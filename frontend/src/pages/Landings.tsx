@@ -29,6 +29,7 @@ import { EntityForm, type FormField } from '../components/EntityForm';
 import { fetchLandings, createLanding, updateLanding, deleteLanding } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatLandingPageForExport } from '../utils/export';
+import { QuickDateRangePicker } from '@/components/DateRangePicker';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -107,6 +108,12 @@ export const Landings = () => {
   // Search and filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
+  
+  // Date range state
+  const [dateRange, setDateRange] = useState<{from: string; to: string}>({
+    from: new Date().toISOString().split('T')[0],
+    to: new Date().toISOString().split('T')[0]
+  });
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -333,7 +340,23 @@ export const Landings = () => {
           <h1 className="text-3xl font-display font-bold text-primary">Landing Pages</h1>
           <p className="text-sm text-on-surface-variant">Manage and optimize your landing pages</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          {/* Date Range Picker */}
+          <div className="w-[280px]">
+            <QuickDateRangePicker
+              value="today"
+              onChange={(preset, range) => {
+                if (range) {
+                  setDateRange({
+                    from: range.startDate.split('T')[0],
+                    to: range.endDate.split('T')[0]
+                  });
+                }
+              }}
+              showTime={false}
+              maxRangeDays={365}
+            />
+          </div>
           <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
             <Filter size={16} />
             Filters

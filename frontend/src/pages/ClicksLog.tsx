@@ -145,11 +145,25 @@ function cn(...classes: (string | boolean | undefined)[]) {
 // 主组件
 // ============================================
 
+// Group By 配置
+const GROUP_BY_OPTIONS = [
+  { value: 'none', label: 'No Grouping' },
+  { value: 'campaign', label: 'Campaign' },
+  { value: 'country', label: 'Country' },
+  { value: 'device', label: 'Device' },
+  { value: 'source', label: 'Source' },
+  { value: 'status', label: 'Status' },
+];
+
 export const ClicksLog = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState<DateRangeValue>(getDateRange(7));
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  
+  // Group By 状态
+  const [groupBy, setGroupBy] = useState<string>('none');
+  const [groupValue, setGroupValue] = useState<string>('all');
 
   const toggleRow = (id: string) => {
     setExpandedRows(prev =>
@@ -157,13 +171,26 @@ export const ClicksLog = () => {
     );
   };
 
+  // 获取 Group By 后的唯一值列表
+  const getGroupValues = () => {
+    if (groupBy === 'none') return [];
+    const values = new Set(CLICKS_DATA.map(log => log[groupBy as keyof ClickLog] as string));
+    return Array.from(values).sort();
+  };
+
+  // 当 Group By 改变时，重置 Group Value
+  React.useEffect(() => {
+    setGroupValue('all');
+  }, [groupBy]);
+
   const filteredData = CLICKS_DATA.filter(log => {
     const matchesSearch = 
       log.campaign.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.ip.includes(searchQuery) ||
       log.country.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || log.status.toLowerCase() === statusFilter.toLowerCase();
-    return matchesSearch && matchesStatus;
+    const matchesGroup = groupBy === 'none' || groupValue === 'all' || log[groupBy as keyof ClickLog] === groupValue;
+    return matchesSearch && matchesStatus && matchesGroup;
   });
 
   return (
@@ -257,7 +284,7 @@ export const ClicksLog = () => {
           </div>
         </div>
         
-        <div className="flex items-center gap-2 pt-2 border-t border-border-default">
+        <div className="flex items-center gap-2 pt-2 border-t border-border-default flex-wrap">
           <Filter size={16} className="text-fg-muted" />
           <span className="text-sm text-fg-muted">Status:</span>
           {['all', 'real', 'bot', 'filtered'].map((status) => (
@@ -274,6 +301,37 @@ export const ClicksLog = () => {
               {status.charAt(0).toUpperCase() + status.slice(1)}
             </button>
           ))}
+          
+          <div className="w-px h-6 bg-border-default mx-2" />
+          
+          {/* Group By 一级筛选 */}
+          <span className="text-sm text-fg-muted">Group By:</span>
+          <select
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value)}
+            className="px-3 py-1 text-xs font-medium rounded bg-surface-container text-fg-default border border-border-default focus:outline-none focus:border-accent-fg"
+          >
+            {GROUP_BY_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          
+          {/* Group By 二级筛选 - 联动显示 */}
+          {groupBy !== 'none' && (
+            <>
+              <span className="text-sm text-fg-muted">Value:</span>
+              <select
+                value={groupValue}
+                onChange={(e) => setGroupValue(e.target.value)}
+                className="px-3 py-1 text-xs font-medium rounded bg-surface-container text-fg-default border border-border-default focus:outline-none focus:border-accent-fg"
+              >
+                <option value="all">All {GROUP_BY_OPTIONS.find(o => o.value === groupBy)?.label}</option>
+                {getGroupValues().map(value => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
       </div>
 

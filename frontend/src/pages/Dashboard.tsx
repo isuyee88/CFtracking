@@ -36,6 +36,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useDashboardURLState } from '../hooks/useURLState';
 import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
+import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources } from '../services/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -542,18 +543,72 @@ export const Dashboard = () => {
     setStats(generateStats(metrics, state.range?.interval || 'today'));
     setChartData(generateChartData(metrics.slice(0, 7)));
     
-    // 生成实体数据
-    const entities: Record<string, any[]> = {};
-    config.entities.forEach(entityKey => {
-      const entityConfig = ENTITY_CONFIGS[entityKey as keyof typeof ENTITY_CONFIGS];
-      if (entityConfig) {
-        entities[entityKey] = generateEntityData(
-          entityKey, 
-          entityConfig.columns.map(c => c.key)
-        );
+    // 从真实API获取实体数据
+    const fetchEntityData = async () => {
+      const entities: Record<string, any[]> = {};
+      
+      for (const entityKey of config.entities) {
+        try {
+          let data: any[] = [];
+          
+          switch (entityKey) {
+            case 'campaigns':
+              const campaigns = await fetchCampaigns();
+              data = campaigns.map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                clicks: c.clicks || 0,
+                unique_clicks: c.uniqueClicks || 0,
+                conversions: c.conversions || 0,
+                cost: c.cost || 0,
+                revenue: c.revenue || 0,
+                profit: c.profit || 0,
+                roi: c.roi || 0
+              }));
+              break;
+            case 'offers':
+              const offers = await fetchOffers();
+              data = offers.map((o: any) => ({
+                id: o.id,
+                name: o.name,
+                clicks: o.clicks || 0,
+                unique_clicks: o.uniqueClicks || 0,
+                conversions: o.conversions || 0
+              }));
+              break;
+            case 'landings':
+              const landings = await fetchLandings();
+              data = landings.map((l: any) => ({
+                id: l.id,
+                name: l.name,
+                clicks: l.clicks || 0,
+                unique_clicks: l.uniqueClicks || 0,
+                conversions: l.conversions || 0
+              }));
+              break;
+            case 'sources':
+              const sources = await fetchTrafficSources();
+              data = sources.map((s: any) => ({
+                id: s.id,
+                name: s.name,
+                clicks: s.clicks || 0,
+                unique_clicks: s.uniqueClicks || 0,
+                conversions: s.conversions || 0
+              }));
+              break;
+          }
+          
+          entities[entityKey] = data;
+        } catch (error) {
+          console.error(`Failed to fetch ${entityKey}:`, error);
+          entities[entityKey] = [];
+        }
       }
-    });
-    setEntityData(entities);
+      
+      setEntityData(entities);
+    };
+    
+    fetchEntityData();
     setRecentClicks(generateRecentClicks(config.recentClicksColumns));
   }, [config, state.range?.interval]);
   

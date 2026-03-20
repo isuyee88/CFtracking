@@ -32,6 +32,7 @@ import { EntityForm, type FormField } from '../components/EntityForm';
 import { fetchAffiliateNetworks, createAffiliateNetwork, updateAffiliateNetwork, deleteAffiliateNetwork } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatAffiliateNetworkForExport } from '../utils/export';
+import { QuickDateRangePicker } from '@/components/DateRangePicker';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -133,6 +134,12 @@ export const AffiliateNetworks = () => {
   
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+  // Date range state
+  const [dateRange, setDateRange] = useState<{from: string; to: string}>({
+    from: new Date().toISOString().split('T')[0],
+    to: new Date().toISOString().split('T')[0]
+  });
 
   // Fetch affiliate networks from API
   useEffect(() => {
@@ -384,6 +391,22 @@ export const AffiliateNetworks = () => {
           <p className="text-sm text-on-surface-variant">Manage your affiliate network connections</p>
         </div>
         <div className="flex gap-3">
+          {/* Date Range Picker */}
+          <div className="w-[280px]">
+            <QuickDateRangePicker
+              value="today"
+              onChange={(preset, range) => {
+                if (range) {
+                  setDateRange({
+                    from: range.startDate.split('T')[0],
+                    to: range.endDate.split('T')[0]
+                  });
+                }
+              }}
+              showTime={false}
+              maxRangeDays={365}
+            />
+          </div>
           <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
             <Filter size={16} />
             Filters

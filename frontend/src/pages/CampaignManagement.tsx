@@ -24,6 +24,7 @@ import { fetchCampaigns, createCampaign } from '../services/api';
 import { CampaignForm } from '../components/CampaignForm';
 import { ExportButton } from '../components/ExportButton';
 import { formatCampaignForExport } from '../utils/export';
+import { QuickDateRangePicker } from '@/components/DateRangePicker';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -93,6 +94,12 @@ export const CampaignManagement = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
+  
+  // Date range state
+  const [dateRange, setDateRange] = useState<{from: string; to: string}>({
+    from: new Date().toISOString().split('T')[0],
+    to: new Date().toISOString().split('T')[0]
+  });
   
   // Form modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -240,7 +247,23 @@ export const CampaignManagement = () => {
           <h1 className="text-3xl font-display font-bold text-fg-default">Campaign Management</h1>
           <p className="text-sm text-fg-muted">Manage your tracking campaigns and traffic distribution</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          {/* Date Range Picker */}
+          <div className="w-[280px]">
+            <QuickDateRangePicker
+              value="today"
+              onChange={(preset, range) => {
+                if (range) {
+                  setDateRange({
+                    from: range.startDate.split('T')[0],
+                    to: range.endDate.split('T')[0]
+                  });
+                }
+              }}
+              showTime={false}
+              maxRangeDays={365}
+            />
+          </div>
           <button className="flex items-center gap-2 px-4 py-2 border border-border-default text-fg-default text-sm font-medium hover:bg-surface-container transition-colors rounded-md">
             <Filter size={16} />
             Filters
