@@ -1,0 +1,820 @@
+/**
+ * File: index.css
+ * Purpose: 全局样式和主题变量定义 - Linear Design System
+ * Input/Output: 定义颜色系统、字体、工具类，供全应用使用
+ * Logic: 使用 Linear 现代极简配色方案，高对比度，纯黑/纯白设计
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Manrope", sans-serif;
+
+  /* ============================================
+     Linear Color System - Light Mode
+     ============================================ */
+  
+  /* Background - 背景层级 */
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #fafafa;
+  --color-bg-tertiary: #f5f5f5;
+  --color-bg-elevated: #ffffff;
+  
+  /* Text Colors - 文字颜色 */
+  --color-text-primary: #111111;
+  --color-text-secondary: #666666;
+  --color-text-tertiary: #999999;
+  --color-text-disabled: #bbbbbb;
+  
+  /* Border & Divider - 边框 */
+  --color-border: #e5e5e5;
+  --color-border-strong: #d4d4d4;
+  
+  /* Accent Colors - 强调色 */
+  --color-accent: #5e6ad2;
+  --color-accent-hover: #4f5ac0;
+  --color-accent-light: rgba(94, 106, 210, 0.1);
+  
+  /* Status Colors - 状态色 */
+  --color-success: #2ea043;
+  --color-warning: #d4a72c;
+  --color-danger: #f85149;
+  --color-info: #58a6ff;
+  
+  /* Legacy compatibility - 兼容旧变量名 */
+  --color-primary: #111111;
+  --color-primary-container: #2a2a2a;
+  --color-on-primary: #ffffff;
+  
+  --color-secondary: #5e6ad2;
+  --color-secondary-container: rgba(94, 106, 210, 0.1);
+  --color-secondary-fixed-dim: #4f5ac0;
+  
+  --color-surface: #ffffff;
+  --color-surface-container: #fafafa;
+  --color-surface-container-low: #f5f5f5;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-high: #f0f0f0;
+  
+  --color-on-surface: #111111;
+  --color-on-surface-variant: #666666;
+  --color-outline-variant: #e5e5e5;
+  
+  --color-error: #f85149;
+  
+  /* Button text colors - 按钮文字颜色 */
+  --color-btn-primary-text: #ffffff;
+  --color-btn-secondary-text: #111111;
+  --color-btn-ghost-text: #666666;
+  --color-btn-ghost-text-hover: #111111;
+  
+  /* Linear specific */
+  --color-fg-default: #111111;
+  --color-fg-muted: #666666;
+  --color-fg-subtle: #999999;
+  --color-fg-on-emphasis: #ffffff;
+  
+  --color-canvas: #ffffff;
+  --color-canvas-inset: #fafafa;
+  --color-border-default: #e5e5e5;
+  --color-border-muted: #f0f0f0;
+  
+  --color-accent-fg: #5e6ad2;
+  --color-accent-emphasis: #5e6ad2;
+  --color-accent-muted: rgba(94, 106, 210, 0.1);
+  --color-accent-subtle: rgba(94, 106, 210, 0.05);
+  
+  --color-success-fg: #2ea043;
+  --color-danger-fg: #f85149;
+  --color-warning-fg: #d4a72c;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-canvas-inset);
+    color: var(--color-fg-default);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+    color: var(--color-fg-default);
+  }
+  
+  /* 优化：全局焦点指示器 - 无障碍支持 */
+  *:focus-visible {
+    outline: 2px solid var(--color-accent-fg);
+    outline-offset: 2px;
+  }
+  
+  /* 优化：减少动画支持 - 无障碍 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ============================================
+   Dark Mode - Linear Style
+   ============================================ */
+
+.dark-mode {
+  /* Background - 优化：非纯黑，减少眼睛疲劳 */
+  --color-bg-primary: #0a0a0a;
+  --color-bg-secondary: #141414;
+  --color-bg-tertiary: #1e1e1e;
+  --color-bg-elevated: #242424;
+  
+  /* Text - 优化：非纯白，更柔和 */
+  --color-text-primary: #f0f0f0;
+  --color-text-secondary: #a0a0a0;
+  --color-text-tertiary: #666666;
+  --color-text-disabled: #444444;
+  
+  /* Border - 优化：增强边框可见性 */
+  --color-border: #333333;
+  --color-border-strong: #444444;
+  
+  /* Legacy compatibility - 优化：更好的层级对比 */
+  --color-surface: #0d0d0d;
+  --color-surface-container: #161616;
+  --color-surface-container-low: #1f1f1f;
+  --color-surface-container-lowest: #0a0a0a;
+  --color-surface-container-high: #2a2a2a;
+  
+  --color-on-surface: #f0f0f0;
+  --color-on-surface-variant: #a0a0a0;
+  --color-outline-variant: #333333;
+  
+  --color-fg-default: #f0f0f0;
+  --color-fg-muted: #a0a0a0;
+  --color-fg-subtle: #666666;
+  --color-fg-on-emphasis: #000000;
+  
+  --color-canvas: #0a0a0a;
+  --color-canvas-inset: #0a0a0a;
+  --color-border-default: #333333;
+  --color-border-muted: #1f1f1f;
+  
+  /* 优化：调整强调色亮度，更柔和 */
+  --color-accent-fg: #7b8fd4;
+  --color-accent-emphasis: #8b9dff;
+  --color-accent-muted: rgba(123, 143, 212, 0.15);
+  --color-accent-subtle: rgba(123, 143, 212, 0.1);
+  
+  /* 优化：状态色饱和度调整 */
+  --color-success-fg: #4ade80;
+  --color-danger-fg: #f87171;
+  --color-warning-fg: #fbbf24;
+  
+  /* Button text colors - 按钮文字颜色 */
+  --color-btn-primary-text: #0a0a0a;
+  --color-btn-secondary-text: #f0f0f0;
+  --color-btn-ghost-text: #a0a0a0;
+  --color-btn-ghost-text-hover: #f0f0f0;
+  
+  /* Legacy compatibility - 暗黑模式覆盖 */
+  --color-primary: #f0f0f0;
+  --color-primary-container: #e5e5e5;
+  --color-on-primary: #0a0a0a;
+  
+  --color-secondary: #7b8fd4;
+  --color-secondary-container: rgba(123, 143, 212, 0.15);
+  --color-secondary-fixed-dim: #a5b4ff;
+  
+  --color-error: #f87171;
+}
+
+/* ============================================
+   Utility Classes - Text Colors
+   ============================================ */
+
+.text-fg-default {
+  color: var(--color-fg-default);
+}
+
+.text-fg-muted {
+  color: var(--color-fg-muted);
+}
+
+.text-fg-subtle {
+  color: var(--color-fg-subtle);
+}
+
+.text-accent-fg {
+  color: var(--color-accent-fg);
+}
+
+.text-success-fg {
+  color: var(--color-success-fg);
+}
+
+.text-danger-fg {
+  color: var(--color-danger-fg);
+}
+
+.text-warning-fg {
+  color: var(--color-warning-fg);
+}
+
+/* High Contrast Utilities */
+.text-high-contrast {
+  color: var(--color-fg-default);
+}
+
+.text-medium-contrast {
+  color: var(--color-fg-muted);
+}
+
+.text-low-contrast {
+  color: var(--color-fg-subtle);
+}
+
+/* Link Styles */
+.link-primary {
+  color: var(--color-accent-fg);
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.link-primary:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+/* ============================================
+   Background Colors
+   ============================================ */
+
+.bg-canvas {
+  background-color: var(--color-canvas);
+}
+
+.bg-canvas-inset {
+  background-color: var(--color-canvas-inset);
+}
+
+.bg-surface {
+  background-color: var(--color-surface);
+}
+
+.bg-surface-container {
+  background-color: var(--color-surface-container);
+}
+
+.bg-surface-container-low {
+  background-color: var(--color-surface-container-low);
+}
+
+.bg-surface-container-high {
+  background-color: var(--color-surface-container-high);
+}
+
+/* ============================================
+   Border Colors
+   ============================================ */
+
+.border-default {
+  border-color: var(--color-border-default);
+}
+
+.border-muted {
+  border-color: var(--color-border-muted);
+}
+
+/* ============================================
+   Table Styles - Linear Style
+   ============================================ */
+
+.data-table {
+  width: 100%;
+  font-size: 0.875rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.data-table thead {
+  background-color: var(--color-surface-container);
+}
+
+.data-table thead th {
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-fg-muted);
+  border-bottom: 1px solid var(--color-border-default);
+  text-align: left;
+}
+
+.data-table tbody tr {
+  background-color: var(--color-surface);
+  transition: background-color 0.15s ease;
+}
+
+.data-table tbody tr:hover {
+  background-color: var(--color-surface-container);
+}
+
+.data-table tbody td {
+  padding: 0.875rem 1rem;
+  color: var(--color-fg-default);
+  border-bottom: 1px solid var(--color-border-default);
+  font-size: 0.875rem;
+}
+
+/* Table Links */
+.data-table tbody td a,
+.data-table tbody td .link-primary {
+  color: var(--color-accent-fg);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.data-table tbody td a:hover,
+.data-table tbody td .link-primary:hover {
+  text-decoration: underline;
+}
+
+/* ============================================
+   Card & Container Styles - Linear
+   ============================================ */
+
+.card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.dark-mode .card {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* 优化：黑夜模式图片适配 */
+.dark-mode img {
+  filter: brightness(0.9) contrast(1.05);
+}
+
+/* 优化：黑夜模式图表适配 - 降低饱和度 */
+.dark-mode .chart-container {
+  filter: saturate(0.85);
+}
+
+/* 优化：黑夜模式图表线条颜色调整 */
+.dark-mode .recharts-surface {
+  filter: saturate(0.9);
+}
+
+.card-header {
+  padding: 1rem 1.25rem;
+  background-color: var(--color-surface-container);
+  border-bottom: 1px solid var(--color-border-default);
+  border-radius: 8px 8px 0 0;
+}
+
+.card-body {
+  padding: 1.25rem;
+}
+
+/* Section Card */
+.section-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+}
+
+.section-header {
+  padding: 1rem 1.25rem;
+  background-color: var(--color-surface-container);
+  border-bottom: 1px solid var(--color-border-default);
+  border-radius: 8px 8px 0 0;
+}
+
+.section-header h3 {
+  color: var(--color-fg-default);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+/* ============================================
+   Button Styles - Linear
+   ============================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  /* 优化：添加焦点指示 */
+  outline: none;
+}
+
+/* 优化：按钮点击反馈动画 */
+.btn:active {
+  transform: scale(0.98);
+}
+
+/* 优化：按钮焦点状态 */
+.btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-canvas), 0 0 0 4px var(--color-accent-fg);
+}
+
+.btn-primary {
+  background-color: var(--color-fg-default);
+  color: var(--color-btn-primary-text);
+  border-color: var(--color-fg-default);
+}
+
+.btn-primary:hover {
+  opacity: 0.85;
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+  opacity: 0.75;
+}
+
+.btn-secondary {
+  background-color: var(--color-surface-container);
+  color: var(--color-btn-secondary-text);
+  border-color: var(--color-border-default);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-surface-container-low);
+  border-color: var(--color-border-strong);
+}
+
+.btn-secondary:active {
+  transform: scale(0.98);
+  background-color: var(--color-surface-container-high);
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: var(--color-btn-ghost-text);
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  background-color: var(--color-surface-container);
+  color: var(--color-btn-ghost-text-hover);
+}
+
+.btn-ghost:active {
+  transform: scale(0.98);
+  background-color: var(--color-surface-container-low);
+}
+
+.btn-accent {
+  background-color: var(--color-accent);
+  color: #ffffff;
+  border-color: var(--color-accent);
+}
+
+.dark-mode .btn-accent {
+  background-color: var(--color-accent-emphasis);
+  color: #0a0a0a;
+}
+
+.btn-accent:hover {
+  opacity: 0.9;
+}
+
+.btn-accent:active {
+  transform: scale(0.98);
+  opacity: 0.8;
+}
+
+/* ============================================
+   Form Elements - Linear
+   ============================================ */
+
+.form-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-fg-default);
+  background-color: var(--color-canvas);
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  /* 优化：无障碍焦点指示 */
+  outline: none;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-accent-fg);
+  /* 优化：增强聚焦glow效果 */
+  box-shadow: 
+    0 0 0 3px var(--color-accent-subtle),
+    0 0 0 1px var(--color-accent-fg);
+}
+
+/* 优化：输入框焦点可见状态 */
+.form-input:focus-visible {
+  box-shadow: 
+    0 0 0 3px var(--color-accent-subtle),
+    0 0 0 1px var(--color-accent-fg);
+}
+
+.form-input::placeholder {
+  color: var(--color-fg-subtle);
+}
+
+/* 优化：禁用状态 */
+.form-input:disabled {
+  background-color: var(--color-surface-container);
+  color: var(--color-fg-subtle);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6L8 10L12 6' stroke='%23666666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.5rem;
+}
+
+.dark-mode .form-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6L8 10L12 6' stroke='%23a0a0a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* ============================================
+   Chart & Visualization
+   ============================================ */
+
+.chart-container {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.chart-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-fg-default);
+  margin-bottom: 1rem;
+}
+
+/* ============================================
+   Status Badges - Linear
+   ============================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+.badge-success {
+  background-color: rgba(46, 160, 67, 0.15);
+  color: var(--color-success-fg);
+}
+
+.badge-danger {
+  background-color: rgba(248, 81, 73, 0.15);
+  color: var(--color-danger-fg);
+}
+
+.badge-warning {
+  background-color: rgba(212, 167, 44, 0.15);
+  color: var(--color-warning-fg);
+}
+
+.badge-default {
+  background-color: var(--color-surface-container);
+  color: var(--color-fg-muted);
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Divider */
+.divider {
+  height: 1px;
+  background-color: var(--color-border-default);
+  margin: 1rem 0;
+}
+
+/* Focus Ring */
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+
+/* ============================================
+   Scrollbar Styles - Linear
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fg-muted);
+}
+
+.dark-mode ::-webkit-scrollbar-thumb {
+  background: var(--color-surface-container-high);
+}
+
+.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fg-muted);
+}
+
+/* ============================================
+   Linear Specific Components
+   ============================================ */
+
+/* Sidebar Item */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  color: var(--color-fg-muted);
+  transition: all 0.15s ease;
+}
+
+.sidebar-item:hover {
+  background-color: var(--color-surface-container);
+  color: var(--color-fg-default);
+}
+
+.sidebar-item.active {
+  background-color: var(--color-accent-muted);
+  color: var(--color-accent-fg);
+}
+
+/* Metric Card */
+.metric-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  padding: 1.25rem;
+  transition: box-shadow 0.15s ease;
+}
+
+.metric-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.dark-mode .metric-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-fg-default);
+  margin-top: 0.25rem;
+}
+
+/* Tab Button */
+.tab-button {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab-button:hover {
+  color: var(--color-fg-default);
+  background-color: var(--color-surface-container);
+}
+
+.tab-button.active {
+  color: var(--color-fg-default);
+  background-color: var(--color-surface-container);
+}
+
+/* ============================================
+   Additional Utility Classes for ClicksLog
+   ============================================ */
+
+.text-primary {
+  color: var(--color-accent-fg);
+}
+
+.bg-surface-container-lowest {
+  background-color: var(--color-surface-container-lowest);
+}
+
+.whisper-shadow {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.text-on-surface-variant {
+  color: var(--color-on-surface-variant);
+}
+
+.bg-secondary {
+  background-color: var(--color-secondary);
+}
+
+.text-secondary {
+  color: var(--color-secondary);
+}
+
+.text-on-primary {
+  color: var(--color-on-primary);
+}
+
+.text-medium-contrast {
+  color: var(--color-fg-muted);
+}
+
+.bg-surface-container {
+  background-color: var(--color-surface-container);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.animate-in {
+  animation: fadeIn 0.7s ease-out;
+}
+
+.fade-in {
+  animation-name: fadeIn;
+}
+
+.duration-700 {
+  animation-duration: 700ms;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

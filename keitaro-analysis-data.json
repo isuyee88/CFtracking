@@ -1,0 +1,1752 @@
+{
+  "pages": [
+    {
+      "name": "Dashboard",
+      "data": {
+        "title": "Dashboard",
+        "url": "https://demo.keitaro.io/admin/#!/dashboard/?s=~(campaign~null~range~(from~'2026-03-19~to~'2026-03-19~interval~'today~timezone~'UTC)~enabledMetrics~(~'clicks~'campaign_unique_clicks~'conversions~'cost~'sale_revenue~'profit_confirmed~'roi_confirmed)~enabledEntities~(~'campaign~'landing~'offer~'ts)~lastClicksColumns~(~'event_id~'datetime~'campaign~'os_icon~'browser_icon~'ip~'destination)~topMetrics~(~'clicks~'campaign_unique_clicks~'conversions))",
+        "sidebarItems": [
+          {
+            "text": "Dashboard",
+            "href": "#!/dashboard/"
+          },
+          {
+            "text": "Campaigns",
+            "href": "#!/campaigns/"
+          },
+          {
+            "text": "Landing Pages",
+            "href": "#!/landings/"
+          },
+          {
+            "text": "Affiliate Networks",
+            "href": "#!/affiliate_networks/"
+          },
+          {
+            "text": "Offers",
+            "href": "#!/offers/"
+          },
+          {
+            "text": "Traffic Sources",
+            "href": "#!/traffic_sources/"
+          },
+          {
+            "text": "Create report",
+            "href": "#!/reports/build"
+          },
+          {
+            "text": "Clicks log",
+            "href": "#!/clicks/log"
+          },
+          {
+            "text": "Conversions log",
+            "href": "#!/conversions/log"
+          },
+          {
+            "text": "Exported reports",
+            "href": "#!/reports/exported"
+          },
+          {
+            "text": "Black and White Lists",
+            "href": "#"
+          },
+          {
+            "text": "Trends",
+            "href": "#!/trends"
+          },
+          {
+            "text": "Domains",
+            "href": "#!/domains"
+          },
+          {
+            "text": "Users",
+            "href": "#!/users"
+          },
+          {
+            "text": "Main",
+            "href": "#!/settings/main"
+          },
+          {
+            "text": "Bot lists",
+            "href": "#!/settings/bots"
+          },
+          {
+            "text": "System",
+            "href": "#!/settings/system"
+          },
+          {
+            "text": "Privacy",
+            "href": "#!/settings/privacy"
+          },
+          {
+            "text": "Branding",
+            "href": "#!/settings/branding"
+          },
+          {
+            "text": "Postback URL",
+            "href": "#"
+          },
+          {
+            "text": "Custom metrics",
+            "href": "#!/custom_metrics"
+          },
+          {
+            "text": "Conversion types",
+            "href": "#!/conversion_types"
+          },
+          {
+            "text": "Geo DBs",
+            "href": "#!/geo_dbs/"
+          },
+          {
+            "text": "Geo profiles",
+            "href": "#!/geo_profiles"
+          },
+          {
+            "text": "Status",
+            "href": "#"
+          },
+          {
+            "text": "Logs",
+            "href": "#!/logs"
+          },
+          {
+            "text": "Archive",
+            "href": "#!/archive"
+          },
+          {
+            "text": "Import conversions",
+            "href": "#"
+          },
+          {
+            "text": "Simulate traffic",
+            "href": "#"
+          },
+          {
+            "text": "Delete statistics",
+            "href": "#"
+          },
+          {
+            "text": "Integrations",
+            "href": "#!/integrations"
+          }
+        ],
+        "headings": [
+          {
+            "tag": "H1",
+            "text": "Dashboard"
+          },
+          {
+            "tag": "H3",
+            "text": "Recent Clicks"
+          }
+        ],
+        "statsCards": [],
+        "tables": [],
+        "buttons": [
+          {
+            "text": "Search"
+          },
+          {
+            "text": "Reports"
+          },
+          {
+            "text": "Black and White Lists"
+          },
+          {
+            "text": "Settings"
+          },
+          {
+            "text": "Postback URL"
+          },
+          {
+            "text": "Maintenance"
+          },
+          {
+            "text": "Status"
+          },
+          {
+            "text": "Import conversions"
+          },
+          {
+            "text": "Simulate traffic"
+          },
+          {
+            "text": "Delete statistics"
+          },
+          {
+            "text": "Clicks\n55,687"
+          },
+          {
+            "text": "UC (campaign)\n47,885"
+          },
+          {
+            "text": "Conv.\n8,353"
+          },
+          {
+            "text": "Cost\n$517.3836"
+          },
+          {
+            "text": "Revenue (confirmed)\n$1,402.88"
+          },
+          {
+            "text": "Profit/Loss (confirmed)\n$885.50"
+          },
+          {
+            "text": "ROI (confirmed)\n171.15%"
+          },
+          {
+            "text": "2026-03-19 04:58:52"
+          },
+          {
+            "text": "2026-03-19 08:53:28"
+          },
+          {
+            "text": "2026-03-19 09:47:55"
+          },
+          {
+            "text": "2026-03-19 02:44:34"
+          },
+          {
+            "text": "2026-03-19 12:21:59"
+          },
+          {
+            "text": "2026-03-19 09:17:04"
+          },
+          {
+            "text": "2026-03-19 13:22:57"
+          },
+          {
+            "text": "2026-03-19 13:12:25"
+          }
+        ],
+        "charts": [
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          }
+        ],
+        "bodyText": "Search Dashboard Campaigns Landing Pages Affiliate Networks Offers Traffic Sources Reports Trends Domains Users Settings Maintenance Integrations Dashboard Campaigns Today Clicks 55,687 UC (campaign) 47,885 Conv. 8,353 Cost $517.3836 Revenue (confirmed) $1,402.88 Profit/Loss (confirmed) $885.50 ROI (confirmed) 171.15% Clicks UC (campaign) Conv. Cost Revenue (confirmed) Profit/Loss (confirmed) ROI (confirmed) Campaign Clicks UC (campaign) Conv. Google Ads Fitness App Split 27,793 23,905 4,102 Meta Ads Food Delivery Promo 27,894 23,980 4,251 55,687 47,885 8,353 Landing page Clicks UC (campaign) Conv. Papa Johns 13,966 12,026 2,111 Little Caesars 13,928 11,954 2,140 27,894 23,980 4,251 Offer Clicks UC (campaign) Conv. Apple Fitness 6,582 5,607 953 Google Fitness App 21,211 18,298 3,149 27,793 23,905 4,102 Source Clicks UC (campaign) Conv. GoogleAds 27,793 23,905 4,102 Facebook.com 27,894 23,980 4,251 55,687 47,885 8,353 Recent Clicks Event id Date and time Campaign OS Logo Browser IP Destination 019d0476-1eb5-7103-ba0e-9f5cd65c736e 2026-03-19 04:58:52 Meta Ads Food Delivery Promo 176.59.50.69 https://locations.papajohns.com/united-states/?_subid=3ilp358.2.inic3&_token=[filtered] 019d054c-bcee-72c1-95ba-f8337d76197f 2026-03-19 08:53:28 Meta Ads Food Delivery Promo 103.5.140.235 https://littlecaesars.com/en-us/?_subid=3ilpssa.2.io1s6&_token=[filtered] 019d057e-9bfa-728a-afc1-ff29129a3816 2026-03-19 09:47:55 Meta Ads Food Delivery Promo 98.207.240.236 https://littlecaesars.com/en-us/?_subid=3im333q.2.io5du&_token=[filtered] 019d03fb-3882-732d-9a41-1fd484cf7da8 2026-03-19 02:44:34 Meta Ads Food Delivery Promo 24.70.83.98 https://locations.papajohns.com/united-states/?_subid=3im9j18.2.in9e8&_token=[filtered] 019d060b-dd13-71f9-8e1e-a1e6cca89581 2026-03-19 12:21:59 Meta Ads Food Delivery Promo 176.221.120.233 https://locations.papajohns.com/united-states/?_subid=3imcsj1.2.iofhu&_token=[filtered] 019d0562-7e2c-72bc-be09-8669e4023367 2026-03-19 09:17:04 Meta Ads Food Delivery Promo 83.5.52.205 https://littlecaesars.com/en-us/?_subid=3imhnii.2.io3eb&_token=[filtered] 019d0643-9bf7-73d6-9331-2b782a9a3bd6 2026-03-19 13:22:57 Meta Ads Food Delivery Promo 82.53.120.234 https://locations.papajohns.com/united-states/?_subid=3imjsge.2.ioji8&_token=[filtered] 019d0639-d5b3-735a-8b22-cad4de0f5e18 2026-03-19 13:12:25 Meta Ads Food Delivery Promo 8.39.183.188 https://littlecaesars.com/en-us/?_subid=3imk18s.2.ioiqo&_token=[filtered] 019d055d-0ddf-7247-b31f-41d9e1e08878 2026-03-19 09:11:02 Meta Ads Food Delivery Promo 75.138.160.244 https://locations.papajohns.com/united-states/?_subid=3imk2a4.2.io2vu&_token=[filtered] 019d04e3-4f2c-73f0-9b6b-32c518017782 2026-03-19 06:58:14 Meta Ads Food Delivery Promo 213.37.93.204 https://littlecaesars.com/en-us/?_subid=3imrfnq.2.inq74&_token=[filtered]"
+      }
+    },
+    {
+      "name": "Dashboard",
+      "data": {
+        "title": "Dashboard",
+        "url": "https://demo.keitaro.io/admin/#!/dashboard/",
+        "sidebarItems": [
+          {
+            "text": "Dashboard",
+            "href": "#!/dashboard/"
+          },
+          {
+            "text": "Campaigns",
+            "href": "#!/campaigns/"
+          },
+          {
+            "text": "Landing Pages",
+            "href": "#!/landings/"
+          },
+          {
+            "text": "Affiliate Networks",
+            "href": "#!/affiliate_networks/"
+          },
+          {
+            "text": "Offers",
+            "href": "#!/offers/"
+          },
+          {
+            "text": "Traffic Sources",
+            "href": "#!/traffic_sources/"
+          },
+          {
+            "text": "Create report",
+            "href": "#!/reports/build"
+          },
+          {
+            "text": "Clicks log",
+            "href": "#!/clicks/log"
+          },
+          {
+            "text": "Conversions log",
+            "href": "#!/conversions/log"
+          },
+          {
+            "text": "Exported reports",
+            "href": "#!/reports/exported"
+          },
+          {
+            "text": "Black and White Lists",
+            "href": "#"
+          },
+          {
+            "text": "Trends",
+            "href": "#!/trends"
+          },
+          {
+            "text": "Domains",
+            "href": "#!/domains"
+          },
+          {
+            "text": "Users",
+            "href": "#!/users"
+          },
+          {
+            "text": "Main",
+            "href": "#!/settings/main"
+          },
+          {
+            "text": "Bot lists",
+            "href": "#!/settings/bots"
+          },
+          {
+            "text": "System",
+            "href": "#!/settings/system"
+          },
+          {
+            "text": "Privacy",
+            "href": "#!/settings/privacy"
+          },
+          {
+            "text": "Branding",
+            "href": "#!/settings/branding"
+          },
+          {
+            "text": "Postback URL",
+            "href": "#"
+          },
+          {
+            "text": "Custom metrics",
+            "href": "#!/custom_metrics"
+          },
+          {
+            "text": "Conversion types",
+            "href": "#!/conversion_types"
+          },
+          {
+            "text": "Geo DBs",
+            "href": "#!/geo_dbs/"
+          },
+          {
+            "text": "Geo profiles",
+            "href": "#!/geo_profiles"
+          },
+          {
+            "text": "Status",
+            "href": "#"
+          },
+          {
+            "text": "Logs",
+            "href": "#!/logs"
+          },
+          {
+            "text": "Archive",
+            "href": "#!/archive"
+          },
+          {
+            "text": "Import conversions",
+            "href": "#"
+          },
+          {
+            "text": "Simulate traffic",
+            "href": "#"
+          },
+          {
+            "text": "Delete statistics",
+            "href": "#"
+          },
+          {
+            "text": "Integrations",
+            "href": "#!/integrations"
+          }
+        ],
+        "headings": [
+          {
+            "tag": "H1",
+            "text": "Dashboard"
+          },
+          {
+            "tag": "H3",
+            "text": "Recent Clicks"
+          }
+        ],
+        "statsCards": [],
+        "tables": [],
+        "buttons": [
+          {
+            "text": "Search"
+          },
+          {
+            "text": "Reports"
+          },
+          {
+            "text": "Black and White Lists"
+          },
+          {
+            "text": "Settings"
+          },
+          {
+            "text": "Postback URL"
+          },
+          {
+            "text": "Maintenance"
+          },
+          {
+            "text": "Status"
+          },
+          {
+            "text": "Import conversions"
+          },
+          {
+            "text": "Simulate traffic"
+          },
+          {
+            "text": "Delete statistics"
+          },
+          {
+            "text": "Clicks\n55,687"
+          },
+          {
+            "text": "UC (campaign)\n47,885"
+          },
+          {
+            "text": "Conv.\n8,353"
+          },
+          {
+            "text": "Cost\n$517.3836"
+          },
+          {
+            "text": "Revenue (confirmed)\n$1,402.88"
+          },
+          {
+            "text": "Profit/Loss (confirmed)\n$885.50"
+          },
+          {
+            "text": "ROI (confirmed)\n171.15%"
+          },
+          {
+            "text": "2026-03-19 04:58:52"
+          },
+          {
+            "text": "2026-03-19 08:53:28"
+          },
+          {
+            "text": "2026-03-19 09:47:55"
+          },
+          {
+            "text": "2026-03-19 02:44:34"
+          },
+          {
+            "text": "2026-03-19 12:21:59"
+          },
+          {
+            "text": "2026-03-19 09:17:04"
+          },
+          {
+            "text": "2026-03-19 13:22:57"
+          },
+          {
+            "text": "2026-03-19 13:12:25"
+          }
+        ],
+        "charts": [
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          }
+        ],
+        "bodyText": "Search Dashboard Campaigns Landing Pages Affiliate Networks Offers Traffic Sources Reports Trends Domains Users Settings Maintenance Integrations Dashboard Campaigns Today Clicks 55,687 UC (campaign) 47,885 Conv. 8,353 Cost $517.3836 Revenue (confirmed) $1,402.88 Profit/Loss (confirmed) $885.50 ROI (confirmed) 171.15% Clicks UC (campaign) Conv. Cost Revenue (confirmed) Profit/Loss (confirmed) ROI (confirmed) Campaign Clicks UC (campaign) Conv. Google Ads Fitness App Split 27,793 23,905 4,102 Meta Ads Food Delivery Promo 27,894 23,980 4,251 55,687 47,885 8,353 Landing page Clicks UC (campaign) Conv. Papa Johns 13,966 12,026 2,111 Little Caesars 13,928 11,954 2,140 27,894 23,980 4,251 Offer Clicks UC (campaign) Conv. Apple Fitness 6,582 5,607 953 Google Fitness App 21,211 18,298 3,149 27,793 23,905 4,102 Source Clicks UC (campaign) Conv. GoogleAds 27,793 23,905 4,102 Facebook.com 27,894 23,980 4,251 55,687 47,885 8,353 Recent Clicks Event id Date and time Campaign OS Logo Browser IP Destination 019d0476-1eb5-7103-ba0e-9f5cd65c736e 2026-03-19 04:58:52 Meta Ads Food Delivery Promo 176.59.50.69 https://locations.papajohns.com/united-states/?_subid=3ilp358.2.inic3&_token=[filtered] 019d054c-bcee-72c1-95ba-f8337d76197f 2026-03-19 08:53:28 Meta Ads Food Delivery Promo 103.5.140.235 https://littlecaesars.com/en-us/?_subid=3ilpssa.2.io1s6&_token=[filtered] 019d057e-9bfa-728a-afc1-ff29129a3816 2026-03-19 09:47:55 Meta Ads Food Delivery Promo 98.207.240.236 https://littlecaesars.com/en-us/?_subid=3im333q.2.io5du&_token=[filtered] 019d03fb-3882-732d-9a41-1fd484cf7da8 2026-03-19 02:44:34 Meta Ads Food Delivery Promo 24.70.83.98 https://locations.papajohns.com/united-states/?_subid=3im9j18.2.in9e8&_token=[filtered] 019d060b-dd13-71f9-8e1e-a1e6cca89581 2026-03-19 12:21:59 Meta Ads Food Delivery Promo 176.221.120.233 https://locations.papajohns.com/united-states/?_subid=3imcsj1.2.iofhu&_token=[filtered] 019d0562-7e2c-72bc-be09-8669e4023367 2026-03-19 09:17:04 Meta Ads Food Delivery Promo 83.5.52.205 https://littlecaesars.com/en-us/?_subid=3imhnii.2.io3eb&_token=[filtered] 019d0643-9bf7-73d6-9331-2b782a9a3bd6 2026-03-19 13:22:57 Meta Ads Food Delivery Promo 82.53.120.234 https://locations.papajohns.com/united-states/?_subid=3imjsge.2.ioji8&_token=[filtered] 019d0639-d5b3-735a-8b22-cad4de0f5e18 2026-03-19 13:12:25 Meta Ads Food Delivery Promo 8.39.183.188 https://littlecaesars.com/en-us/?_subid=3imk18s.2.ioiqo&_token=[filtered] 019d055d-0ddf-7247-b31f-41d9e1e08878 2026-03-19 09:11:02 Meta Ads Food Delivery Promo 75.138.160.244 https://locations.papajohns.com/united-states/?_subid=3imk2a4.2.io2vu&_token=[filtered] 019d04e3-4f2c-73f0-9b6b-32c518017782 2026-03-19 06:58:14 Meta Ads Food Delivery Promo 213.37.93.204 https://littlecaesars.com/en-us/?_subid=3imrfnq.2.inq74&_token=[filtered]"
+      }
+    },
+    {
+      "name": "Landing Pages",
+      "data": {
+        "title": "Landing Pages",
+        "url": "https://demo.keitaro.io/admin/#!/landings/?s=~(limit~250~sort~(column~'id~order~'desc)~metrics~(~'more~'profitability~'clicks~'lp_clicks~'lp_ctr~'conversions~'cr~'epc_confirmed~'cpc~'sale_revenue~'cost~'profit_confirmed~'roi_confirmed)~range~(interval~'today~timezone~'UTC)~columns~(~'checkbox~'id~'name~'group))",
+        "sidebarItems": [
+          {
+            "text": "Dashboard",
+            "href": "#!/dashboard/"
+          },
+          {
+            "text": "Campaigns",
+            "href": "#!/campaigns/"
+          },
+          {
+            "text": "Landing Pages",
+            "href": "#!/landings/"
+          },
+          {
+            "text": "Affiliate Networks",
+            "href": "#!/affiliate_networks/"
+          },
+          {
+            "text": "Offers",
+            "href": "#!/offers/"
+          },
+          {
+            "text": "Traffic Sources",
+            "href": "#!/traffic_sources/"
+          },
+          {
+            "text": "Create report",
+            "href": "#!/reports/build"
+          },
+          {
+            "text": "Clicks log",
+            "href": "#!/clicks/log"
+          },
+          {
+            "text": "Conversions log",
+            "href": "#!/conversions/log"
+          },
+          {
+            "text": "Exported reports",
+            "href": "#!/reports/exported"
+          },
+          {
+            "text": "Black and White Lists",
+            "href": "#"
+          },
+          {
+            "text": "Trends",
+            "href": "#!/trends"
+          },
+          {
+            "text": "Domains",
+            "href": "#!/domains"
+          },
+          {
+            "text": "Users",
+            "href": "#!/users"
+          },
+          {
+            "text": "Main",
+            "href": "#!/settings/main"
+          },
+          {
+            "text": "Bot lists",
+            "href": "#!/settings/bots"
+          },
+          {
+            "text": "System",
+            "href": "#!/settings/system"
+          },
+          {
+            "text": "Privacy",
+            "href": "#!/settings/privacy"
+          },
+          {
+            "text": "Branding",
+            "href": "#!/settings/branding"
+          },
+          {
+            "text": "Postback URL",
+            "href": "#"
+          },
+          {
+            "text": "Custom metrics",
+            "href": "#!/custom_metrics"
+          },
+          {
+            "text": "Conversion types",
+            "href": "#!/conversion_types"
+          },
+          {
+            "text": "Geo DBs",
+            "href": "#!/geo_dbs/"
+          },
+          {
+            "text": "Geo profiles",
+            "href": "#!/geo_profiles"
+          },
+          {
+            "text": "Status",
+            "href": "#"
+          },
+          {
+            "text": "Logs",
+            "href": "#!/logs"
+          },
+          {
+            "text": "Archive",
+            "href": "#!/archive"
+          },
+          {
+            "text": "Import conversions",
+            "href": "#"
+          },
+          {
+            "text": "Simulate traffic",
+            "href": "#"
+          },
+          {
+            "text": "Delete statistics",
+            "href": "#"
+          },
+          {
+            "text": "Integrations",
+            "href": "#!/integrations"
+          }
+        ],
+        "headings": [],
+        "statsCards": [
+          {
+            "text": "All states"
+          },
+          {
+            "text": "1 - 3 of 3"
+          }
+        ],
+        "tables": [
+          {
+            "index": 0,
+            "headers": [
+              "ID",
+              "Name",
+              "Group",
+              "Clicks",
+              "LP clicks",
+              "LP CTR — LP Click-Through Rate",
+              "Conv.",
+              "CR",
+              "EPC (confirmed)",
+              "CPC",
+              "Revenue (confirmed)",
+              "Cost",
+              "Profit/Loss (confirmed)",
+              "ROI (confirmed)"
+            ],
+            "firstRowData": [
+              "",
+              "",
+              "3",
+              "Little Caesars",
+              "",
+              "",
+              "13,928",
+              "2,140",
+              "15.36%",
+              "2,140",
+              "15.36%",
+              "$0.0264",
+              "$0.0091",
+              "$367.47",
+              "$127.1723",
+              "$240.30",
+              "188.95%"
+            ],
+            "rowCount": 3
+          }
+        ],
+        "buttons": [
+          {
+            "text": "Search"
+          },
+          {
+            "text": "Reports"
+          },
+          {
+            "text": "Black and White Lists"
+          },
+          {
+            "text": "Settings"
+          },
+          {
+            "text": "Postback URL"
+          },
+          {
+            "text": "Maintenance"
+          },
+          {
+            "text": "Status"
+          },
+          {
+            "text": "Import conversions"
+          },
+          {
+            "text": "Simulate traffic"
+          },
+          {
+            "text": "Delete statistics"
+          },
+          {
+            "text": "Create"
+          },
+          {
+            "text": "Groups"
+          },
+          {
+            "text": "How to work with landing pages?"
+          },
+          {
+            "text": "Export"
+          },
+          {
+            "text": "CSV"
+          },
+          {
+            "text": "HTML"
+          }
+        ],
+        "charts": [
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          }
+        ],
+        "bodyText": "Search Dashboard Campaigns Landing Pages Affiliate Networks Offers Traffic Sources Reports Trends Domains Users Settings Maintenance Integrations Create Groups How to work with landing pages? All groups All states Today ID Name Group Clicks LP clicks LP CTR — LP Click-Through Rate Conv. CR EPC (confirmed) CPC Revenue (confirmed) Cost Profit/Loss (confirmed) ROI (confirmed) 3 Little Caesars 13,928 2,140 15.36% 2,140 15.36% $0.0264 $0.0091 $367.47 $127.1723 $240.30 188.95% 2 Papa Johns 13,966 2,111 15.12% 2,111 15.12% $0.0251 $0.0091 $350.22 $127.6608 $222.56 174.34% 1 Factor 0 0 0.00% 0 0.00% $0.0000 $0.0000 $0.00 $0.0000 $0.00 0.00% 27,894 4,251 15.24% 4,251 15.24% $0.0257 $0.0091 $717.69 $254.8332 $462.86 181.63% 250 1 - 3 of 3 Export"
+      }
+    },
+    {
+      "name": "Affiliate Networks",
+      "data": {
+        "title": "Affiliate Networks",
+        "url": "https://demo.keitaro.io/admin/#!/affiliate_networks/?s=~(sort~(~)~filters~(~)~columns~(profitability~1~checkbox~1~id~1~state~0~name~1~notes~1~clicks~1~visitors~0~campaign_unique_clicks~0~stream_unique_clicks~0~global_unique_clicks~0~uc_campaign_rate~0~uc_stream_rate~0~uc_global_rate~0~bots~0~bot_share~0~proxies~0~empty_referrers~0~cost~1~conversions~0~leads~1~sales~1~rejected~1~trash~0~approve~0~revenue~0~lead_revenue~0~sale_revenue~1~rejected_revenue~0~trash_revenue~0~profit~0~profit_confirmed~1~cr~1~crs~0~crd~0~crl~0~crr~0~roi~0~roi_confirmed~1~epc~0~uepc~0~epc_hold~0~uepc_hold~0~epc_reg~0~uepc_reg~0~epc_confirmed~1~uepc_confirmed~0~cps~0~cpl~0~cpr~0~cpd~0~cpa~0~cpc~1~ucpc~0~ecpc~0~ecpm~0~ecpm_confirmed~0~ec~0~ec_confirmed~0~deposits~0~regs~0~reg_revenue~0~deposit_revenue~0~ucr_regs~0~datetime~0~offers~1~landing_clicked_period~0~lp_views~0~lp_clicks~0~lp_ctr~0)~resized_columns~()~range~(interval~'today~timezone~'UTC)~filter_builder~null~grouping~(~'name~'id)~limit~25~offset~0)",
+        "sidebarItems": [
+          {
+            "text": "Dashboard",
+            "href": "#!/dashboard/"
+          },
+          {
+            "text": "Campaigns",
+            "href": "#!/campaigns/"
+          },
+          {
+            "text": "Landing Pages",
+            "href": "#!/landings/"
+          },
+          {
+            "text": "Affiliate Networks",
+            "href": "#!/affiliate_networks/"
+          },
+          {
+            "text": "Offers",
+            "href": "#!/offers/"
+          },
+          {
+            "text": "Traffic Sources",
+            "href": "#!/traffic_sources/"
+          },
+          {
+            "text": "Create report",
+            "href": "#!/reports/build"
+          },
+          {
+            "text": "Clicks log",
+            "href": "#!/clicks/log"
+          },
+          {
+            "text": "Conversions log",
+            "href": "#!/conversions/log"
+          },
+          {
+            "text": "Exported reports",
+            "href": "#!/reports/exported"
+          },
+          {
+            "text": "Black and White Lists",
+            "href": "#"
+          },
+          {
+            "text": "Trends",
+            "href": "#!/trends"
+          },
+          {
+            "text": "Domains",
+            "href": "#!/domains"
+          },
+          {
+            "text": "Users",
+            "href": "#!/users"
+          },
+          {
+            "text": "Main",
+            "href": "#!/settings/main"
+          },
+          {
+            "text": "Bot lists",
+            "href": "#!/settings/bots"
+          },
+          {
+            "text": "System",
+            "href": "#!/settings/system"
+          },
+          {
+            "text": "Privacy",
+            "href": "#!/settings/privacy"
+          },
+          {
+            "text": "Branding",
+            "href": "#!/settings/branding"
+          },
+          {
+            "text": "Postback URL",
+            "href": "#"
+          },
+          {
+            "text": "Custom metrics",
+            "href": "#!/custom_metrics"
+          },
+          {
+            "text": "Conversion types",
+            "href": "#!/conversion_types"
+          },
+          {
+            "text": "Geo DBs",
+            "href": "#!/geo_dbs/"
+          },
+          {
+            "text": "Geo profiles",
+            "href": "#!/geo_profiles"
+          },
+          {
+            "text": "Status",
+            "href": "#"
+          },
+          {
+            "text": "Logs",
+            "href": "#!/logs"
+          },
+          {
+            "text": "Archive",
+            "href": "#!/archive"
+          },
+          {
+            "text": "Import conversions",
+            "href": "#"
+          },
+          {
+            "text": "Simulate traffic",
+            "href": "#"
+          },
+          {
+            "text": "Delete statistics",
+            "href": "#"
+          },
+          {
+            "text": "Integrations",
+            "href": "#!/integrations"
+          }
+        ],
+        "headings": [],
+        "statsCards": [],
+        "tables": [],
+        "buttons": [
+          {
+            "text": "Search"
+          },
+          {
+            "text": "Reports"
+          },
+          {
+            "text": "Black and White Lists"
+          },
+          {
+            "text": "Settings"
+          },
+          {
+            "text": "Postback URL"
+          },
+          {
+            "text": "Maintenance"
+          },
+          {
+            "text": "Status"
+          },
+          {
+            "text": "Import conversions"
+          },
+          {
+            "text": "Simulate traffic"
+          },
+          {
+            "text": "Delete statistics"
+          },
+          {
+            "text": "Create"
+          },
+          {
+            "text": "How to work with affiliate networks?"
+          },
+          {
+            "text": "Export"
+          }
+        ],
+        "charts": [
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          }
+        ],
+        "bodyText": "Search Dashboard Campaigns Landing Pages Affiliate Networks Offers Traffic Sources Reports Trends Domains Users Settings Maintenance Integrations Create How to work with affiliate networks? All states Today ID Name Clicks Cost Leads Sales Rejected Revenue (confirmed) Profit/Loss (confirmed) CR ROI (confirmed) EPC (confirmed) CPC Offers No data 0 $0.0000 0 0 0 $0.00 $0.00 0.00% 0.00% $0.0000 $0.0000 0 25 Export"
+      }
+    },
+    {
+      "name": "Offers",
+      "data": {
+        "title": "Offers",
+        "url": "https://demo.keitaro.io/admin/#!/offers/?s=~(limit~250~sort~(column~'id~order~'desc)~metrics~(~'more~'profitability~'notes~'country~'affiliate_network~'clicks~'leads~'sales~'rejected~'cr~'epc_confirmed~'cpc~'sale_revenue~'cost~'profit_confirmed~'roi_confirmed~'conversion_cap)~range~(interval~'today~timezone~'UTC)~columns~(~'checkbox~'id~'name~'group))",
+        "sidebarItems": [
+          {
+            "text": "Dashboard",
+            "href": "#!/dashboard/"
+          },
+          {
+            "text": "Campaigns",
+            "href": "#!/campaigns/"
+          },
+          {
+            "text": "Landing Pages",
+            "href": "#!/landings/"
+          },
+          {
+            "text": "Affiliate Networks",
+            "href": "#!/affiliate_networks/"
+          },
+          {
+            "text": "Offers",
+            "href": "#!/offers/"
+          },
+          {
+            "text": "Traffic Sources",
+            "href": "#!/traffic_sources/"
+          },
+          {
+            "text": "Create report",
+            "href": "#!/reports/build"
+          },
+          {
+            "text": "Clicks log",
+            "href": "#!/clicks/log"
+          },
+          {
+            "text": "Conversions log",
+            "href": "#!/conversions/log"
+          },
+          {
+            "text": "Exported reports",
+            "href": "#!/reports/exported"
+          },
+          {
+            "text": "Black and White Lists",
+            "href": "#"
+          },
+          {
+            "text": "Trends",
+            "href": "#!/trends"
+          },
+          {
+            "text": "Domains",
+            "href": "#!/domains"
+          },
+          {
+            "text": "Users",
+            "href": "#!/users"
+          },
+          {
+            "text": "Main",
+            "href": "#!/settings/main"
+          },
+          {
+            "text": "Bot lists",
+            "href": "#!/settings/bots"
+          },
+          {
+            "text": "System",
+            "href": "#!/settings/system"
+          },
+          {
+            "text": "Privacy",
+            "href": "#!/settings/privacy"
+          },
+          {
+            "text": "Branding",
+            "href": "#!/settings/branding"
+          },
+          {
+            "text": "Postback URL",
+            "href": "#"
+          },
+          {
+            "text": "Custom metrics",
+            "href": "#!/custom_metrics"
+          },
+          {
+            "text": "Conversion types",
+            "href": "#!/conversion_types"
+          },
+          {
+            "text": "Geo DBs",
+            "href": "#!/geo_dbs/"
+          },
+          {
+            "text": "Geo profiles",
+            "href": "#!/geo_profiles"
+          },
+          {
+            "text": "Status",
+            "href": "#"
+          },
+          {
+            "text": "Logs",
+            "href": "#!/logs"
+          },
+          {
+            "text": "Archive",
+            "href": "#!/archive"
+          },
+          {
+            "text": "Import conversions",
+            "href": "#"
+          },
+          {
+            "text": "Simulate traffic",
+            "href": "#"
+          },
+          {
+            "text": "Delete statistics",
+            "href": "#"
+          },
+          {
+            "text": "Integrations",
+            "href": "#!/integrations"
+          }
+        ],
+        "headings": [],
+        "statsCards": [
+          {
+            "text": "All states"
+          },
+          {
+            "text": "1 - 2 of 2"
+          }
+        ],
+        "tables": [
+          {
+            "index": 0,
+            "headers": [
+              "ID",
+              "Name",
+              "Group",
+              "Country",
+              "Aff. Network",
+              "Clicks",
+              "Leads",
+              "Sales",
+              "Rejected",
+              "CR",
+              "EPC (confirmed)",
+              "CPC",
+              "Revenue (confirmed)",
+              "Cost",
+              "Profit/Loss (confirmed)",
+              "ROI (confirmed)",
+              "Conversion cap"
+            ],
+            "firstRowData": [
+              "",
+              "",
+              "2",
+              "Google Fitness App",
+              "",
+              "",
+              "",
+              "",
+              "21,211",
+              "429",
+              "1,067",
+              "1,653",
+              "14.85%",
+              "$0.0250",
+              "$0.0095",
+              "$530.27",
+              "$200.6273",
+              "$329.64",
+              "164.31%",
+              ""
+            ],
+            "rowCount": 2
+          }
+        ],
+        "buttons": [
+          {
+            "text": "Search"
+          },
+          {
+            "text": "Reports"
+          },
+          {
+            "text": "Black and White Lists"
+          },
+          {
+            "text": "Settings"
+          },
+          {
+            "text": "Postback URL"
+          },
+          {
+            "text": "Maintenance"
+          },
+          {
+            "text": "Status"
+          },
+          {
+            "text": "Import conversions"
+          },
+          {
+            "text": "Simulate traffic"
+          },
+          {
+            "text": "Delete statistics"
+          },
+          {
+            "text": "Create"
+          },
+          {
+            "text": "Groups"
+          },
+          {
+            "text": "How to work with offers?"
+          },
+          {
+            "text": "Export"
+          },
+          {
+            "text": "CSV"
+          },
+          {
+            "text": "HTML"
+          }
+        ],
+        "charts": [
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          }
+        ],
+        "bodyText": "Search Dashboard Campaigns Landing Pages Affiliate Networks Offers Traffic Sources Reports Trends Domains Users Settings Maintenance Integrations Create Groups How to work with offers? All groups All affiliate networks All states Today ID Name Group Country Aff. Network Clicks Leads Sales Rejected CR EPC (confirmed) CPC Revenue (confirmed) Cost Profit/Loss (confirmed) ROI (confirmed) Conversion cap 2 Google Fitness App 21,211 429 1,067 1,653 14.85% $0.0250 $0.0095 $530.27 $200.6273 $329.64 164.31% 1 Apple Fitness 6,582 119 309 525 14.48% $0.0235 $0.0094 $154.92 $61.9231 $93.00 150.18% 27,793 548 1,376 2,178 14.76% $0.0247 $0.0094 $685.19 $262.5504 $422.64 160.97% 250 1 - 2 of 2 Export"
+      }
+    },
+    {
+      "name": "Traffic Sources",
+      "data": {
+        "title": "Traffic Sources",
+        "url": "https://demo.keitaro.io/admin/#!/traffic_sources/?s=~(sort~(~(name~'id~order~'desc))~filters~(~)~columns~(profitability~1~checkbox~1~id~1~name~1~notes~1~datetime~0~clicks~1~visitors~0~campaign_unique_clicks~0~stream_unique_clicks~0~global_unique_clicks~0~uc_campaign_rate~0~uc_stream_rate~0~uc_global_rate~0~bots~0~bot_share~0~proxies~0~empty_referrers~0~cost~1~conversions~0~leads~1~sales~1~rejected~1~trash~0~approve~0~revenue~0~lead_revenue~0~sale_revenue~1~rejected_revenue~0~trash_revenue~0~profit~0~profit_confirmed~1~cr~1~crs~0~crd~0~crl~0~crr~0~roi~0~roi_confirmed~1~epc~0~uepc~0~epc_hold~0~uepc_hold~0~epc_reg~0~uepc_reg~0~epc_confirmed~1~uepc_confirmed~0~cps~0~cpl~0~cpr~0~cpd~0~cpa~0~cpc~1~ucpc~0~ecpc~0~ecpm~0~ecpm_confirmed~0~ec~0~ec_confirmed~0~deposits~0~regs~0~reg_revenue~0~deposit_revenue~0~ucr_regs~0~state~0~landing_clicked_period~0~lp_views~0~lp_clicks~0~lp_ctr~0)~resized_columns~()~range~(interval~'today~timezone~'UTC)~filter_builder~null~grouping~(~'name~'id)~limit~25~offset~0)",
+        "sidebarItems": [
+          {
+            "text": "Dashboard",
+            "href": "#!/dashboard/"
+          },
+          {
+            "text": "Campaigns",
+            "href": "#!/campaigns/"
+          },
+          {
+            "text": "Landing Pages",
+            "href": "#!/landings/"
+          },
+          {
+            "text": "Affiliate Networks",
+            "href": "#!/affiliate_networks/"
+          },
+          {
+            "text": "Offers",
+            "href": "#!/offers/"
+          },
+          {
+            "text": "Traffic Sources",
+            "href": "#!/traffic_sources/"
+          },
+          {
+            "text": "Create report",
+            "href": "#!/reports/build"
+          },
+          {
+            "text": "Clicks log",
+            "href": "#!/clicks/log"
+          },
+          {
+            "text": "Conversions log",
+            "href": "#!/conversions/log"
+          },
+          {
+            "text": "Exported reports",
+            "href": "#!/reports/exported"
+          },
+          {
+            "text": "Black and White Lists",
+            "href": "#"
+          },
+          {
+            "text": "Trends",
+            "href": "#!/trends"
+          },
+          {
+            "text": "Domains",
+            "href": "#!/domains"
+          },
+          {
+            "text": "Users",
+            "href": "#!/users"
+          },
+          {
+            "text": "Main",
+            "href": "#!/settings/main"
+          },
+          {
+            "text": "Bot lists",
+            "href": "#!/settings/bots"
+          },
+          {
+            "text": "System",
+            "href": "#!/settings/system"
+          },
+          {
+            "text": "Privacy",
+            "href": "#!/settings/privacy"
+          },
+          {
+            "text": "Branding",
+            "href": "#!/settings/branding"
+          },
+          {
+            "text": "Postback URL",
+            "href": "#"
+          },
+          {
+            "text": "Custom metrics",
+            "href": "#!/custom_metrics"
+          },
+          {
+            "text": "Conversion types",
+            "href": "#!/conversion_types"
+          },
+          {
+            "text": "Geo DBs",
+            "href": "#!/geo_dbs/"
+          },
+          {
+            "text": "Geo profiles",
+            "href": "#!/geo_profiles"
+          },
+          {
+            "text": "Status",
+            "href": "#"
+          },
+          {
+            "text": "Logs",
+            "href": "#!/logs"
+          },
+          {
+            "text": "Archive",
+            "href": "#!/archive"
+          },
+          {
+            "text": "Import conversions",
+            "href": "#"
+          },
+          {
+            "text": "Simulate traffic",
+            "href": "#"
+          },
+          {
+            "text": "Delete statistics",
+            "href": "#"
+          },
+          {
+            "text": "Integrations",
+            "href": "#!/integrations"
+          }
+        ],
+        "headings": [],
+        "statsCards": [
+          {
+            "text": "1 - 2 of 2"
+          }
+        ],
+        "tables": [],
+        "buttons": [
+          {
+            "text": "Search"
+          },
+          {
+            "text": "Reports"
+          },
+          {
+            "text": "Black and White Lists"
+          },
+          {
+            "text": "Settings"
+          },
+          {
+            "text": "Postback URL"
+          },
+          {
+            "text": "Maintenance"
+          },
+          {
+            "text": "Status"
+          },
+          {
+            "text": "Import conversions"
+          },
+          {
+            "text": "Simulate traffic"
+          },
+          {
+            "text": "Delete statistics"
+          },
+          {
+            "text": "Create"
+          },
+          {
+            "text": "How to work with traffic sources?"
+          },
+          {
+            "text": "Facebook.com"
+          },
+          {
+            "text": "GoogleAds"
+          },
+          {
+            "text": "Export"
+          }
+        ],
+        "charts": [
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          },
+          {
+            "tagName": "svg",
+            "width": {},
+            "height": {}
+          }
+        ],
+        "bodyText": "Search Dashboard Campaigns Landing Pages Affiliate Networks Offers Traffic Sources Reports Trends Domains Users Settings Maintenance Integrations Create How to work with traffic sources? All states Today ID Name Clicks Cost Leads Sales Rejected Revenue (confirmed) Profit/Loss (confirmed) CR ROI (confirmed) EPC (confirmed) CPC 4 Facebook.com 27,894 $254.8332 546 1439 2266 $717.69 $462.86 15.24% 181.63% $0.0257 $0.0091 3 GoogleAds 27,793 $262.5504 548 1376 2178 $685.19 $422.64 14.76% 160.97% $0.0247 $0.0094 55,687 $517.3836 1094 2815 4444 $1,402.88 $885.50 15.00% 171.15% $0.0252 $0.0093 25 1 - 2 of 2 Export"
+      }
+    }
+  ]
+}

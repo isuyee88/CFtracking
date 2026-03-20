@@ -1,0 +1,278 @@
+{
+  "image_id": "keitaro_payment_methods",
+  "version": "1.0",
+  "generated_at": "2026-03-15T10:10:00Z",
+  "model_used": "manual_analysis",
+  
+  "basic_info": {
+    "category": "payment-integration",
+    "subcategory": "payment-methods",
+    "page_title": "Payment Methods & Billing",
+    "language": "en"
+  },
+  
+  "ui_elements": [
+    {
+      "id": "elem_001",
+      "type": "heading",
+      "label": "Payment Methods",
+      "bounding_box": {
+        "x": 280,
+        "y": 80,
+        "width": 500,
+        "height": 40
+      },
+      "text_content": "Payment Methods & Billing",
+      "is_primary": true,
+      "is_interactive": false
+    },
+    {
+      "id": "elem_002",
+      "type": "card",
+      "label": "Current Plan",
+      "bounding_box": {
+        "x": 280,
+        "y": 140,
+        "width": 700,
+        "height": 160
+      },
+      "text_content": "Professional Plan\n$149 / month\nRenewal date: 2026-04-15\nStatus: Active",
+      "is_primary": true,
+      "is_interactive": false
+    },
+    {
+      "id": "elem_003",
+      "type": "button",
+      "label": "Change Plan",
+      "bounding_box": {
+        "x": 840,
+        "y": 180,
+        "width": 140,
+        "height": 40
+      },
+      "text_content": "Change Plan",
+      "is_primary": false,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_004",
+      "type": "heading",
+      "label": "Available Payment Methods",
+      "bounding_box": {
+        "x": 280,
+        "y": 320,
+        "width": 500,
+        "height": 35
+      },
+      "text_content": "Available Payment Methods",
+      "is_primary": false,
+      "is_interactive": false
+    },
+    {
+      "id": "elem_005",
+      "type": "card",
+      "label": "Credit Card",
+      "bounding_box": {
+        "x": 280,
+        "y": 375,
+        "width": 340,
+        "height": 120
+      },
+      "text_content": "Credit / Debit Card\nVisa, Mastercard, Amex\n[Active]",
+      "is_primary": true,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_006",
+      "type": "card",
+      "label": "PayPal",
+      "bounding_box": {
+        "x": 640,
+        "y": 375,
+        "width": 340,
+        "height": 120
+      },
+      "text_content": "PayPal\nPay with PayPal account",
+      "is_primary": false,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_007",
+      "type": "card",
+      "label": "Crypto",
+      "bounding_box": {
+        "x": 280,
+        "y": 515,
+        "width": 340,
+        "height": 120
+      },
+      "text_content": "Cryptocurrency\nBTC, ETH, USDT",
+      "is_primary": false,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_008",
+      "type": "card",
+      "label": "Bank Transfer",
+      "bounding_box": {
+        "x": 640,
+        "y": 515,
+        "width": 340,
+        "height": 120
+      },
+      "text_content": "Bank Transfer\nSEPA, Wire transfer",
+      "is_primary": false,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_009",
+      "type": "heading",
+      "label": "Billing History",
+      "bounding_box": {
+        "x": 280,
+        "y": 655,
+        "width": 500,
+        "height": 35
+      },
+      "text_content": "Billing History",
+      "is_primary": false,
+      "is_interactive": false
+    },
+    {
+      "id": "elem_010",
+      "type": "table",
+      "label": "Transaction History",
+      "bounding_box": {
+        "x": 280,
+        "y": 710,
+        "width": 1000,
+        "height": 300
+      },
+      "headers": ["Date", "Description", "Amount", "Status", "Invoice"],
+      "rows": 8,
+      "columns": 5,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_011",
+      "type": "button",
+      "label": "Download Invoice",
+      "bounding_box": {
+        "x": 1140,
+        "y": 670,
+        "width": 160,
+        "height": 40
+      },
+      "text_content": "Download Invoice",
+      "is_primary": false,
+      "is_interactive": true
+    }
+  ],
+  
+  "text_content": {
+    "full_text": "Payment Methods & Billing\n\nCurrent Plan\nProfessional Plan - $149 / month\nRenewal date: 2026-04-15\nStatus: Active\n[Change Plan]\n\nAvailable Payment Methods\nCredit / Debit Card: Visa, Mastercard, Amex [Active]\nPayPal: Pay with PayPal account\nCryptocurrency: BTC, ETH, USDT\nBank Transfer: SEPA, Wire transfer\n\nBilling History\nDate | Description | Amount | Status | Invoice\n\n[Download Invoice]",
+    "sections": [
+      {
+        "heading": "Subscription Overview",
+        "content": "Current plan details and renewal information",
+        "position": {"x": 280, "y": 130, "width": 1000, "height": 180}
+      },
+      {
+        "heading": "Payment Methods",
+        "content": "Available payment options for subscription",
+        "position": {"x": 280, "y": 310, "width": 1000, "height": 340}
+      },
+      {
+        "heading": "Billing History",
+        "content": "Transaction history and invoice downloads",
+        "position": {"x": 280, "y": 650, "width": 1000, "height": 360}
+      }
+    ],
+    "key_phrases": [
+      "Payment Methods",
+      "Billing",
+      "Current Plan",
+      "Professional Plan",
+      "Credit Card",
+      "PayPal",
+      "Cryptocurrency",
+      "Bank Transfer",
+      "Billing History",
+      "Invoice",
+      "Renewal date"
+    ]
+  },
+  
+  "functional_description": {
+    "primary_function": "Payment and billing management interface for subscription management",
+    "user_goal": "View current plan, manage payment methods, and access billing history",
+    "workflow_steps": [
+      {
+        "step": 1,
+        "action": "View current subscription plan details",
+        "element_id": "elem_002"
+      },
+      {
+        "step": 2,
+        "action": "Click 'Change Plan' to upgrade/downgrade",
+        "element_id": "elem_003"
+      },
+      {
+        "step": 3,
+        "action": "Select or update payment method",
+        "element_id": "elem_005"
+      },
+      {
+        "step": 4,
+        "action": "Review billing history in the table",
+        "element_id": "elem_010"
+      },
+      {
+        "step": 5,
+        "action": "Download invoices if needed",
+        "element_id": "elem_011"
+      }
+    ],
+    "data_displayed": [
+      "Current subscription plan",
+      "Pricing and renewal date",
+      "Available payment methods",
+      "Transaction history",
+      "Invoice download links"
+    ],
+    "critical_elements": [
+      "elem_002",
+      "elem_003",
+      "elem_005",
+      "elem_010"
+    ]
+  },
+  
+  "contextual_info": {
+    "related_pages": [
+      "Account Settings",
+      "Subscription Plans",
+      "Team Management"
+    ],
+    "parent_section": "Settings",
+    "documentation_path": "/en/settings/payment.html",
+    "keywords": [
+      "payment",
+      "billing",
+      "subscription",
+      "credit card",
+      "PayPal",
+      "crypto",
+      "invoice",
+      "plan",
+      "pricing"
+    ]
+  },
+  
+  "analysis_confidence": {
+    "ui_detection": 0.93,
+    "ocr_accuracy": 0.96,
+    "functional_understanding": 0.94,
+    "overall": 0.94
+  }
+}

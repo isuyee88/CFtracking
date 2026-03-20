@@ -1,0 +1,58 @@
+name = "cf-tracking"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "development"
+JWT_EXPIRES_IN = "24h"
+# Cloudflare API 配置（用于 Analytics Engine 查询）
+# 注意: CF_API_TOKEN 应该使用 wrangler secret put 设置，不要硬编码
+CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
+
+# 定时任务配置
+# - 每天凌晨 2:00 执行数据聚合
+# - 每 5 分钟执行平台规则评估和任务处理
+[[triggers]]
+crons = ["0 2 * * *", "*/5 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cf-tracking-db"
+database_id = "c20392f5-c14c-42fa-a3e7-fa9bdb5b4b76"
+migrations_dir = "schema/migrations"
+
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "cf_tracking_events"
+
+# 去重专用 KV 命名空间
+[[kv_namespaces]]
+binding = "UNIQUENESS_KV"
+id = "7cdc9c88e1964bff954835d91f98bd74"
+
+[[durable_objects.bindings]]
+name = "SESSION_DO"
+class_name = "SessionDurableObject"
+
+[[durable_objects.bindings]]
+name = "COUNTER_DO"
+class_name = "CounterDurableObject"
+
+[[durable_objects.bindings]]
+name = "QUEUE_DO"
+class_name = "QueueDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject"]
+
+[assets]
+directory = "./frontend/dist"
+binding = "ASSETS"
+
+[observability]
+enabled = true
+
+[dev]
+port = 12334

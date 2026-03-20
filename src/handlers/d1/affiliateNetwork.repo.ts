@@ -1,0 +1,128 @@
+/**
+ * @fileoverview Affiliate Network 数据仓库
+ * @description 封装 Affiliate Network 相关的所有数据库操作
+ * @module handlers/d1/affiliateNetwork.repo
+ */
+
+import { BaseRepository } from './base.repo';
+import type { D1Database } from './index';
+import type { AffiliateNetwork, CreateAffiliateNetworkDTO, UpdateAffiliateNetworkDTO } from '@/types/affiliateNetwork';
+
+export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork> {
+  constructor(db: D1Database) {
+    super(db, 'affiliateNetworks');
+  }
+
+  /**
+   * 创建 Affiliate Network
+   */
+  async create(data: CreateAffiliateNetworkDTO): Promise<AffiliateNetwork> {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    await this.db
+      .prepare(`
+        INSERT INTO affiliateNetworks (id, name, type, status, apiUrl, apiKey, postbackUrl, notes, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        id,
+        data.name,
+        data.type || 'api',
+        'active',
+        data.apiUrl || null,
+        data.apiKey || null,
+        data.postbackUrl || null,
+        data.notes || null,
+        now,
+        now
+      )
+      .run();
+
+    const network = await this.findById(id);
+    return network!;
+  }
+
+  /**
+   * 更新 Affiliate Network
+   */
+  async update(id: string, data: UpdateAffiliateNetworkDTO): Promise<AffiliateNetwork | null> {
+    const fields: string[] = [];
+    const values: unknown[] = [];
+
+    if (data.name !== undefined) { fields.push('name = ?'); values.push(data.name); }
+    if (data.type !== undefined) { fields.push('type = ?'); values.push(data.type); }
+    if (data.apiUrl !== undefined) { fields.push('apiUrl = ?'); values.push(data.apiUrl); }
+    if (data.apiKey !== undefined) { fields.push('apiKey = ?'); values.push(data.apiKey); }
+    if (data.postbackUrl !== undefined) { fields.push('postbackUrl = ?'); values.push(data.postbackUrl); }
+    if (data.notes !== undefined) { fields.push('notes = ?'); values.push(data.notes); }
+    if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
+
+    if (fields.length === 0) {
+      return this.findById(id);
+    }
+
+    fields.push('updatedAt = ?');
+    values.push(new Date().toISOString());
+    values.push(id);
+
+    await this.db
+      .prepare(`UPDATE affiliateNetworks SET ${fields.join(', ')} WHERE id = ?`)
+      .bind(...values)
+      .run();
+
+    return this.findById(id);
+  }
+
+  /**
+   * 按状态查询
+   */
+  async findByStatus(status: string): Promise<AffiliateNetwork[]> {
+    return this.findBy('status', status);
+  }
+
+  /**
+   * 按类型查询
+   */
+  async findByType(type: string): Promise<AffiliateNetwork[]> {
+    return this.findBy('type', type);
+  }
+
+  /**
+   * 获取关联的 Offer 数量
+   */
+  async getOfferCount(networkId: string): Promise<number> {
+    const result = await this.db
+      .prepare(`
+        SELECT COUNT(*) as count
+        FROM offers
+        WHERE network = ?
+      `)
+      .bind(networkId)
+      .first<{ count: number }>();
+    return result?.count || 0;
+  }
+
+  /**
+   * 获取 Affiliate Network 统计数据
+   */
+  async getStats(networkId: string): Promise<{ clicks: number; conversions: number; revenue: number }> {
+    const result = await this.db
+      .prepare(`
+        SELECT 
+          COALESCE(SUM(ts.clicks), 0) as clicks,
+          COALESCE(SUM(ts.conversions), 0) as conversions,
+          COALESCE(SUM(ts.revenue), 0) as revenue
+        FROM trafficSummary ts
+        JOIN offers o ON ts.offerId = o.id
+        WHERE o.network = ?
+      `)
+      .bind(networkId)
+      .first<{ clicks: number; conversions: number; revenue: number }>();
+    return {
+      clicks: result?.clicks || 0,
+      conversions: result?.conversions || 0,
+      revenue: result?.revenue || 0,
+    };
+  }
+}

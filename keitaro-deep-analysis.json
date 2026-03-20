@@ -1,0 +1,1529 @@
+{
+  "pages": [
+    {
+      "name": "Dashboard",
+      "screenshots": [
+        "D:\\suyee\\github\\CFtracking\\keitaro-screenshots-detailed\\dashboard-scroll-1.png"
+      ],
+      "data": {
+        "title": "Dashboard",
+        "url": "https://demo.keitaro.io/admin/#!/dashboard/?s=~(campaign~null~range~(from~'2026-03-19~to~'2026-03-19~interval~'today~timezone~'UTC)~enabledMetrics~(~'clicks~'campaign_unique_clicks~'conversions~'cost~'sale_revenue~'profit_confirmed~'roi_confirmed)~enabledEntities~(~'campaign~'landing~'offer~'ts)~lastClicksColumns~(~'event_id~'datetime~'campaign~'os_icon~'browser_icon~'ip~'destination)~topMetrics~(~'clicks~'campaign_unique_clicks~'conversions))",
+        "sections": [],
+        "formFields": [
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-24-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-25-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          }
+        ],
+        "tables": [],
+        "modals": [],
+        "cards": [],
+        "navItems": [
+          {
+            "text": "Dashboard",
+            "href": "#!/dashboard/"
+          },
+          {
+            "text": "Campaigns",
+            "href": "#!/campaigns/"
+          },
+          {
+            "text": "Landing Pages",
+            "href": "#!/landings/"
+          },
+          {
+            "text": "Affiliate Networks",
+            "href": "#!/affiliate_networks/"
+          },
+          {
+            "text": "Offers",
+            "href": "#!/offers/"
+          },
+          {
+            "text": "Traffic Sources",
+            "href": "#!/traffic_sources/"
+          },
+          {
+            "text": "Create report",
+            "href": "#!/reports/build"
+          },
+          {
+            "text": "Clicks log",
+            "href": "#!/clicks/log"
+          },
+          {
+            "text": "Conversions log",
+            "href": "#!/conversions/log"
+          },
+          {
+            "text": "Exported reports",
+            "href": "#!/reports/exported"
+          },
+          {
+            "text": "Black and White Lists",
+            "href": "#"
+          },
+          {
+            "text": "Trends",
+            "href": "#!/trends"
+          },
+          {
+            "text": "Domains",
+            "href": "#!/domains"
+          },
+          {
+            "text": "Users",
+            "href": "#!/users"
+          },
+          {
+            "text": "Main",
+            "href": "#!/settings/main"
+          },
+          {
+            "text": "Bot lists",
+            "href": "#!/settings/bots"
+          },
+          {
+            "text": "System",
+            "href": "#!/settings/system"
+          },
+          {
+            "text": "Privacy",
+            "href": "#!/settings/privacy"
+          },
+          {
+            "text": "Branding",
+            "href": "#!/settings/branding"
+          },
+          {
+            "text": "Postback URL",
+            "href": "#"
+          },
+          {
+            "text": "Custom metrics",
+            "href": "#!/custom_metrics"
+          },
+          {
+            "text": "Conversion types",
+            "href": "#!/conversion_types"
+          },
+          {
+            "text": "Geo DBs",
+            "href": "#!/geo_dbs/"
+          },
+          {
+            "text": "Geo profiles",
+            "href": "#!/geo_profiles"
+          },
+          {
+            "text": "Status",
+            "href": "#"
+          },
+          {
+            "text": "Logs",
+            "href": "#!/logs"
+          },
+          {
+            "text": "Archive",
+            "href": "#!/archive"
+          },
+          {
+            "text": "Import conversions",
+            "href": "#"
+          },
+          {
+            "text": "Simulate traffic",
+            "href": "#"
+          },
+          {
+            "text": "Delete statistics",
+            "href": "#"
+          },
+          {
+            "text": "Integrations",
+            "href": "#!/integrations"
+          }
+        ],
+        "buttons": [
+          {
+            "text": "Search",
+            "type": "submit"
+          },
+          {
+            "text": "Reports",
+            "type": "button"
+          },
+          {
+            "text": "Black and White Lists",
+            "type": ""
+          },
+          {
+            "text": "Settings",
+            "type": "button"
+          },
+          {
+            "text": "Postback URL",
+            "type": ""
+          },
+          {
+            "text": "Maintenance",
+            "type": "button"
+          },
+          {
+            "text": "Status",
+            "type": ""
+          },
+          {
+            "text": "Import conversions",
+            "type": ""
+          },
+          {
+            "text": "Simulate traffic",
+            "type": ""
+          },
+          {
+            "text": "Delete statistics",
+            "type": ""
+          },
+          {
+            "text": "Clicks\n56,087"
+          },
+          {
+            "text": "UC (campaign)\n48,267"
+          },
+          {
+            "text": "Conv.\n8,413"
+          },
+          {
+            "text": "Cost\n$521.1212"
+          },
+          {
+            "text": "Revenue (confirmed)\n$1,411.71"
+          },
+          {
+            "text": "Profit/Loss (confirmed)\n$890.59"
+          },
+          {
+            "text": "ROI (confirmed)\n170.90%"
+          },
+          {
+            "text": "2026-03-19 07:04:13",
+            "type": "button"
+          },
+          {
+            "text": "2026-03-19 06:14:04",
+            "type": "button"
+          },
+          {
+            "text": "2026-03-19 07:24:49",
+            "type": "button"
+          },
+          {
+            "text": "2026-03-19 07:01:16",
+            "type": "button"
+          },
+          {
+            "text": "2026-03-19 12:18:54",
+            "type": "button"
+          },
+          {
+            "text": "2026-03-19 08:31:17",
+            "type": "button"
+          },
+          {
+            "text": "2026-03-19 12:16:03",
+            "type": "button"
+          },
+          {
+            "text": "2026-03-19 00:05:11",
+            "type": "button"
+          },
+          {
+            "text": "2026-03-19 05:00:13",
+            "type": "button"
+          },
+          {
+            "text": "2026-03-19 06:05:10",
+            "type": "button"
+          }
+        ],
+        "charts": [
+          {
+            "index": 0,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 1,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 2,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 3,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 4,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 5,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 6,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 7,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 8,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 9,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 10,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 11,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 12,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 13,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 14,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 15,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 16,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 17,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 18,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 19,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 20,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 21,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 22,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 23,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 24,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 25,
+            "tagName": "DIV",
+            "className": "chartjs-size-monitor"
+          },
+          {
+            "index": 26,
+            "tagName": "DIV",
+            "className": "chartjs-size-monitor-expand"
+          },
+          {
+            "index": 27,
+            "tagName": "DIV",
+            "className": "chartjs-size-monitor-shrink"
+          },
+          {
+            "index": 28,
+            "tagName": "CANVAS",
+            "className": "chartjs-render-monitor"
+          },
+          {
+            "index": 29,
+            "tagName": "LI",
+            "className": "chart-legend-item active"
+          },
+          {
+            "index": 30,
+            "tagName": "DIV",
+            "className": "chart-legend-box"
+          },
+          {
+            "index": 31,
+            "tagName": "LI",
+            "className": "chart-legend-item active"
+          },
+          {
+            "index": 32,
+            "tagName": "DIV",
+            "className": "chart-legend-box"
+          },
+          {
+            "index": 33,
+            "tagName": "LI",
+            "className": "chart-legend-item active"
+          },
+          {
+            "index": 34,
+            "tagName": "DIV",
+            "className": "chart-legend-box"
+          },
+          {
+            "index": 35,
+            "tagName": "LI",
+            "className": "chart-legend-item active"
+          },
+          {
+            "index": 36,
+            "tagName": "DIV",
+            "className": "chart-legend-box"
+          },
+          {
+            "index": 37,
+            "tagName": "LI",
+            "className": "chart-legend-item active"
+          },
+          {
+            "index": 38,
+            "tagName": "DIV",
+            "className": "chart-legend-box"
+          },
+          {
+            "index": 39,
+            "tagName": "LI",
+            "className": "chart-legend-item active"
+          },
+          {
+            "index": 40,
+            "tagName": "DIV",
+            "className": "chart-legend-box"
+          },
+          {
+            "index": 41,
+            "tagName": "LI",
+            "className": "chart-legend-item active"
+          },
+          {
+            "index": 42,
+            "tagName": "DIV",
+            "className": "chart-legend-box"
+          }
+        ],
+        "fullText": "Search\nDashboard\nCampaigns\nLanding Pages\nAffiliate Networks\nOffers\nTraffic Sources\nReports\nTrends\nDomains\nUsers\nSettings\nMaintenance\nIntegrations\nDashboard\nCampaigns\nToday\nClicks\n56,087\nUC (campaign)\n48,267\nConv.\n8,413\nCost\n$521.1212\nRevenue (confirmed)\n$1,411.71\nProfit/Loss (confirmed)\n$890.59\nROI (confirmed)\n170.90%\nClicks\nUC (campaign)\nConv.\nCost\nRevenue (confirmed)\nProfit/Loss (confirmed)\nROI (confirmed)\nCampaign\nClicks\nUC (campaign)\nConv.\nGoogle Ads Fitness App Split\n27,985\n24,088\n4,132\nMeta Ads Food Delivery Promo\n28,102\n24,179\n4,281\n56,087\n48,267\n8,413\nLanding page\nClicks\nUC (campaign)\nConv.\nPapa Johns\n14,067\n12,120\n2,126\nLittle Caesars\n14,035\n12,059\n2,155\n28,102\n24,179\n4,281\nOffer\nClicks\nUC (campaign)\nConv.\nApple Fitness\n6,635\n5,658\n962\nGoogle Fitness App\n21,350\n18,430\n3,170\n27,985\n24,088\n4,132\nSource\nClicks\nUC (campaign)\nConv.\nGoogleAds\n27,985\n24,088\n4,132\nFacebook.com\n28,102\n24,179\n4,281\n56,087\n48,267\n8,413\nRecent Clicks\nEvent id\nDate and time\nCampaign\nOS Logo\nBrowser\nIP\nDestination\n019d04e8-bc8a-725f-8e05-a683e7b83d2c\n2026-03-19 07:04:13\nGoogle Ads Fitness App Split\nandroid chrome 78.187.53.78 https://play.google.com/store/apps/details?id=com.google.android.apps.fitness&hl=en_US&_subid=1001q7p.1.inql7&_token=[filtered]\n019d04ba-e769-711d-8237-db7db5e28b34\n2026-03-19 06:14:04\nGoogle Ads Fitness App Split\nandroid 86.219.226.72 https://play.google.com/store/apps/details?id=com.google.android.apps.fitness&hl=en_US&_subid=100av7j.1.innap&_token=[filtered]\n019d04fb-ac70-7378-b5ca-4fe3c683b6c1\n2026-03-19 07:24:49\nGoogle Ads Fitness App Split\nios safari 123.119.4.107 https://play.google.com/store/apps/details?id=com.google.android.apps.fitness&hl=en_US&_subid=100hkak.1.inrv8&_token=[filtered]\n019d04e6-23be-73ea-a676-4af803d02c82\n2026-03-19 07:01:16\nGoogle Ads Fitness App Split\nwindows chrome 1.128.0.60 https://play.google.com/store/apps/details?id=com.google.android.apps.fitness&hl=en_US&_subid=100oh2k.1.inqeu&_token=[filtered]\n019d0609-035f-729e-b945-db8e3924de82\n2026-03-19 12:18:54\nGoogle Ads Fitness App Split\nandroid chrome 162.241.20.124 https://play.google.com/store/apps/details?id=com.google.android.apps.fitness&hl=en_US&_subid=100q97b.1.iof9v&_token=[filtered]\n019d0538-6d7f-7048-a89f-8353b1217ec5\n2026-03-19 08:31:17\nGoogle Ads Fitness App Split\nwindows firefox 86.219.226.32 https://play.google.com/store/apps/details?id=com.google.android.apps.fitness&hl=en_US&_subid=100sr97.1.io0cb&_token=[filtered]\n019d0606-65af-72a1-894d-774a5409a249\n2026-03-19 12:16:03\nGoogle Ads Fitness App Split\nwindows chrome 151.43.179.72 https://play.google.com/store/apps/details?id=com.google.android.apps.fitness&hl=en_US&_subid=1010c00.1.iof5m&_token=[filtered]\n019d0369-28dd-70e3-8b54-f57b71d85d98\n2026-03-19 00:05:11\nGoogle Ads Fitness App Split\nandroid 203.50.11.7 https://play.google.com/store/apps/details?id=com.google.android.apps.fitness&hl=en_US&_subid=101febb.1.imus6&_token=[filtered]\n019d0477-4d23-7343-b14f-65bdb2239a90\n2026-03-19 05:00:13\nGoogle Ads Fitness App Split\nios 5.17.46.94 https://apps.apple.com/us/app/apple-fitness/id1208224953?_subid=101k9q7.1.inida&_token=[filtered]\n019d04b2-dbbd-720a-a5f4-151a35e93a01\n2026-03-19 06:05:10\nGoogle Ads Fitness App Split\nwindows edge 174.60.167.205 https://play.google.com/store/apps/details?id=com.google.android.apps.fitness&hl=en_US&_subid=101mlo6.1.inmne&_token=[filtered]"
+      }
+    },
+    {
+      "name": "Campaigns",
+      "screenshots": [
+        "D:\\suyee\\github\\CFtracking\\keitaro-screenshots-detailed\\campaigns-scroll-1.png"
+      ],
+      "data": {
+        "title": "Campaigns",
+        "url": "https://demo.keitaro.io/admin/#!/campaigns/?s=~(sort~(~(name~'id~order~'desc))~filters~(~)~columns~(profitability~1~checkbox~1~state~1~id~1~name~1~more~1~notes~0~ts~1~traffic_source_id~0~streams_count~1~clicks~1~conversions~1~crs~1~sale_revenue~1~cost~1~profit_confirmed~1~roi_confirmed~1~group~1~group_id~0~visitors~0~campaign_unique_clicks~0~stream_unique_clicks~0~global_unique_clicks~0~uc_campaign_rate~0~uc_stream_rate~0~uc_global_rate~0~bots~0~bot_share~0~proxies~0~empty_referrers~0~leads~0~sales~0~rejected~0~trash~0~approve~0~revenue~0~lead_revenue~0~rejected_revenue~0~trash_revenue~0~profit~0~cr~0~crd~0~crl~0~crr~0~roi~0~epc~0~uepc~0~epc_hold~0~uepc_hold~0~epc_reg~0~uepc_reg~0~epc_confirmed~0~uepc_confirmed~0~cps~0~cpl~0~cpr~0~cpd~0~cpa~0~cpc~0~ucpc~0~ecpc~0~ecpm~0~ecpm_confirmed~0~ec~0~ec_confirmed~0~deposits~0~regs~0~reg_revenue~0~deposit_revenue~0~ucr_regs~0~event_type~0~event_id~0~datetime~0~landing_clicked_period~0~lp_views~0~lp_clicks~0~lp_ctr~0)~resized_columns~()~range~(interval~'today~timezone~'UTC)~filter_builder~null~grouping~(~'name~'id)~limit~25~offset~0)",
+        "sections": [
+          {
+            "index": 0,
+            "className": "kg-pagination-section",
+            "text": ""
+          },
+          {
+            "index": 1,
+            "className": "kg-pagination-section",
+            "text": "25"
+          },
+          {
+            "index": 2,
+            "className": "kg-pagination-section",
+            "text": "1 - 2 of 2"
+          }
+        ],
+        "formFields": [
+          {
+            "type": "search",
+            "name": "name",
+            "id": "",
+            "placeholder": "Search...",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-28-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "hidden",
+            "name": "traffic_source_id",
+            "id": "",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-29-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "hidden",
+            "name": "group_id",
+            "id": "",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-26-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "hidden",
+            "name": "state",
+            "id": "",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-30-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-27-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          }
+        ],
+        "tables": [],
+        "modals": [],
+        "cards": [],
+        "navItems": [
+          {
+            "text": "Dashboard",
+            "href": "#!/dashboard/"
+          },
+          {
+            "text": "Campaigns",
+            "href": "#!/campaigns/"
+          },
+          {
+            "text": "Landing Pages",
+            "href": "#!/landings/"
+          },
+          {
+            "text": "Affiliate Networks",
+            "href": "#!/affiliate_networks/"
+          },
+          {
+            "text": "Offers",
+            "href": "#!/offers/"
+          },
+          {
+            "text": "Traffic Sources",
+            "href": "#!/traffic_sources/"
+          },
+          {
+            "text": "Create report",
+            "href": "#!/reports/build"
+          },
+          {
+            "text": "Clicks log",
+            "href": "#!/clicks/log"
+          },
+          {
+            "text": "Conversions log",
+            "href": "#!/conversions/log"
+          },
+          {
+            "text": "Exported reports",
+            "href": "#!/reports/exported"
+          },
+          {
+            "text": "Black and White Lists",
+            "href": "#"
+          },
+          {
+            "text": "Trends",
+            "href": "#!/trends"
+          },
+          {
+            "text": "Domains",
+            "href": "#!/domains"
+          },
+          {
+            "text": "Users",
+            "href": "#!/users"
+          },
+          {
+            "text": "Main",
+            "href": "#!/settings/main"
+          },
+          {
+            "text": "Bot lists",
+            "href": "#!/settings/bots"
+          },
+          {
+            "text": "System",
+            "href": "#!/settings/system"
+          },
+          {
+            "text": "Privacy",
+            "href": "#!/settings/privacy"
+          },
+          {
+            "text": "Branding",
+            "href": "#!/settings/branding"
+          },
+          {
+            "text": "Postback URL",
+            "href": "#"
+          },
+          {
+            "text": "Custom metrics",
+            "href": "#!/custom_metrics"
+          },
+          {
+            "text": "Conversion types",
+            "href": "#!/conversion_types"
+          },
+          {
+            "text": "Geo DBs",
+            "href": "#!/geo_dbs/"
+          },
+          {
+            "text": "Geo profiles",
+            "href": "#!/geo_profiles"
+          },
+          {
+            "text": "Status",
+            "href": "#"
+          },
+          {
+            "text": "Logs",
+            "href": "#!/logs"
+          },
+          {
+            "text": "Archive",
+            "href": "#!/archive"
+          },
+          {
+            "text": "Import conversions",
+            "href": "#"
+          },
+          {
+            "text": "Simulate traffic",
+            "href": "#"
+          },
+          {
+            "text": "Delete statistics",
+            "href": "#"
+          },
+          {
+            "text": "Integrations",
+            "href": "#!/integrations"
+          }
+        ],
+        "buttons": [
+          {
+            "text": "Search",
+            "type": "submit"
+          },
+          {
+            "text": "Reports",
+            "type": "button"
+          },
+          {
+            "text": "Black and White Lists",
+            "type": ""
+          },
+          {
+            "text": "Settings",
+            "type": "button"
+          },
+          {
+            "text": "Postback URL",
+            "type": ""
+          },
+          {
+            "text": "Maintenance",
+            "type": "button"
+          },
+          {
+            "text": "Status",
+            "type": ""
+          },
+          {
+            "text": "Import conversions",
+            "type": ""
+          },
+          {
+            "text": "Simulate traffic",
+            "type": ""
+          },
+          {
+            "text": "Delete statistics",
+            "type": ""
+          },
+          {
+            "text": "Create",
+            "type": ""
+          },
+          {
+            "text": "Groups",
+            "type": "button"
+          },
+          {
+            "text": "How to work with campaigns?",
+            "type": ""
+          },
+          {
+            "text": "Meta Ads Food Delivery Promo",
+            "type": ""
+          },
+          {
+            "text": "3",
+            "type": ""
+          },
+          {
+            "text": "Google Ads Fitness App Split",
+            "type": ""
+          },
+          {
+            "text": "2",
+            "type": ""
+          },
+          {
+            "text": "Export",
+            "type": "button"
+          }
+        ],
+        "charts": [
+          {
+            "index": 0,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 1,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 2,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 3,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 4,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 5,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 6,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 7,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 8,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 9,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 10,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 11,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 12,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 13,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 14,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 15,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 16,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 17,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 18,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 19,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 20,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 21,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 22,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 23,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 24,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 25,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 26,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 27,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 28,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 29,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 30,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 31,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 32,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 33,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 34,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 35,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 36,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 37,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 38,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 39,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 40,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 41,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 42,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 43,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 44,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 45,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 46,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 47,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 48,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 49,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 50,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 51,
+            "tagName": "svg",
+            "className": {}
+          }
+        ],
+        "fullText": "Search\nDashboard\nCampaigns\nLanding Pages\nAffiliate Networks\nOffers\nTraffic Sources\nReports\nTrends\nDomains\nUsers\nSettings\nMaintenance\nIntegrations\nCreate\nGroups\nHow to work with campaigns?\nAll sources\nAll groups\nAll states\nToday\nID\nName\nSource\nFlows\nClicks\nConv.\nCR (sales)\nRevenue (confirmed)\nCost\nProfit/Loss (confirmed)\nROI (confirmed)\nGroup\n2\nMeta Ads Food Delivery Promo\nFacebook.com\n3\n28103\n4281\n5.16%\n$722.82\n$256.7635\n$466.06\n181.51%\nMeta Ads\n1\nGoogle Ads Fitness App Split\nGoogleAds\n2\n27986\n4132\n4.95%\n$688.89\n$264.3734\n$424.52\n160.57%\nGoogle Ads\n5\n56089\n8413\n5.05%\n$1,411.71\n$521.1369\n$890.57\n170.89%\n25\n1 - 2 of 2\nExport"
+      }
+    },
+    {
+      "name": "Landing Pages",
+      "screenshots": [
+        "D:\\suyee\\github\\CFtracking\\keitaro-screenshots-detailed\\landing-pages-scroll-1.png"
+      ],
+      "data": {
+        "title": "Landing Pages",
+        "url": "https://demo.keitaro.io/admin/#!/landings/",
+        "sections": [],
+        "formFields": [
+          {
+            "type": "search",
+            "name": "",
+            "id": "",
+            "placeholder": "Search...",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-32-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-31-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-34-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          },
+          {
+            "type": "text",
+            "name": "",
+            "id": "react-select-33-input",
+            "placeholder": "",
+            "value": "",
+            "label": null
+          }
+        ],
+        "tables": [
+          {
+            "index": 0,
+            "headers": [
+              "",
+              "",
+              "ID",
+              "Name",
+              "Group",
+              "",
+              "Clicks",
+              "LP clicks",
+              "LP CTR — LP Click-Through Rate",
+              "Conv.",
+              "CR",
+              "EPC (confirmed)",
+              "CPC",
+              "Revenue (confirmed)",
+              "Cost",
+              "Profit/Loss (confirmed)",
+              "ROI (confirmed)"
+            ],
+            "rows": [
+              [
+                "",
+                "",
+                "3",
+                "Little Caesars",
+                "",
+                "",
+                "14,059",
+                "2,160",
+                "15.36%",
+                "2,160",
+                "15.36%",
+                "$0.0266",
+                "$0.0091",
+                "$374.27",
+                "$128.3597",
+                "$245.91",
+                "191.58%"
+              ],
+              [
+                "",
+                "",
+                "2",
+                "Papa Johns",
+                "",
+                "",
+                "14,097",
+                "2,132",
+                "15.12%",
+                "2,132",
+                "15.12%",
+                "$0.0251",
+                "$0.0091",
+                "$353.18",
+                "$128.8968",
+                "$224.28",
+                "174.00%"
+              ],
+              [
+                "",
+                "",
+                "1",
+                "Factor",
+                "",
+                "",
+                "0",
+                "0",
+                "0.00%",
+                "0",
+                "0.00%",
+                "$0.0000",
+                "$0.0000",
+                "$0.00",
+                "$0.0000",
+                "$0.00",
+                "0.00%"
+              ]
+            ],
+            "totalRows": 3
+          }
+        ],
+        "modals": [],
+        "cards": [],
+        "navItems": [
+          {
+            "text": "Dashboard",
+            "href": "#!/dashboard/"
+          },
+          {
+            "text": "Campaigns",
+            "href": "#!/campaigns/"
+          },
+          {
+            "text": "Landing Pages",
+            "href": "#!/landings/"
+          },
+          {
+            "text": "Affiliate Networks",
+            "href": "#!/affiliate_networks/"
+          },
+          {
+            "text": "Offers",
+            "href": "#!/offers/"
+          },
+          {
+            "text": "Traffic Sources",
+            "href": "#!/traffic_sources/"
+          },
+          {
+            "text": "Create report",
+            "href": "#!/reports/build"
+          },
+          {
+            "text": "Clicks log",
+            "href": "#!/clicks/log"
+          },
+          {
+            "text": "Conversions log",
+            "href": "#!/conversions/log"
+          },
+          {
+            "text": "Exported reports",
+            "href": "#!/reports/exported"
+          },
+          {
+            "text": "Black and White Lists",
+            "href": "#"
+          },
+          {
+            "text": "Trends",
+            "href": "#!/trends"
+          },
+          {
+            "text": "Domains",
+            "href": "#!/domains"
+          },
+          {
+            "text": "Users",
+            "href": "#!/users"
+          },
+          {
+            "text": "Main",
+            "href": "#!/settings/main"
+          },
+          {
+            "text": "Bot lists",
+            "href": "#!/settings/bots"
+          },
+          {
+            "text": "System",
+            "href": "#!/settings/system"
+          },
+          {
+            "text": "Privacy",
+            "href": "#!/settings/privacy"
+          },
+          {
+            "text": "Branding",
+            "href": "#!/settings/branding"
+          },
+          {
+            "text": "Postback URL",
+            "href": "#"
+          },
+          {
+            "text": "Custom metrics",
+            "href": "#!/custom_metrics"
+          },
+          {
+            "text": "Conversion types",
+            "href": "#!/conversion_types"
+          },
+          {
+            "text": "Geo DBs",
+            "href": "#!/geo_dbs/"
+          },
+          {
+            "text": "Geo profiles",
+            "href": "#!/geo_profiles"
+          },
+          {
+            "text": "Status",
+            "href": "#"
+          },
+          {
+            "text": "Logs",
+            "href": "#!/logs"
+          },
+          {
+            "text": "Archive",
+            "href": "#!/archive"
+          },
+          {
+            "text": "Import conversions",
+            "href": "#"
+          },
+          {
+            "text": "Simulate traffic",
+            "href": "#"
+          },
+          {
+            "text": "Delete statistics",
+            "href": "#"
+          },
+          {
+            "text": "Integrations",
+            "href": "#!/integrations"
+          }
+        ],
+        "buttons": [
+          {
+            "text": "Search",
+            "type": "submit"
+          },
+          {
+            "text": "Reports",
+            "type": "button"
+          },
+          {
+            "text": "Black and White Lists",
+            "type": ""
+          },
+          {
+            "text": "Settings",
+            "type": "button"
+          },
+          {
+            "text": "Postback URL",
+            "type": ""
+          },
+          {
+            "text": "Maintenance",
+            "type": "button"
+          },
+          {
+            "text": "Status",
+            "type": ""
+          },
+          {
+            "text": "Import conversions",
+            "type": ""
+          },
+          {
+            "text": "Simulate traffic",
+            "type": ""
+          },
+          {
+            "text": "Delete statistics",
+            "type": ""
+          },
+          {
+            "text": "Create",
+            "type": "submit"
+          },
+          {
+            "text": "Groups",
+            "type": "submit"
+          },
+          {
+            "text": "How to work with landing pages?",
+            "type": ""
+          },
+          {
+            "text": "Export",
+            "type": "submit"
+          },
+          {
+            "text": "CSV",
+            "type": ""
+          },
+          {
+            "text": "HTML",
+            "type": ""
+          }
+        ],
+        "charts": [
+          {
+            "index": 0,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 1,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 2,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 3,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 4,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 5,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 6,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 7,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 8,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 9,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 10,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 11,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 12,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 13,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 14,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 15,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 16,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 17,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 18,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 19,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 20,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 21,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 22,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 23,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 24,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 25,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 26,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 27,
+            "tagName": "svg",
+            "className": {}
+          },
+          {
+            "index": 28,
+            "tagName": "svg",
+            "className": {}
+          }
+        ],
+        "fullText": "Search\nDashboard\nCampaigns\nLanding Pages\nAffiliate Networks\nOffers\nTraffic Sources\nReports\nTrends\nDomains\nUsers\nSettings\nMaintenance\nIntegrations\nCreate\nGroups\nHow to work with landing pages?\nAll groups\nAll states\nToday\nID\nName\nGroup\nClicks\nLP clicks\nLP CTR — LP Click-Through Rate\nConv.\nCR\nEPC (confirmed)\nCPC\nRevenue (confirmed)\nCost\nProfit/Loss (confirmed)\nROI (confirmed)\n3\nLittle Caesars\n14,059\n2,160\n15.36%\n2,160\n15.36%\n$0.0266\n$0.0091\n$374.27\n$128.3597\n$245.91\n191.58%\n2\nPapa Johns\n14,097\n2,132\n15.12%\n2,132\n15.12%\n$0.0251\n$0.0091\n$353.18\n$128.8968\n$224.28\n174.00%\n1\nFactor\n0\n0\n0.00%\n0\n0.00%\n$0.0000\n$0.0000\n$0.00\n$0.0000\n$0.00\n0.00%\n28,156\n4,292\n15.24%\n4,292\n15.24%\n$0.0258\n$0.0091\n$727.45\n$257.2565\n$470.19\n182.77%\n \n250\n1 - 3 of 3\nExport"
+      }
+    }
+  ]
+}

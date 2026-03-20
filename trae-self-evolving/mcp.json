@@ -1,0 +1,36 @@
+# Trae IDE MCP Configuration
+# File: trae-self-evolving/mcp.json
+# Use this configuration in Trae IDE MCP settings
+
+{
+  "mcpServers": {
+    "knowledge-graph-memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "env": {
+        "MEMORY_BACKEND": "knowledge-graph"
+      },
+      "description": "Knowledge Graph Memory for persistent cross-session context"
+    },
+    "self-evolving-learn": {
+      "command": "node",
+      "args": ["${workspace}/trae-self-evolving/skills/self-evolving/actions/learn.js"],
+      "description": "Self-Evolving System: Learn from user feedback"
+    },
+    "self-evolving-optimize": {
+      "command": "node",
+      "args": ["${workspace}/trae-self-evolving/skills/self-evolving/actions/optimize.js"],
+      "description": "Self-Evolving System: Optimize skill performance"
+    },
+    "self-evolving-resolve": {
+      "command": "node",
+      "args": ["${workspace}/trae-self-evolving/skills/self-evolving/actions/resolve.js"],
+      "description": "Self-Evolving System: Resolve skill conflicts"
+    },
+    "self-evolving-rollback": {
+      "command": "node",
+      "args": ["${workspace}/trae-self-evolving/skills/self-evolving/actions/rollback.js"],
+      "description": "Self-Evolving System: Version management and rollback"
+    }
+  }
+}

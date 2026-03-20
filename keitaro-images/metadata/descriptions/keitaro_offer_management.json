@@ -1,0 +1,245 @@
+{
+  "image_id": "keitaro_offer_management",
+  "version": "1.0",
+  "generated_at": "2026-03-15T10:15:00Z",
+  "model_used": "manual_analysis",
+  
+  "basic_info": {
+    "category": "offer-management",
+    "subcategory": "offer-list",
+    "page_title": "Offer Management",
+    "language": "en"
+  },
+  
+  "ui_elements": [
+    {
+      "id": "elem_001",
+      "type": "heading",
+      "label": "Offers",
+      "bounding_box": {
+        "x": 280,
+        "y": 80,
+        "width": 400,
+        "height": 40
+      },
+      "text_content": "Offers",
+      "is_primary": true,
+      "is_interactive": false
+    },
+    {
+      "id": "elem_002",
+      "type": "button",
+      "label": "Create Offer",
+      "bounding_box": {
+        "x": 1700,
+        "y": 85,
+        "width": 160,
+        "height": 40
+      },
+      "text_content": "+ Create Offer",
+      "is_primary": true,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_003",
+      "type": "input",
+      "label": "Search Offers",
+      "placeholder": "Search by name or ID...",
+      "bounding_box": {
+        "x": 280,
+        "y": 140,
+        "width": 400,
+        "height": 45
+      },
+      "is_interactive": true
+    },
+    {
+      "id": "elem_004",
+      "type": "dropdown",
+      "label": "Filter by Status",
+      "options": ["All", "Active", "Paused", "Archived"],
+      "selected_option": "All",
+      "bounding_box": {
+        "x": 700,
+        "y": 140,
+        "width": 200,
+        "height": 45
+      },
+      "is_interactive": true
+    },
+    {
+      "id": "elem_005",
+      "type": "table",
+      "label": "Offers List",
+      "bounding_box": {
+        "x": 280,
+        "y": 205,
+        "width": 1580,
+        "height": 700
+      },
+      "headers": ["ID", "Name", "Payout", "Type", "Status", "Clicks", "Conversions", "Revenue", "Actions"],
+      "rows": 15,
+      "columns": 9,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_006",
+      "type": "button",
+      "label": "Edit",
+      "bounding_box": {
+        "x": 1620,
+        "y": 220,
+        "width": 60,
+        "height": 30
+      },
+      "text_content": "Edit",
+      "is_primary": false,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_007",
+      "type": "button",
+      "label": "Pause",
+      "bounding_box": {
+        "x": 1690,
+        "y": 220,
+        "width": 60,
+        "height": 30
+      },
+      "text_content": "Pause",
+      "is_primary": false,
+      "is_interactive": true
+    },
+    {
+      "id": "elem_008",
+      "type": "badge",
+      "label": "Active",
+      "bounding_box": {
+        "x": 950,
+        "y": 220,
+        "width": 80,
+        "height": 25
+      },
+      "text_content": "Active",
+      "is_primary": false,
+      "is_interactive": false
+    },
+    {
+      "id": "elem_009",
+      "type": "pagination",
+      "label": "Page Navigation",
+      "bounding_box": {
+        "x": 280,
+        "y": 920,
+        "width": 1580,
+        "height": 40
+      },
+      "is_interactive": true
+    }
+  ],
+  
+  "text_content": {
+    "full_text": "Offers\n\n[+ Create Offer]\n\nSearch: Search by name or ID...\nFilter: All | Active | Paused | Archived\n\nOffers List\nID | Name | Payout | Type | Status | Clicks | Conversions | Revenue | Actions\n\n1 | iPhone 14 Pro Max | $45.00 | CPA | Active | 12,456 | 234 | $10,530.00 | [Edit] [Pause]\n2 | Weight Loss Supplement | $25.00 | RevShare | Active | 8,234 | 412 | $8,250.00 | [Edit] [Pause]\n...\n\nPage: 1 | 2 | 3 | Next >",
+    "sections": [
+      {
+        "heading": "Offers Management",
+        "content": "List and manage all your offers with performance metrics",
+        "position": {"x": 280, "y": 70, "width": 400, "height": 50}
+      },
+      {
+        "heading": "Search & Filter",
+        "content": "Search offers and filter by status",
+        "position": {"x": 280, "y": 130, "width": 620, "height": 60}
+      },
+      {
+        "heading": "Offers Table",
+        "content": "Complete list of offers with performance data",
+        "position": {"x": 280, "y": 195, "width": 1580, "height": 720}
+      }
+    ],
+    "key_phrases": [
+      "Offers",
+      "Create Offer",
+      "Payout",
+      "CPA",
+      "RevShare",
+      "Clicks",
+      "Conversions",
+      "Revenue",
+      "Active",
+      "Edit",
+      "Pause"
+    ]
+  },
+  
+  "functional_description": {
+    "primary_function": "Offer management interface for viewing, creating, and editing affiliate offers",
+    "user_goal": "Manage offers, view performance metrics, and create new offers",
+    "workflow_steps": [
+      {
+        "step": 1,
+        "action": "View offers list in the table",
+        "element_id": "elem_005"
+      },
+      {
+        "step": 2,
+        "action": "Search offers using the search field",
+        "element_id": "elem_003"
+      },
+      {
+        "step": 3,
+        "action": "Filter by status using dropdown",
+        "element_id": "elem_004"
+      },
+      {
+        "step": 4,
+        "action": "Click 'Create Offer' to add new offer",
+        "element_id": "elem_002"
+      },
+      {
+        "step": 5,
+        "action": "Edit or pause existing offers",
+        "element_id": "elem_006"
+      }
+    ],
+    "data_displayed": [
+      "Offer ID and name",
+      "Payout amount and type",
+      "Performance metrics (clicks, conversions, revenue)",
+      "Offer status (Active/Paused)"
+    ],
+    "critical_elements": [
+      "elem_002",
+      "elem_003",
+      "elem_004",
+      "elem_005"
+    ]
+  },
+  
+  "contextual_info": {
+    "related_pages": [
+      "Create Offer",
+      "Campaign Management",
+      "Analytics Reports"
+    ],
+    "parent_section": "Offers",
+    "documentation_path": "/en/offers/list.html",
+    "keywords": [
+      "offer",
+      "CPA",
+      "RevShare",
+      "payout",
+      "conversion",
+      "revenue",
+      "affiliate",
+      "tracking"
+    ]
+  },
+  
+  "analysis_confidence": {
+    "ui_detection": 0.93,
+    "ocr_accuracy": 0.97,
+    "functional_understanding": 0.94,
+    "overall": 0.94
+  }
+}

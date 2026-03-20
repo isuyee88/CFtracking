@@ -1,0 +1,79 @@
+/* App.css */
+
+/* 全局样式 */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f0f2f5;
+}
+
+/* 头部样式 */
+.header {
+  background: #1890ff;
+  color: white;
+  padding: 0 24px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.logo {
+  font-size: 20px;
+  font-weight: bold;
+  color: white;
+}
+
+/* 内容区域样式 */
+.content {
+  margin: 24px;
+  padding: 24px;
+  background: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 卡片样式 */
+.ant-card {
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 表格样式 */
+.ant-table {
+  margin-top: 16px;
+}
+
+/* 按钮样式 */
+.ant-btn {
+  margin-right: 8px;
+}
+
+/* 模态框样式 */
+.ant-modal-body {
+  padding: 24px;
+}
+
+/* 表单样式 */
+.ant-form-item {
+  margin-bottom: 16px;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .ant-layout {
+    flex-direction: column;
+  }
+  
+  .ant-layout-sider {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+  }
+  
+  .content {
+    margin: 12px;
+    padding: 16px;
+  }
+}
