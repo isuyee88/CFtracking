@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   TrendingUp, 
   ChevronRight,
@@ -477,6 +478,7 @@ const PreferencesModal = ({
 export const Dashboard = () => {
   // URL状态管理
   const { state, setState } = useDashboardURLState();
+  const navigate = useNavigate();
   
   // 自动昼夜模式
   const { isDarkMode, currentTime } = useAutoDarkMode();
@@ -845,7 +847,12 @@ export const Dashboard = () => {
                                 )}
                               >
                                 {col.key === 'name' ? (
-                                  <span className="font-semibold text-high-contrast hover:text-secondary transition-colors cursor-pointer link-primary">{row[col.key]}</span>
+                                  <Link 
+                                    to={`/${entityKey}/${row.id}`}
+                                    className="font-semibold text-high-contrast hover:text-secondary transition-colors cursor-pointer link-primary"
+                                  >
+                                    {row[col.key]}
+                                  </Link>
                                 ) : (
                                   <span className="text-medium-contrast">{row[col.key]?.toLocaleString() || '-'}</span>
                                 )}
