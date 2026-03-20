@@ -183,6 +183,20 @@ export async function deleteTrafficSource(id: string | number) {
   return response.json();
 }
 
+export async function testTrafficSourceConnection(data: {
+  apiBaseUrl: string;
+  apiKey: string;
+  apiSecret?: string;
+  platformType?: string;
+}) {
+  const response = await fetch(`${API_BASE_URL}/api/traffic-sources/test-connection`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
 // ==================== Affiliate Networks API ====================
 
 export async function fetchAffiliateNetworks(withStats = true) {

@@ -29,6 +29,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
+import { TrafficSourceForm } from '../components/TrafficSourceForm';
 import { fetchTrafficSources, createTrafficSource, updateTrafficSource, deleteTrafficSource } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatTrafficSourceForExport } from '../utils/export';
@@ -152,31 +153,6 @@ const TRAFFIC_SOURCE_FIELDS: FormField[] = [
     label: 'Enable API Integration',
     type: 'checkbox',
     description: 'Enable API integration for automatic blacklist/whitelist management'
-  },
-  {
-    name: 'apiBaseUrl',
-    label: 'API Base URL',
-    type: 'url',
-    placeholder: 'https://api.example.com/v1',
-    description: 'The base URL for the traffic source API',
-    showWhen: (data) => data.apiEnabled === true,
-    validation: (value) => {
-      if (!value) return null;
-      try {
-        new URL(value);
-        return null;
-      } catch {
-        return 'Please enter a valid URL';
-      }
-    }
-  },
- {
-    name: 'apiKey',
-    label: 'API Key',
-    type: 'password',
-    placeholder: 'Enter your API key',
-    description: 'API key for authentication',
-    showWhen: (data) => data.apiEnabled === true
   }
 ];
 
@@ -508,13 +484,11 @@ export const TrafficSources = () => {
 
   return (
     <div className="space-y-6">
-      {/* Entity Form Modal */}
-      <EntityForm
+      {/* Traffic Source Form Modal */}
+      <TrafficSourceForm
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
         onSubmit={handleFormSubmit}
-        title="Traffic Source"
-        fields={TRAFFIC_SOURCE_FIELDS}
         initialData={selectedSource}
         mode={formMode}
       />

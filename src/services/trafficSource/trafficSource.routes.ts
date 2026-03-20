@@ -6,6 +6,7 @@
 
 import { Hono } from 'hono';
 import { TrafficSourceService } from './trafficSource.service';
+import { testApiConnection } from '@/services/platform/api-tester';
 import { success, error } from '@/utils/response';
 import { validatePagination, validateRequired } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
@@ -107,6 +108,39 @@ export function createTrafficSourceRouter(): Hono<{ Bindings: Env }> {
         return c.json(error('Traffic Source not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
       }
       throw err;
+    }
+  });
+
+  // Test API connection
+  router.post('/test-connection', async (c) => {
+    const body = await c.req.json();
+
+    // Validate required fields
+    if (!body.apiBaseUrl) {
+      return c.json(error('API Base URL is required', ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+    }
+    if (!body.apiKey) {
+      return c.json(error('API Key is required', ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+    }
+
+    try {
+      const result = await testApiConnection({
+        baseUrl: body.apiBaseUrl,
+        apiKey: body.apiKey,
+        apiSecret: body.apiSecret,
+        platformType: body.platformType,
+      });
+
+      if (result.success) {
+        return c.json(success(result));
+      } else {
+        return c.json(error(result.message, ERROR_CODES.BAD_REQUEST), HTTP_STATUS.BAD_REQUEST);
+      }
+    } catch (err) {
+      return c.json(
+        error('Failed to test connection: ' + (err instanceof Error ? err.message : 'Unknown error')),
+        HTTP_STATUS.INTERNAL_SERVER_ERROR
+      );
     }
   });
 

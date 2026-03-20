@@ -31,7 +31,8 @@ import {
   MousePointerClick,
   CheckCircle,
   Shield,
-  ThumbsUp
+  ThumbsUp,
+  Target
 } from 'lucide-react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -152,20 +153,20 @@ export const Layout = () => {
       ]
     },
     {
-      title: "Analytics",
+      title: "Report",
       items: [
-        { icon: BarChart3, label: "Reports", to: "/reports" },
         { icon: LineChart, label: "Trends", to: "/trends" },
-        { icon: MousePointerClick, label: "Clicks Log", to: "/audit" },
+        { icon: MousePointerClick, label: "Click Log", to: "/audit" },
         { icon: CheckCircle, label: "Conversions", to: "/conversions" },
-        { icon: FlaskConical, label: "A/B Tests", to: "/ab-tests" },
       ]
     },
     {
-      title: "Lists",
+      title: "Tools",
       items: [
+        { icon: Zap, label: "Autorules", to: "/rules" },
         { icon: Shield, label: "Blacklist", to: "/blacklist" },
         { icon: ThumbsUp, label: "Whitelist", to: "/whitelist" },
+        { icon: Target, label: "Target", to: "/target" },
       ]
     },
     {

@@ -111,3 +111,4 @@ wrangler.toml.bak
 
 # Cloudflare
 .dev.vars
+node_modules
