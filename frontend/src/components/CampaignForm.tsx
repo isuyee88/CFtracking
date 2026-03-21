@@ -9,43 +9,12 @@ import React, { useState } from 'react';
 import { X, Plus, Trash2, Settings, Filter, Activity, FileText, GripVertical } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { FilterBuilder } from './filters';
+import type { FilterConfig } from './filters';
+import { FlowDesigner, type FlowNode, type FlowConnection } from './FlowDesigner';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
-}
-
-// Filter types based on Keitaro documentation
-const FILTER_TYPES = [
-  { value: 'country', label: 'Country', category: 'Geo' },
-  { value: 'region', label: 'Region/State', category: 'Geo' },
-  { value: 'city', label: 'City', category: 'Geo' },
-  { value: 'device_type', label: 'Device Type', category: 'Device' },
-  { value: 'os', label: 'Operating System', category: 'Device' },
-  { value: 'browser', label: 'Browser', category: 'Device' },
-  { value: 'ip', label: 'IP Address', category: 'Network' },
-  { value: 'isp', label: 'ISP', category: 'Network' },
-  { value: 'referrer', label: 'Referrer', category: 'Traffic' },
-  { value: 'user_agent', label: 'User Agent', category: 'Traffic' },
-];
-
-const OPERATORS = [
-  { value: 'equals', label: 'Equals' },
-  { value: 'not_equals', label: 'Not Equals' },
-  { value: 'contains', label: 'Contains' },
-  { value: 'not_contains', label: 'Not Contains' },
-  { value: 'starts_with', label: 'Starts With' },
-  { value: 'ends_with', label: 'Ends With' },
-  { value: 'regex', label: 'Matches Regex' },
-  { value: 'in_list', label: 'In List' },
-  { value: 'not_in_list', label: 'Not In List' },
-];
-
-interface Filter {
-  id: string;
-  type: string;
-  operator: string;
-  value: string;
-  isNot: boolean;
 }
 
 interface CampaignFormData {
@@ -59,9 +28,10 @@ interface CampaignFormData {
   uniquenessTTL: number;
   visitorBinding: 'none' | 'cookie' | 'ip';
   status: 'active' | 'paused';
-  filters: Filter[];
-  filterLogic: 'AND' | 'OR';
+  filterConfig: FilterConfig;
   notes: string;
+  flows: FlowNode[];
+  connections: FlowConnection[];
 }
 
 interface CampaignFormProps {
@@ -99,43 +69,22 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
     uniquenessTTL: initialData?.uniquenessTTL || 86400,
     visitorBinding: initialData?.visitorBinding || 'none',
     status: initialData?.status || 'active',
-    filters: initialData?.filters || [],
-    filterLogic: initialData?.filterLogic || 'AND',
+    filterConfig: initialData?.filterConfig || {
+      groups: [{
+        id: 'default-group',
+        name: 'Default Group',
+        logic: 'AND',
+        conditions: []
+      }],
+      globalLogic: 'AND'
+    },
     notes: initialData?.notes || '',
+    flows: initialData?.flows || [],
+    connections: initialData?.connections || [],
   });
 
   const handleChange = (field: keyof CampaignFormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const addFilter = () => {
-    const newFilter: Filter = {
-      id: Date.now().toString(),
-      type: 'country',
-      operator: 'equals',
-      value: '',
-      isNot: false,
-    };
-    setFormData(prev => ({
-      ...prev,
-      filters: [...prev.filters, newFilter]
-    }));
-  };
-
-  const updateFilter = (filterId: string, field: keyof Filter, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      filters: prev.filters.map(f =>
-        f.id === filterId ? { ...f, [field]: value } : f
-      )
-    }));
-  };
-
-  const removeFilter = (filterId: string) => {
-    setFormData(prev => ({
-      ...prev,
-      filters: prev.filters.filter(f => f.id !== filterId)
-    }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -217,7 +166,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                    Domain
+                    Domain *
                   </label>
                   <input
                     type="text"
@@ -225,6 +174,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     onChange={(e) => handleChange('domain', e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                     placeholder="example.com"
+                    required
                   />
                 </div>
                 <div>
@@ -351,123 +301,25 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
           {/* Schema Tab */}
           {activeTab === 'schema' && (
             <div className="space-y-6">
-              <div className="bg-surface-container p-6 rounded-sm">
-                <h3 className="text-sm font-bold text-primary mb-4">Flow Schema</h3>
-                <p className="text-sm text-on-surface-variant mb-4">
-                  Define the flow structure for this campaign. Flows determine how traffic is distributed between landing pages and offers.
-                </p>
-                <button
-                  type="button"
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest rounded-sm"
-                >
-                  <Plus size={16} />
-                  Add Flow
-                </button>
-              </div>
+              <FlowDesigner
+                campaignId={formData.alias || 'new'}
+                initialFlows={formData.flows}
+                initialConnections={formData.connections}
+                onSave={(flows, connections) => {
+                  setFormData(prev => ({ ...prev, flows, connections }));
+                }}
+              />
             </div>
           )}
 
           {/* Filters Tab */}
           {activeTab === 'filters' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-on-surface-variant">Filter Logic:</span>
-                  <div className="flex bg-surface-container rounded-sm">
-                    {(['AND', 'OR'] as const).map((logic) => (
-                      <button
-                        key={logic}
-                        type="button"
-                        onClick={() => handleChange('filterLogic', logic)}
-                        className={cn(
-                          "px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-sm transition-all",
-                          formData.filterLogic === logic
-                            ? "bg-primary text-on-primary"
-                            : "text-on-surface-variant hover:bg-surface-container-highest"
-                        )}
-                      >
-                        {logic}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={addFilter}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest rounded-sm"
-                >
-                  <Plus size={16} />
-                  Add Filter
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {formData.filters.map((filter, index) => (
-                  <div key={filter.id} className="flex items-center gap-3 bg-surface-container p-4 rounded-sm">
-                    <span className="text-xs font-bold text-on-surface-variant w-8">{index + 1}</span>
-                    
-                    <select
-                      value={filter.type}
-                      onChange={(e) => updateFilter(filter.id, 'type', e.target.value)}
-                      className="flex-1 px-3 py-2 bg-surface border border-outline-variant text-sm"
-                    >
-                      {FILTER_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      type="button"
-                      onClick={() => updateFilter(filter.id, 'isNot', !filter.isNot)}
-                      className={cn(
-                        "px-3 py-2 text-xs font-bold uppercase tracking-widest rounded-sm transition-all",
-                        filter.isNot
-                          ? "bg-error text-on-error"
-                          : "bg-secondary text-on-secondary"
-                      )}
-                    >
-                      {filter.isNot ? 'IS NOT' : 'IS'}
-                    </button>
-
-                    <select
-                      value={filter.operator}
-                      onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}
-                      className="flex-1 px-3 py-2 bg-surface border border-outline-variant text-sm"
-                    >
-                      {OPERATORS.map((op) => (
-                        <option key={op.value} value={op.value}>
-                          {op.label}
-                        </option>
-                      ))}
-                    </select>
-
-                    <input
-                      type="text"
-                      value={filter.value}
-                      onChange={(e) => updateFilter(filter.id, 'value', e.target.value)}
-                      placeholder="Value"
-                      className="flex-1 px-3 py-2 bg-surface border border-outline-variant text-sm"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => removeFilter(filter.id)}
-                      className="p-2 text-on-surface-variant hover:text-error transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-
-                {formData.filters.length === 0 && (
-                  <div className="text-center py-8 text-on-surface-variant">
-                    <p>No filters added yet</p>
-                    <p className="text-sm mt-1">Click "Add Filter" to create traffic filters</p>
-                  </div>
-                )}
-              </div>
+              <FilterBuilder
+                config={formData.filterConfig}
+                onChange={(config) => handleChange('filterConfig', config)}
+                showPreview={true}
+              />
             </div>
           )}
 

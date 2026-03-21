@@ -24,6 +24,8 @@ import { Settings } from './pages/Settings';
 import { Trends } from './pages/Trends';
 import { Blacklist } from './pages/Blacklist';
 import { Whitelist } from './pages/Whitelist';
+import { TargetPage } from './pages/Target';
+import { HelpCenter } from './pages/HelpCenter';
 
 export default function App() {
   return (
@@ -36,6 +38,7 @@ export default function App() {
           <Route path="rules" element={<RuleManagement />} />
           <Route path="platforms" element={<PlatformManagement />} />
           <Route path="landings" element={<Landings />} />
+          <Route path="l" element={<Landings />} />
           <Route path="offers" element={<Offers />} />
           <Route path="traffic-sources" element={<TrafficSources />} />
           <Route path="affiliate-networks" element={<AffiliateNetworks />} />
@@ -44,9 +47,9 @@ export default function App() {
           <Route path="conversions" element={<ConversionsLog />} />
           <Route path="blacklist" element={<Blacklist />} />
           <Route path="whitelist" element={<Whitelist />} />
-          <Route path="target" element={<div>Target Page</div>} />
+          <Route path="target" element={<TargetPage />} />
           <Route path="settings" element={<Settings />} />
-          <Route path="help" element={<div>Help Center Page</div>} />
+          <Route path="help" element={<HelpCenter />} />
         </Route>
       </Routes>
     </Router>

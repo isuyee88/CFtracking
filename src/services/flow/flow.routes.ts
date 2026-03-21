@@ -11,11 +11,13 @@
 
 import { Hono } from 'hono';
 import { FlowService } from './flow.service';
+import { FlowLogService } from './flow.log.service';
 import { FlowValidator } from './flow.validator';
 import { success, error } from '@/utils/response';
 import { validateRequired } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
+import type { FlowStatus } from '@/types/flow';
 import { getAvailableOperators, getAvailableTargets } from '@/utils/flow.filters';
 
 export function createFlowRouter(): Hono<{ Bindings: Env }> {
@@ -350,6 +352,211 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
   router.get('/filters/targets', async (c) => {
     const targets = getAvailableTargets();
     return c.json(success(targets));
+  });
+
+  // ==================== Flow Statistics ====================
+
+  /**
+   * 获取 Flow 统计数据
+   */
+  router.get('/:id/stats', async (c) => {
+    const id = c.req.param('id');
+    const service = new FlowService(c.env);
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
+
+    const query: { startDate?: string; endDate?: string } = {};
+    if (startDate) query.startDate = startDate;
+    if (endDate) query.endDate = endDate;
+
+    try {
+      const stats = await service.getFlowStats(id, Object.keys(query).length > 0 ? query : undefined);
+      return c.json(success(stats));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Flow not found') {
+        return c.json(error('Flow not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
+  /**
+   * 获取 Campaign 下所有 Flow 的统计数据
+   */
+  router.get('/campaign/:campaignId/stats', async (c) => {
+    const campaignId = c.req.param('campaignId');
+    const service = new FlowService(c.env);
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
+
+    const query: { startDate?: string; endDate?: string } = {};
+    if (startDate) query.startDate = startDate;
+    if (endDate) query.endDate = endDate;
+
+    const stats = await service.getCampaignFlowStats(campaignId, Object.keys(query).length > 0 ? query : undefined);
+    return c.json(success(stats));
+  });
+
+  // ==================== Flow Traffic Logs ====================
+
+  /**
+   * 获取 Flow 执行日志
+   */
+  router.get('/:id/logs', async (c) => {
+    const flowId = c.req.param('id');
+    const logService = new FlowLogService(c.env);
+    
+    const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!) : 50;
+    const offset = c.req.query('offset') ? parseInt(c.req.query('offset')!) : 0;
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
+
+    const result = await logService.query({
+      flowId,
+      startDate,
+      endDate,
+      limit,
+      offset,
+    });
+
+    return c.json(success(result));
+  });
+
+  /**
+   * 获取 Campaign 的流量日志
+   */
+  router.get('/campaign/:campaignId/logs', async (c) => {
+    const campaignId = c.req.param('campaignId');
+    const logService = new FlowLogService(c.env);
+    
+    const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!) : 50;
+    const offset = c.req.query('offset') ? parseInt(c.req.query('offset')!) : 0;
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
+
+    const result = await logService.query({
+      campaignId,
+      startDate,
+      endDate,
+      limit,
+      offset,
+    });
+
+    return c.json(success(result));
+  });
+
+  /**
+   * 获取单个日志详情
+   */
+  router.get('/logs/:logId', async (c) => {
+    const logId = c.req.param('logId');
+    const logService = new FlowLogService(c.env);
+
+    const log = await logService.getById(logId);
+    if (!log) {
+      return c.json(error('Log not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+    }
+
+    return c.json(success(log));
+  });
+
+  /**
+   * 清除 Flow 的所有日志
+   */
+  router.delete('/:id/logs', async (c) => {
+    const flowId = c.req.param('id');
+    const logService = new FlowLogService(c.env);
+
+    const deleted = await logService.clearFlowLogs(flowId);
+    return c.json(success({ deleted }));
+  });
+
+  // ==================== Batch Operations ====================
+
+  /**
+   * 批量更新 Flow 状态或权重
+   */
+  router.post('/batch', async (c) => {
+    const body = await c.req.json();
+    const { flowIds, action, value } = body;
+
+    if (!flowIds || !Array.isArray(flowIds) || flowIds.length === 0) {
+      return c.json(error('flowIds is required and must be a non-empty array', ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+    }
+
+    const service = new FlowService(c.env);
+    const results: { flowId: string; success: boolean; error?: string }[] = [];
+
+    for (const flowId of flowIds) {
+      try {
+        if (action === 'updateStatus') {
+          await service.update(flowId, { status: value as FlowStatus });
+        } else if (action === 'updateWeight') {
+          await service.update(flowId, { weight: value as number });
+        } else if (action === 'delete') {
+          await service.delete(flowId);
+        } else {
+          throw new Error(`Unknown action: ${action}`);
+        }
+        results.push({ flowId, success: true });
+      } catch (err) {
+        results.push({ flowId, success: false, error: (err as Error).message });
+      }
+    }
+
+    return c.json(success({ results }));
+  });
+
+  /**
+   * 均衡 Flow 权重
+   */
+  router.post('/equalize', async (c) => {
+    const body = await c.req.json();
+    const { campaignId } = body;
+
+    if (!campaignId) {
+      return c.json(error('campaignId is required', ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+    }
+
+    const service = new FlowService(c.env);
+    const flows = await service.getByCampaignId(campaignId);
+    const activeFlows = flows.filter(f => f.status === 'active' && f.type !== 'default');
+
+    if (activeFlows.length === 0) {
+      return c.json(success({ message: 'No active flows to equalize' }));
+    }
+
+    const equalWeight = Math.floor(100 / activeFlows.length);
+    const remainder = 100 % activeFlows.length;
+
+    const results: { flowId: string; newWeight: number }[] = [];
+    
+    for (let i = 0; i < activeFlows.length; i++) {
+      const flow = activeFlows[i]!;
+      const newWeight = equalWeight + (i < remainder ? 1 : 0);
+      await service.update(flow.id, { weight: newWeight });
+      results.push({ flowId: flow.id, newWeight });
+    }
+
+    return c.json(success({ results }));
+  });
+
+  /**
+   * 克隆 Flow
+   */
+  router.post('/:id/clone', async (c) => {
+    const flowId = c.req.param('id');
+    const service = new FlowService(c.env);
+
+    try {
+      const clonedFlow = await service.clone(flowId);
+      return c.json(success(clonedFlow));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Flow not found') {
+        return c.json(error('Flow not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
   });
 
   return router;

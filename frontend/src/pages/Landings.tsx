@@ -30,6 +30,7 @@ import { fetchLandings, createLanding, updateLanding, deleteLanding } from '../s
 import { ExportButton } from '../components/ExportButton';
 import { formatLandingPageForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
+import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -37,6 +38,7 @@ function cn(...inputs: ClassValue[]) {
 
 interface LandingPage {
   id: string;
+  displayId?: string;
   name: string;
   url: string;
   status: 'active' | 'paused' | 'deleted';
@@ -121,6 +123,10 @@ export const Landings = () => {
   
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+  // Filter panel state
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterValues, setFilterValues] = useState<FilterValues>({});
 
   // Fetch landings from API
   useEffect(() => {
@@ -295,6 +301,26 @@ export const Landings = () => {
     }
   };
 
+  // Filter configs
+  const filterConfigs: FilterConfig[] = [
+    {
+      key: 'status',
+      label: 'Status',
+      type: 'select',
+      options: [
+        { value: 'active', label: 'Active' },
+        { value: 'paused', label: 'Paused' },
+        { value: 'deleted', label: 'Deleted' },
+      ],
+    },
+    {
+      key: 'group',
+      label: 'Group',
+      type: 'search',
+      placeholder: 'Search by group...',
+    },
+  ];
+
   // Filter landings
   const filteredLandings = landings.filter(landing => {
     const matchesSearch = 
@@ -303,7 +329,30 @@ export const Landings = () => {
       landing.group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       false;
     const matchesStatus = filterStatus === 'All' || landing.status === filterStatus.toLowerCase();
-    return matchesSearch && matchesStatus;
+    
+    // Apply filter panel filters
+    const matchesFilters = Object.entries(filterValues).every(([key, value]) => {
+      if (!value || value === '' || (Array.isArray(value) && value.length === 0)) {
+        return true;
+      }
+      const landingValue = (landing as any)[key];
+      const landingValueStr = landingValue?.toString().toLowerCase() || '';
+      const filterValueStr = value?.toString().toLowerCase() || '';
+      
+      if (Array.isArray(value)) {
+        return value.some(v => landingValueStr === v.toLowerCase());
+      }
+      
+      // For search type, use includes
+      const config = filterConfigs.find(c => c.key === key);
+      if (config?.type === 'search') {
+        return landingValueStr.includes(filterValueStr);
+      }
+      
+      return landingValueStr === filterValueStr;
+    });
+    
+    return matchesSearch && matchesStatus && matchesFilters;
   });
 
   // Pagination
@@ -357,9 +406,17 @@ export const Landings = () => {
               maxRangeDays={365}
             />
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
+          <button 
+            onClick={() => setIsFilterOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+          >
             <Filter size={16} />
             Filters
+            {Object.keys(filterValues).length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 bg-primary text-on-primary text-xs rounded-full">
+                {Object.keys(filterValues).length}
+              </span>
+            )}
           </button>
           <ExportButton 
             data={landings.map(formatLandingPageForExport)}
@@ -618,6 +675,25 @@ export const Landings = () => {
           </div>
         )}
       </div>
+
+      {/* Filter Panel */}
+      <FilterPanel
+        isOpen={isFilterOpen}
+        onClose={() => setIsFilterOpen(false)}
+        configs={filterConfigs}
+        values={filterValues}
+        onChange={setFilterValues}
+        onApply={() => {
+          setCurrentPage(1);
+          setIsFilterOpen(false);
+        }}
+        onReset={() => {
+          setFilterValues({});
+          setCurrentPage(1);
+        }}
+        resultCount={filteredLandings.length}
+        totalCount={landings.length}
+      />
     </div>
   );
 };

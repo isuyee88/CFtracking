@@ -8,45 +8,40 @@ import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
 import type { Campaign, CreateCampaignDTO, UpdateCampaignDTO, CampaignListQuery } from '@/types/campaign';
 import { generateApiToken } from '@/utils/crypto';
-
-/**
- * 数据库行转换为 Campaign 对象
- * 处理 parameters 字段的 JSON 序列化
- */
-function rowToCampaign(row: Record<string, unknown>): Campaign {
-  return {
-    ...row,
-    parameters: row.parameters ? JSON.parse(row.parameters as string) : {},
-  } as Campaign;
-}
+import { IdService } from '@/services/id.service';
 
 export class CampaignRepository extends BaseRepository<Campaign> {
+  private idService: IdService;
+
   constructor(db: D1Database) {
     super(db, 'campaigns');
+    this.idService = new IdService(db);
   }
 
-  /**
-   * 重写 findById 以处理 parameters JSON 反序列化
-   */
-  async findById(id: string): Promise<Campaign | null> {
+  protected transform(row: Record<string, unknown>): Campaign {
+    return {
+      ...row,
+      id: row.displayId || row.id,
+      parameters: row.parameters ? JSON.parse(row.parameters as string) : {},
+    } as Campaign;
+  }
+
+  async findByDisplayId(displayId: string): Promise<Campaign | null> {
     const result = await this.db
-      .prepare(`SELECT * FROM campaigns WHERE id = ?`)
-      .bind(id)
+      .prepare(`SELECT * FROM campaigns WHERE displayId = ?`)
+      .bind(displayId)
       .first();
     if (!result) return null;
-    return rowToCampaign(result as Record<string, unknown>);
+    return this.transform(result as Record<string, unknown>);
   }
 
-  /**
-   * 按 apiToken 查询
-   */
   async findByApiToken(apiToken: string): Promise<Campaign | null> {
     const result = await this.db
       .prepare(`SELECT * FROM campaigns WHERE apiToken = ? LIMIT 1`)
       .bind(apiToken)
       .first();
     if (!result) return null;
-    return rowToCampaign(result as Record<string, unknown>);
+    return this.transform(result as Record<string, unknown>);
   }
 
   /**
@@ -66,6 +61,7 @@ export class CampaignRepository extends BaseRepository<Campaign> {
    */
   async create(data: CreateCampaignDTO): Promise<Campaign> {
     const id = crypto.randomUUID();
+    const displayId = await this.idService.generateId('campaigns');
     const now = new Date().toISOString();
     const apiToken = generateApiToken();
     const parameters = data.parameters ? JSON.stringify(data.parameters) : '{}';
@@ -73,13 +69,14 @@ export class CampaignRepository extends BaseRepository<Campaign> {
     await this.db
       .prepare(`
         INSERT INTO campaigns (
-          id, name, alias, domain, "group", trafficSource, 
+          id, displayId, name, alias, domain, "group", trafficSource, 
           flowRotation, costModel, trafficLoss, uniquenessTTL, 
           visitorBinding, apiToken, parameters, status, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         id,
+        displayId,
         data.name,
         data.alias,
         data.domain,
@@ -153,7 +150,7 @@ export class CampaignRepository extends BaseRepository<Campaign> {
       .prepare(`SELECT * FROM campaigns WHERE status = ? LIMIT ? OFFSET ?`)
       .bind(status, limit, offset)
       .all();
-    return (result.results as unknown as Record<string, unknown>[]).map(rowToCampaign) || [];
+    return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [];
   }
 
   /**
@@ -192,7 +189,7 @@ export class CampaignRepository extends BaseRepository<Campaign> {
     ]);
 
     return {
-      list: (listResult.results as unknown as Record<string, unknown>[]).map(rowToCampaign) || [],
+      list: (listResult.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [],
       total: (countResult?.count as number) || 0,
     };
   }

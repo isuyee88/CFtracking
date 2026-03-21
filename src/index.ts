@@ -40,6 +40,7 @@ import { createRuleRouter } from '@/services/rule/rule.routes';
 import { createPlatformRouter } from '@/services/platform/platform.routes';
 import { createTrackingRouter } from '@/services/tracking/tracking.routes';
 import { createAggregationRouter } from '@/services/analytics/aggregation.routes';
+import { createAnalyticsRouter } from '@/services/analytics/analytics.routes';
 import { createClickLogRouter } from '@/services/tracking/clickLog.routes';
 import { createConversionLogRouter } from '@/services/tracking/conversionLog.routes';
 import { createExportRouter } from '@/services/export/export.routes';
@@ -57,6 +58,7 @@ app.route('/api/rules', createRuleRouter());
 app.route('/api/platforms', createPlatformRouter());
 app.route('/api/tracking', createTrackingRouter());
 app.route('/api/analytics', createAggregationRouter());
+app.route('/api/analytics', createAnalyticsRouter());
 app.route('/api/clicks', createClickLogRouter());
 app.route('/api/conversions', createConversionLogRouter());
 app.route('/api/export', createExportRouter());
@@ -76,6 +78,21 @@ export default {
     // 处理 API 请求（包括 /api/* 和 /health）
     if (url.pathname.startsWith('/api/') || url.pathname === '/health') {
       return app.fetch(request, env, ctx);
+    }
+    
+    // 处理直接通过域名访问的追踪请求
+    // 格式: http://custom-domain.com/:campaignAlias
+    if (url.pathname.length > 1 && !url.pathname.startsWith('/__')) {
+      const pathParts = url.pathname.split('/').filter(Boolean);
+      if (pathParts.length === 1) {
+        const campaignAlias = pathParts[0];
+        // 重定向到追踪 API
+        const trackingUrl = new URL('/api/tracking/click/' + campaignAlias, request.url);
+        // 保留所有查询参数
+        trackingUrl.search = url.search;
+        const trackingRequest = new Request(trackingUrl.toString(), request);
+        return app.fetch(trackingRequest, env, ctx);
+      }
     }
     
     // 所有其他请求（包括静态资源和前端路由）直接交给 ASSETS 处理

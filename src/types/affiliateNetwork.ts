@@ -9,6 +9,7 @@ export type AffiliateNetworkType = 'soap' | 'rest' | 'api' | 'other';
 
 export interface AffiliateNetwork {
   id: string;
+  displayId?: string;
   name: string;
   type: AffiliateNetworkType;
   status: AffiliateNetworkStatus;

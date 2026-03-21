@@ -134,12 +134,12 @@ export function createTrafficSourceRouter(): Hono<{ Bindings: Env }> {
       if (result.success) {
         return c.json(success(result));
       } else {
-        return c.json(error(result.message, ERROR_CODES.BAD_REQUEST), HTTP_STATUS.BAD_REQUEST);
+        return c.json(error(result.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
       }
     } catch (err) {
       return c.json(
         error('Failed to test connection: ' + (err instanceof Error ? err.message : 'Unknown error')),
-        HTTP_STATUS.INTERNAL_SERVER_ERROR
+        HTTP_STATUS.INTERNAL_ERROR
       );
     }
   });

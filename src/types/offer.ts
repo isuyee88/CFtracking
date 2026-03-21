@@ -9,6 +9,7 @@ export type PayoutType = 'fixed' | 'revshare' | 'cpa';
 
 export interface Offer {
   id: string;
+  displayId?: string;
   name: string;
   url: string;
   payout: number;

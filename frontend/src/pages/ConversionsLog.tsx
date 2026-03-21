@@ -37,6 +37,8 @@ import {
   Group
 } from 'lucide-react';
 import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
+import { GroupByFilter, filterByGroupBy } from '@/components/GroupByFilter';
+import type { GroupByState, GroupByOption } from '@/types/filter';
 
 // 完整的 Conversion 数据结构
 interface Conversion {
@@ -305,52 +307,23 @@ const CONVERSIONS_DATA: Conversion[] = [
   },
 ];
 
-// Group By 选项
-const GROUP_BY_OPTIONS = [
-  {
-    category: 'Campaign & Offer',
-    options: [
-      { value: 'campaign', label: 'Campaign' },
-      { value: 'stream', label: 'Stream' },
-      { value: 'offer', label: 'Offer' },
-      { value: 'affiliate_network', label: 'Affiliate Network' },
-      { value: 'source', label: 'Traffic Source' },
-    ]
-  },
-  {
-    category: 'Financial',
-    options: [
-      { value: 'status', label: 'Status' },
-      { value: 'type', label: 'Conversion Type' },
-      { value: 'currency', label: 'Currency' },
-    ]
-  },
-  {
-    category: 'Geo',
-    options: [
-      { value: 'country', label: 'Country' },
-      { value: 'region', label: 'Region/State' },
-      { value: 'city', label: 'City' },
-      { value: 'isp', label: 'ISP' },
-    ]
-  },
-  {
-    category: 'Device & System',
-    options: [
-      { value: 'device_type', label: 'Device Type' },
-      { value: 'os', label: 'Operating System' },
-      { value: 'browser', label: 'Browser' },
-    ]
-  },
-  {
-    category: 'Time',
-    options: [
-      { value: 'hour', label: 'Hour' },
-      { value: 'day', label: 'Day' },
-      { value: 'week', label: 'Week' },
-      { value: 'month', label: 'Month' },
-    ]
-  }
+// ConversionsLog 专用的 Group By 选项
+const CONVERSIONS_LOG_GROUP_BY_OPTIONS: GroupByOption[] = [
+  { value: 'campaign', label: 'Campaign', category: 'Campaign & Traffic' },
+  { value: 'stream', label: 'Stream', category: 'Campaign & Traffic' },
+  { value: 'offer', label: 'Offer', category: 'Campaign & Traffic' },
+  { value: 'affiliate_network', label: 'Affiliate Network', category: 'Campaign & Traffic' },
+  { value: 'source', label: 'Traffic Source', category: 'Campaign & Traffic' },
+  { value: 'status', label: 'Status', category: 'Financial' },
+  { value: 'type', label: 'Conversion Type', category: 'Financial' },
+  { value: 'currency', label: 'Currency', category: 'Financial' },
+  { value: 'country', label: 'Country', category: 'Geo' },
+  { value: 'region', label: 'Region/State', category: 'Geo' },
+  { value: 'city', label: 'City', category: 'Geo' },
+  { value: 'isp', label: 'ISP', category: 'Geo' },
+  { value: 'device_type', label: 'Device Type', category: 'Device & System' },
+  { value: 'os', label: 'Operating System', category: 'Device & System' },
+  { value: 'browser', label: 'Browser', category: 'Device & System' },
 ];
 
 export const ConversionsLog = () => {
@@ -362,9 +335,8 @@ export const ConversionsLog = () => {
   const [dateRange, setDateRange] = useState<string>('last7days');
   const [dateRangeValue, setDateRangeValue] = useState<DateRangeValue>(getDateRange('last7days'));
   
-  // Group By 筛选
-  const [groupBy1, setGroupBy1] = useState('');
-  const [groupBy2, setGroupBy2] = useState('');
+  // Group By 状态 - 使用新的 GroupByState 数组
+  const [groupByStates, setGroupByStates] = useState<GroupByState[]>([]);
   const [showFilters, setShowFilters] = useState(false);
 
   // 处理日期范围变更
@@ -403,14 +375,24 @@ export const ConversionsLog = () => {
     );
   };
 
-  // 获取第二级 Group By 选项（排除已选的第一级）
-  const getGroupBy2Options = () => {
-    if (!groupBy1) return GROUP_BY_OPTIONS;
-    return GROUP_BY_OPTIONS.map(category => ({
-      ...category,
-      options: category.options.filter(opt => opt.value !== groupBy1)
-    })).filter(cat => cat.options.length > 0);
-  };
+  // 应用 Group By 筛选
+  const filteredWithGroupBy = React.useMemo(() => {
+    return filterByGroupBy(filteredConversions, groupByStates);
+  }, [filteredConversions, groupByStates]);
+
+  // 重新计算筛选后的统计数据
+  const totalRevenueFiltered = filteredWithGroupBy
+    .filter(c => c.status === 'Approved')
+    .reduce((sum, c) => sum + parseFloat(c.revenue), 0);
+
+  const totalPayoutFiltered = filteredWithGroupBy
+    .filter(c => c.status === 'Approved')
+    .reduce((sum, c) => sum + parseFloat(c.payout), 0);
+
+  const totalConversionsFiltered = filteredWithGroupBy.length;
+  const approvedConversionsFiltered = filteredWithGroupBy.filter(c => c.status === 'Approved').length;
+  const pendingConversionsFiltered = filteredWithGroupBy.filter(c => c.status === 'Pending').length;
+  const rejectedConversionsFiltered = filteredWithGroupBy.filter(c => c.status === 'Rejected').length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
@@ -558,85 +540,14 @@ export const ConversionsLog = () => {
 
         {/* Row 2: Group By Filters */}
         {showFilters && (
-          <div className="pt-4 border-t border-outline-variant/10 space-y-4">
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Group By 1 */}
-              <div className="flex items-center gap-2">
-                <Layers size={16} className="text-on-surface-variant" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Group By 1:</span>
-                <select
-                  value={groupBy1}
-                  onChange={(e) => {
-                    setGroupBy1(e.target.value);
-                    setGroupBy2(''); // Reset second group by when first changes
-                  }}
-                  className="px-3 py-2 bg-surface-container border border-outline-variant/30 text-xs focus:border-primary outline-none min-w-[150px]"
-                >
-                  <option value="">None</option>
-                  {GROUP_BY_OPTIONS.map(category => (
-                    <optgroup key={category.category} label={category.category}>
-                      {category.options.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
-
-              {/* Group By 2 */}
-              <div className="flex items-center gap-2">
-                <Group size={16} className="text-on-surface-variant" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Group By 2:</span>
-                <select
-                  value={groupBy2}
-                  onChange={(e) => setGroupBy2(e.target.value)}
-                  disabled={!groupBy1}
-                  className="px-3 py-2 bg-surface-container border border-outline-variant/30 text-xs focus:border-primary outline-none min-w-[150px] disabled:opacity-50"
-                >
-                  <option value="">None</option>
-                  {getGroupBy2Options().map(category => (
-                    <optgroup key={category.category} label={category.category}>
-                      {category.options.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
-
-              {/* Clear Filters */}
-              {(groupBy1 || groupBy2) && (
-                <button
-                  onClick={() => {
-                    setGroupBy1('');
-                    setGroupBy2('');
-                  }}
-                  className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-error hover:bg-error/10 transition-all"
-                >
-                  Clear Group By
-                </button>
-              )}
-            </div>
-
-            {/* Active Filters Display */}
-            {(groupBy1 || groupBy2) && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-on-surface-variant/60">Active Grouping:</span>
-                {groupBy1 && (
-                  <span className="px-2 py-1 bg-primary/10 text-primary rounded-sm">
-                    {GROUP_BY_OPTIONS.flatMap(c => c.options).find(o => o.value === groupBy1)?.label}
-                  </span>
-                )}
-                {groupBy2 && (
-                  <>
-                    <span className="text-on-surface-variant">→</span>
-                    <span className="px-2 py-1 bg-secondary/10 text-secondary rounded-sm">
-                      {GROUP_BY_OPTIONS.flatMap(c => c.options).find(o => o.value === groupBy2)?.label}
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
+          <div className="pt-4 border-t border-outline-variant/10">
+            <GroupByFilter
+              data={CONVERSIONS_DATA}
+              groupByOptions={CONVERSIONS_LOG_GROUP_BY_OPTIONS}
+              value={groupByStates}
+              onChange={setGroupByStates}
+              maxLevels={3}
+            />
           </div>
         )}
 

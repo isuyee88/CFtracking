@@ -7,10 +7,30 @@
 import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
 import type { Offer, CreateOfferDTO, UpdateOfferDTO } from '@/types/offer';
+import { IdService } from '@/services/id.service';
 
 export class OfferRepository extends BaseRepository<Offer> {
+  private idService: IdService;
+
   constructor(db: D1Database) {
     super(db, 'offers');
+    this.idService = new IdService(db);
+  }
+
+  protected transform(row: Record<string, unknown>): Offer {
+    return {
+      ...row,
+      id: row.displayId || row.id,
+    } as Offer;
+  }
+
+  async findByDisplayId(displayId: string): Promise<Offer | null> {
+    const result = await this.db
+      .prepare(`SELECT * FROM offers WHERE displayId = ?`)
+      .bind(displayId)
+      .first();
+    if (!result) return null;
+    return this.transform(result as Record<string, unknown>);
   }
 
   /**
@@ -18,22 +38,21 @@ export class OfferRepository extends BaseRepository<Offer> {
    */
   async create(data: CreateOfferDTO): Promise<Offer> {
     const id = crypto.randomUUID();
+    const displayId = await this.idService.generateId('offers');
     const now = new Date().toISOString();
 
     await this.db
       .prepare(`
-        INSERT INTO offers (id, name, url, payout, currency, payoutType, network, "group", status, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO offers (id, displayId, name, url, payout, currency, status, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         id, 
+        displayId,
         data.name, 
         data.url, 
         data.payout || 0, 
         data.currency || 'USD',
-        data.payoutType || 'fixed',
-        data.network || 'Default',
-        data.group || 'Default',
         'active', 
         now, 
         now

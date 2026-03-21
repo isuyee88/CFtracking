@@ -7,10 +7,40 @@
 import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
 import type { TrafficSource, CreateTrafficSourceDTO, UpdateTrafficSourceDTO } from '@/types/trafficSource';
+import { IdService } from '@/services/id.service';
 
 export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
+  private idService: IdService;
+
   constructor(db: D1Database) {
     super(db, 'trafficSources');
+    this.idService = new IdService(db);
+  }
+
+  protected transform(row: Record<string, unknown>): TrafficSource {
+    const result: TrafficSource = {
+      ...row,
+      id: row.displayId || row.id,
+    } as TrafficSource;
+    if (row.parameters && typeof row.parameters === 'string') {
+      result.parameters = JSON.parse(row.parameters as string);
+    }
+    if (row.postbackConfig && typeof row.postbackConfig === 'string') {
+      result.postbackConfig = JSON.parse(row.postbackConfig as string);
+    }
+    if (row.apiConfig && typeof row.apiConfig === 'string') {
+      result.apiConfig = JSON.parse(row.apiConfig as string);
+    }
+    return result;
+  }
+
+  async findByDisplayId(displayId: string): Promise<TrafficSource | null> {
+    const result = await this.db
+      .prepare(`SELECT * FROM trafficSources WHERE displayId = ?`)
+      .bind(displayId)
+      .first();
+    if (!result) return null;
+    return this.transform(result as Record<string, unknown>);
   }
 
   /**
@@ -18,18 +48,25 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
    */
   async create(data: CreateTrafficSourceDTO): Promise<TrafficSource> {
     const id = crypto.randomUUID();
+    const displayId = await this.idService.generateId('trafficSources');
     const now = new Date().toISOString();
 
-    // Convert apiConfig to JSON string if provided
+    // Convert complex objects to JSON strings
     const apiConfigStr = data.apiConfig ? JSON.stringify(data.apiConfig) : null;
+    const parametersStr = data.parameters ? JSON.stringify(data.parameters) : null;
+    const postbackConfigStr = data.postbackConfig ? JSON.stringify(data.postbackConfig) : null;
 
     await this.db
       .prepare(`
-        INSERT INTO trafficSources (id, name, type, status, postbackUrl, costModel, costValue, currency, parameters, apiConfig, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO trafficSources (
+          id, displayId, name, type, status, postbackUrl, costModel, costValue, currency, 
+          parameters, postbackConfig, apiConfig, templateId, createdAt, updatedAt
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         id,
+        displayId,
         data.name,
         data.type || 'other',
         'active',
@@ -37,8 +74,10 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
         data.costModel || 'cpc',
         data.costValue || 0,
         data.currency || 'USD',
-        data.parameters || '{}',
+        parametersStr,
+        postbackConfigStr,
         apiConfigStr,
+        data.templateId || null,
         now,
         now
       )
@@ -61,8 +100,19 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
     if (data.costModel !== undefined) { fields.push('costModel = ?'); values.push(data.costModel); }
     if (data.costValue !== undefined) { fields.push('costValue = ?'); values.push(data.costValue); }
     if (data.currency !== undefined) { fields.push('currency = ?'); values.push(data.currency); }
-    if (data.parameters !== undefined) { fields.push('parameters = ?'); values.push(data.parameters); }
     if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
+    if (data.templateId !== undefined) { fields.push('templateId = ?'); values.push(data.templateId); }
+    
+    if (data.parameters !== undefined) { 
+      fields.push('parameters = ?'); 
+      values.push(data.parameters ? JSON.stringify(data.parameters) : null); 
+    }
+    
+    if (data.postbackConfig !== undefined) { 
+      fields.push('postbackConfig = ?'); 
+      values.push(data.postbackConfig ? JSON.stringify(data.postbackConfig) : null); 
+    }
+    
     if (data.apiConfig !== undefined) { 
       fields.push('apiConfig = ?'); 
       values.push(data.apiConfig ? JSON.stringify(data.apiConfig) : null); 
@@ -96,6 +146,13 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
    */
   async findByType(type: string): Promise<TrafficSource[]> {
     return this.findBy('type', type);
+  }
+
+  /**
+   * 按模板ID查询
+   */
+  async findByTemplate(templateId: string): Promise<TrafficSource[]> {
+    return this.findBy('templateId', templateId);
   }
 
   /**

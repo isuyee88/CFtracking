@@ -24,138 +24,47 @@ import {
   Loader2,
   Zap,
   TrendingUp,
-  DollarSign
+  DollarSign,
+  Code,
+  Link,
+  Plug,
+  LayoutTemplate
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { EntityForm, type FormField } from '../components/EntityForm';
 import { TrafficSourceForm } from '../components/TrafficSourceForm';
 import { fetchTrafficSources, createTrafficSource, updateTrafficSource, deleteTrafficSource } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatTrafficSourceForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
+import type { TrafficSource, ParameterTemplate, PostbackConfig } from '../types/trafficSource';
+import { getTemplateById } from '../data/trafficSourceTemplates';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-interface TrafficSource {
-  id: string;
-  name: string;
-  type: 'social' | 'search' | 'native' | 'push' | 'pop' | 'display' | 'email' | 'other';
-  status: 'active' | 'paused' | 'deleted';
-  postbackUrl?: string;
-  costModel: 'cpc' | 'cpm' | 'cpa' | 'fixed';
-  costValue: number;
-  currency: string;
-  campaignCount?: number;
-  clicks: number;
-  conversions: number;
-  revenue: number | string;
-  cost?: number;
-  profit: number | string;
-  roi: number | string;
-  updatedAt: string;
-  apiConfig?: string | {
-    enabled: boolean;
-    baseUrl: string;
-    apiKey: string;
-  };
-}
-
-const TRAFFIC_SOURCE_FIELDS: FormField[] = [
-  {
-    name: 'name',
-    label: 'Traffic Source Name',
-    type: 'text',
-    required: true,
-    placeholder: 'Enter traffic source name'
-  },
-  {
-    name: 'type',
-    label: 'Type',
-    type: 'select',
-    required: true,
-    options: [
-      { value: 'social', label: 'Social' },
-      { value: 'search', label: 'Search' },
-      { value: 'native', label: 'Native' },
-      { value: 'push', label: 'Push' },
-      { value: 'pop', label: 'Pop' },
-      { value: 'display', label: 'Display' },
-      { value: 'email', label: 'Email' },
-      { value: 'other', label: 'Other' }
-    ]
-  },
-  {
-    name: 'postbackUrl',
-    label: 'Postback URL',
-    type: 'url',
-    placeholder: 'https://example.com/postback',
-    validation: (value) => {
-      if (!value) return null;
-      try {
-        new URL(value);
-        return null;
-      } catch {
-        return 'Please enter a valid URL';
-      }
-    }
-  },
-  {
-    name: 'costModel',
-    label: 'Cost Model',
-    type: 'select',
-    required: true,
-    options: [
-      { value: 'cpc', label: 'CPC (Cost Per Click)' },
-      { value: 'cpm', label: 'CPM (Cost Per Mille)' },
-      { value: 'cpa', label: 'CPA (Cost Per Action)' },
-      { value: 'fixed', label: 'Fixed' }
-    ]
-  },
-  {
-    name: 'costValue',
-    label: 'Cost Value',
-    type: 'number',
-    required: true,
-    placeholder: '0.00'
-  },
-  {
-    name: 'currency',
-    label: 'Currency',
-    type: 'select',
-    required: true,
-    options: [
-      { value: 'USD', label: 'USD' },
-      { value: 'EUR', label: 'EUR' },
-      { value: 'GBP', label: 'GBP' },
-      { value: 'CNY', label: 'CNY' }
-    ]
-  },
-  {
-    name: 'status',
-    label: 'Status',
-    type: 'select',
-    required: true,
-    options: [
-      { value: 'active', label: 'Active' },
-      { value: 'paused', label: 'Paused' }
-    ]
-  },
-  {
-    name: 'notes',
-    label: 'Notes',
-    type: 'textarea',
-    placeholder: 'Add notes about this traffic source...'
-  },
-  {
-    name: 'apiEnabled',
-    label: 'Enable API Integration',
-    type: 'checkbox',
-    description: 'Enable API integration for automatic blacklist/whitelist management'
+/**
+ * 解析 JSON 字段
+ */
+const parseJsonField = <T,>(field: any, defaultValue: T): T => {
+  if (!field) return defaultValue;
+  if (typeof field === 'object') return field as T;
+  try {
+    return JSON.parse(field) as T;
+  } catch {
+    return defaultValue;
   }
-];
+};
+
+/**
+ * 获取模板名称
+ */
+const getTemplateName = (templateId?: string): string => {
+  if (!templateId) return 'Custom';
+  const template = getTemplateById(templateId);
+  return template?.name || templateId;
+};
 
 export const TrafficSources = () => {
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
@@ -663,7 +572,14 @@ export const TrafficSources = () => {
                       </div>
                       <div>
                         <h3 className="font-bold text-primary">{source.name}</h3>
-                        <p className="text-xs text-on-surface-variant">ID: {source.id}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <p className="text-xs text-on-surface-variant">ID: {source.displayId || source.id}</p>
+                          {source.templateId && (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                              {getTemplateName(source.templateId)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -731,6 +647,21 @@ export const TrafficSources = () => {
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-1">
+                      {source.parameters && (
+                        <span className="p-1.5 text-on-surface-variant/50" title="Has Parameters">
+                          <Code size={14} />
+                        </span>
+                      )}
+                      {source.postbackConfig && (
+                        <span className="p-1.5 text-on-surface-variant/50" title="Has Postback">
+                          <Link size={14} />
+                        </span>
+                      )}
+                      {source.apiConfig && parseJsonField<{enabled: boolean}>(source.apiConfig, {enabled: false}).enabled && (
+                        <span className="p-1.5 text-secondary/70" title="API Enabled">
+                          <Plug size={14} />
+                        </span>
+                      )}
                       <button 
                         onClick={() => handleEditSource(source)}
                         className="p-2 text-on-surface-variant hover:text-primary transition-colors"

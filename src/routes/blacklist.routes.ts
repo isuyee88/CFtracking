@@ -37,6 +37,55 @@ export function createBlacklistRouter(): Hono<{ Bindings: Env }> {
     }
   });
 
+  // 创建单个黑名单条目
+  router.post('/', async (c) => {
+    const env = c.env;
+    const body = await c.req.json();
+
+    try {
+      const entry = await service(env).create(body);
+      return c.json(success(entry), HTTP_STATUS.CREATED);
+    } catch (err) {
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to create blacklist entry', ERROR_CODES.INTERNAL_ERROR),
+        HTTP_STATUS.BAD_REQUEST
+      );
+    }
+  });
+
+  // 获取单个黑名单条目
+  router.get('/:id', async (c) => {
+    const env = c.env;
+    const id = c.req.param('id');
+
+    try {
+      const entry = await service(env).getById(id);
+      return c.json(success(entry));
+    } catch (err) {
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to fetch blacklist entry', ERROR_CODES.INTERNAL_ERROR),
+        HTTP_STATUS.NOT_FOUND
+      );
+    }
+  });
+
+  // 更新黑名单条目
+  router.put('/:id', async (c) => {
+    const env = c.env;
+    const id = c.req.param('id');
+    const body = await c.req.json();
+
+    try {
+      const entry = await service(env).update(id, body);
+      return c.json(success(entry));
+    } catch (err) {
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to update blacklist entry', ERROR_CODES.INTERNAL_ERROR),
+        HTTP_STATUS.BAD_REQUEST
+      );
+    }
+  });
+
   // 批量添加黑名单
   router.post('/batch', async (c) => {
     const env = c.env;

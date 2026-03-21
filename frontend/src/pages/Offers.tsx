@@ -33,6 +33,7 @@ import { fetchOffers, createOffer, updateOffer, deleteOffer } from '../services/
 import { ExportButton } from '../components/ExportButton';
 import { formatOfferForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
+import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -40,6 +41,7 @@ function cn(...inputs: ClassValue[]) {
 
 interface Offer {
   id: string;
+  displayId?: string;
   name: string;
   url: string;
   payout: number;
@@ -148,6 +150,10 @@ export const Offers = () => {
   
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+  // Filter panel state
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterValues, setFilterValues] = useState<FilterValues>({});
 
   // Date range state
   const [dateRange, setDateRange] = useState<{from: string; to: string}>({
@@ -352,6 +358,42 @@ export const Offers = () => {
     }
   };
 
+  // Filter configs
+  const filterConfigs: FilterConfig[] = [
+    {
+      key: 'status',
+      label: 'Status',
+      type: 'select',
+      options: [
+        { value: 'active', label: 'Active' },
+        { value: 'paused', label: 'Paused' },
+        { value: 'deleted', label: 'Deleted' },
+      ],
+    },
+    {
+      key: 'payoutType',
+      label: 'Payout Type',
+      type: 'select',
+      options: [
+        { value: 'fixed', label: 'Fixed' },
+        { value: 'revshare', label: 'RevShare' },
+        { value: 'cpa', label: 'CPA' },
+      ],
+    },
+    {
+      key: 'group',
+      label: 'Group',
+      type: 'search',
+      placeholder: 'Search by group...',
+    },
+    {
+      key: 'network',
+      label: 'Network',
+      type: 'search',
+      placeholder: 'Search by network...',
+    },
+  ];
+
   // Filter offers
   const filteredOffers = offers.filter(offer => {
     const matchesSearch = 
@@ -361,7 +403,30 @@ export const Offers = () => {
       offer.group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       false;
     const matchesStatus = filterStatus === 'All' || offer.status === filterStatus.toLowerCase();
-    return matchesSearch && matchesStatus;
+    
+    // Apply filter panel filters
+    const matchesFilters = Object.entries(filterValues).every(([key, value]) => {
+      if (!value || value === '' || (Array.isArray(value) && value.length === 0)) {
+        return true;
+      }
+      const offerValue = (offer as any)[key];
+      const offerValueStr = offerValue?.toString().toLowerCase() || '';
+      const filterValueStr = value?.toString().toLowerCase() || '';
+      
+      if (Array.isArray(value)) {
+        return value.some(v => offerValueStr === v.toLowerCase());
+      }
+      
+      // For search type, use includes
+      const config = filterConfigs.find(c => c.key === key);
+      if (config?.type === 'search') {
+        return offerValueStr.includes(filterValueStr);
+      }
+      
+      return offerValueStr === filterValueStr;
+    });
+    
+    return matchesSearch && matchesStatus && matchesFilters;
   });
 
   // Pagination
@@ -415,9 +480,17 @@ export const Offers = () => {
               maxRangeDays={365}
             />
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
+          <button 
+            onClick={() => setIsFilterOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+          >
             <Filter size={16} />
             Filters
+            {Object.keys(filterValues).length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 bg-primary text-on-primary text-xs rounded-full">
+                {Object.keys(filterValues).length}
+              </span>
+            )}
           </button>
           <ExportButton 
             data={offers.map(formatOfferForExport)}
@@ -698,6 +771,25 @@ export const Offers = () => {
           </div>
         )}
       </div>
+
+      {/* Filter Panel */}
+      <FilterPanel
+        isOpen={isFilterOpen}
+        onClose={() => setIsFilterOpen(false)}
+        configs={filterConfigs}
+        values={filterValues}
+        onChange={setFilterValues}
+        onApply={() => {
+          setCurrentPage(1);
+          setIsFilterOpen(false);
+        }}
+        onReset={() => {
+          setFilterValues({});
+          setCurrentPage(1);
+        }}
+        resultCount={filteredOffers.length}
+        totalCount={offers.length}
+      />
     </div>
   );
 };

@@ -24,8 +24,8 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
       .prepare(`
         INSERT INTO blacklist (
           id, trafficSourceId, type, value, name, reason, status, synced,
-          syncedAt, campaignId, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          syncedAt, campaignId, ipMatchMode, uaMatchMode, syncToPlatform, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         id,
@@ -38,6 +38,9 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
         data.synced || false,
         data.syncedAt || null,
         data.campaignId || null,
+        data.ipMatchMode || null,
+        data.uaMatchMode || null,
+        data.syncToPlatform !== undefined ? (data.syncToPlatform ? 1 : 0) : 1,
         now,
         now
       )
@@ -182,6 +185,18 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
     if (data.syncedAt !== undefined) {
       fields.push('syncedAt = ?');
       values.push(data.syncedAt);
+    }
+    if (data.ipMatchMode !== undefined) {
+      fields.push('ipMatchMode = ?');
+      values.push(data.ipMatchMode);
+    }
+    if (data.uaMatchMode !== undefined) {
+      fields.push('uaMatchMode = ?');
+      values.push(data.uaMatchMode);
+    }
+    if (data.syncToPlatform !== undefined) {
+      fields.push('syncToPlatform = ?');
+      values.push(data.syncToPlatform ? 1 : 0);
     }
 
     if (fields.length === 0) {

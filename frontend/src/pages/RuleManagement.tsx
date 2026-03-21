@@ -9,7 +9,8 @@ import {
   Menu,
   AlertTriangle,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  Search
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -20,6 +21,7 @@ function cn(...inputs: ClassValue[]) {
 
 interface Rule {
   id: string;
+  displayId?: string;
   name: string;
   type: 'campaign' | 'platform';
   priority: number;

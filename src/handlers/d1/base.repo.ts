@@ -13,12 +13,17 @@ export abstract class BaseRepository<T> {
     this.tableName = tableName;
   }
 
+  protected transform(row: Record<string, unknown>): T {
+    return row as unknown as T;
+  }
+
   async findById(id: string): Promise<T | null> {
     const result = await this.db
-      .prepare(`SELECT * FROM ${this.tableName} WHERE id = ?`)
-      .bind(id)
+      .prepare(`SELECT * FROM ${this.tableName} WHERE id = ? OR displayId = ?`)
+      .bind(id, id)
       .first();
-    return result as T | null;
+    if (!result) return null;
+    return this.transform(result as Record<string, unknown>);
   }
 
   async findAll(limit = 100, offset = 0): Promise<T[]> {
@@ -26,7 +31,7 @@ export abstract class BaseRepository<T> {
       .prepare(`SELECT * FROM ${this.tableName} LIMIT ? OFFSET ?`)
       .bind(limit, offset)
       .all();
-    return (result.results as unknown as T[]) || [];
+    return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [];
   }
 
   async findBy(field: string, value: unknown): Promise<T[]> {
@@ -34,7 +39,7 @@ export abstract class BaseRepository<T> {
       .prepare(`SELECT * FROM ${this.tableName} WHERE ${field} = ?`)
       .bind(value)
       .all();
-    return (result.results as unknown as T[]) || [];
+    return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [];
   }
 
   async findOneBy(field: string, value: unknown): Promise<T | null> {
@@ -42,7 +47,8 @@ export abstract class BaseRepository<T> {
       .prepare(`SELECT * FROM ${this.tableName} WHERE ${field} = ? LIMIT 1`)
       .bind(value)
       .first();
-    return result as T | null;
+    if (!result) return null;
+    return this.transform(result as Record<string, unknown>);
   }
 
   async deleteById(id: string): Promise<boolean> {
@@ -85,9 +91,9 @@ export abstract class BaseRepository<T> {
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
     const result = await this.db
-      .prepare(`SELECT * FROM ${this.tableName} WHERE id IN (${placeholders})`)
-      .bind(...ids)
+      .prepare(`SELECT * FROM ${this.tableName} WHERE id IN (${placeholders}) OR displayId IN (${placeholders})`)
+      .bind(...ids, ...ids)
       .all();
-    return (result.results as unknown as T[]) || [];
+    return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [];
   }
 }

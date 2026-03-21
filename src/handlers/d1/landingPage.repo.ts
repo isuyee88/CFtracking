@@ -7,10 +7,30 @@
 import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
 import type { LandingPage, CreateLandingPageDTO, UpdateLandingPageDTO } from '@/types/landingPage';
+import { IdService } from '@/services/id.service';
 
 export class LandingPageRepository extends BaseRepository<LandingPage> {
+  private idService: IdService;
+
   constructor(db: D1Database) {
     super(db, 'landingPages');
+    this.idService = new IdService(db);
+  }
+
+  protected transform(row: Record<string, unknown>): LandingPage {
+    return {
+      ...row,
+      id: row.displayId || row.id,
+    } as LandingPage;
+  }
+
+  async findByDisplayId(displayId: string): Promise<LandingPage | null> {
+    const result = await this.db
+      .prepare(`SELECT * FROM landingPages WHERE displayId = ?`)
+      .bind(displayId)
+      .first();
+    if (!result) return null;
+    return this.transform(result as Record<string, unknown>);
   }
 
   /**
@@ -18,15 +38,15 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
    */
   async create(data: CreateLandingPageDTO): Promise<LandingPage> {
     const id = crypto.randomUUID();
+    const displayId = await this.idService.generateId('landingPages');
     const now = new Date().toISOString();
-    const group = data.group || 'Default';
 
     await this.db
       .prepare(`
-        INSERT INTO landingPages (id, name, url, status, "group", createdAt, updatedAt)
+        INSERT INTO landingPages (id, displayId, name, url, status, createdAt, updatedAt)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `)
-      .bind(id, data.name, data.url, 'active', group, now, now)
+      .bind(id, displayId, data.name, data.url, 'active', now, now)
       .run();
 
     const lp = await this.findById(id);

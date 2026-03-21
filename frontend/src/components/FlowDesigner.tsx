@@ -6,7 +6,7 @@
  * @output Flow configuration
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -20,7 +20,9 @@ import {
   Settings,
   GripVertical,
   Percent,
-  AlertCircle
+  AlertCircle,
+  Download,
+  Upload
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -30,7 +32,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // Types
-interface FlowNode {
+export interface FlowNode {
   id: string;
   type: 'landing' | 'offer' | 'condition' | 'action';
   name: string;
@@ -38,7 +40,7 @@ interface FlowNode {
   config?: Record<string, any>;
 }
 
-interface FlowConnection {
+export interface FlowConnection {
   id: string;
   from: string;
   to: string;
@@ -80,8 +82,10 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   
   const [connections, setConnections] = useState<FlowConnection[]>(initialConnections);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<FlowNode>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Calculate total weight
   const totalWeight = flows.reduce((sum, f) => sum + f.weight, 0);
@@ -119,10 +123,130 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   // Save edited node
   const handleSaveEdit = () => {
     if (selectedNode && editForm.name) {
-      setFlows(flows.map(f => f.id === selectedNode ? { ...f, ...editForm } as FlowNode : f));
+      setFlows(flows.map(f => {
+        if (selectedNodes.has(f.id)) {
+          return { ...f, ...editForm } as FlowNode;
+        }
+        return f;
+      }));
       setIsEditing(false);
       setSelectedNode(null);
+      setSelectedNodes(new Set());
     }
+  };
+
+  // Toggle node selection for batch operations
+  const handleToggleSelection = (id: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setSelectedNodes(prev => {
+      const newSelected = new Set(prev);
+      if (newSelected.has(id)) {
+        newSelected.delete(id);
+      } else {
+        newSelected.add(id);
+      }
+      return newSelected;
+    });
+  };
+
+  // Select all nodes
+  const handleSelectAll = () => {
+    if (selectedNodes.size === flows.length) {
+      setSelectedNodes(new Set());
+    } else {
+      setSelectedNodes(new Set(flows.map(f => f.id)));
+    }
+  };
+
+  // Batch delete selected nodes
+  const handleBatchDelete = () => {
+    if (selectedNodes.size > 0) {
+      if (confirm(`Are you sure you want to delete ${selectedNodes.size} nodes?`)) {
+        const nodesToDelete = Array.from(selectedNodes);
+        setFlows(flows.filter(f => !selectedNodes.has(f.id)));
+        setConnections(connections.filter(c => !nodesToDelete.includes(c.from) && !nodesToDelete.includes(c.to)));
+        setSelectedNodes(new Set());
+        if (selectedNode && selectedNodes.has(selectedNode)) {
+          setSelectedNode(null);
+        }
+      }
+    }
+  };
+
+  // Batch edit selected nodes
+  const handleBatchEdit = () => {
+    if (selectedNodes.size > 0) {
+      // For simplicity, we'll edit the first selected node and apply changes to all
+      const firstSelected = Array.from(selectedNodes)[0];
+      const node = flows.find(f => f.id === firstSelected);
+      if (node) {
+        setSelectedNode(firstSelected);
+        setEditForm({ ...node });
+        setIsEditing(true);
+      }
+    }
+  };
+
+  // Export flow configuration as JSON
+  const handleExportFlow = () => {
+    const flowConfig = {
+      flows,
+      connections,
+      metadata: {
+        campaignId,
+        exportDate: new Date().toISOString(),
+        totalNodes: flows.length,
+        totalConnections: connections.length
+      }
+    };
+
+    const jsonString = JSON.stringify(flowConfig, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `flow-config-${campaignId}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Import flow configuration from JSON
+  const handleImportFlow = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const jsonString = e.target?.result as string;
+        const flowConfig = JSON.parse(jsonString);
+
+        if (flowConfig.flows && Array.isArray(flowConfig.flows)) {
+          setFlows(flowConfig.flows);
+          setConnections(flowConfig.connections || []);
+          setSelectedNodes(new Set());
+          setSelectedNode(null);
+          alert('Flow configuration imported successfully!');
+        } else {
+          alert('Invalid flow configuration file');
+        }
+      } catch (error) {
+        alert('Error parsing flow configuration file');
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Trigger file input click
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
   };
 
   // Get percentage for weight
@@ -166,6 +290,53 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Import/Export Buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportFlow}
+              className="flex items-center gap-1 px-3 py-1.5 border border-outline-variant text-on-surface text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+              title="Export Flow"
+            >
+              <Download size={14} />
+              Export
+            </button>
+            <button
+              onClick={triggerFileInput}
+              className="flex items-center gap-1 px-3 py-1.5 border border-outline-variant text-on-surface text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+              title="Import Flow"
+            >
+              <Upload size={14} />
+              Import
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImportFlow}
+              className="hidden"
+            />
+          </div>
+          
+          {selectedNodes.size > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleBatchEdit}
+                className="flex items-center gap-1 px-3 py-1.5 border border-outline-variant text-on-surface text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+                title="Batch Edit"
+              >
+                <Edit3 size={14} />
+                Edit
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                className="flex items-center gap-1 px-3 py-1.5 border border-error/20 text-error text-xs font-bold uppercase tracking-widest hover:bg-error/5 transition-colors"
+                title="Batch Delete"
+              >
+                <Trash2 size={14} />
+                Delete
+              </button>
+            </div>
+          )}
           <button
             onClick={onCancel}
             className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-on-surface text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
@@ -283,15 +454,40 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
 
           {/* Flow Nodes */}
           <div className="space-y-3">
+            {/* Select All Header */}
+            {flows.length > 0 && (
+              <div className="flex items-center gap-4 p-3 border border-outline-variant/20 rounded-sm bg-surface-container">
+                <input
+                  type="checkbox"
+                  checked={selectedNodes.size === flows.length && flows.length > 0}
+                  onChange={handleSelectAll}
+                  className="w-4 h-4 text-primary"
+                />
+                <span className="text-sm font-bold text-on-surface-variant">Select All</span>
+                <span className="text-xs text-on-surface-variant ml-auto">
+                  {selectedNodes.size} of {flows.length} selected
+                </span>
+              </div>
+            )}
+            
             {flows.map((flow, index) => (
               <div
                 key={flow.id}
                 className={cn(
                   "flex items-center gap-4 p-4 border-2 rounded-sm transition-all",
                   getNodeColor(flow.type),
-                  selectedNode === flow.id ? 'ring-2 ring-primary' : ''
+                  selectedNode === flow.id ? 'ring-2 ring-primary' : '',
+                  selectedNodes.has(flow.id) ? 'bg-opacity-80' : ''
                 )}
               >
+                {/* Selection Checkbox */}
+                <input
+                  type="checkbox"
+                  checked={selectedNodes.has(flow.id)}
+                  onChange={(e) => handleToggleSelection(flow.id, e)}
+                  className="w-4 h-4 text-primary"
+                />
+
                 {/* Drag Handle */}
                 <div className="cursor-move text-current/50">
                   <GripVertical size={16} />

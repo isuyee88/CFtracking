@@ -293,6 +293,14 @@
   border-color: var(--color-border-muted);
 }
 
+.border-border-default {
+  border-color: var(--color-border-default);
+}
+
+.text-canvas {
+  color: var(--color-canvas);
+}
+
 /* ============================================
    Table Styles - Linear Style
    ============================================ */

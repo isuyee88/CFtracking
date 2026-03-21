@@ -85,6 +85,10 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
     const existingVisitorId = parseVisitorIdFromCookie(cookieHeader) || undefined;
 
     try {
+      // 保存原始URL，用于构建重定向URL
+      const urlParams = new URL(c.req.url).searchParams;
+      urlParams.set('__originalUrl', c.req.url);
+
       const result = await service.handleClick({
         campaignId: campaignAlias,
         ip,
@@ -106,7 +110,7 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
         uniquenessParameter,
         uniquenessTTL,
         existingVisitorId,
-        urlParams: new URL(c.req.url).searchParams,
+        urlParams,
         // Cloudflare 特定信息
         cfInfo,
         fingerprint,
@@ -164,6 +168,10 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
     const existingVisitorId = parseVisitorIdFromCookie(cookieHeader) || undefined;
 
     try {
+      // 保存原始URL，用于构建重定向URL
+      const urlParams = body.urlParams ? new URLSearchParams(body.urlParams) : new URLSearchParams();
+      urlParams.set('__originalUrl', c.req.url);
+
       const result = await service.handleClick({
         campaignId: body.campaignId,
         ip: body.ip || c.req.header('CF-Connecting-IP') || 'unknown',
@@ -182,7 +190,7 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
         uniquenessParameter: body.uniquenessParameter,
         uniquenessTTL: body.uniquenessTTL,
         existingVisitorId,
-        urlParams: body.urlParams ? new URLSearchParams(body.urlParams) : new URLSearchParams(),
+        urlParams,
       });
 
       // 构建响应

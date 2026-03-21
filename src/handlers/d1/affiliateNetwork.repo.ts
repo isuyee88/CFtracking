@@ -7,10 +7,30 @@
 import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
 import type { AffiliateNetwork, CreateAffiliateNetworkDTO, UpdateAffiliateNetworkDTO } from '@/types/affiliateNetwork';
+import { IdService } from '@/services/id.service';
 
 export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork> {
+  private idService: IdService;
+
   constructor(db: D1Database) {
     super(db, 'affiliateNetworks');
+    this.idService = new IdService(db);
+  }
+
+  protected transform(row: Record<string, unknown>): AffiliateNetwork {
+    return {
+      ...row,
+      id: row.displayId || row.id,
+    } as AffiliateNetwork;
+  }
+
+  async findByDisplayId(displayId: string): Promise<AffiliateNetwork | null> {
+    const result = await this.db
+      .prepare(`SELECT * FROM affiliateNetworks WHERE displayId = ?`)
+      .bind(displayId)
+      .first();
+    if (!result) return null;
+    return this.transform(result as Record<string, unknown>);
   }
 
   /**
@@ -18,15 +38,17 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
    */
   async create(data: CreateAffiliateNetworkDTO): Promise<AffiliateNetwork> {
     const id = crypto.randomUUID();
+    const displayId = await this.idService.generateId('affiliateNetworks');
     const now = new Date().toISOString();
 
     await this.db
       .prepare(`
-        INSERT INTO affiliateNetworks (id, name, type, status, apiUrl, apiKey, postbackUrl, notes, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO affiliateNetworks (id, displayId, name, type, status, apiUrl, apiKey, postbackUrl, notes, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         id,
+        displayId,
         data.name,
         data.type || 'api',
         'active',

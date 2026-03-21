@@ -1,8 +1,8 @@
 /**
  * File: Blacklist.tsx
- * Purpose: 黑名单管理页面，支持查看、添加、同步黑名单
- * Input/Output: 显示黑名单列表，支持批量操作和同步到流量平台
- * Logic: 从 API 获取黑名单数据，支持按流量平台筛选
+ * Purpose: 黑名单管理页面，支持查看、添加、编辑、同步黑名单
+ * Input/Output: 显示黑名单列表，支持CRUD操作和同步到流量平台
+ * Logic: 从 API 获取黑名单数据，支持按流量平台筛选，支持IP/UA类型
  */
 
 import React, { useState, useEffect } from 'react';
@@ -17,9 +17,16 @@ import {
   Loader2,
   ExternalLink,
   AlertTriangle,
-  Filter,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Edit2,
+  Globe,
+  Smartphone,
+  Palette,
+  User,
+  Hash,
+  MapPin,
+  Monitor
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -28,11 +35,15 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+type BlacklistType = 'zone' | 'creative' | 'publisher' | 'sub_id' | 'geo' | 'device' | 'ip' | 'user_agent';
+type IpMatchMode = 'exact' | 'cidr';
+type UaMatchMode = 'exact' | 'contains';
+
 interface BlacklistEntry {
   id: string;
   trafficSourceId: string;
   trafficSourceName?: string;
-  type: 'zone' | 'creative' | 'publisher' | 'sub_id' | 'geo' | 'device';
+  type: BlacklistType;
   value: string;
   name?: string;
   reason?: string;
@@ -40,13 +51,52 @@ interface BlacklistEntry {
   synced: boolean;
   syncedAt?: string;
   campaignId?: string;
+  ipMatchMode?: IpMatchMode;
+  uaMatchMode?: UaMatchMode;
+  syncToPlatform?: boolean;
   createdAt: string;
+  updatedAt: string;
 }
 
 interface TrafficSource {
   id: string;
   name: string;
 }
+
+interface FormData {
+  trafficSourceId: string;
+  type: BlacklistType;
+  value: string;
+  name: string;
+  reason: string;
+  campaignId: string;
+  ipMatchMode: IpMatchMode;
+  uaMatchMode: UaMatchMode;
+  syncToPlatform: boolean;
+}
+
+const initialFormData: FormData = {
+  trafficSourceId: '',
+  type: 'zone',
+  value: '',
+  name: '',
+  reason: '',
+  campaignId: '',
+  ipMatchMode: 'exact',
+  uaMatchMode: 'exact',
+  syncToPlatform: true,
+};
+
+const typeOptions: { value: BlacklistType; label: string; icon: React.ReactNode }[] = [
+  { value: 'zone', label: 'Zone', icon: <Globe size={16} /> },
+  { value: 'creative', label: 'Creative', icon: <Palette size={16} /> },
+  { value: 'publisher', label: 'Publisher', icon: <User size={16} /> },
+  { value: 'sub_id', label: 'Sub ID', icon: <Hash size={16} /> },
+  { value: 'geo', label: 'Geo', icon: <MapPin size={16} /> },
+  { value: 'device', label: 'Device', icon: <Smartphone size={16} /> },
+  { value: 'ip', label: 'IP Address', icon: <Monitor size={16} /> },
+  { value: 'user_agent', label: 'User Agent', icon: <ExternalLink size={16} /> },
+];
 
 export const Blacklist = () => {
   const [entries, setEntries] = useState<BlacklistEntry[]>([]);
@@ -56,6 +106,15 @@ export const Blacklist = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSource, setFilterSource] = useState<string>('all');
   const [filterSynced, setFilterSynced] = useState<string>('all');
+  const [filterType, setFilterType] = useState<string>('all');
+  
+  // Modal states
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<FormData>(initialFormData);
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+  const [submitting, setSubmitting] = useState(false);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -121,20 +180,122 @@ export const Blacklist = () => {
     }
   };
 
+  const openAddModal = () => {
+    setIsEditMode(false);
+    setEditingId(null);
+    setFormData(initialFormData);
+    setFormErrors({});
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (entry: BlacklistEntry) => {
+    setIsEditMode(true);
+    setEditingId(entry.id);
+    setFormData({
+      trafficSourceId: entry.trafficSourceId,
+      type: entry.type,
+      value: entry.value,
+      name: entry.name || '',
+      reason: entry.reason || '',
+      campaignId: entry.campaignId || '',
+      ipMatchMode: entry.ipMatchMode || 'exact',
+      uaMatchMode: entry.uaMatchMode || 'exact',
+      syncToPlatform: entry.syncToPlatform !== false,
+    });
+    setFormErrors({});
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setFormData(initialFormData);
+    setFormErrors({});
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Partial<Record<keyof FormData, string>> = {};
+
+    if (!formData.trafficSourceId) {
+      errors.trafficSourceId = 'Traffic source is required';
+    }
+    if (!formData.value.trim()) {
+      errors.value = 'Value is required';
+    }
+
+    // IP validation
+    if (formData.type === 'ip') {
+      if (formData.ipMatchMode === 'cidr') {
+        const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+        if (!cidrRegex.test(formData.value)) {
+          errors.value = 'Invalid CIDR format. Expected: x.x.x.x/y';
+        }
+      } else {
+        const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+        if (!ipv4Regex.test(formData.value)) {
+          errors.value = 'Invalid IP address format';
+        }
+      }
+    }
+
+    // UA validation
+    if (formData.type === 'user_agent' && formData.value.length > 1000) {
+      errors.value = 'User Agent too long (max 1000 characters)';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!validateForm()) return;
+
+    setSubmitting(true);
+    try {
+      const url = isEditMode ? `/api/blacklist/${editingId}` : '/api/blacklist';
+      const method = isEditMode ? 'PUT' : 'POST';
+      
+      const payload = {
+        ...formData,
+        name: formData.name || undefined,
+        reason: formData.reason || undefined,
+        campaignId: formData.campaignId || undefined,
+      };
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        closeModal();
+        fetchData();
+      } else {
+        const error = await response.json();
+        alert(error.message || 'Failed to save blacklist entry');
+      }
+    } catch (err) {
+      console.error('Failed to save:', err);
+      alert('Failed to save blacklist entry');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const getTrafficSourceName = (id: string) => {
     return trafficSources.find(ts => ts.id === id)?.name || id;
   };
 
   const getTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      zone: 'Zone',
-      creative: 'Creative',
-      publisher: 'Publisher',
-      sub_id: 'Sub ID',
-      geo: 'Geo',
-      device: 'Device'
-    };
-    return labels[type] || type;
+    const option = typeOptions.find(opt => opt.value === type);
+    return option?.label || type;
+  };
+
+  const getTypeIcon = (type: string) => {
+    const option = typeOptions.find(opt => opt.value === type);
+    return option?.icon || <Globe size={16} />;
   };
 
   // Filter entries
@@ -147,7 +308,8 @@ export const Blacklist = () => {
     const matchesSynced = filterSynced === 'all' || 
       (filterSynced === 'synced' && entry.synced) ||
       (filterSynced === 'unsynced' && !entry.synced);
-    return matchesSearch && matchesSource && matchesSynced;
+    const matchesType = filterType === 'all' || entry.type === filterType;
+    return matchesSearch && matchesSource && matchesSynced && matchesType;
   });
 
   // Pagination
@@ -172,7 +334,7 @@ export const Blacklist = () => {
         <div>
           <h1 className="text-3xl font-display font-bold text-primary">Blacklist</h1>
           <p className="text-sm text-on-surface-variant">
-            Manage blocked zones, creatives, and other traffic sources
+            Manage blocked zones, creatives, IPs, user agents and other traffic sources
           </p>
         </div>
         <div className="flex gap-3">
@@ -182,6 +344,13 @@ export const Blacklist = () => {
           >
             <RefreshCw size={16} />
             Refresh
+          </button>
+          <button 
+            onClick={openAddModal}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors"
+          >
+            <Plus size={16} />
+            Add Entry
           </button>
         </div>
       </div>
@@ -258,6 +427,16 @@ export const Blacklist = () => {
             ))}
           </select>
           <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+          >
+            <option value="all">All Types</option>
+            {typeOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <select
             value={filterSynced}
             onChange={(e) => setFilterSynced(e.target.value)}
             className="px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
@@ -299,7 +478,7 @@ export const Blacklist = () => {
                 <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Status</th>
                 <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Sync Status</th>
                 <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Created</th>
-                <th className="px-4 py-4 w-10"></th>
+                <th className="px-4 py-4 w-20"></th>
               </tr>
             </thead>
             <tbody>
@@ -314,10 +493,17 @@ export const Blacklist = () => {
                       {entry.name && (
                         <p className="text-xs text-on-surface-variant">{entry.name}</p>
                       )}
+                      {entry.type === 'ip' && entry.ipMatchMode && (
+                        <p className="text-xs text-on-surface-variant/60">Mode: {entry.ipMatchMode}</p>
+                      )}
+                      {entry.type === 'user_agent' && entry.uaMatchMode && (
+                        <p className="text-xs text-on-surface-variant/60">Mode: {entry.uaMatchMode}</p>
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-4">
-                    <span className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm bg-surface-container text-on-surface-variant">
+                    <span className="inline-flex items-center gap-1 px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm bg-surface-container text-on-surface-variant">
+                      {getTypeIcon(entry.type)}
                       {getTypeLabel(entry.type)}
                     </span>
                   </td>
@@ -356,13 +542,22 @@ export const Blacklist = () => {
                     </span>
                   </td>
                   <td className="px-4 py-4">
-                    <button 
-                      onClick={() => handleRemove(entry.id)}
-                      className="p-2 text-on-surface-variant hover:text-error transition-colors"
-                      title="Remove from blacklist"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => openEditModal(entry)}
+                        className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                        title="Edit blacklist entry"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button 
+                        onClick={() => handleRemove(entry.id)}
+                        className="p-2 text-on-surface-variant hover:text-error transition-colors"
+                        title="Remove from blacklist"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -374,7 +569,7 @@ export const Blacklist = () => {
           <div className="p-8 text-center text-on-surface-variant">
             <Shield size={48} className="mx-auto mb-4 opacity-30" />
             <p>No blacklist entries found</p>
-            <p className="text-sm mt-2">Add entries from the Reports page</p>
+            <p className="text-sm mt-2">Add entries using the Add Entry button</p>
           </div>
         )}
 
@@ -427,6 +622,225 @@ export const Blacklist = () => {
           </div>
         )}
       </div>
+
+      {/* Add/Edit Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-container-lowest w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <h2 className="text-xl font-bold text-primary mb-4">
+                {isEditMode ? 'Edit Blacklist Entry' : 'Add Blacklist Entry'}
+              </h2>
+              
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Traffic Source */}
+                <div>
+                  <label className="block text-sm font-medium text-on-surface mb-1">
+                    Traffic Source <span className="text-error">*</span>
+                  </label>
+                  <select
+                    value={formData.trafficSourceId}
+                    onChange={(e) => setFormData({ ...formData, trafficSourceId: e.target.value })}
+                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                    disabled={isEditMode}
+                  >
+                    <option value="">Select traffic source</option>
+                    {trafficSources.map(ts => (
+                      <option key={ts.id} value={ts.id}>{ts.name}</option>
+                    ))}
+                  </select>
+                  {formErrors.trafficSourceId && (
+                    <p className="text-xs text-error mt-1">{formErrors.trafficSourceId}</p>
+                  )}
+                </div>
+
+                {/* Type */}
+                <div>
+                  <label className="block text-sm font-medium text-on-surface mb-1">
+                    Type <span className="text-error">*</span>
+                  </label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value as BlacklistType })}
+                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                    disabled={isEditMode}
+                  >
+                    {typeOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Value */}
+                <div>
+                  <label className="block text-sm font-medium text-on-surface mb-1">
+                    Value <span className="text-error">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.value}
+                    onChange={(e) => setFormData({ ...formData, value: e.target.value })}
+                    placeholder={formData.type === 'ip' ? '192.168.1.1' : formData.type === 'user_agent' ? 'Mozilla/5.0...' : 'Enter value'}
+                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                    disabled={isEditMode}
+                  />
+                  {formErrors.value && (
+                    <p className="text-xs text-error mt-1">{formErrors.value}</p>
+                  )}
+                  {formData.type === 'ip' && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Enter IP address. Use CIDR mode for ranges (e.g., 192.168.1.0/24)
+                    </p>
+                  )}
+                  {formData.type === 'user_agent' && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Enter User Agent string or pattern
+                    </p>
+                  )}
+                </div>
+
+                {/* IP Match Mode */}
+                {formData.type === 'ip' && (
+                  <div>
+                    <label className="block text-sm font-medium text-on-surface mb-1">
+                      Match Mode
+                    </label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          value="exact"
+                          checked={formData.ipMatchMode === 'exact'}
+                          onChange={(e) => setFormData({ ...formData, ipMatchMode: e.target.value as IpMatchMode })}
+                          className="text-primary"
+                        />
+                        <span className="text-sm">Exact Match</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          value="cidr"
+                          checked={formData.ipMatchMode === 'cidr'}
+                          onChange={(e) => setFormData({ ...formData, ipMatchMode: e.target.value as IpMatchMode })}
+                          className="text-primary"
+                        />
+                        <span className="text-sm">CIDR Range</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* UA Match Mode */}
+                {formData.type === 'user_agent' && (
+                  <div>
+                    <label className="block text-sm font-medium text-on-surface mb-1">
+                      Match Mode
+                    </label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          value="exact"
+                          checked={formData.uaMatchMode === 'exact'}
+                          onChange={(e) => setFormData({ ...formData, uaMatchMode: e.target.value as UaMatchMode })}
+                          className="text-primary"
+                        />
+                        <span className="text-sm">Exact Match</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          value="contains"
+                          checked={formData.uaMatchMode === 'contains'}
+                          onChange={(e) => setFormData({ ...formData, uaMatchMode: e.target.value as UaMatchMode })}
+                          className="text-primary"
+                        />
+                        <span className="text-sm">Contains</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sync to Platform */}
+                {(formData.type === 'ip' || formData.type === 'user_agent') && (
+                  <div>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={formData.syncToPlatform}
+                        onChange={(e) => setFormData({ ...formData, syncToPlatform: e.target.checked })}
+                        className="text-primary"
+                      />
+                      <span className="text-sm">Sync to traffic platform (if supported)</span>
+                    </label>
+                  </div>
+                )}
+
+                {/* Name */}
+                <div>
+                  <label className="block text-sm font-medium text-on-surface mb-1">
+                    Name (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Enter a descriptive name"
+                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                  />
+                </div>
+
+                {/* Reason */}
+                <div>
+                  <label className="block text-sm font-medium text-on-surface mb-1">
+                    Reason (Optional)
+                  </label>
+                  <textarea
+                    value={formData.reason}
+                    onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                    placeholder="Why is this being blacklisted?"
+                    rows={3}
+                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none resize-none"
+                  />
+                </div>
+
+                {/* Campaign ID */}
+                <div>
+                  <label className="block text-sm font-medium text-on-surface mb-1">
+                    Campaign ID (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.campaignId}
+                    onChange={(e) => setFormData({ ...formData, campaignId: e.target.value })}
+                    placeholder="Associated campaign ID"
+                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant/20">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="px-4 py-2 border border-outline-variant text-primary text-sm font-medium hover:bg-surface-container transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    {submitting && <Loader2 size={16} className="animate-spin" />}
+                    {isEditMode ? 'Update' : 'Add'} Entry
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

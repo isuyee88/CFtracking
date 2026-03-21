@@ -7,6 +7,7 @@
 import { PlatformAdapter } from './adapter';
 import { OddBytesAdapter } from './oddbytes';
 import { PropellerAdsAdapter } from './propellerads';
+import { ClickBankAdapter } from './clickbank';
 import type { PlatformInfo, PlatformConfig, PlatformActionResult } from '@/types/platform';
 
 export class PlatformManager {
@@ -103,6 +104,7 @@ export class PlatformManager {
     const manager = new PlatformManager();
     manager.registerAdapter(new OddBytesAdapter({ wsdlUrl: '', apiKey: '' } as any));
     manager.registerAdapter(new PropellerAdsAdapter({ apiKey: '' } as any));
+    manager.registerAdapter(new ClickBankAdapter({ apiKey: '', accountNickname: '' } as any));
     return manager;
   }
 }

@@ -124,8 +124,15 @@ export class FlowEngine {
     const startTime = Date.now();
     const steps: string[] = [];
 
+    // 根据绑定类型生成适当的访客ID
+    const visitorId = this.generateVisitorIdByBindingType(context.request, context.campaign.visitorBinding);
+    const bindingContext = {
+      ...context,
+      visitorId
+    };
+
     // 1. 检查访问者绑定
-    const binding = await this.getVisitorBinding(context);
+    const binding = await this.getVisitorBinding(bindingContext);
     if (binding && binding.flowId) {
       const boundFlow = context.flows.find(f => f.id === binding.flowId);
       if (boundFlow && boundFlow.status === 'active') {
@@ -161,7 +168,7 @@ export class FlowEngine {
     const forcedResult = await this.executeForcedFlows(forcedFlows, context.validationContext, context);
     if (forcedResult) {
       steps.push(`Matched forced flow: ${forcedResult.flow.id}`);
-      await this.updateVisitorBinding(context, forcedResult.flow.id);
+      await this.updateVisitorBinding(bindingContext, forcedResult.flow.id);
       return {
         flow: forcedResult.flow,
         action: forcedResult.action,
@@ -184,7 +191,7 @@ export class FlowEngine {
     );
     if (regularResult) {
       steps.push(`Matched regular flow: ${regularResult.flow.id}`);
-      await this.updateVisitorBinding(context, regularResult.flow.id);
+      await this.updateVisitorBinding(bindingContext, regularResult.flow.id);
       return {
         flow: regularResult.flow,
         action: regularResult.action,
@@ -388,6 +395,23 @@ export class FlowEngine {
       await this.kv.put(key, JSON.stringify(binding), { expirationTtl: ttl });
     } catch (err) {
       console.error('Failed to update visitor binding:', err);
+    }
+  }
+
+  /**
+   * 根据绑定类型生成不同的访客ID
+   */
+  private generateVisitorIdByBindingType(request: ClickRequest, bindingType: string): string {
+    switch (bindingType) {
+      case 'cookie':
+        // 使用IP和User-Agent生成访客ID（模拟cookie行为）
+        return btoa(`${request.ip}:${request.userAgent}`).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
+      case 'ip':
+        // 仅使用IP生成访客ID
+        return btoa(request.ip).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
+      default:
+        // 默认使用完整信息
+        return generateVisitorId(request);
     }
   }
 

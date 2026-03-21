@@ -16,6 +16,8 @@ import type {
   BlacklistSyncResult,
   BlacklistCandidate,
   BlacklistType,
+  CreateBlacklistDTO,
+  UpdateBlacklistDTO,
 } from '@/types/blacklist';
 import type { TrafficSourceApiConfig } from '@/types/trafficSource';
 import { NotFoundError, ValidationError } from '@/middleware/error';
@@ -30,6 +32,74 @@ export class BlacklistService {
     const db = getD1Connection(env);
     this.blacklistRepo = new BlacklistRepository(db);
     this.trafficSourceRepo = new TrafficSourceRepository(db);
+  }
+
+  /**
+   * 创建单个黑名单条目
+   */
+  async create(data: CreateBlacklistDTO): Promise<BlacklistEntry> {
+    const { trafficSourceId, type, value } = data;
+
+    // 验证流量平台是否存在
+    const trafficSource = await this.trafficSourceRepo.findById(trafficSourceId);
+    if (!trafficSource) {
+      throw new NotFoundError('Traffic Source not found');
+    }
+
+    // 验证值格式
+    this.validateEntryValue(type, value, data.ipMatchMode, data.uaMatchMode);
+
+    // 检查是否已存在
+    const existing = await this.blacklistRepo.findByValue(trafficSourceId, type, value);
+    if (existing) {
+      if (existing.status === 'active') {
+        throw new ValidationError(`Entry already exists in blacklist: ${value}`);
+      }
+      // 如果已存在但已移除，重新激活
+      const updated = await this.blacklistRepo.update(existing.id, {
+        status: 'active',
+        reason: data.reason,
+        name: data.name,
+        ipMatchMode: data.ipMatchMode,
+        uaMatchMode: data.uaMatchMode,
+        syncToPlatform: data.syncToPlatform,
+      });
+      return updated!;
+    }
+
+    // 创建新条目
+    const entry = await this.blacklistRepo.create({
+      trafficSourceId,
+      type,
+      value,
+      name: data.name,
+      reason: data.reason,
+      status: 'active',
+      synced: false,
+      campaignId: data.campaignId,
+      ipMatchMode: data.ipMatchMode,
+      uaMatchMode: data.uaMatchMode,
+      syncToPlatform: data.syncToPlatform,
+    });
+
+    return entry;
+  }
+
+  /**
+   * 更新黑名单条目
+   */
+  async update(id: string, data: UpdateBlacklistDTO): Promise<BlacklistEntry> {
+    const entry = await this.blacklistRepo.findById(id);
+    if (!entry) {
+      throw new NotFoundError('Blacklist entry not found');
+    }
+
+    const updated = await this.blacklistRepo.update(id, data);
+    if (!updated) {
+      throw new NotFoundError('Blacklist entry not found');
+    }
+
+    return updated;
   }
 
   /**
@@ -315,6 +385,98 @@ export class BlacklistService {
     unsynced: number;
   }> {
     return this.blacklistRepo.getStats(trafficSourceId);
+  }
+
+  /**
+   * 验证条目值格式
+   */
+  private validateEntryValue(
+    type: BlacklistType,
+    value: string,
+    ipMatchMode?: string,
+    uaMatchMode?: string
+  ): void {
+    if (!value || value.trim() === '') {
+      throw new ValidationError('Value is required');
+    }
+
+    switch (type) {
+      case 'ip':
+        this.validateIpValue(value, ipMatchMode);
+        break;
+      case 'user_agent':
+        this.validateUaValue(value, uaMatchMode);
+        break;
+      case 'zone':
+      case 'creative':
+      case 'publisher':
+      case 'sub_id':
+      case 'geo':
+      case 'device':
+        // 这些类型只需要非空值
+        break;
+      default:
+        throw new ValidationError(`Unsupported type: ${type}`);
+    }
+  }
+
+  /**
+   * 验证IP地址格式
+   */
+  private validateIpValue(value: string, matchMode?: string): void {
+    const mode = matchMode || 'exact';
+
+    if (mode === 'cidr') {
+      // 验证CIDR格式: x.x.x.x/y
+      const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+      if (!cidrRegex.test(value)) {
+        throw new ValidationError(`Invalid CIDR format: ${value}. Expected format: x.x.x.x/y`);
+      }
+      // 验证IP部分
+      const [ip] = value.split('/');
+      if (ip && !this.isValidIp(ip)) {
+        throw new ValidationError(`Invalid IP address in CIDR: ${ip}`);
+      }
+    } else {
+      // 精确匹配模式
+      if (!this.isValidIp(value)) {
+        throw new ValidationError(`Invalid IP address: ${value}`);
+      }
+    }
+  }
+
+  /**
+   * 验证是否是有效的IP地址
+   */
+  private isValidIp(ip: string): boolean {
+    // IPv4验证
+    const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (ipv4Regex.test(ip)) {
+      const parts = ip.split('.').map(Number);
+      return parts.every(part => part >= 0 && part <= 255);
+    }
+
+    // IPv6验证（简化版）
+    const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::$|^::1$|^([0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}$/;
+    if (ipv6Regex.test(ip)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * 验证UA值
+   */
+  private validateUaValue(value: string, matchMode?: string): void {
+    if (value.length > 1000) {
+      throw new ValidationError('User Agent pattern too long (max 1000 characters)');
+    }
+
+    const mode = matchMode || 'exact';
+    if (mode !== 'exact' && mode !== 'contains') {
+      throw new ValidationError(`Invalid UA match mode: ${mode}. Must be 'exact' or 'contains'`);
+    }
   }
 
   /**

@@ -168,6 +168,9 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
         case 'conversions':
           result = await service.exportConversions(request);
           break;
+        case 'flows':
+          result = await service.exportFlows(request);
+          break;
         default:
           return c.json(
             error(`Unsupported entity type: ${request.entityType}`, ERROR_CODES.VALIDATION),

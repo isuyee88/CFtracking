@@ -61,7 +61,9 @@ export type FilterTarget =
   | 'visit.revenue'        // 收益
   | 'visit.visitsCount'    // 访问次数
   | 'visit.firstVisit'     // 是否首次访问
-  | 'visit.returning';     // 是否回访
+  | 'visit.returning'      // 是否回访
+  | 'visit.flowClicksCount' // Flow 点击计数（用于点击限制）
+  | 'visit.flowLimit';     // Flow 点击限制
 
 // ==================== 过滤器定义 ====================
 

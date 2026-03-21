@@ -101,6 +101,18 @@ export const DEFAULT_FIELD_MAPPINGS: Record<string, FieldMapping[]> = {
     { field: 'offerName', header: 'Offer Name' },
     { field: 'status', header: 'Status' },
   ],
+  flows: [
+    { field: 'id', header: 'ID' },
+    { field: 'displayId', header: 'Display ID' },
+    { field: 'campaignId', header: 'Campaign ID' },
+    { field: 'name', header: 'Name' },
+    { field: 'type', header: 'Type' },
+    { field: 'weight', header: 'Weight' },
+    { field: 'status', header: 'Status' },
+    { field: 'limit', header: 'Click Limit' },
+    { field: 'createdAt', header: 'Created At', formatter: formatDate },
+    { field: 'updatedAt', header: 'Updated At', formatter: formatDate },
+  ],
 };
 
 /**

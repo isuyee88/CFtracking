@@ -35,6 +35,7 @@ export interface Action {
 
 export interface Rule {
   id: string;
+  displayId?: string;
   campaignId: string;
   name: string;
   description: string | null;

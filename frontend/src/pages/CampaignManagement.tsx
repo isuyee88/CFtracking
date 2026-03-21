@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Zap, 
   Plus, 
-  Filter, 
   Search, 
   MoreHorizontal, 
   ArrowUpRight, 
@@ -25,6 +24,9 @@ import { CampaignForm } from '../components/CampaignForm';
 import { ExportButton } from '../components/ExportButton';
 import { formatCampaignForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
+import { GroupByFilter, filterByGroupBy } from '../components/GroupByFilter';
+import type { GroupByState, GroupByOption } from '../types/filter';
+import { useToast } from '../components/Toast';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -33,6 +35,7 @@ function cn(...inputs: ClassValue[]) {
 // Backend Campaign data structure
 interface BackendCampaign {
   id: string;
+  displayId?: string;
   name: string;
   alias: string;
   domain: string;
@@ -52,6 +55,7 @@ interface BackendCampaign {
 // Frontend Campaign display structure
 interface Campaign {
   id: string;
+  displayId?: string;
   name: string;
   status: 'Active' | 'Paused' | 'Deleted';
   type: 'Redirect' | 'Direct';
@@ -70,7 +74,7 @@ interface Campaign {
 
 // Transform backend data to frontend format
 const transformCampaign = (backend: BackendCampaign): Campaign => ({
-  id: backend.id,
+  id: backend.displayId || backend.id,  // Use displayId as the primary ID
   name: backend.name,
   status: backend.status === 'active' ? 'Active' : backend.status === 'paused' ? 'Paused' : 'Deleted',
   type: 'Redirect',
@@ -89,6 +93,7 @@ const transformCampaign = (backend: BackendCampaign): Campaign => ({
 
 export const CampaignManagement = () => {
   const navigate = useNavigate();
+  const toast = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +117,9 @@ export const CampaignManagement = () => {
   
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+  // Group By state
+  const [groupByStates, setGroupByStates] = useState<GroupByState[]>([]);
 
   // Fetch campaigns from API
   useEffect(() => {
@@ -159,11 +167,13 @@ export const CampaignManagement = () => {
         if (response.success && response.data) {
           const newCampaign = transformCampaign(response.data);
           setCampaigns(prev => [...prev, newCampaign]);
+          toast.success('Campaign Created', `Campaign "${formData.name}" has been created successfully.`);
         }
       }
       setIsFormOpen(false);
     } catch (err) {
       console.error('Failed to save campaign:', err);
+      toast.error('Failed to Create Campaign', err instanceof Error ? err.message : 'Please check your input and try again.');
     }
   };
   
@@ -186,19 +196,35 @@ export const CampaignManagement = () => {
   };
   
   const handleBulkAction = (action: 'activate' | 'pause' | 'delete') => {
-    // TODO: Implement bulk actions
     console.log(`Bulk ${action} for items:`, Array.from(selectedItems));
   };
 
+  // Group By options for campaigns
+  const CAMPAIGN_GROUP_BY_OPTIONS: GroupByOption[] = [
+    { value: 'status', label: 'Status', category: 'Status' },
+    { value: 'type', label: 'Type', category: 'Campaign' },
+    { value: 'group', label: 'Group', category: 'Campaign' },
+    { value: 'source', label: 'Traffic Source', category: 'Traffic' },
+    { value: 'flow', label: 'Flow', category: 'Campaign' },
+  ];
+
   // Filter campaigns
-  const filteredCampaigns = campaigns.filter(campaign => {
-    const matchesSearch = campaign.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         campaign.id?.toString().includes(searchTerm) ||
-                         campaign.group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         false;
-    const matchesStatus = filterStatus === 'All' || campaign.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredCampaigns = React.useMemo(() => {
+    let result = campaigns.filter(campaign => {
+      const matchesSearch = campaign.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           campaign.id?.toString().includes(searchTerm) ||
+                           campaign.group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           false;
+      const matchesStatus = filterStatus === 'All' || campaign.status === filterStatus;
+      
+      return matchesSearch && matchesStatus;
+    });
+    
+    // Apply Group By filters
+    result = filterByGroupBy(result, groupByStates);
+    
+    return result;
+  }, [campaigns, searchTerm, filterStatus, groupByStates]);
   
   // Pagination
   const totalPages = Math.ceil(filteredCampaigns.length / itemsPerPage);
@@ -264,10 +290,6 @@ export const CampaignManagement = () => {
               maxRangeDays={365}
             />
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 border border-border-default text-fg-default text-sm font-medium hover:bg-surface-container transition-colors rounded-md">
-            <Filter size={16} />
-            Filters
-          </button>
           <ExportButton 
             data={campaigns.map(formatCampaignForExport)}
             filename="campaigns"
@@ -281,6 +303,17 @@ export const CampaignManagement = () => {
             Create Campaign
           </button>
         </div>
+      </div>
+
+      {/* Group By Filter */}
+      <div className="card p-4">
+        <GroupByFilter
+          data={campaigns}
+          groupByOptions={CAMPAIGN_GROUP_BY_OPTIONS}
+          value={groupByStates}
+          onChange={setGroupByStates}
+          maxLevels={3}
+        />
       </div>
 
       {/* Toolbar */}
@@ -410,7 +443,7 @@ export const CampaignManagement = () => {
                         >
                           {campaign.name}
                         </button>
-                        <p className="text-xs text-medium-contrast">ID: {campaign.id}</p>
+                        <p className="text-xs text-medium-contrast">ID: {campaign.displayId || campaign.id}</p>
                       </div>
                     </div>
                   </td>

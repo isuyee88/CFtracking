@@ -40,6 +40,7 @@ function cn(...inputs: ClassValue[]) {
 
 interface AffiliateNetwork {
   id: string;
+  displayId?: string;
   name: string;
   type: 'soap' | 'rest' | 'api' | 'other';
   status: 'active' | 'paused' | 'deleted';

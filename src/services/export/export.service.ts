@@ -19,6 +19,7 @@ import { TrafficSourceRepository } from '@/handlers/d1/trafficSource.repo';
 import { AffiliateNetworkRepository } from '@/handlers/d1/affiliateNetwork.repo';
 import { ClickRepository } from '@/handlers/d1/click.repo';
 import { ConversionRepository } from '@/handlers/d1/conversion.repo';
+import { FlowRepository } from '@/handlers/d1/flow.repo';
 import { getD1Connection } from '@/handlers/d1';
 import {
   convertToCSV,
@@ -31,7 +32,7 @@ import {
 } from '@/utils/export.formatter';
 
 export interface ExportRequest {
-  entityType: 'campaigns' | 'landing-pages' | 'offers' | 'traffic-sources' | 'affiliate-networks' | 'clicks' | 'conversions';
+  entityType: 'campaigns' | 'landing-pages' | 'offers' | 'traffic-sources' | 'affiliate-networks' | 'clicks' | 'conversions' | 'flows';
   format: ExportFormat;
   fields?: string[];
   filters?: ExportFilters;
@@ -125,6 +126,16 @@ export class ExportService {
     
     return this.formatExportData('conversions', result.list as unknown as Record<string, unknown>[], request);
   }
+
+  
+  async exportFlows(request: ExportRequest): Promise<ExportResult> {
+    const db = getD1Connection({} as Env);
+    const repo = new FlowRepository(db);
+    const flows = await repo.findAll();
+    
+    return this.formatExportData('flows', flows as unknown as Record<string, unknown>[], request);
+  }
+
 
   private formatExportData(
     entityType: string,

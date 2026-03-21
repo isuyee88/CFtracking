@@ -8,6 +8,7 @@ export type LandingPageStatus = 'active' | 'paused' | 'deleted';
 
 export interface LandingPage {
   id: string;
+  displayId?: string;
   name: string;
   url: string;
   status: LandingPageStatus;

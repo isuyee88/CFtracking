@@ -23,6 +23,54 @@ export interface ApiTestConfig {
   platformType?: string;
 }
 
+// API Response types
+interface PropellerAdsResponse {
+  name?: string;
+  email?: string;
+  id?: string;
+  balance?: number;
+  currency?: string;
+}
+
+interface TaboolaResponse {
+  name?: string;
+  email?: string;
+  id?: string;
+}
+
+interface FacebookResponse {
+  id?: string;
+  name?: string;
+  error?: {
+    message?: string;
+  };
+}
+
+interface RevcontentResponse {
+  name?: string;
+  email?: string;
+  id?: string;
+}
+
+interface OutbrainResponse {
+  marketers?: Array<{
+    name?: string;
+    id?: string;
+  }>;
+}
+
+interface RumbleResponse {
+  name?: string;
+  email?: string;
+  id?: string;
+}
+
+interface OddBytesResponse {
+  accountName?: string;
+  username?: string;
+  accountId?: string;
+}
+
 /**
  * 平台 API 测试器接口
  */
@@ -82,7 +130,7 @@ export class PropellerAdsTester implements PlatformApiTester {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as PropellerAdsResponse;
         return {
           success: true,
           message: 'PropellerAds API connection successful',
@@ -131,7 +179,7 @@ export class TaboolaTester implements PlatformApiTester {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as TaboolaResponse;
         return {
           success: true,
           message: 'Taboola API connection successful',
@@ -170,7 +218,7 @@ export class FacebookTester implements PlatformApiTester {
       const url = `https://graph.facebook.com/v18.0/me?access_token=${config.apiKey}`;
       
       const response = await fetch(url);
-      const data = await response.json();
+      const data = await response.json() as FacebookResponse;
 
       if (response.ok && data.id) {
         return {
@@ -219,7 +267,7 @@ export class RevcontentTester implements PlatformApiTester {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as RevcontentResponse;
         return {
           success: true,
           message: 'Revcontent API connection successful',
@@ -266,7 +314,7 @@ export class OutbrainTester implements PlatformApiTester {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as OutbrainResponse;
         const marketer = data.marketers?.[0];
         return {
           success: true,
@@ -314,7 +362,7 @@ export class RumbleTester implements PlatformApiTester {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as RumbleResponse;
         return {
           success: true,
           message: 'Rumble API connection successful',
@@ -361,7 +409,7 @@ export class OddBytesTester implements PlatformApiTester {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as OddBytesResponse;
         return {
           success: true,
           message: 'OddBytes API connection successful',

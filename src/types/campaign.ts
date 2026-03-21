@@ -7,10 +7,11 @@
 export type CampaignStatus = 'active' | 'paused' | 'deleted';
 export type FlowRotation = 'position' | 'weight';
 export type CostModel = 'cpc' | 'cpm' | 'cpa' | 'cps' | 'revshare';
-export type VisitorBinding = 'none' | 'flows' | 'flows_lp' | 'flows_lp_offers';
+export type VisitorBinding = 'none' | 'cookie' | 'ip';
 
 export interface Campaign {
   id: string;
+  displayId?: string;
   name: string;
   alias: string;
   domain: string;

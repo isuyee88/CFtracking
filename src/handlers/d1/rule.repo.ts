@@ -7,10 +7,33 @@
 import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
 import type { Rule, CreateRuleDTO, UpdateRuleDTO, RuleExecutionLog } from '@/types/rule';
+import { IdService } from '@/services/id.service';
 
 export class RuleRepository extends BaseRepository<Rule> {
+  private idService: IdService;
+
   constructor(db: D1Database) {
     super(db, 'rules');
+    this.idService = new IdService(db);
+  }
+
+  protected transform(row: Record<string, unknown>): Rule {
+    return {
+      ...row,
+      id: row.displayId || row.id,
+      conditions: typeof row.conditions === 'string' ? JSON.parse(row.conditions as string) : row.conditions,
+      actions: typeof row.actions === 'string' ? JSON.parse(row.actions as string) : row.actions,
+      enabled: Number(row.enabled) === 1 || row.enabled === true,
+    } as Rule;
+  }
+
+  async findByDisplayId(displayId: string): Promise<Rule | null> {
+    const result = await this.db
+      .prepare(`SELECT * FROM rules WHERE displayId = ?`)
+      .bind(displayId)
+      .first();
+    if (!result) return null;
+    return this.transform(result as Record<string, unknown>);
   }
 
   /**
@@ -18,15 +41,17 @@ export class RuleRepository extends BaseRepository<Rule> {
    */
   async create(data: CreateRuleDTO): Promise<Rule> {
     const id = crypto.randomUUID();
+    const displayId = await this.idService.generateId('rules');
     const now = new Date().toISOString();
 
     await this.db
       .prepare(`
-        INSERT INTO rules (id, name, description, type, conditions, actions, priority, enabled, status, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO rules (id, displayId, name, description, type, conditions, actions, priority, enabled, status, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         id,
+        displayId,
         data.name,
         data.description || null,
         data.type,
@@ -41,12 +66,9 @@ export class RuleRepository extends BaseRepository<Rule> {
       .run();
 
     const rule = await this.findById(id);
-    return this.mapRule(rule!);
+    return rule!;
   }
 
-  /**
-   * 更新 Rule
-   */
   async update(id: string, data: UpdateRuleDTO): Promise<Rule | null> {
     const fields: string[] = [];
     const values: unknown[] = [];
@@ -73,30 +95,23 @@ export class RuleRepository extends BaseRepository<Rule> {
       .bind(...values)
       .run();
 
-    const rule = await this.findById(id);
-    return rule ? this.mapRule(rule) : null;
+    return this.findById(id);
   }
 
-  /**
-   * 获取所有启用的规则
-   */
   async findEnabled(): Promise<Rule[]> {
     const result = await this.db
       .prepare('SELECT * FROM rules WHERE enabled = 1 AND status = ? ORDER BY priority DESC')
       .bind('active')
       .all();
-    return (result.results as unknown as Rule[]).map(this.mapRule);
+    return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this));
   }
 
-  /**
-   * 按类型查询
-   */
   async findByType(type: string): Promise<Rule[]> {
     const result = await this.db
       .prepare('SELECT * FROM rules WHERE type = ? AND status = ? ORDER BY priority DESC')
       .bind(type, 'active')
       .all();
-    return (result.results as unknown as Rule[]).map(this.mapRule);
+    return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this));
   }
 
   /**
@@ -146,21 +161,6 @@ export class RuleRepository extends BaseRepository<Rule> {
     }));
   }
 
-  /**
-   * 映射数据库记录到 Rule 类型
-   */
-  private mapRule(row: Rule): Rule {
-    return {
-      ...row,
-      conditions: typeof row.conditions === 'string' ? JSON.parse(row.conditions) : row.conditions,
-      actions: typeof row.actions === 'string' ? JSON.parse(row.actions) : row.actions,
-      enabled: Number(row.enabled) === 1 || row.enabled === true,
-    };
-  }
-
-  /**
-   * 查询列表（支持搜索和过滤）
-   */
   async findList(query: { page?: number; pageSize?: number; type?: string; status?: string }): Promise<{ list: Rule[]; total: number }> {
     const { page = 1, pageSize = 20, type, status } = query;
     const offset = (page - 1) * pageSize;
@@ -193,7 +193,7 @@ export class RuleRepository extends BaseRepository<Rule> {
     ]);
 
     return {
-      list: (listResult.results as unknown as Rule[]).map(this.mapRule),
+      list: (listResult.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)),
       total: (countResult?.count as number) || 0,
     };
   }

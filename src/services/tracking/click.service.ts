@@ -20,7 +20,6 @@ import { FlowRepository } from '@/handlers/d1/flow.repo';
 import { CampaignRepository } from '@/handlers/d1/campaign.repo';
 import { OfferRepository } from '@/handlers/d1/offer.repo';
 import { LandingPageRepository } from '@/handlers/d1/landingPage.repo';
-import { ClickRepository } from '@/handlers/d1/click.repo';
 import { getD1Connection, getAnalyticsClient } from '@/handlers/d1';
 import { DOService } from '@/handlers/do';
 import { UniquenessService, type UniquenessMethod } from './uniqueness.service';
@@ -113,7 +112,6 @@ export class ClickService {
   private campaignRepo: CampaignRepository;
   private offerRepo: OfferRepository;
   private lpRepo: LandingPageRepository;
-  private clickRepo: ClickRepository;
   private doService: DOService;
   private uniquenessService: UniquenessService;
   private filterService: FilterService;
@@ -125,7 +123,6 @@ export class ClickService {
     this.campaignRepo = new CampaignRepository(db);
     this.offerRepo = new OfferRepository(db);
     this.lpRepo = new LandingPageRepository(db);
-    this.clickRepo = new ClickRepository(db);
     this.doService = new DOService(env);
     this.uniquenessService = new UniquenessService(env);
     this.filterService = new FilterService();
@@ -143,177 +140,206 @@ export class ClickService {
    * 7. 记录分析数据
    */
   async handleClick(request: ClickRequest): Promise<ClickResult> {
-    const clickId = generateClickId();
-    const visitorId = request.existingVisitorId || generateVisitorId();
+    try {
+      const clickId = generateClickId();
+      const visitorId = request.existingVisitorId || generateVisitorId();
 
-    // 1. 获取 Campaign 配置（支持 alias 或 id）
-    const campaign = await this.resolveCampaign(request.campaignId);
-    if (!campaign) {
-      throw new Error('Campaign not found');
-    }
-
-    // 2. 执行去重检查
-    const uniquenessResult = await this.checkUniqueness(request, clickId, campaign);
-
-    // 3. 获取活跃的 Flows
-    const flows = await this.flowRepo.findByCampaignIdAndStatus(campaign.id, 'active');
-    
-    // 4. 执行 Flow Filters 选择合适的 Flow
-    const selectedFlow = await this.selectFlow(flows, request);
-
-    // 5. 准备 Action 执行
-    let actionConfig: ActionConfig;
-    let selectedLP: LandingPage | null = null;
-    let selectedOffer: Offer | null = null;
-
-    if (selectedFlow) {
-      // 获取 Landing Page 和 Offer
-      const [lpAssociations, offerAssociations] = await Promise.all([
-        this.flowRepo.getLandingPages(selectedFlow.id),
-        this.flowRepo.getOffers(selectedFlow.id),
-      ]);
-
-      // 选择 Landing Page
-      if (lpAssociations.length > 0) {
-        const lpAssoc = this.selectByWeight(lpAssociations);
-        selectedLP = await this.lpRepo.findById(lpAssoc.landingPageId);
+      // 1. 获取 Campaign 配置（支持 alias 或 id）
+      const campaign = await this.resolveCampaign(request.campaignId);
+      if (!campaign) {
+        throw new Error('Campaign not found');
       }
 
-      // 选择 Offer
-      if (offerAssociations.length > 0) {
-        const offerAssoc = this.selectByWeight(offerAssociations);
-        selectedOffer = await this.offerRepo.findById(offerAssoc.offerId);
+      // 获取请求的完整URL，用于构建重定向URL
+      let baseUrl = 'http://localhost';
+      try {
+        console.log('Request URL Params:', request.urlParams);
+        const originalUrl = request.urlParams ? request.urlParams.get('__originalUrl') : null;
+        console.log('Original URL:', originalUrl);
+        
+        // 确保 originalUrl 是有效的
+        if (originalUrl && typeof originalUrl === 'string') {
+          const requestUrl = new URL(originalUrl);
+          baseUrl = campaign.domain || requestUrl.origin;
+        } else {
+          // 如果没有原始URL，使用默认值
+          baseUrl = campaign.domain || 'http://localhost';
+        }
+        console.log('Base URL:', baseUrl);
+      } catch (err) {
+        console.error('URL creation error:', err);
+        // Fallback to localhost if URL creation fails
+        baseUrl = campaign.domain || 'http://localhost';
       }
 
-      // 构建 Action 配置
-      actionConfig = this.buildActionConfig(selectedFlow, selectedLP, selectedOffer);
-    } else {
-      // 没有匹配的 Flow，执行流量损失
-      actionConfig = { type: 'traffic_loss' };
-    }
+      // 2. 执行去重检查
+      const uniquenessResult = await this.checkUniqueness(request, clickId, campaign);
 
-    // 6. 执行 Action 获取重定向 URL
-    const redirectUrl = await this.executeAction(actionConfig, clickId, visitorId, request);
+      // 3. 获取活跃的 Flows
+      const flows = await this.flowRepo.findByCampaignIdAndStatus(campaign.id, 'active');
+      console.log('Found flows:', flows.length);
+      
+      // 4. 执行 Flow Filters 选择合适的 Flow
+      const selectedFlow = await this.selectFlow(flows, request);
+      console.log('Selected flow:', selectedFlow?.id || 'No flow selected');
 
-    // 7. 记录点击数据（包含 Cloudflare 信息）
-    const cfInfo = request.cfInfo;
-    const bm = cfInfo?.botManagement;
-    const tlsAuth = cfInfo?.tlsClientAuth;
-    
-    const clickData: ClickData = {
-      clickId,
-      campaignId: campaign.id,
-      flowId: selectedFlow?.id || null,
-      landingPageId: selectedLP?.id || null,
-      offerId: selectedOffer?.id || null,
-      timestamp: new Date().toISOString(),
-      ip: request.ip,
-      userAgent: request.userAgent,
-      referer: request.referer || null,
-      country: request.country || null,
-      city: request.city || null,
-      region: request.region || null,
-      device: request.device || null,
-      browser: request.browser || null,
-      os: request.os || null,
-      isp: cfInfo?.asOrganization || null,
-      connectionType: null,
-      visitorId,
-      subId1: request.subId1 || null,
-      subId2: request.subId2 || null,
-      subId3: request.subId3 || null,
-      subId4: request.subId4 || null,
-      subId5: request.subId5 || null,
-      cost: request.cost || 0,
-      // Cloudflare 特定信息
-      cfRayId: cfInfo?.rayId,
-      cfConnectingIP: cfInfo?.connectingIP,
-      cfIPCountry: cfInfo?.ipCountry,
-      cfIsEUCountry: cfInfo?.isEUCountry,
-      cfASN: cfInfo?.asn,
-      cfASOrganization: cfInfo?.asOrganization,
-      cfColo: cfInfo?.colo,
-      cfLatitude: cfInfo?.latitude,
-      cfLongitude: cfInfo?.longitude,
-      cfPostalCode: cfInfo?.postalCode,
-      cfMetroCode: cfInfo?.metroCode,
-      cfTimezone: cfInfo?.timezone,
-      cfContinent: cfInfo?.continent,
-      cfHTTPProtocol: cfInfo?.httpProtocol,
-      cfTLSVersion: cfInfo?.tlsVersion,
-      cfTLSCipher: cfInfo?.tlsCipher,
-      cfTLSClientRandom: cfInfo?.tlsClientRandom,
-      cfTLSClientHelloLength: cfInfo?.tlsClientHelloLength,
-      cfTLSClientCiphersSha1: cfInfo?.tlsClientCiphersSha1,
-      cfTLSClientExtensionsSha1: cfInfo?.tlsClientExtensionsSha1,
-      // Bot Management
-      cfBotScore: bm?.score ?? null,
-      cfBotVerified: bm?.verifiedBot ?? false,
-      cfBotStaticResource: bm?.staticResource ?? false,
-      cfBotJA3Hash: bm?.ja3Hash ?? null,
-      cfBotJA4: bm?.ja4 ?? null,
-      cfBotDetectionIds: bm?.detectionIds ?? [],
-      cfBotJSDetectionPassed: bm?.jsDetectionPassed ?? null,
-      // TLS Client Auth
-      cfTLSClientAuthCertVerified: tlsAuth?.certVerified ?? false,
-      cfTLSClientAuthCertFingerprintSHA1: tlsAuth?.certFingerprintSHA1 ?? null,
-      cfTLSClientAuthCertFingerprintSHA256: tlsAuth?.certFingerprintSHA256 ?? null,
-      cfTLSClientAuthCertIssuerDN: tlsAuth?.certIssuerDN ?? null,
-      cfTLSClientAuthCertSubjectDN: tlsAuth?.certSubjectDN ?? null,
-      cfTLSClientAuthCertSerial: tlsAuth?.certSerial ?? null,
-      cfTLSClientAuthCertNotBefore: tlsAuth?.certNotBefore ?? null,
-      cfTLSClientAuthCertNotAfter: tlsAuth?.certNotAfter ?? null,
-      cfTLSClientAuthCertRevoked: tlsAuth?.certRevoked ?? null,
-      cfTLSClientAuthCertPresented: tlsAuth?.certPresented ?? null,
-      // 指纹和风险评估
-      fingerprint: request.fingerprint ?? null,
-      riskScore: request.riskAssessment?.riskScore ?? 0,
-      isBot: request.riskAssessment?.isBot ?? false,
-      isSuspicious: request.riskAssessment?.isSuspicious ?? false,
-      riskReasons: request.riskAssessment?.reasons ?? [],
-    };
+      // 5. 准备 Action 执行
+      let actionConfig: ActionConfig;
+      let selectedLP: LandingPage | null = null;
+      let selectedOffer: Offer | null = null;
 
-    // 异步记录分析数据
-    try {
-      this.analytics.trackClick(clickData);
-    } catch (err) {
-      console.error('Failed to track click:', err);
-    }
+      if (selectedFlow) {
+        // 获取 Landing Page 和 Offer
+        const [lpAssociations, offerAssociations] = await Promise.all([
+          this.flowRepo.getLandingPages(selectedFlow.id),
+          this.flowRepo.getOffers(selectedFlow.id),
+        ]);
 
-    // 保存点击记录到 D1 数据库
-    try {
-      await this.clickRepo.saveClick(clickData);
-    } catch (err) {
-      console.error('Failed to save click to D1:', err);
-    }
+        // 选择 Landing Page
+        if (lpAssociations.length > 0) {
+          const lpAssoc = this.selectByWeight(lpAssociations);
+          selectedLP = await this.lpRepo.findById(lpAssoc.landingPageId);
+          console.log('Selected landing page:', selectedLP?.id || 'No landing page');
+        }
 
-    // 更新计数器
-    await this.doService.incrementCounter(`campaign:${campaign.id}:today`, {
-      clicks: 1,
-      spend: request.cost || 0,
-    });
+        // 选择 Offer
+        if (offerAssociations.length > 0) {
+          const offerAssoc = this.selectByWeight(offerAssociations);
+          selectedOffer = await this.offerRepo.findById(offerAssoc.offerId);
+          console.log('Selected offer:', selectedOffer?.id || 'No offer');
+        }
 
-    // 如果不是唯一点击，更新重复点击计数（使用 clicks 字段）
-    if (!uniquenessResult.isUnique) {
-      await this.doService.incrementCounter(`campaign:${campaign.id}:duplicates`, {
+        // 构建 Action 配置
+        actionConfig = this.buildActionConfig(selectedFlow, selectedLP, selectedOffer);
+      } else {
+        // 没有匹配的 Flow，执行流量损失
+        actionConfig = { type: 'traffic_loss' };
+      }
+
+      console.log('Action config:', actionConfig);
+
+      // 6. 执行 Action 获取重定向 URL
+      const redirectUrl = await this.executeAction(actionConfig, clickId, visitorId, request, baseUrl);
+      console.log('Redirect URL:', redirectUrl);
+
+      // 7. 记录点击数据（包含 Cloudflare 信息）
+      const cfInfo = request.cfInfo;
+      const bm = cfInfo?.botManagement;
+      const tlsAuth = cfInfo?.tlsClientAuth;
+      
+      const clickData: ClickData = {
+        clickId,
+        campaignId: campaign.id,
+        flowId: selectedFlow?.id || null,
+        landingPageId: selectedLP?.id || null,
+        offerId: selectedOffer?.id || null,
+        timestamp: new Date().toISOString(),
+        ip: request.ip,
+        userAgent: request.userAgent,
+        referer: request.referer || null,
+        country: request.country || null,
+        city: request.city || null,
+        region: request.region || null,
+        device: request.device || null,
+        browser: request.browser || null,
+        os: request.os || null,
+        isp: cfInfo?.asOrganization || null,
+        connectionType: null,
+        visitorId,
+        subId1: request.subId1 || null,
+        subId2: request.subId2 || null,
+        subId3: request.subId3 || null,
+        subId4: request.subId4 || null,
+        subId5: request.subId5 || null,
+        cost: request.cost || 0,
+        // Cloudflare 特定信息
+        cfRayId: cfInfo?.rayId,
+        cfConnectingIP: cfInfo?.connectingIP,
+        cfIPCountry: cfInfo?.ipCountry,
+        cfIsEUCountry: cfInfo?.isEUCountry,
+        cfASN: cfInfo?.asn,
+        cfASOrganization: cfInfo?.asOrganization,
+        cfColo: cfInfo?.colo,
+        cfLatitude: cfInfo?.latitude,
+        cfLongitude: cfInfo?.longitude,
+        cfPostalCode: cfInfo?.postalCode,
+        cfMetroCode: cfInfo?.metroCode,
+        cfTimezone: cfInfo?.timezone,
+        cfContinent: cfInfo?.continent,
+        cfHTTPProtocol: cfInfo?.httpProtocol,
+        cfTLSVersion: cfInfo?.tlsVersion,
+        cfTLSCipher: cfInfo?.tlsCipher,
+        cfTLSClientRandom: cfInfo?.tlsClientRandom,
+        cfTLSClientHelloLength: cfInfo?.tlsClientHelloLength,
+        cfTLSClientCiphersSha1: cfInfo?.tlsClientCiphersSha1,
+        cfTLSClientExtensionsSha1: cfInfo?.tlsClientExtensionsSha1,
+        // Bot Management
+        cfBotScore: bm?.score ?? null,
+        cfBotVerified: bm?.verifiedBot ?? false,
+        cfBotStaticResource: bm?.staticResource ?? false,
+        cfBotJA3Hash: bm?.ja3Hash ?? null,
+        cfBotJA4: bm?.ja4 ?? null,
+        cfBotDetectionIds: bm?.detectionIds ?? [],
+        cfBotJSDetectionPassed: bm?.jsDetectionPassed ?? null,
+        // TLS Client Auth
+        cfTLSClientAuthCertVerified: tlsAuth?.certVerified ?? false,
+        cfTLSClientAuthCertFingerprintSHA1: tlsAuth?.certFingerprintSHA1 ?? null,
+        cfTLSClientAuthCertFingerprintSHA256: tlsAuth?.certFingerprintSHA256 ?? null,
+        cfTLSClientAuthCertIssuerDN: tlsAuth?.certIssuerDN ?? null,
+        cfTLSClientAuthCertSubjectDN: tlsAuth?.certSubjectDN ?? null,
+        cfTLSClientAuthCertSerial: tlsAuth?.certSerial ?? null,
+        cfTLSClientAuthCertNotBefore: tlsAuth?.certNotBefore ?? null,
+        cfTLSClientAuthCertNotAfter: tlsAuth?.certNotAfter ?? null,
+        cfTLSClientAuthCertRevoked: tlsAuth?.certRevoked ?? null,
+        cfTLSClientAuthCertPresented: tlsAuth?.certPresented ?? null,
+        // 指纹和风险评估
+        fingerprint: request.fingerprint ?? null,
+        riskScore: request.riskAssessment?.riskScore ?? 0,
+        isBot: request.riskAssessment?.isBot ?? false,
+        isSuspicious: request.riskAssessment?.isSuspicious ?? false,
+        riskReasons: request.riskAssessment?.reasons ?? [],
+      };
+
+      // 异步记录分析数据到 Analytics Engine
+      try {
+        this.analytics.trackClick(clickData);
+      } catch (err) {
+        console.error('Failed to track click to Analytics Engine:', err);
+      }
+
+      // D1 数据库只用于统计汇总，不存储原始点击数据
+
+      // 更新计数器
+      await this.doService.incrementCounter(`campaign:${campaign.id}:today`, {
         clicks: 1,
+        spend: request.cost || 0,
       });
-    }
 
-    return {
-      clickId,
-      visitorId,
-      redirectUrl,
-      flowId: selectedFlow?.id || null,
-      landingPageId: selectedLP?.id || null,
-      offerId: selectedOffer?.id || null,
-      isUnique: uniquenessResult.isUnique,
-      uniquenessMethod: uniquenessResult.method,
-      shouldSetCookie: uniquenessResult.shouldSetCookie,
-      existingClickId: uniquenessResult.existingClickId,
-      isTrafficLoss: actionConfig.type === 'traffic_loss',
-      actionType: actionConfig.type,
-    };
+      // 如果不是唯一点击，更新重复点击计数（使用 clicks 字段）
+      if (!uniquenessResult.isUnique) {
+        await this.doService.incrementCounter(`campaign:${campaign.id}:duplicates`, {
+          clicks: 1,
+        });
+      }
+
+      return {
+        clickId,
+        visitorId,
+        redirectUrl,
+        flowId: selectedFlow?.id || null,
+        landingPageId: selectedLP?.id || null,
+        offerId: selectedOffer?.id || null,
+        isUnique: uniquenessResult.isUnique,
+        uniquenessMethod: uniquenessResult.method,
+        shouldSetCookie: uniquenessResult.shouldSetCookie,
+        existingClickId: uniquenessResult.existingClickId,
+        isTrafficLoss: actionConfig.type === 'traffic_loss',
+        actionType: actionConfig.type,
+      };
+    } catch (err) {
+      console.error('Handle click error:', err);
+      throw err;
+    }
   }
 
   /**
@@ -408,30 +434,43 @@ export class ClickService {
     config: ActionConfig,
     clickId: string,
     visitorId: string,
-    request: ClickRequest
+    request: ClickRequest,
+    baseUrl: string
   ): Promise<string> {
     const params = this.buildTrackingParams(clickId, visitorId, request);
 
-    switch (config.type) {
-      case 'redirect':
-        if (config.url) {
-          return this.appendParams(config.url, params);
-        }
-        return `/click/${clickId}`;
+    // 确保 baseUrl 是完整的 URL 格式
+    let fullBaseUrl = baseUrl;
+    if (!fullBaseUrl.startsWith('http://') && !fullBaseUrl.startsWith('https://')) {
+      fullBaseUrl = `https://${fullBaseUrl}`;
+    }
 
-      case 'show_offer':
-        if (config.url) {
-          return this.appendParams(config.url, params);
-        }
-        if (config.offerId) {
-          return `/offer/${config.offerId}?${params.toString()}`;
-        }
-        return `/click/${clickId}`;
+    try {
+      switch (config.type) {
+        case 'redirect':
+          if (config.url) {
+            return this.appendParams(config.url, params);
+          }
+          return new URL(`/click/${clickId}`, fullBaseUrl).toString();
 
-      case 'traffic_loss':
-      default:
-        // 流量损失，返回空页面或默认 URL
-        return `/traffic-loss?${params.toString()}`;
+        case 'show_offer':
+          if (config.url) {
+            return this.appendParams(config.url, params);
+          }
+          if (config.offerId) {
+            return new URL(`/offer/${config.offerId}?${params.toString()}`, fullBaseUrl).toString();
+          }
+          return new URL(`/click/${clickId}`, fullBaseUrl).toString();
+
+        case 'traffic_loss':
+        default:
+          // 流量损失，返回空页面或默认 URL
+          return new URL(`/traffic-loss?${params.toString()}`, fullBaseUrl).toString();
+      }
+    } catch (err) {
+      console.error('Execute action error:', err);
+      // Fallback to a safe URL
+      return `https://${baseUrl}/traffic-loss?${params.toString()}`;
     }
   }
 

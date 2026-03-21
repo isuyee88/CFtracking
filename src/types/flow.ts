@@ -13,12 +13,15 @@ export { type FlowFilter };
 
 export interface Flow {
   id: string;
+  displayId?: string;
   campaignId: string;
   name: string;
   type: FlowType;
   weight: number;
   status: FlowStatus;
   filters: FlowFilter[];
+  /** 点击限制（0 表示无限制） */
+  limit?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +38,7 @@ export interface UpdateFlowDTO {
   type?: FlowType;
   weight?: number;
   status?: FlowStatus;
+  filters?: FlowFilter[];
 }
 
 export interface FlowLandingPage {
@@ -63,4 +67,54 @@ export interface CreateFlowOfferDTO {
   flowId: string;
   offerId: string;
   weight?: number;
+}
+
+/**
+ * Flow statistics data
+ */
+export interface FlowStats {
+  flowId: string;
+  flowName: string;
+  flowType: FlowType;
+  clicks: number;
+  uniqueClicks: number;
+  bots: number;
+  conversions: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  conversionRate: number;
+  epc: number;
+  ctr: number;
+}
+
+/**
+ * Flow stats query parameters
+ */
+export interface FlowStatsQuery {
+  startDate?: string;
+  endDate?: string;
+}
+
+/**
+ * Flow traffic log entry
+ */
+export interface FlowTrafficLog {
+  id: string;
+  flowId: string;
+  campaignId: string;
+  visitorId: string;
+  clickId: string;
+  matchedRule?: string;
+  action: string;
+  actionTarget?: string;
+  executionTimeMs: number;
+  timestamp: string;
+  ip: string;
+  country?: string;
+  device?: string;
+  browser?: string;
+  os?: string;
+  isBot: boolean;
+  isUnique: boolean;
 }

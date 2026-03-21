@@ -36,7 +36,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useDashboardURLState } from '../hooks/useURLState';
 import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
-import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources } from '../services/api';
+import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -92,12 +92,14 @@ const ALL_METRICS = [
   { key: 'sale_revenue', label: 'Revenue', format: 'currency', category: 'financial' },
 ];
 
-// Entities配置
+// Entities配置 - 扩展为完整的Top Blocks
 const ENTITY_CONFIGS = {
+  // Campaign & Traffic
   campaigns: {
     key: 'campaigns',
     label: 'Campaigns',
     icon: 'Target',
+    category: 'Campaign',
     columns: [
       { key: 'name', label: 'Campaign', width: '200px' },
       { key: 'clicks', label: 'Clicks', align: 'right' },
@@ -109,10 +111,25 @@ const ENTITY_CONFIGS = {
       { key: 'roi', label: 'ROI', align: 'right' },
     ]
   },
+  streams: {
+    key: 'streams',
+    label: 'Streams',
+    icon: 'GitBranch',
+    category: 'Campaign',
+    columns: [
+      { key: 'name', label: 'Stream', width: '200px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC (campaign)', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+      { key: 'cost', label: 'Cost', align: 'right' },
+      { key: 'revenue', label: 'Revenue', align: 'right' },
+    ]
+  },
   landings: {
     key: 'landings',
     label: 'Landing Pages',
     icon: 'FileText',
+    category: 'Campaign',
     columns: [
       { key: 'name', label: 'Landing page', width: '200px' },
       { key: 'clicks', label: 'Clicks', align: 'right' },
@@ -124,6 +141,7 @@ const ENTITY_CONFIGS = {
     key: 'offers',
     label: 'Offers',
     icon: 'Gift',
+    category: 'Campaign',
     columns: [
       { key: 'name', label: 'Offer', width: '200px' },
       { key: 'clicks', label: 'Clicks', align: 'right' },
@@ -133,26 +151,302 @@ const ENTITY_CONFIGS = {
   },
   sources: {
     key: 'sources',
-    label: 'Sources',
+    label: 'Traffic Sources',
     icon: 'Globe',
+    category: 'Campaign',
     columns: [
       { key: 'name', label: 'Source', width: '200px' },
       { key: 'clicks', label: 'Clicks', align: 'right' },
       { key: 'unique_clicks', label: 'UC (campaign)', align: 'right' },
       { key: 'conversions', label: 'Conv.', align: 'right' },
     ]
-  }
+  },
+  affiliates: {
+    key: 'affiliates',
+    label: 'Affiliate Networks',
+    icon: 'Network',
+    category: 'Campaign',
+    columns: [
+      { key: 'name', label: 'Network', width: '200px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+      { key: 'revenue', label: 'Revenue', align: 'right' },
+    ]
+  },
+
+  // Geo
+  countries: {
+    key: 'countries',
+    label: 'Countries',
+    icon: 'MapPin',
+    category: 'Geo',
+    columns: [
+      { key: 'name', label: 'Country', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+      { key: 'conversion_rate', label: 'CR', align: 'right' },
+    ]
+  },
+  regions: {
+    key: 'regions',
+    label: 'Regions/States',
+    icon: 'Map',
+    category: 'Geo',
+    columns: [
+      { key: 'name', label: 'Region', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+  cities: {
+    key: 'cities',
+    label: 'Cities',
+    icon: 'Building',
+    category: 'Geo',
+    columns: [
+      { key: 'name', label: 'City', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+  isps: {
+    key: 'isps',
+    label: 'ISPs',
+    icon: 'Wifi',
+    category: 'Geo',
+    columns: [
+      { key: 'name', label: 'ISP', width: '180px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+
+  // Device
+  device_types: {
+    key: 'device_types',
+    label: 'Device Types',
+    icon: 'Smartphone',
+    category: 'Device',
+    columns: [
+      { key: 'name', label: 'Device Type', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+  os: {
+    key: 'os',
+    label: 'Operating Systems',
+    icon: 'Monitor',
+    category: 'Device',
+    columns: [
+      { key: 'name', label: 'OS', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+  browsers: {
+    key: 'browsers',
+    label: 'Browsers',
+    icon: 'Layout',
+    category: 'Device',
+    columns: [
+      { key: 'name', label: 'Browser', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+
+  // Connection
+  connection_types: {
+    key: 'connection_types',
+    label: 'Connection Types',
+    icon: 'Radio',
+    category: 'Network',
+    columns: [
+      { key: 'name', label: 'Connection', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+
+  // Time
+  hours: {
+    key: 'hours',
+    label: 'Hours of Day',
+    icon: 'Clock',
+    category: 'Time',
+    columns: [
+      { key: 'name', label: 'Hour', width: '100px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+  days_of_week: {
+    key: 'days_of_week',
+    label: 'Days of Week',
+    icon: 'Calendar',
+    category: 'Time',
+    columns: [
+      { key: 'name', label: 'Day', width: '120px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+
+  // Referrer
+  referrers: {
+    key: 'referrers',
+    label: 'Referrers',
+    icon: 'Link',
+    category: 'Referrer',
+    columns: [
+      { key: 'name', label: 'Referrer', width: '250px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+  referrer_domains: {
+    key: 'referrer_domains',
+    label: 'Referrer Domains',
+    icon: 'Globe2',
+    category: 'Referrer',
+    columns: [
+      { key: 'name', label: 'Domain', width: '200px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+  search_engines: {
+    key: 'search_engines',
+    label: 'Search Engines',
+    icon: 'Search',
+    category: 'Referrer',
+    columns: [
+      { key: 'name', label: 'Search Engine', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+
+  // Sub IDs
+  sub1: {
+    key: 'sub1',
+    label: 'Sub ID 1',
+    icon: 'Tag',
+    category: 'Sub IDs',
+    columns: [
+      { key: 'name', label: 'Sub ID 1', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+  sub2: {
+    key: 'sub2',
+    label: 'Sub ID 2',
+    icon: 'Tag',
+    category: 'Sub IDs',
+    columns: [
+      { key: 'name', label: 'Sub ID 2', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
+  sub3: {
+    key: 'sub3',
+    label: 'Sub ID 3',
+    icon: 'Tag',
+    category: 'Sub IDs',
+    columns: [
+      { key: 'name', label: 'Sub ID 3', width: '150px' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'unique_clicks', label: 'UC', align: 'right' },
+      { key: 'conversions', label: 'Conv.', align: 'right' },
+    ]
+  },
 };
 
-// Recent Clicks列配置
+// Recent Clicks列配置 - 基于RawClick数据模型
 const RECENT_CLICKS_COLUMNS = [
-  { key: 'event_id', label: 'Event id', width: '120px' },
-  { key: 'datetime', label: 'Date and time', width: '150px' },
-  { key: 'campaign', label: 'Campaign', width: '180px' },
-  { key: 'os_icon', label: 'OS Logo', width: '60px' },
-  { key: 'browser_icon', label: 'Browser logo', width: '80px' },
-  { key: 'ip', label: 'IP', width: '120px' },
-  { key: 'destination', label: 'Destination', width: '200px' },
+  // 基础信息 (Basic)
+  { key: 'event_id', label: 'Event ID', width: '120px', category: 'Basic' },
+  { key: 'datetime', label: 'Date and Time', width: '150px', category: 'Basic' },
+  { key: 'visitor_code', label: 'Visitor Code', width: '120px', category: 'Basic' },
+
+  // Campaign & Traffic
+  { key: 'campaign', label: 'Campaign', width: '180px', category: 'Campaign' },
+  { key: 'stream', label: 'Stream', width: '120px', category: 'Campaign' },
+  { key: 'landing', label: 'Landing Page', width: '150px', category: 'Campaign' },
+  { key: 'offer', label: 'Offer', width: '150px', category: 'Campaign' },
+  { key: 'source', label: 'Traffic Source', width: '150px', category: 'Campaign' },
+
+  // Geo 信息
+  { key: 'country', label: 'Country', width: '100px', category: 'Geo' },
+  { key: 'region', label: 'Region/State', width: '120px', category: 'Geo' },
+  { key: 'city', label: 'City', width: '120px', category: 'Geo' },
+  { key: 'language', label: 'Language', width: '80px', category: 'Geo' },
+  { key: 'isp', label: 'ISP', width: '150px', category: 'Geo' },
+  { key: 'operator', label: 'Mobile Operator', width: '150px', category: 'Geo' },
+
+  // Device & System
+  { key: 'device_type', label: 'Device Type', width: '100px', category: 'Device' },
+  { key: 'device_model', label: 'Device Model', width: '150px', category: 'Device' },
+  { key: 'os', label: 'OS', width: '100px', category: 'Device' },
+  { key: 'os_version', label: 'OS Version', width: '100px', category: 'Device' },
+  { key: 'browser', label: 'Browser', width: '100px', category: 'Device' },
+  { key: 'browser_version', label: 'Browser Version', width: '120px', category: 'Device' },
+  { key: 'os_icon', label: 'OS Logo', width: '60px', category: 'Device' },
+  { key: 'browser_icon', label: 'Browser Logo', width: '80px', category: 'Device' },
+
+  // Network
+  { key: 'ip', label: 'IP Address', width: '120px', category: 'Network' },
+  { key: 'connection_type', label: 'Connection Type', width: '120px', category: 'Network' },
+  { key: 'proxy', label: 'Proxy Status', width: '100px', category: 'Network' },
+
+  // Tracking IDs
+  { key: 'creative_id', label: 'Creative ID', width: '120px', category: 'Tracking' },
+  { key: 'external_id', label: 'External ID', width: '120px', category: 'Tracking' },
+  { key: 'ad_campaign_id', label: 'Ad Campaign ID', width: '150px', category: 'Tracking' },
+
+  // Sub IDs
+  { key: 'sub_id', label: 'Sub ID', width: '120px', category: 'Sub IDs' },
+  { key: 'sub1', label: 'Sub ID 1', width: '100px', category: 'Sub IDs' },
+  { key: 'sub2', label: 'Sub ID 2', width: '100px', category: 'Sub IDs' },
+  { key: 'sub3', label: 'Sub ID 3', width: '100px', category: 'Sub IDs' },
+  { key: 'sub4', label: 'Sub ID 4', width: '100px', category: 'Sub IDs' },
+  { key: 'sub5', label: 'Sub ID 5', width: '100px', category: 'Sub IDs' },
+
+  // Referrer
+  { key: 'referrer', label: 'Referrer', width: '200px', category: 'Referrer' },
+  { key: 'referrer_domain', label: 'Referrer Domain', width: '150px', category: 'Referrer' },
+  { key: 'search_engine', label: 'Search Engine', width: '120px', category: 'Referrer' },
+  { key: 'keyword', label: 'Keyword', width: '150px', category: 'Referrer' },
+
+  // Destination & Cost
+  { key: 'destination', label: 'Destination', width: '200px', category: 'Destination' },
+  { key: 'cost', label: 'Click Cost', width: '100px', category: 'Cost' },
+
+  // Status & Detection
+  { key: 'bot', label: 'Bot Status', width: '100px', category: 'Status' },
+  { key: 'unique_stream', label: 'Unique per Stream', width: '130px', category: 'Status' },
+  { key: 'unique_campaign', label: 'Unique per Campaign', width: '150px', category: 'Status' },
+
+  // User Agent
+  { key: 'user_agent', label: 'User Agent', width: '300px', category: 'User Agent' },
 ];
 
 // 时间范围选项 - 使用新的日期选择器组件
@@ -169,110 +463,19 @@ const TIME_RANGES = [
 
 // ==================== 数据生成函数 ====================
 
-// 基于key生成固定随机数
-const getFixedValue = (key: string, min: number, max: number) => {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = ((hash << 5) - hash) + key.charCodeAt(i);
-    hash = hash & hash;
-  }
-  const normalized = (Math.abs(hash) % 1000) / 1000;
-  return min + normalized * (max - min);
-};
+// 加载状态组件
+const LoadingSpinner = ({ size = 24 }: { size?: number }) => (
+  <div className="flex items-center justify-center">
+    <div className="animate-spin rounded-full h-{size} w-{size} border-t-2 border-b-2 border-primary"></div>
+  </div>
+);
 
-// 生成统计数据
-const generateStats = (enabledMetrics: string[], timeRange: string = 'today') => {
-  return enabledMetrics.map(key => {
-    const config = ALL_METRICS.find(m => m.key === key);
-    if (!config) return null;
-    
-    const seed = key + timeRange;
-    const baseValue = getFixedValue(seed, 10000, 100000);
-    const trend = getFixedValue(seed + 'trend', -15, 15);
-    
-    let value: string;
-    switch (config.format) {
-      case 'currency':
-        value = `$${baseValue.toFixed(2)}`;
-        break;
-      case 'percentage':
-        value = `${baseValue.toFixed(2)}%`;
-        break;
-      default:
-        value = Math.floor(baseValue).toLocaleString();
-    }
-    
-    return {
-      key,
-      label: config.label,
-      value,
-      trend: `${trend > 0 ? '+' : ''}${trend.toFixed(1)}%`,
-      isPositive: trend > 0,
-      format: config.format
-    };
-  }).filter(Boolean);
-};
-
-// 生成图表数据
-const generateChartData = (metrics: string[]) => {
-  const hours = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
-  return hours.map(hour => {
-    const data: any = { name: hour };
-    metrics.forEach(metric => {
-      data[metric] = Math.floor(getFixedValue(hour + metric, 100, 4000));
-    });
-    return data;
-  });
-};
-
-// 生成实体数据
-const generateEntityData = (type: string, columns: string[]) => {
-  const names: Record<string, string[]> = {
-    campaigns: ['Google Ads Fitness App', 'Meta Ads Food Delivery', 'TikTok Gaming Promo', 'Native News Feed'],
-    landings: ['Papa Johns Landing', 'Little Caesars Page', 'Fitness Pro LP', 'Food Delivery LP'],
-    offers: ['Apple Fitness+', 'Google Fitness App', 'DoorDash Promo', 'UberEats Deal'],
-    sources: ['GoogleAds', 'Facebook.com', 'TikTok.com', 'Taboola']
-  };
-  
-  return names[type]?.map((name, idx) => {
-    const row: any = { name, id: idx + 1 };
-    columns.forEach(col => {
-      if (col !== 'name' && col !== 'id') {
-        row[col] = Math.floor(getFixedValue(name + col, 1000, 50000));
-      }
-    });
-    return row;
-  }) || [];
-};
-
-// 生成最近点击数据
-const generateRecentClicks = (columns: string[]) => {
-  const campaigns = ['Google Ads Fitness', 'Meta Ads Food', 'TikTok Gaming', 'Native News'];
-  const osList = ['Windows', 'iOS', 'Android', 'MacOS'];
-  const browsers = ['Chrome', 'Safari', 'Firefox', 'Edge'];
-  
-  return Array.from({ length: 10 }, (_, i) => {
-    const click: any = {
-      id: `evt_${Date.now()}_${i}`,
-    };
-    
-    if (columns.includes('event_id')) click.event_id = `evt_${10000 + i}`;
-    if (columns.includes('datetime')) {
-      click.datetime = new Date(Date.now() - i * 60000).toISOString();
-    }
-    if (columns.includes('campaign')) {
-      click.campaign = campaigns[Math.floor(getFixedValue(`click${i}`, 0, 4))];
-    }
-    if (columns.includes('os_icon')) click.os_icon = osList[Math.floor(getFixedValue(`os${i}`, 0, 4))];
-    if (columns.includes('browser_icon')) click.browser_icon = browsers[Math.floor(getFixedValue(`browser${i}`, 0, 4))];
-    if (columns.includes('ip')) {
-      click.ip = `192.168.${Math.floor(getFixedValue(`ip${i}`, 1, 255))}.${Math.floor(getFixedValue(`ip2${i}`, 1, 255))}`;
-    }
-    if (columns.includes('destination')) click.destination = 'https://example.com/offer';
-    
-    return click;
-  });
-};
+// 错误提示组件
+const ErrorMessage = ({ message }: { message: string }) => (
+  <div className="text-red-500 text-sm p-4 bg-red-50 rounded-lg">
+    {message}
+  </div>
+);
 
 // ==================== 组件 ====================
 
@@ -335,30 +538,30 @@ const PreferencesModal = ({
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="glass-card rounded-sm w-full max-w-2xl max-h-[80vh] overflow-hidden">
+      <div className="bg-surface border border-border-default rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-outline-variant/10">
-          <h2 className="text-lg font-display font-semibold text-on-surface">Preferences</h2>
-          <button onClick={onClose} className="p-1 hover:bg-surface-container rounded-sm transition-colors">
-            <X size={20} className="text-on-surface-variant" />
+        <div className="flex items-center justify-between p-4 border-b border-border-default">
+          <h2 className="text-lg font-display font-semibold text-fg-default">Preferences</h2>
+          <button onClick={onClose} className="p-1 hover:bg-surface-container rounded-lg transition-colors">
+            <X size={20} className="text-fg-muted" />
           </button>
         </div>
         
         {/* Content */}
-        <div className="p-4 overflow-y-auto max-h-[60vh]">
+        <div className="p-4 overflow-y-auto max-h-[60vh] bg-surface">
           {/* Metrics Section */}
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-on-surface-variant mb-3 uppercase tracking-wider">Metrics</h3>
+            <h3 className="text-sm font-medium text-fg-muted mb-3 uppercase tracking-wider">Metrics</h3>
             <div className="flex flex-wrap gap-2">
               {(localConfig.metrics || []).map((key: string) => {
                 const metric = ALL_METRICS.find(m => m.key === key);
                 return (
-                  <span 
+                  <span
                     key={key}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary text-xs rounded-sm"
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-accent-muted text-accent-fg text-xs rounded-lg"
                   >
                     {metric?.label || key}
-                    <button onClick={() => toggleMetric(key)} className="hover:text-primary/70 transition-colors">
+                    <button onClick={() => toggleMetric(key)} className="hover:opacity-70 transition-opacity">
                       <X size={12} />
                     </button>
                   </span>
@@ -366,8 +569,8 @@ const PreferencesModal = ({
               })}
             </div>
             <div className="mt-2 relative">
-              <select 
-                className="w-full p-2 border border-outline-variant/20 rounded-sm text-sm bg-surface-container-lowest focus:border-primary focus:outline-none transition-colors"
+              <select
+                className="w-full p-2 border border-border-default rounded-lg text-sm bg-canvas focus:border-accent-fg focus:outline-none transition-colors"
                 onChange={(e) => { if (e.target.value) { toggleMetric(e.target.value); e.target.value = ''; }}}
                 value=""
               >
@@ -378,20 +581,20 @@ const PreferencesModal = ({
               </select>
             </div>
           </div>
-          
+
           {/* Entities Section */}
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-on-surface-variant mb-3 uppercase tracking-wider">Top Blocks (Entities)</h3>
+            <h3 className="text-sm font-medium text-fg-muted mb-3 uppercase tracking-wider">Top Blocks (Entities)</h3>
             <div className="flex flex-wrap gap-2">
               {(localConfig.entities || []).map((key: string) => {
                 const entity = ENTITY_CONFIGS[key as keyof typeof ENTITY_CONFIGS];
                 return (
-                  <span 
+                  <span
                     key={key}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-secondary/10 text-secondary text-xs rounded-sm"
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-surface-container text-fg-default text-xs rounded-lg border border-border-default"
                   >
                     {entity?.label || key}
-                    <button onClick={() => toggleEntity(key)} className="hover:text-secondary/70 transition-colors">
+                    <button onClick={() => toggleEntity(key)} className="hover:text-fg-muted transition-colors">
                       <X size={12} />
                     </button>
                   </span>
@@ -399,32 +602,46 @@ const PreferencesModal = ({
               })}
             </div>
             <div className="mt-2">
-              <select 
-                className="w-full p-2 border border-outline-variant/20 rounded-sm text-sm bg-surface-container-lowest focus:border-primary focus:outline-none transition-colors"
+              <select
+                className="w-full p-2 border border-border-default rounded-lg text-sm bg-canvas focus:border-accent-fg focus:outline-none transition-colors"
                 onChange={(e) => { if (e.target.value) { toggleEntity(e.target.value); e.target.value = ''; }}}
                 value=""
               >
                 <option value="">Add entity...</option>
-                {Object.keys(ENTITY_CONFIGS).filter(k => !(localConfig.entities || []).includes(k)).map(k => (
-                  <option key={k} value={k}>{ENTITY_CONFIGS[k as keyof typeof ENTITY_CONFIGS].label}</option>
-                ))}
+                {/* 按分类分组显示 */}
+                {(() => {
+                  const categories = [...new Set(Object.values(ENTITY_CONFIGS).map(e => e.category))];
+                  return categories.map(category => {
+                    const entitiesInCategory = Object.entries(ENTITY_CONFIGS).filter(
+                      ([key, config]) => config.category === category && !(localConfig.entities || []).includes(key)
+                    );
+                    if (entitiesInCategory.length === 0) return null;
+                    return (
+                      <optgroup key={category} label={category}>
+                        {entitiesInCategory.map(([key, config]) => (
+                          <option key={key} value={key}>{config.label}</option>
+                        ))}
+                      </optgroup>
+                    );
+                  });
+                })()}
               </select>
             </div>
           </div>
-          
+
           {/* Recent Clicks Columns Section */}
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-on-surface-variant mb-3 uppercase tracking-wider">Recent Clicks Columns</h3>
+            <h3 className="text-sm font-medium text-fg-muted mb-3 uppercase tracking-wider">Recent Clicks Columns</h3>
             <div className="flex flex-wrap gap-2">
               {(localConfig.recentClicksColumns || []).map((key: string) => {
                 const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
                 return (
-                  <span 
+                  <span
                     key={key}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-primary-container/30 text-primary text-xs rounded-sm"
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-surface-container-low text-fg-default text-xs rounded-lg border border-border-default"
                   >
                     {col?.label || key}
-                    <button onClick={() => toggleRecentClickColumn(key)} className="hover:text-primary/70 transition-colors">
+                    <button onClick={() => toggleRecentClickColumn(key)} className="hover:text-fg-muted transition-colors">
                       <X size={12} />
                     </button>
                   </span>
@@ -432,38 +649,52 @@ const PreferencesModal = ({
               })}
             </div>
             <div className="mt-2">
-              <select 
-                className="w-full p-2 border border-outline-variant/20 rounded-sm text-sm bg-surface-container-lowest focus:border-primary focus:outline-none transition-colors"
+              <select
+                className="w-full p-2 border border-border-default rounded-lg text-sm bg-canvas focus:border-accent-fg focus:outline-none transition-colors"
                 onChange={(e) => { if (e.target.value) { toggleRecentClickColumn(e.target.value); e.target.value = ''; }}}
                 value=""
               >
                 <option value="">Add column...</option>
-                {RECENT_CLICKS_COLUMNS.filter(c => !(localConfig.recentClicksColumns || []).includes(c.key)).map(c => (
-                  <option key={c.key} value={c.key}>{c.label}</option>
-                ))}
+                {/* 按分类分组显示 */}
+                {(() => {
+                  const categories = [...new Set(RECENT_CLICKS_COLUMNS.map(c => c.category))];
+                  return categories.map(category => {
+                    const colsInCategory = RECENT_CLICKS_COLUMNS.filter(
+                      c => c.category === category && !(localConfig.recentClicksColumns || []).includes(c.key)
+                    );
+                    if (colsInCategory.length === 0) return null;
+                    return (
+                      <optgroup key={category} label={category}>
+                        {colsInCategory.map(c => (
+                          <option key={c.key} value={c.key}>{c.label}</option>
+                        ))}
+                      </optgroup>
+                    );
+                  });
+                })()}
               </select>
             </div>
           </div>
         </div>
         
         {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-outline-variant/10 bg-surface-container">
-          <button 
+        <div className="flex items-center justify-between p-4 border-t border-border-default bg-surface-container">
+          <button
             onClick={handleRestoreDefault}
-            className="text-sm text-on-surface-variant hover:text-on-surface transition-colors"
+            className="text-sm text-fg-muted hover:text-fg-default transition-colors"
           >
             Restore to default
           </button>
           <div className="flex gap-2">
-            <button 
+            <button
               onClick={onClose}
-              className="px-4 py-2 text-sm border border-outline-variant/20 rounded-sm hover:bg-surface-container-high transition-colors"
+              className="px-4 py-2 text-sm border border-border-default rounded-lg hover:bg-surface-container-high transition-colors text-fg-default"
             >
               Cancel
             </button>
-            <button 
+            <button
               onClick={handleApply}
-              className="px-4 py-2 text-sm bg-primary text-on-primary rounded-sm hover:bg-primary-container transition-colors"
+              className="px-4 py-2 text-sm bg-fg-default text-canvas rounded-lg hover:opacity-85 transition-opacity"
             >
               Apply
             </button>
@@ -492,6 +723,16 @@ export const Dashboard = () => {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
+  const [loading, setLoading] = useState({
+    stats: false,
+    recentClicks: false,
+    entities: false
+  });
+  const [errors, setErrors] = useState({
+    stats: '',
+    recentClicks: '',
+    entities: ''
+  });
   
   // 应用暗色模式类
   useEffect(() => {
@@ -529,88 +770,61 @@ export const Dashboard = () => {
   // 刷新数据函数 - 使用 ref 避免依赖循环
   const refreshData = useCallback(async () => {
     setIsRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    setLoading(prev => ({ ...prev, stats: true, recentClicks: true, entities: true }));
+    setErrors(prev => ({ ...prev, stats: '', recentClicks: '', entities: '' }));
     
-    setRecentClicks(generateRecentClicks(config.recentClicksColumns));
-    setLastUpdated(new Date());
-    
-    setIsRefreshing(false);
-  }, []);
+    try {
+      // 并行获取数据
+      const [statsData, clicksData] = await Promise.all([
+        fetchDashboardStats(state.range?.interval || 'today'),
+        fetchRecentClicks(10)
+      ]);
+      
+      // 更新统计数据
+      if (statsData) {
+        setStats(statsData.metrics || []);
+        setChartData(statsData.chartData || []);
+      }
+      
+      // 更新最近点击数据
+      if (clicksData) {
+        setRecentClicks(clicksData);
+      }
+      
+      // 获取实体数据
+      const entityPromises = config.entities.map(entityKey => 
+        fetchEntityStats(entityKey, state.range?.interval || 'today')
+      );
+      
+      const entityResults = await Promise.all(entityPromises);
+      const newEntityData: Record<string, any[]> = {};
+      
+      config.entities.forEach((entityKey, index) => {
+        newEntityData[entityKey] = entityResults[index] || [];
+      });
+      
+      setEntityData(newEntityData);
+      
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      setErrors(prev => ({
+        ...prev,
+        stats: 'Failed to fetch stats',
+        recentClicks: 'Failed to fetch recent clicks',
+        entities: 'Failed to fetch entity data'
+      }));
+    } finally {
+      setLoading(prev => ({ ...prev, stats: false, recentClicks: false, entities: false }));
+      setLastUpdated(new Date());
+      setIsRefreshing(false);
+    }
+  }, [config.entities, state.range?.interval]);
   
   // 处理统计数据更新
   useEffect(() => {
-    const metrics = config.metrics;
-    setStats(generateStats(metrics, state.range?.interval || 'today'));
-    setChartData(generateChartData(metrics.slice(0, 7)));
-    
-    // 从真实API获取实体数据
-    const fetchEntityData = async () => {
-      const entities: Record<string, any[]> = {};
-      
-      for (const entityKey of config.entities) {
-        try {
-          let data: any[] = [];
-          
-          switch (entityKey) {
-            case 'campaigns':
-              const campaigns = await fetchCampaigns();
-              data = campaigns.map((c: any) => ({
-                id: c.id,
-                name: c.name,
-                clicks: c.clicks || 0,
-                unique_clicks: c.uniqueClicks || 0,
-                conversions: c.conversions || 0,
-                cost: c.cost || 0,
-                revenue: c.revenue || 0,
-                profit: c.profit || 0,
-                roi: c.roi || 0
-              }));
-              break;
-            case 'offers':
-              const offers = await fetchOffers();
-              data = offers.map((o: any) => ({
-                id: o.id,
-                name: o.name,
-                clicks: o.clicks || 0,
-                unique_clicks: o.uniqueClicks || 0,
-                conversions: o.conversions || 0
-              }));
-              break;
-            case 'landings':
-              const landings = await fetchLandings();
-              data = landings.map((l: any) => ({
-                id: l.id,
-                name: l.name,
-                clicks: l.clicks || 0,
-                unique_clicks: l.uniqueClicks || 0,
-                conversions: l.conversions || 0
-              }));
-              break;
-            case 'sources':
-              const sources = await fetchTrafficSources();
-              data = sources.map((s: any) => ({
-                id: s.id,
-                name: s.name,
-                clicks: s.clicks || 0,
-                unique_clicks: s.uniqueClicks || 0,
-                conversions: s.conversions || 0
-              }));
-              break;
-          }
-          
-          entities[entityKey] = data;
-        } catch (error) {
-          console.error(`Failed to fetch ${entityKey}:`, error);
-          entities[entityKey] = [];
-        }
-      }
-      
-      setEntityData(entities);
-    };
-    
-    fetchEntityData();
-    setRecentClicks(generateRecentClicks(config.recentClicksColumns));
-  }, [config, state.range?.interval]);
+    // 当配置或时间范围变化时，刷新数据
+    refreshData();
+  }, [config, state.range?.interval, refreshData]);
   
   // 初始加载和自动刷新
   useEffect(() => {
@@ -755,29 +969,54 @@ export const Dashboard = () => {
         {/* Metrics Cards - 统一主色调样式 */}
         {config.metrics.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            {stats.filter(Boolean).map((stat: any, index: number) => {
-              const style = getMetricStyle(index);
-              return (
-                <motion.div 
-                  key={stat?.key || index} 
-                  className={cn("metric-card", style.gradient)}
-                  whileHover={{ y: -2 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {/* 装饰性渐变光晕 */}
-                  <div className={cn("metric-card-accent", style.accent)} />
-                  
-                  <p className="metric-label">{stat?.label || 'Unknown'}</p>
-                  <h3 className="metric-value">{stat?.value || '-'}</h3>
-                  <p className={cn(
-                    "metric-trend",
-                    stat?.isPositive ? "metric-trend-up" : "metric-trend-down"
-                  )}>
-                    {stat?.isPositive ? '↑' : '↓'} {stat?.trend || ''}
-                  </p>
-                </motion.div>
-              );
-            })}
+            {loading.stats ? (
+              Array(config.metrics.length).fill(0).map((_, index) => {
+                const style = getMetricStyle(index);
+                return (
+                  <motion.div 
+                    key={index} 
+                    className={cn("metric-card", style.gradient)}
+                    whileHover={{ y: -2 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <div className={cn("metric-card-accent", style.accent)} />
+                    <p className="metric-label">Loading...</p>
+                    <h3 className="metric-value">
+                      <LoadingSpinner size={20} />
+                    </h3>
+                    <p className="metric-trend">--</p>
+                  </motion.div>
+                );
+              })
+            ) : errors.stats ? (
+              <div className="col-span-full">
+                <ErrorMessage message={errors.stats} />
+              </div>
+            ) : (
+              stats.filter(Boolean).map((stat: any, index: number) => {
+                const style = getMetricStyle(index);
+                return (
+                  <motion.div 
+                    key={stat?.key || index} 
+                    className={cn("metric-card", style.gradient)}
+                    whileHover={{ y: -2 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    {/* 装饰性渐变光晕 */}
+                    <div className={cn("metric-card-accent", style.accent)} />
+                    
+                    <p className="metric-label">{stat?.label || 'Unknown'}</p>
+                    <h3 className="metric-value">{stat?.value || '-'}</h3>
+                    <p className={cn(
+                      "metric-trend",
+                      stat?.isPositive ? "metric-trend-up" : "metric-trend-down"
+                    )}>
+                      {stat?.isPositive ? '↑' : '↓'} {stat?.trend || ''}
+                    </p>
+                  </motion.div>
+                );
+              })
+            )}
           </div>
         )}
         
@@ -935,37 +1174,102 @@ export const Dashboard = () => {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {config.recentClicksColumns.map(key => {
-                      const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
-                      return (
-                        <th key={key} className="text-left">
-                          {col?.label || key}
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentClicks.map((click, idx) => (
-                    <tr key={idx}>
-                      {config.recentClicksColumns.map(key => (
-                        <td key={key}>
-                          {key === 'datetime' ? (
-                            <span className="text-medium-contrast">{new Date(click[key]).toLocaleString()}</span>
-                          ) : key === 'destination' ? (
-                            <span className="text-high-contrast hover:text-secondary transition-colors truncate max-w-[150px] block cursor-pointer link-primary">{click[key]}</span>
-                          ) : (
-                            <span className="text-medium-contrast">{click[key] || '-'}</span>
-                          )}
-                        </td>
-                      ))}
+              {loading.recentClicks ? (
+                <div className="p-8 flex items-center justify-center">
+                  <LoadingSpinner size={40} />
+                </div>
+              ) : errors.recentClicks ? (
+                <div className="p-4">
+                  <ErrorMessage message={errors.recentClicks} />
+                </div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      {config.recentClicksColumns.map(key => {
+                        const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
+                        return (
+                          <th key={key} className="text-left">
+                            {col?.label || key}
+                          </th>
+                        );
+                      })}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {recentClicks.length > 0 ? (
+                      recentClicks.map((click, idx) => (
+                        <tr key={idx}>
+                          {config.recentClicksColumns.map(key => {
+                            const value = click[key];
+                            const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
+
+                            // 根据字段类型渲染不同样式
+                            const renderCell = () => {
+                              if (key === 'datetime') {
+                                return <span className="text-medium-contrast">{value ? new Date(value).toLocaleString() : '-'}</span>;
+                              }
+                              if (key === 'destination' || key === 'referrer') {
+                                return (
+                                  <span className="text-high-contrast hover:text-secondary transition-colors truncate max-w-[150px] block cursor-pointer link-primary" title={value}>
+                                    {value || '-'}
+                                  </span>
+                                );
+                              }
+                              if (key === 'user_agent') {
+                                return (
+                                  <span className="text-medium-contrast truncate max-w-[200px] block" title={value}>
+                                    {value || '-'}
+                                  </span>
+                                );
+                              }
+                              // Yes/No 状态字段
+                              if (['bot', 'proxy', 'unique_stream', 'unique_campaign'].includes(key)) {
+                                const isYes = value === 'Yes';
+                                return (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                    isYes
+                                      ? key === 'bot' ? 'bg-danger-fg/10 text-danger-fg' : 'bg-success-fg/10 text-success-fg'
+                                      : 'bg-surface-container text-fg-muted'
+                                  }`}>
+                                    {value || 'No'}
+                                  </span>
+                                );
+                              }
+                              // 成本字段
+                              if (key === 'cost') {
+                                return <span className="text-medium-contrast font-medium">{value || '-'}</span>;
+                              }
+                              // 图标字段
+                              if (key === 'os_icon' || key === 'browser_icon') {
+                                return (
+                                  <span className="inline-flex items-center justify-center w-8 h-8 bg-surface-container rounded">
+                                    {value || '-'}
+                                  </span>
+                                );
+                              }
+                              // 默认渲染
+                              return <span className="text-medium-contrast">{value || '-'}</span>;
+                            };
+
+                            return (
+                              <td key={key} style={{ width: col?.width, minWidth: col?.width }}>
+                                {renderCell()}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={config.recentClicksColumns.length} className="text-center py-8 text-fg-muted">
+                          No recent clicks found
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}

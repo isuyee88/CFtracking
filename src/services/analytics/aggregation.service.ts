@@ -52,10 +52,10 @@ export class AggregationService {
     try {
       console.log(`[Aggregation] Starting daily aggregation for ${targetDate}`);
 
-      // 1. 查询 Analytics Engine 获取原始点击数据
-      const clickData = await this.queryAnalyticsEngine(targetDate);
+      // 1. 查询 Analytics Engine 获取聚合数据
+      const aggregatedData = await this.queryAnalyticsEngine(targetDate);
       
-      if (clickData.length === 0) {
+      if (aggregatedData.length === 0) {
         console.log(`[Aggregation] No data found for ${targetDate}`);
         return {
           success: true,
@@ -65,15 +65,15 @@ export class AggregationService {
         };
       }
 
-      console.log(`[Aggregation] Found ${clickData.length} raw records`);
+      console.log(`[Aggregation] Found ${aggregatedData.length} aggregated records`);
 
-      // 2. 按维度聚合数据
-      const aggregatedData = this.aggregateByDimensions(clickData, targetDate);
+      // 2. 处理聚合数据
+      const summaryData = this.aggregateByDimensions(aggregatedData, targetDate);
       
-      console.log(`[Aggregation] Aggregated into ${aggregatedData.length} summary records`);
+      console.log(`[Aggregation] Processed into ${summaryData.length} summary records`);
 
       // 3. 写入 D1 数据库
-      for (const record of aggregatedData) {
+      for (const record of summaryData) {
         try {
           await this.trafficRepo.upsertSummary(record);
           recordsProcessed++;
@@ -106,9 +106,9 @@ export class AggregationService {
   }
 
   /**
-   * 从 Analytics Engine 查询原始点击数据
+   * 从 Analytics Engine 查询聚合数据
    */
-  private async queryAnalyticsEngine(date: string): Promise<RawClickData[]> {
+  private async queryAnalyticsEngine(date: string): Promise<AggregatedClickData[]> {
     const accountId = this.env.CF_ACCOUNT_ID;
     const apiToken = this.env.CF_API_TOKEN;
 
@@ -116,31 +116,44 @@ export class AggregationService {
       throw new Error('CF_ACCOUNT_ID or CF_API_TOKEN not configured');
     }
 
-    // 构建 SQL 查询
+    // 构建 SQL 查询，使用 Analytics Engine 聚合函数
     const sql = `
       SELECT 
-        blob1 as clickId,
         blob2 as campaignId,
         blob3 as flowId,
         blob4 as landingPageId,
         blob5 as offerId,
-        blob6 as ip,
-        blob7 as userAgent,
-        blob8 as referer,
         blob9 as country,
-        blob10 as city,
         blob11 as device,
         blob12 as browser,
         blob13 as os,
-        blob14 as visitorId,
-        blob15 as subId1,
-        blob16 as subId2,
-        blob17 as subId3,
-        double1 as cost,
-        timestamp
+        blob20 as utmSource,
+        blob21 as utmMedium,
+        blob22 as utmCampaign,
+        count() as clicks,
+        sum(double1) as totalCost,
+        avg(double1) as avgCost,
+        count(distinct blob14) as uniqueVisitors,
+        countIf(double1 > 0) as paidClicks,
+        countIf(double3 > 0) as botScoreClicks,
+        avg(double3) as avgBotScore,
+        countIf(double2 > 0) as highRiskClicks
       FROM ANALYTICS
       WHERE toDate(timestamp) = '${date}'
-      ORDER BY timestamp
+      GROUP BY 
+        campaignId,
+        flowId,
+        landingPageId,
+        offerId,
+        country,
+        device,
+        browser,
+        os,
+        utmSource,
+        utmMedium,
+        utmCampaign
+      HAVING clicks > 0
+      ORDER BY campaignId, clicks DESC
     `;
 
     const response = await fetch(
@@ -160,7 +173,7 @@ export class AggregationService {
       throw new Error(`Analytics Engine query failed: ${response.status} ${errorText}`);
     }
 
-    const result = await response.json() as AnalyticsEngineResponse;
+    const result = await response.json() as AnalyticsEngineAggregatedResponse;
     
     if (!result.success) {
       throw new Error(`Analytics Engine query error: ${JSON.stringify(result.errors)}`);
@@ -170,43 +183,34 @@ export class AggregationService {
   }
 
   /**
-   * 按维度聚合数据
+   * 处理从 Analytics Engine 返回的聚合数据
    */
-  private aggregateByDimensions(data: RawClickData[], date: string): TrafficSummary[] {
-    const groups = new Map<string, TrafficSummary>();
-
-    for (const record of data) {
-      // 创建聚合键（按 campaign + country + device + browser + offer）
-      const key = `${record.campaignId || 'unknown'}|${record.country || 'unknown'}|${record.device || 'unknown'}|${record.browser || 'unknown'}|${record.offerId || 'unknown'}`;
-
-      let summary = groups.get(key);
-      if (!summary) {
-        summary = {
-          campaignId: record.campaignId || 'unknown',
-          date,
-          impressions: 0,
-          clicks: 0,
-          conversions: 0,
-          spend: 0,
-          revenue: 0,
-          country: record.country || null,
-          device: record.device || null,
-          browser: record.browser || null,
-          offerId: record.offerId || null,
-        };
-        groups.set(key, summary);
-      }
-
-      // 累加统计
-      summary.clicks++;
-      summary.spend += record.cost || 0;
-      
-      // 这里可以根据业务逻辑判断是否计入转化
-      // 简化处理：每个点击都算一次展示和点击
-      summary.impressions++;
-    }
-
-    return Array.from(groups.values());
+  private aggregateByDimensions(data: AggregatedClickData[], date: string): TrafficSummary[] {
+    return data.map(record => ({
+      campaignId: record.campaignId || 'unknown',
+      date,
+      impressions: record.clicks, // 简化处理：每个点击都算一次展示
+      clicks: record.clicks,
+      conversions: 0, // 转化数据需要从其他数据源获取
+      spend: record.totalCost || 0,
+      revenue: 0, // 收入数据需要从其他数据源获取
+      country: record.country || null,
+      device: record.device || null,
+      browser: record.browser || null,
+      offerId: record.offerId || null,
+      flowId: record.flowId || null,
+      // UTM 参数
+      utmSource: record.utmSource || null,
+      utmMedium: record.utmMedium || null,
+      utmCampaign: record.utmCampaign || null,
+      // 新增指标
+      avgCost: record.avgCost || 0,
+      uniqueVisitors: record.uniqueVisitors || 0,
+      paidClicks: record.paidClicks || 0,
+      botScoreClicks: record.botScoreClicks || 0,
+      avgBotScore: record.avgBotScore || 0,
+      highRiskClicks: record.highRiskClicks || 0,
+    }));
   }
 
   /**
@@ -248,32 +252,32 @@ export class AggregationService {
 }
 
 // 类型定义
-interface RawClickData {
-  clickId: string;
+interface AggregatedClickData {
   campaignId: string;
   flowId: string;
   landingPageId: string;
   offerId: string;
-  ip: string;
-  userAgent: string;
-  referer: string;
   country: string;
-  city: string;
   device: string;
   browser: string;
   os: string;
-  visitorId: string;
-  subId1: string;
-  subId2: string;
-  subId3: string;
-  cost: number;
-  timestamp: string;
+  utmSource: string;
+  utmMedium: string;
+  utmCampaign: string;
+  clicks: number;
+  totalCost: number;
+  avgCost: number;
+  uniqueVisitors: number;
+  paidClicks: number;
+  botScoreClicks: number;
+  avgBotScore: number;
+  highRiskClicks: number;
 }
 
-interface AnalyticsEngineResponse {
+interface AnalyticsEngineAggregatedResponse {
   success: boolean;
   errors?: unknown[];
-  data?: RawClickData[];
+  data?: AggregatedClickData[];
 }
 
 export function createAggregationService(env: Env): AggregationService {

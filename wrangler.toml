@@ -12,9 +12,8 @@ CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
 
 # 定时任务配置
 # - 每天凌晨 2:00 执行数据聚合
-# - 每 5 分钟执行平台规则评估和任务处理
-[[triggers]]
-crons = ["0 2 * * *", "*/5 * * * *"]
+[triggers]
+crons = ["0 2 * * *"]
 
 [[d1_databases]]
 binding = "DB"

@@ -110,32 +110,40 @@ interface Campaign {
 }
 
 // Transform backend data to frontend format
-const transformCampaign = (backend: BackendCampaign): Campaign => ({
-  id: backend.id,
-  name: backend.name,
-  status: backend.status === 'active' ? 'Active' : backend.status === 'paused' ? 'Paused' : 'Deleted',
-  type: 'Redirect',
-  group: backend.group || 'Default',
-  flow: backend.flowRotation || 'Default',
-  source: backend.trafficSource || 'Direct',
-  url: `https://${backend.domain || 'example.com'}/campaign/${backend.alias}`,
-  clicks: 0,
-  conversions: 0,
-  revenue: '$0.00',
-  profit: '$0.00',
-  roi: '0%',
-  epc: '$0.00',
-  cpc: '$0.00',
-  cr: '0%',
-  budget: '$0.00',
-  spent: '$0.00',
-  targetGeo: ['US', 'UK', 'CA'],
-  devices: ['Desktop', 'Mobile'],
-  createdAt: backend.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-  updatedAt: backend.updatedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-  filters: [],
-  filterLogic: 'AND'
-});
+const transformCampaign = (backend: BackendCampaign): Campaign => {
+  // Always use current domain from window location
+  // This ensures we use the actual domain the user is currently accessing
+  const currentDomain = window.location.host;
+  // Build real tracking URL using current domain
+  const trackingUrl = `https://${currentDomain}/${backend.alias}`;
+  
+  return {
+    id: backend.id,
+    name: backend.name,
+    status: backend.status === 'active' ? 'Active' : backend.status === 'paused' ? 'Paused' : 'Deleted',
+    type: 'Redirect',
+    group: backend.group || 'Default',
+    flow: backend.flowRotation || 'Default',
+    source: backend.trafficSource || 'Direct',
+    url: trackingUrl,
+    clicks: 0,
+    conversions: 0,
+    revenue: '$0.00',
+    profit: '$0.00',
+    roi: '0%',
+    epc: '$0.00',
+    cpc: '$0.00',
+    cr: '0%',
+    budget: '$0.00',
+    spent: '$0.00',
+    targetGeo: [],
+    devices: [],
+    createdAt: backend.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+    updatedAt: backend.updatedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+    filters: [],
+    filterLogic: 'AND'
+  };
+};
 
 // Filter types based on Keitaro RawClick documentation
 const FILTER_TYPES = [
@@ -194,16 +202,9 @@ export const CampaignDetail = () => {
               setStats(statsRes.data);
             }
           } catch (statsErr) {
-            // Stats API might not be implemented yet, use mock data
-            console.warn('Stats API not available, using mock data');
-            setStats({
-              clicks: 0,
-              conversions: 0,
-              revenue: 0,
-              cost: 0,
-              profit: 0,
-              roi: 0
-            });
+            // Stats API might not be implemented yet
+            console.warn('Stats API not available');
+            setStats(null);
           }
         } else {
           setError('Campaign not found');

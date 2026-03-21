@@ -13,7 +13,7 @@ import { FlowRepository } from '@/handlers/d1/flow.repo';
 import { CampaignRepository } from '@/handlers/d1/campaign.repo';
 import { getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
-import type { Flow, CreateFlowDTO, UpdateFlowDTO, FlowLandingPage, FlowOffer } from '@/types/flow';
+import type { Flow, CreateFlowDTO, UpdateFlowDTO, FlowLandingPage, FlowOffer, FlowStats, FlowStatsQuery } from '@/types/flow';
 import type { FlowSchema, ValidationContext, FlowValidationResult, CreateFlowRuleDTO, UpdateFlowRuleDTO, FilterGroup, FlowRule } from '@/types/flow.schema';
 import { FlowValidator } from './flow.validator';
 import { NotFoundError } from '@/middleware/error';
@@ -276,5 +276,68 @@ export class FlowService {
    */
   async getRuleById(ruleId: string): Promise<FlowSchema['rules'][0] | null> {
     return this.repo.getFlowRuleById(ruleId);
+  }
+
+  // ==================== Flow Statistics ====================
+
+  /**
+   * 获取 Flow 统计数据
+   */
+  async getFlowStats(flowId: string, query?: FlowStatsQuery): Promise<FlowStats> {
+    const stats = await this.repo.getFlowStats(flowId, query);
+    if (!stats) {
+      throw new NotFoundError('Flow not found');
+    }
+    return stats;
+  }
+
+  /**
+   * 获取 Campaign 下所有 Flow 的统计数据
+   */
+  async getCampaignFlowStats(campaignId: string, query?: FlowStatsQuery): Promise<FlowStats[]> {
+    return this.repo.getCampaignFlowStats(campaignId, query);
+  }
+
+  /**
+   * 克隆 Flow
+   */
+  async clone(flowId: string): Promise<Flow> {
+    const original = await this.repo.findById(flowId);
+    if (!original) {
+      throw new NotFoundError('Flow not found');
+    }
+
+    const clonedName = `${original.name} (Copy)`;
+
+    const clonedFlow = await this.repo.create({
+      campaignId: original.campaignId,
+      name: clonedName,
+      type: original.type,
+      weight: original.weight,
+    });
+
+    // Clone filters if exists
+    if (original.filters && original.filters.length > 0) {
+      await this.repo.update(clonedFlow.id, { 
+        filters: original.filters.map(f => ({
+          ...f,
+          id: crypto.randomUUID(),
+        }))
+      });
+    }
+
+    // Clone landing pages
+    const landingPages = await this.repo.getLandingPages(flowId);
+    for (const lp of landingPages) {
+      await this.repo.addLandingPage(clonedFlow.id, lp.landingPageId, lp.weight);
+    }
+
+    // Clone offers
+    const offers = await this.repo.getOffers(flowId);
+    for (const offer of offers) {
+      await this.repo.addOffer(clonedFlow.id, offer.offerId, offer.weight);
+    }
+
+    return this.repo.findById(clonedFlow.id) as Promise<Flow>;
   }
 }
