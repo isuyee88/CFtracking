@@ -2,30 +2,27 @@
  * @fileoverview Trends Service
  * @description Business logic for trends and analytics visualization
  * @module services/trends/trends.service
- * 
+ *
  * Input: TrendFilter with date range and optional filters
  * Output: TrendsReport with data points and breakdowns
- * Logic Interaction: Uses TrafficRepository
+ * Logic Interaction: Uses AnalyticsQueryService (Analytics Engine)
  * Frontend-Backend: Provides data for Trends charts and reports
  */
 
-import { TrafficRepository } from '@/handlers/d1/traffic.repo';
-import { getD1Connection } from '@/handlers/d1';
+import { AnalyticsQueryService, createAnalyticsQueryService } from '@/services/analytics/analytics-query.service';
 import type { Env } from '@/config/env';
-import type { 
-  TrendFilter, 
-  TrendDataPoint, 
-  TrendSummary, 
-  TrendsReport 
+import type {
+  TrendFilter,
+  TrendDataPoint,
+  TrendSummary,
+  TrendsReport
 } from '@/types/trends';
-import type { TrafficSummary } from '@/types/tracking';
 
 export class TrendsService {
-  private trafficRepo: TrafficRepository;
+  private analyticsQueryService: AnalyticsQueryService;
 
   constructor(env: Env) {
-    const db = getD1Connection(env);
-    this.trafficRepo = new TrafficRepository(db);
+    this.analyticsQueryService = createAnalyticsQueryService(env);
   }
 
   /**
@@ -34,26 +31,15 @@ export class TrendsService {
   async generateReport(filter: TrendFilter): Promise<TrendsReport> {
     const { startDate, endDate } = filter;
     const campaignId = filter.campaignId;
+    const interval = filter.interval || 'day';
 
-    let trendData: TrafficSummary[] = [];
-    let countryBreakdown: TrafficSummary[] = [];
-    let deviceBreakdown: TrafficSummary[] = [];
-    let browserBreakdown: TrafficSummary[] = [];
-
-    if (campaignId) {
-      // Get trend data for specific campaign
-      trendData = await this.trafficRepo.getTrend(campaignId, startDate, endDate);
-      
-      // Get dimension breakdowns
-      [countryBreakdown, deviceBreakdown, browserBreakdown] = await Promise.all([
-        this.trafficRepo.getStatsByDimension(campaignId, 'country', startDate, endDate),
-        this.trafficRepo.getStatsByDimension(campaignId, 'device', startDate, endDate),
-        this.trafficRepo.getStatsByDimension(campaignId, 'browser', startDate, endDate),
-      ]);
-    } else {
-      // Without campaignId, return empty data
-      trendData = [];
-    }
+    // Get trend data from Analytics Engine
+    const trendData = await this.analyticsQueryService.getTrendReport(
+      startDate,
+      endDate,
+      interval,
+      campaignId
+    );
 
     // Calculate summary
     const summary = this.calculateSummary(trendData);
@@ -65,12 +51,12 @@ export class TrendsService {
       const revenue = point.revenue || 0;
       const spend = point.spend || 0;
       const profit = revenue - spend;
-      
+
       return {
         timestamp: point.date || '',
         date: point.date || '',
         clicks: clicks,
-        uniqueClicks: clicks, // Use clicks as uniqueClicks for now
+        uniqueClicks: point.uniqueVisitors || clicks,
         conversions: conversions,
         revenue: revenue,
         cost: spend,
@@ -83,20 +69,34 @@ export class TrendsService {
       };
     });
 
+    // Get breakdowns from entity stats
+    const range = this.getRangeFromDates(startDate, endDate);
+    let countryBreakdown: any[] = [];
+    let deviceBreakdown: any[] = [];
+    let browserBreakdown: any[] = [];
+
+    if (campaignId) {
+      [countryBreakdown, deviceBreakdown, browserBreakdown] = await Promise.all([
+        this.analyticsQueryService.getEntityStats('countries', range),
+        this.analyticsQueryService.getEntityStats('device_types', range),
+        this.analyticsQueryService.getEntityStats('browsers', range),
+      ]);
+    }
+
     // Map breakdowns
-    const mapBreakdown = (items: TrafficSummary[]) => {
+    const mapBreakdown = (items: any[]) => {
       return items.map(item => {
         const clicks = item.clicks || 0;
         const conversions = item.conversions || 0;
         const revenue = item.revenue || 0;
         const spend = item.spend || 0;
         const profit = revenue - spend;
-        
+
         return {
           dimension: '',
-          value: (item as any).country || (item as any).device || (item as any).browser || 'unknown',
+          value: item.name || 'unknown',
           clicks: clicks,
-          uniqueClicks: clicks,
+          uniqueClicks: item.unique_visitors || clicks,
           conversions: conversions,
           revenue: revenue,
           cost: spend,
@@ -122,9 +122,9 @@ export class TrendsService {
   /**
    * Calculate summary statistics from trend data
    */
-  private calculateSummary(data: TrafficSummary[]): TrendSummary {
+  private calculateSummary(data: any[]): TrendSummary {
     const totalClicks = data.reduce((sum, d) => sum + (d.clicks || 0), 0);
-    const totalUniqueClicks = totalClicks; // Use clicks as uniqueClicks for now
+    const totalUniqueClicks = data.reduce((sum, d) => sum + (d.uniqueVisitors || d.clicks || 0), 0);
     const totalConversions = data.reduce((sum, d) => sum + (d.conversions || 0), 0);
     const totalRevenue = data.reduce((sum, d) => sum + (d.revenue || 0), 0);
     const totalCost = data.reduce((sum, d) => sum + (d.spend || 0), 0);
@@ -140,13 +140,13 @@ export class TrendsService {
     const mid = Math.floor(data.length / 2);
     const firstHalf = data.slice(0, mid);
     const secondHalf = data.slice(mid);
-    
+
     const firstHalfClicks = firstHalf.reduce((sum, d) => sum + (d.clicks || 0), 0);
     const secondHalfClicks = secondHalf.reduce((sum, d) => sum + (d.clicks || 0), 0);
-    
+
     let trend: 'up' | 'down' | 'stable' = 'stable';
     let changePercent = 0;
-    
+
     if (firstHalfClicks > 0) {
       changePercent = ((secondHalfClicks - firstHalfClicks) / firstHalfClicks) * 100;
       if (changePercent > 5) trend = 'up';
@@ -190,15 +190,10 @@ export class TrendsService {
       roi: number;
     };
   }> {
-    let currentData: TrafficSummary[] = [];
-    let previousData: TrafficSummary[] = [];
-
-    if (campaignId) {
-      [currentData, previousData] = await Promise.all([
-        this.trafficRepo.getTrend(campaignId, currentStart, currentEnd),
-        this.trafficRepo.getTrend(campaignId, previousStart, previousEnd),
-      ]);
-    }
+    const [currentData, previousData] = await Promise.all([
+      this.analyticsQueryService.getTrendReport(currentStart, currentEnd, 'day', campaignId),
+      this.analyticsQueryService.getTrendReport(previousStart, previousEnd, 'day', campaignId),
+    ]);
 
     const current = this.calculateSummary(currentData);
     const previous = this.calculateSummary(previousData);
@@ -207,23 +202,37 @@ export class TrendsService {
       current,
       previous,
       changes: {
-        clicks: previous.totalClicks > 0 
-          ? ((current.totalClicks - previous.totalClicks) / previous.totalClicks) * 100 
+        clicks: previous.totalClicks > 0
+          ? ((current.totalClicks - previous.totalClicks) / previous.totalClicks) * 100
           : 0,
-        conversions: previous.totalConversions > 0 
-          ? ((current.totalConversions - previous.totalConversions) / previous.totalConversions) * 100 
+        conversions: previous.totalConversions > 0
+          ? ((current.totalConversions - previous.totalConversions) / previous.totalConversions) * 100
           : 0,
-        revenue: previous.totalRevenue > 0 
-          ? ((current.totalRevenue - previous.totalRevenue) / previous.totalRevenue) * 100 
+        revenue: previous.totalRevenue > 0
+          ? ((current.totalRevenue - previous.totalRevenue) / previous.totalRevenue) * 100
           : 0,
-        profit: previous.totalProfit !== 0 
-          ? ((current.totalProfit - previous.totalProfit) / Math.abs(previous.totalProfit)) * 100 
+        profit: previous.totalProfit !== 0
+          ? ((current.totalProfit - previous.totalProfit) / Math.abs(previous.totalProfit)) * 100
           : 0,
-        roi: previous.avgRoi !== 0 
-          ? ((current.avgRoi - previous.avgRoi) / Math.abs(previous.avgRoi)) * 100 
+        roi: previous.avgRoi !== 0
+          ? ((current.avgRoi - previous.avgRoi) / Math.abs(previous.avgRoi)) * 100
           : 0,
       },
     };
+  }
+
+  /**
+   * Convert date range to range string for entity stats
+   */
+  private getRangeFromDates(startDate: string, endDate: string): string {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 1) return 'today';
+    if (diffDays <= 7) return '7days';
+    if (diffDays <= 30) return '30days';
+    return '30days';
   }
 }
 

@@ -43,6 +43,7 @@ export default function App() {
           <Route path="traffic-sources" element={<TrafficSources />} />
           <Route path="affiliate-networks" element={<AffiliateNetworks />} />
           <Route path="trends" element={<Trends />} />
+          <Route path="reports" element={<Reports />} />
           <Route path="audit" element={<ClicksLog />} />
           <Route path="conversions" element={<ConversionsLog />} />
           <Route path="blacklist" element={<Blacklist />} />

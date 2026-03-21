@@ -415,6 +415,82 @@ export class AnalyticsQueryService {
         return 1;
     }
   }
+
+  /**
+   * 获取趋势报告数据
+   * 用于 Trends 页面，从 Analytics Engine 获取趋势数据
+   *
+   * @param startDate 开始日期
+   * @param endDate 结束日期
+   * @param interval 时间间隔 (hour, day, week, month)
+   * @param campaignId 可选的 Campaign ID 过滤
+   * @returns 趋势数据点数组
+   */
+  async getTrendReport(
+    startDate: string,
+    endDate: string,
+    interval: 'hour' | 'day' | 'week' | 'month' = 'day',
+    campaignId?: string
+  ): Promise<any[]> {
+    let dateFormat: string;
+    switch (interval) {
+      case 'hour':
+        dateFormat = 'toStartOfHour(timestamp)';
+        break;
+      case 'week':
+        dateFormat = 'toStartOfWeek(timestamp)';
+        break;
+      case 'month':
+        dateFormat = 'toStartOfMonth(timestamp)';
+        break;
+      case 'day':
+      default:
+        dateFormat = 'toDate(timestamp)';
+    }
+
+    const start = new Date(startDate).toISOString().replace('T', ' ').substring(0, 19);
+    const end = new Date(endDate).toISOString().replace('T', ' ').substring(0, 19);
+
+    const conditions: string[] = [];
+    conditions.push(`timestamp >= parseDateTime('${start}')`);
+    conditions.push(`timestamp <= parseDateTime('${end}')`);
+
+    if (campaignId) {
+      conditions.push(`blob2 = '${campaignId}'`);
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+    const sql = `
+      SELECT
+        ${dateFormat} as date,
+        count() as clicks,
+        count(distinct blob14) as uniqueVisitors,
+        sum(double1) as cost
+      FROM cf_tracking_events
+      ${whereClause}
+      GROUP BY ${dateFormat}
+      ORDER BY ${dateFormat}
+    `;
+
+    try {
+      const result = await this.executeQuery(sql);
+      const data = result.data || [];
+
+      return data.map((row: any) => ({
+        date: row.date || '',
+        clicks: Number(row.clicks) || 0,
+        uniqueVisitors: Number(row.uniqueVisitors) || 0,
+        conversions: 0,
+        spend: Number(row.cost) || 0,
+        revenue: 0,
+        impressions: 0,
+      }));
+    } catch (err) {
+      console.error('[AnalyticsQueryService] Failed to get trend report:', err);
+      throw err;
+    }
+  }
 }
 
 interface AnalyticsEngineResponse {
