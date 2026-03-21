@@ -27,6 +27,9 @@ export interface AnalyticsClickRecord {
   device: string;
   browser: string;
   os: string;
+  isp: string;
+  userAgent: string;
+  fingerprint: string;
   visitorId: string;
   subId1: string;
   subId2: string;
@@ -39,6 +42,9 @@ export interface AnalyticsClickRecord {
   cost: number;
   riskScore: number;
   cfBotScore: number;
+  connectionType: number;
+  proxy: number;
+  isBot: number;
   timestamp: string;
 }
 
@@ -111,14 +117,14 @@ export class AnalyticsQueryService {
    * 构建 Recent Clicks SQL 查询
    *
    * 数据模型 (Analytics Engine 限制: blobs≤20, doubles≤20, indexes≤1):
-   * - indexes[0]: campaignId (用于索引查询)
-   * - blobs: blob1=campaignId, blob2=ip, blob3=country, blob4=city, blob5=device
-   *           blob6=browser, blob7=os, blob8-12=subId1-5, blob13=utmSource
-   *           blob14=utmMedium, blob15=utmCampaign, blob16=referer
-   * - doubles: double1=clickId, double2=flowId, double3=landingPageId, double4=offerId
-   *            double5=visitorId, double6=cost, double7=riskScore, double8=cfBotScore
-   *
-   * 注意：数据集名称为 cf_tracking_events
+   * 
+   * indexes[0]: campaignId (用于索引查询)
+   * 
+   * blobs[0-17]: ip, country, city, device, browser, os, subId1-5, utmSource, utmMedium, 
+   *              utmCampaign, referer, userAgent, isp, fingerprint
+   * 
+   * doubles[0-10]: clickId, flowId, landingPageId, offerId, visitorId, cost, riskScore, 
+   *                cfBotScore, connectionType, proxy, isBot
    */
   private buildRecentClicksSQL(params: {
     limit: number;
@@ -134,15 +140,15 @@ export class AnalyticsQueryService {
     }
 
     if (params.campaignId) {
-      conditions.push(`blob1 = '${params.campaignId}'`);
+      conditions.push(`index1 = '${params.campaignId}'`);
     }
 
     if (params.country) {
-      conditions.push(`blob3 = '${params.country}'`);
+      conditions.push(`blob2 = '${params.country}'`);
     }
 
     if (params.device) {
-      conditions.push(`blob5 = '${params.device}'`);
+      conditions.push(`blob4 = '${params.device}'`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -150,29 +156,35 @@ export class AnalyticsQueryService {
     return `
       SELECT
         double1 as clickIdNumeric,
-        blob1 as campaignId,
+        index1 as campaignId,
         double2 as flowIdNumeric,
         double3 as landingPageIdNumeric,
         double4 as offerIdNumeric,
-        blob2 as ip,
-        blob3 as country,
-        blob4 as city,
-        blob5 as device,
-        blob6 as browser,
-        blob7 as os,
+        blob1 as ip,
+        blob2 as country,
+        blob3 as city,
+        blob4 as device,
+        blob5 as browser,
+        blob6 as os,
         double5 as visitorIdNumeric,
-        blob8 as subId1,
-        blob9 as subId2,
-        blob10 as subId3,
-        blob11 as subId4,
-        blob12 as subId5,
-        blob13 as utmSource,
-        blob14 as utmMedium,
-        blob15 as utmCampaign,
-        blob16 as referer,
+        blob7 as subId1,
+        blob8 as subId2,
+        blob9 as subId3,
+        blob10 as subId4,
+        blob11 as subId5,
+        blob12 as utmSource,
+        blob13 as utmMedium,
+        blob14 as utmCampaign,
+        blob15 as referer,
+        blob16 as userAgent,
+        blob17 as isp,
+        blob18 as fingerprint,
         double6 as cost,
         double7 as riskScore,
         double8 as cfBotScore,
+        double9 as connectionType,
+        double10 as proxy,
+        double11 as isBot,
         timestamp
       FROM cf_tracking_events
       ${whereClause}
@@ -233,6 +245,9 @@ export class AnalyticsQueryService {
       device: row.device || '',
       browser: row.browser || '',
       os: row.os || '',
+      isp: row.isp || '',
+      userAgent: row.userAgent || '',
+      fingerprint: row.fingerprint || '',
       visitorId: row.visitorIdNumeric ? String(row.visitorIdNumeric) : '',
       subId1: row.subId1 || '',
       subId2: row.subId2 || '',
@@ -245,6 +260,9 @@ export class AnalyticsQueryService {
       cost: row.cost || 0,
       riskScore: row.riskScore || 0,
       cfBotScore: row.cfBotScore || 0,
+      connectionType: row.connectionType || 0,
+      proxy: row.proxy || 0,
+      isBot: row.isBot || 0,
       timestamp: row.timestamp || '',
     }));
   }

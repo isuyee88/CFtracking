@@ -94,6 +94,7 @@ export interface ClickData {
   fingerprint?: string | null;
   riskScore?: number;
   isBot?: boolean;
+  isProxy?: boolean;
   isSuspicious?: boolean;
   riskReasons?: string[];
 }
