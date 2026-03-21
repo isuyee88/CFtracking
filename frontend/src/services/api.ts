@@ -218,19 +218,19 @@ export async function deleteAffiliateNetwork(id: string | number) {
 // ==================== Landings API ====================
 
 export async function fetchLandings(withStats = true) {
-  const response = await fetch(`${API_BASE_URL}/api/landings?withStats=${withStats}`);
+  const response = await fetch(`${API_BASE_URL}/api/landing-pages?withStats=${withStats}`);
   const result = await handleResponse(response);
   return result.data?.list || result.data || [];
 }
 
 export async function fetchLanding(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/landings/${id}`);
+  const response = await fetch(`${API_BASE_URL}/api/landing-pages/${id}`);
   const result = await handleResponse(response);
   return result.data;
 }
 
 export async function createLanding(data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/landings`, {
+  const response = await fetch(`${API_BASE_URL}/api/landing-pages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -240,7 +240,7 @@ export async function createLanding(data: any) {
 }
 
 export async function updateLanding(id: string | number, data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/landings/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/landing-pages/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -250,7 +250,7 @@ export async function updateLanding(id: string | number, data: any) {
 }
 
 export async function deleteLanding(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/landings/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/landing-pages/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);

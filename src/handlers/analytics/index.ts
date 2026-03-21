@@ -57,14 +57,14 @@ export class AnalyticsService {
       ];
 
       const doubles = [
-        0, // clickId numeric (暂用0，后续ID数值化后替换)
-        data.flowId ? 0 : 0, // flowId numeric
-        data.landingPageId ? 0 : 0, // landingPageId numeric
-        data.offerId ? 0 : 0, // offerId numeric
-        0, // visitorId numeric
-        data.cost || 0,
-        data.riskScore || 0,
-        data.cfBotScore || 0,
+        this.extractNumericId(data.clickId), // double1: clickId numeric
+        data.flowId ? this.extractNumericId(data.flowId) : 0, // double2: flowId numeric
+        data.landingPageId ? this.extractNumericId(data.landingPageId) : 0, // double3: landingPageId numeric
+        data.offerId ? this.extractNumericId(data.offerId) : 0, // double4: offerId numeric
+        this.extractNumericId(data.visitorId), // double5: visitorId numeric
+        data.cost || 0, // double6: cost
+        data.riskScore || 0, // double7: riskScore
+        data.cfBotScore || 0, // double8: cfBotScore
       ];
 
       console.log('[AnalyticsService] Writing click:', {
@@ -83,6 +83,13 @@ export class AnalyticsService {
     } catch (error) {
       console.error('[AnalyticsService] Error tracking click to Analytics Engine:', error);
     }
+  }
+
+  private extractNumericId(id: string): number {
+    if (!id) return 0;
+    const uuidPart = id.replace(/[^0-9a-f]/gi, '');
+    const numericPart = uuidPart.replace(/^0+/, '').slice(0, 15);
+    return numericPart ? parseInt(numericPart, 16) : 0;
   }
 
   /**
