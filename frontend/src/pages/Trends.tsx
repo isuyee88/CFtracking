@@ -3,6 +3,7 @@
  * Purpose: Trends 趋势分析页面
  * Input/Output: 展示流量趋势数据、统计图表
  * Logic: 从 API 获取趋势数据，展示时间序列图表和多维度分析
+ * 前后端交互: 调用 /api/trends/report 接口
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -10,67 +11,13 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar 
 } from 'recharts';
-import { Calendar, TrendingUp, TrendingDown, Minus, Filter, Download, RefreshCw, ChevronDown } from 'lucide-react';
+import { Calendar, TrendingUp, TrendingDown, Minus, Filter, Download, RefreshCw, ChevronDown, AlertCircle } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { fetchTrendsReport, fetchCampaigns, type TrendsReport } from '../services/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
-}
-
-interface TrendDataPoint {
-  timestamp: string;
-  date: string;
-  clicks: number;
-  uniqueClicks: number;
-  conversions: number;
-  revenue: number;
-  cost: number;
-  profit: number;
-  roi: number;
-  epc: number;
-  cpa: number;
-  ctr: number;
-  cr: number;
-}
-
-interface TrendSummary {
-  totalClicks: number;
-  totalUniqueClicks: number;
-  totalConversions: number;
-  totalRevenue: number;
-  totalCost: number;
-  totalProfit: number;
-  avgRoi: number;
-  avgEpc: number;
-  avgCpa: number;
-  avgCtr: number;
-  avgCr: number;
-  trend: 'up' | 'down' | 'stable';
-  changePercent: number;
-}
-
-interface DimensionData {
-  name: string;
-  value: number;
-  clicks: number;
-  conversions: number;
-  revenue: number;
-}
-
-interface TrendsReport {
-  filter: {
-    startDate: string;
-    endDate: string;
-    interval: string;
-  };
-  summary: TrendSummary;
-  data: TrendDataPoint[];
-  trafficSources: DimensionData[];
-  affiliateNetworks: DimensionData[];
-  deviceTypes: DimensionData[];
-  countries: DimensionData[];
-  offers: DimensionData[];
 }
 
 const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#10b981'];
@@ -140,57 +87,70 @@ const StatCard = ({ title, value, trend, changePercent, prefix = '' }: {
 
 const PieChartCard = ({ title, data, dataKey, nameKey }: { 
   title: string; 
-  data: DimensionData[]; 
-  dataKey: keyof DimensionData;
-  nameKey: keyof DimensionData;
+  data: Array<{ name: string; value: number; clicks?: number; conversions?: number; revenue?: number }>; 
+  dataKey: string;
+  nameKey: string;
 }) => (
   <div className="bg-surface p-6 rounded-lg border border-border-default">
     <h3 className="text-lg font-semibold text-fg-default mb-4">{title}</h3>
-    <ResponsiveContainer width="100%" height={250}>
-      <PieChart>
-        <Pie
-          data={data}
-          cx="50%"
-          cy="50%"
-          labelLine={false}
-          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-          outerRadius={80}
-          fill="#8884d8"
-          dataKey={dataKey as string}
-          nameKey={nameKey as string}
-        >
-          {data.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-          ))}
-        </Pie>
-        <Tooltip />
-      </PieChart>
-    </ResponsiveContainer>
+    {data && data.length > 0 ? (
+      <ResponsiveContainer width="100%" height={250}>
+        <PieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            labelLine={false}
+            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+            outerRadius={80}
+            fill="#8884d8"
+            dataKey={dataKey}
+            nameKey={nameKey}
+          >
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip />
+        </PieChart>
+      </ResponsiveContainer>
+    ) : (
+      <div className="h-[250px] flex items-center justify-center text-fg-muted">
+        No data available
+      </div>
+    )}
   </div>
 );
 
 const BarChartCard = ({ title, data, dataKey }: { 
   title: string; 
-  data: DimensionData[]; 
-  dataKey: keyof DimensionData;
+  data: Array<{ name: string; value: number; clicks?: number; conversions?: number; revenue?: number }>; 
+  dataKey: string;
 }) => (
   <div className="bg-surface p-6 rounded-lg border border-border-default">
     <h3 className="text-lg font-semibold text-fg-default mb-4">{title}</h3>
-    <ResponsiveContainer width="100%" height={250}>
-      <BarChart data={data} layout="vertical">
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-        <XAxis type="number" tick={{ fontSize: 12 }} />
-        <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} />
-        <Tooltip />
-        <Bar dataKey={dataKey as string} fill="#6366f1" radius={[0, 4, 4, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
+    {data && data.length > 0 ? (
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={data} layout="vertical">
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis type="number" tick={{ fontSize: 12 }} />
+          <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} />
+          <Tooltip />
+          <Bar dataKey={dataKey} fill="#6366f1" radius={[0, 4, 4, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    ) : (
+      <div className="h-[250px] flex items-center justify-center text-fg-muted">
+        No data available
+      </div>
+    )}
   </div>
 );
 
 export const Trends = () => {
   const [report, setReport] = useState<TrendsReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState({
     startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
@@ -200,7 +160,19 @@ export const Trends = () => {
   const [showDateDropdown, setShowDateDropdown] = useState(false);
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [tempDateRange, setTempDateRange] = useState(dateRange);
+  const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load campaigns for filter
+  useEffect(() => {
+    fetchCampaigns()
+      .then(data => {
+        const list = Array.isArray(data) ? data : data?.list || [];
+        setCampaigns(list.map((c: any) => ({ id: c.id || c.campaignId, name: c.name || c.campaignName })));
+      })
+      .catch(err => console.error('Failed to load campaigns:', err));
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -238,115 +210,73 @@ export const Trends = () => {
   // Fetch data when dateRange or interval changes
   useEffect(() => {
     setLoading(true);
+    setError(null);
     
-    // Simulate API call delay
-    const timer = setTimeout(() => {
-      const days = Math.max(1, Math.ceil((new Date(dateRange.endDate).getTime() - new Date(dateRange.startDate).getTime()) / (24 * 60 * 60 * 1000)));
-      
-      const mockData: TrendDataPoint[] = Array.from({ length: Math.min(days, 30) }, (_, i) => {
-        const end = new Date(dateRange.endDate);
-        const date = new Date(end.getTime() - (days - 1 - i) * 24 * 60 * 60 * 1000);
-        return {
-        timestamp: date.toISOString(),
-        date: date.toISOString().split('T')[0],
-        clicks: Math.floor(Math.random() * 1000) + 500,
-        uniqueClicks: Math.floor(Math.random() * 800) + 400,
-        conversions: Math.floor(Math.random() * 50) + 10,
-        revenue: Math.floor(Math.random() * 5000) + 1000,
-        cost: Math.floor(Math.random() * 2000) + 500,
-        profit: Math.floor(Math.random() * 3000) + 500,
-        roi: Math.random() * 100 + 20,
-        epc: Math.random() * 5 + 1,
-        cpa: Math.random() * 50 + 10,
-        ctr: Math.random() * 5 + 1,
-        cr: Math.random() * 3 + 0.5,
-      };
-    });
+    fetchTrendsReport({
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate,
+      interval,
+      campaignId: selectedCampaignId || undefined,
+    })
+      .then(data => {
+        setReport(data);
+      })
+      .catch(err => {
+        console.error('Failed to fetch trends:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load trends data');
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [dateRange, interval, selectedCampaignId]);
 
-    // Mock dimension data
-    const mockTrafficSources: DimensionData[] = [
-      { name: 'Facebook Ads', value: 35, clicks: 4500, conversions: 180, revenue: 12500 },
-      { name: 'Google Ads', value: 28, clicks: 3600, conversions: 145, revenue: 9800 },
-      { name: 'Native Ads', value: 18, clicks: 2300, conversions: 92, revenue: 6200 },
-      { name: 'TikTok', value: 12, clicks: 1500, conversions: 60, revenue: 4100 },
-      { name: 'Organic', value: 7, clicks: 900, conversions: 36, revenue: 2500 },
-    ];
-
-    const mockAffiliateNetworks: DimensionData[] = [
-      { name: 'MaxBounty', value: 32, clicks: 4100, conversions: 164, revenue: 11400 },
-      { name: 'ClickBank', value: 25, clicks: 3200, conversions: 128, revenue: 8900 },
-      { name: 'CJ Affiliate', value: 20, clicks: 2600, conversions: 104, revenue: 7200 },
-      { name: 'ShareASale', value: 15, clicks: 1900, conversions: 76, revenue: 5300 },
-      { name: 'Others', value: 8, clicks: 1000, conversions: 40, revenue: 2800 },
-    ];
-
-    const mockDeviceTypes: DimensionData[] = [
-      { name: 'Mobile', value: 55, clicks: 7100, conversions: 284, revenue: 19800 },
-      { name: 'Desktop', value: 35, clicks: 4500, conversions: 180, revenue: 12500 },
-      { name: 'Tablet', value: 10, clicks: 1300, conversions: 52, revenue: 3600 },
-    ];
-
-    const mockCountries: DimensionData[] = [
-      { name: 'United States', value: 42, clicks: 5400, conversions: 216, revenue: 15100 },
-      { name: 'United Kingdom', value: 18, clicks: 2300, conversions: 92, revenue: 6400 },
-      { name: 'Canada', value: 12, clicks: 1500, conversions: 60, revenue: 4200 },
-      { name: 'Australia', value: 10, clicks: 1300, conversions: 52, revenue: 3600 },
-      { name: 'Germany', value: 8, clicks: 1000, conversions: 40, revenue: 2800 },
-      { name: 'Others', value: 10, clicks: 1300, conversions: 52, revenue: 3600 },
-    ];
-
-    const mockOffers: DimensionData[] = [
-      { name: 'Weight Loss Pro', value: 28, clicks: 3600, conversions: 144, revenue: 10000 },
-      { name: 'Crypto Trader', value: 22, clicks: 2800, conversions: 112, revenue: 7800 },
-      { name: 'Casino VIP', value: 18, clicks: 2300, conversions: 92, revenue: 6400 },
-      { name: 'Insurance Plus', value: 15, clicks: 1900, conversions: 76, revenue: 5300 },
-      { name: 'Loan Express', value: 12, clicks: 1500, conversions: 60, revenue: 4200 },
-      { name: 'Others', value: 5, clicks: 600, conversions: 24, revenue: 1700 },
-    ];
-
-    const mockReport: TrendsReport = {
-      filter: {
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-        interval,
-      },
-      summary: {
-        totalClicks: mockData.reduce((sum, d) => sum + d.clicks, 0),
-        totalUniqueClicks: mockData.reduce((sum, d) => sum + d.uniqueClicks, 0),
-        totalConversions: mockData.reduce((sum, d) => sum + d.conversions, 0),
-        totalRevenue: mockData.reduce((sum, d) => sum + d.revenue, 0),
-        totalCost: mockData.reduce((sum, d) => sum + d.cost, 0),
-        totalProfit: mockData.reduce((sum, d) => sum + d.profit, 0),
-        avgRoi: 45.2,
-        avgEpc: 2.5,
-        avgCpa: 35.8,
-        avgCtr: 2.1,
-        avgCr: 1.8,
-        trend: 'up',
-        changePercent: 12.5,
-      },
-      data: mockData,
-      trafficSources: mockTrafficSources,
-      affiliateNetworks: mockAffiliateNetworks,
-      deviceTypes: mockDeviceTypes,
-      countries: mockCountries,
-      offers: mockOffers,
-    };
-
-      setReport(mockReport);
-      setLoading(false);
-    }, 300);
-    
-    return () => clearTimeout(timer);
-  }, [dateRange, interval]);
-
-  if (loading || !report) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
         <RefreshCw className="animate-spin text-accent-fg" size={32} />
       </div>
     );
   }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 text-danger">
+        <AlertCircle size={48} className="mb-4" />
+        <p className="text-lg font-medium">{error}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="mt-4 px-4 py-2 bg-surface border border-border-default rounded-md text-fg-default hover:bg-surface-container transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!report) {
+    return (
+      <div className="flex items-center justify-center h-96 text-fg-muted">
+        No data available
+      </div>
+    );
+  }
+
+  // Transform breakdowns for charts
+  const countryData = report.breakdowns?.country?.map(item => ({
+    name: item.value || 'Unknown',
+    value: item.clicks || 0,
+    clicks: item.clicks || 0,
+    conversions: item.conversions || 0,
+    revenue: item.revenue || 0,
+  })) || [];
+
+  const deviceData = report.breakdowns?.device?.map(item => ({
+    name: item.value || 'Unknown',
+    value: item.clicks || 0,
+    clicks: item.clicks || 0,
+    conversions: item.conversions || 0,
+    revenue: item.revenue || 0,
+  })) || [];
 
   return (
     <div className="space-y-6">
@@ -450,6 +380,20 @@ export const Trends = () => {
         
         <div className="h-6 w-px bg-border-default" />
         
+        {/* Campaign Filter */}
+        <select
+          value={selectedCampaignId}
+          onChange={(e) => setSelectedCampaignId(e.target.value)}
+          className="px-3 py-2 bg-surface-container border border-border-default rounded-md text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+        >
+          <option value="">All Campaigns</option>
+          {campaigns.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        
+        <div className="h-6 w-px bg-border-default" />
+        
         {/* Interval Selector */}
         <div className="flex items-center gap-1 bg-surface-container rounded-md p-1">
           {(['hour', 'day', 'week', 'month'] as const).map((i) => (
@@ -484,142 +428,143 @@ export const Trends = () => {
         {/* Clicks & Conversions Chart */}
         <div className="bg-surface p-6 rounded-lg border border-border-default">
           <h3 className="text-lg font-semibold text-fg-default mb-4">Clicks & Conversions</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={report.data}>
-              <defs>
-                <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                </linearGradient>
-                <linearGradient id="colorConversions" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Legend />
-              <Area type="monotone" dataKey="clicks" stroke="#6366f1" fillOpacity={1} fill="url(#colorClicks)" />
-              <Area type="monotone" dataKey="conversions" stroke="#22c55e" fillOpacity={1} fill="url(#colorConversions)" />
-            </AreaChart>
-          </ResponsiveContainer>
+          {report.data && report.data.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={report.data}>
+                <defs>
+                  <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorConversions" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Legend />
+                <Area type="monotone" dataKey="clicks" stroke="#6366f1" fillOpacity={1} fill="url(#colorClicks)" />
+                <Area type="monotone" dataKey="conversions" stroke="#22c55e" fillOpacity={1} fill="url(#colorConversions)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-fg-muted">
+              No trend data available. Select a campaign to view trends.
+            </div>
+          )}
         </div>
 
         {/* Revenue & Cost Chart */}
         <div className="bg-surface p-6 rounded-lg border border-border-default">
           <h3 className="text-lg font-semibold text-fg-default mb-4">Revenue & Cost</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={report.data}>
-              <defs>
-                <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                </linearGradient>
-                <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
-              <Legend />
-              <Area type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" />
-              <Area type="monotone" dataKey="cost" stroke="#ef4444" fillOpacity={1} fill="url(#colorCost)" />
-            </AreaChart>
-          </ResponsiveContainer>
+          {report.data && report.data.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={report.data}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
+                <Legend />
+                <Area type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" />
+                <Area type="monotone" dataKey="cost" stroke="#ef4444" fillOpacity={1} fill="url(#colorCost)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-fg-muted">
+              No trend data available. Select a campaign to view trends.
+            </div>
+          )}
         </div>
 
         {/* ROI Chart */}
         <div className="bg-surface p-6 rounded-lg border border-border-default">
           <h3 className="text-lg font-semibold text-fg-default mb-4">ROI Trend</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={report.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
-              <Legend />
-              <Line type="monotone" dataKey="roi" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          {report.data && report.data.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={report.data}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
+                <Legend />
+                <Line type="monotone" dataKey="roi" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-fg-muted">
+              No trend data available
+            </div>
+          )}
         </div>
 
         {/* EPC & CPA Chart */}
         <div className="bg-surface p-6 rounded-lg border border-border-default">
           <h3 className="text-lg font-semibold text-fg-default mb-4">EPC & CPA</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={report.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
-              <Legend />
-              <Line type="monotone" dataKey="epc" stroke="#06b6d4" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="cpa" stroke="#f59e0b" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          {report.data && report.data.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={report.data}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
+                <Legend />
+                <Line type="monotone" dataKey="epc" stroke="#06b6d4" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="cpa" stroke="#f59e0b" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-fg-muted">
+              No trend data available
+            </div>
+          )}
         </div>
       </div>
 
       {/* Dimension Breakdown Charts */}
-      <div className="space-y-6">
-        <h2 className="text-xl font-semibold text-fg-default">Dimension Breakdown</h2>
-        
-        {/* Traffic Sources & Affiliate Networks */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <PieChartCard 
-            title="Traffic Sources Distribution" 
-            data={report.trafficSources} 
-            dataKey="value" 
-            nameKey="name" 
-          />
-          <PieChartCard 
-            title="Affiliate Networks Distribution" 
-            data={report.affiliateNetworks} 
-            dataKey="value" 
-            nameKey="name" 
-          />
+      {selectedCampaignId && (
+        <div className="space-y-6">
+          <h2 className="text-xl font-semibold text-fg-default">Dimension Breakdown</h2>
+          
+          {/* Device Types & Countries */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <PieChartCard 
+              title="Device Types Distribution" 
+              data={deviceData} 
+              dataKey="value" 
+              nameKey="name" 
+            />
+            <BarChartCard 
+              title="Top Countries by Clicks" 
+              data={countryData} 
+              dataKey="clicks" 
+            />
+          </div>
         </div>
+      )}
 
-        {/* Device Types & Countries */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <PieChartCard 
-            title="Device Types Distribution" 
-            data={report.deviceTypes} 
-            dataKey="value" 
-            nameKey="name" 
-          />
-          <BarChartCard 
-            title="Top Countries by Clicks" 
-            data={report.countries} 
-            dataKey="clicks" 
-          />
+      {/* No Campaign Selected Message */}
+      {!selectedCampaignId && (
+        <div className="bg-surface p-8 rounded-lg border border-border-default text-center">
+          <p className="text-fg-muted">
+            Select a campaign from the dropdown above to view detailed trends and breakdowns.
+          </p>
         </div>
-
-        {/* Top Offers */}
-        <div className="bg-surface p-6 rounded-lg border border-border-default">
-          <h3 className="text-lg font-semibold text-fg-default mb-4">Top Offers Performance</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={report.offers}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={80} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(value: number, name: string) => {
-                if (name === 'revenue') return `$${value.toLocaleString()}`;
-                return value.toLocaleString();
-              }} />
-              <Legend />
-              <Bar dataKey="clicks" fill="#6366f1" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="conversions" fill="#22c55e" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="revenue" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
+
+export default Trends;

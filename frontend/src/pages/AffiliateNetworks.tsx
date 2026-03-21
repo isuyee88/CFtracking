@@ -147,9 +147,9 @@ export const AffiliateNetworks = () => {
     const loadNetworks = async () => {
       try {
         setLoading(true);
-        const response = await fetchAffiliateNetworks();
-        if (response.success && response.data) {
-          setNetworks(response.data);
+        const data = await fetchAffiliateNetworks();
+        if (Array.isArray(data)) {
+          setNetworks(data);
         } else {
           // Use mock data if API fails
           setNetworks([
@@ -225,15 +225,15 @@ export const AffiliateNetworks = () => {
   const handleFormSubmit = async (formData: Record<string, any>) => {
     try {
       if (formMode === 'create') {
-        const response = await createAffiliateNetwork(formData);
-        if (response.success && response.data) {
-          setNetworks(prev => [...prev, response.data]);
+        const network = await createAffiliateNetwork(formData);
+        if (network && network.id) {
+          setNetworks(prev => [...prev, network]);
         }
       } else if (selectedNetwork?.id) {
-        const response = await updateAffiliateNetwork(selectedNetwork.id, formData);
-        if (response.success && response.data) {
-          setNetworks(prev => 
-            prev.map(n => n.id === selectedNetwork.id ? response.data : n)
+        const network = await updateAffiliateNetwork(selectedNetwork.id, formData);
+        if (network && network.id) {
+          setNetworks(prev =>
+            prev.map(n => n.id === selectedNetwork.id ? network : n)
           );
         }
       }

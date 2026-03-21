@@ -166,9 +166,9 @@ export const Offers = () => {
     const loadOffers = async () => {
       try {
         setLoading(true);
-        const response = await fetchOffers();
-        if (response.success && response.data) {
-          setOffers(response.data);
+        const data = await fetchOffers();
+        if (Array.isArray(data)) {
+          setOffers(data);
         } else {
           // Use mock data if API fails
           setOffers([
@@ -253,15 +253,15 @@ export const Offers = () => {
   const handleFormSubmit = async (formData: Record<string, any>) => {
     try {
       if (formMode === 'create') {
-        const response = await createOffer(formData);
-        if (response.success && response.data) {
-          setOffers(prev => [...prev, response.data]);
+        const offer = await createOffer(formData);
+        if (offer && offer.id) {
+          setOffers(prev => [...prev, offer]);
         }
       } else if (selectedOffer?.id) {
-        const response = await updateOffer(selectedOffer.id, formData);
-        if (response.success && response.data) {
-          setOffers(prev => 
-            prev.map(o => o.id === selectedOffer.id ? response.data : o)
+        const offer = await updateOffer(selectedOffer.id, formData);
+        if (offer && offer.id) {
+          setOffers(prev =>
+            prev.map(o => o.id === selectedOffer.id ? offer : o)
           );
         }
       }

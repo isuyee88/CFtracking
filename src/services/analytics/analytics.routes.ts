@@ -4,9 +4,9 @@
  * @module services/analytics/analytics.routes
  *
  * 数据源策略 (Option C 混合方案):
- * - 近期数据 (< 7 天): Analytics Engine 直接查询
- * - 历史数据 (> 7 天): D1 trafficSummary 聚合数据
- * - Dashboard 统计: D1 trafficSummary
+ * - 近期数据 (< 3个月): Analytics Engine 直接查询
+ * - Dashboard 统计: Analytics Engine 实时聚合
+ * - 历史聚合报表: D1 trafficSummary (待实现 aggregation service)
  */
 
 import { Hono } from 'hono';
@@ -23,21 +23,20 @@ export function createAnalyticsRouter() {
   /**
    * GET /api/analytics/dashboard
    * 获取仪表板统计数据
+   *
+   * 数据源: Analytics Engine (实时聚合，保留 3 个月)
+   * 用途: Dashboard 核心指标显示
    */
   router.get('/dashboard', async (c) => {
     try {
       const range = c.req.query('range') || 'today';
-      const db = getD1Connection(c.env);
-      const trafficRepo = new TrafficRepository(db);
+      const analyticsQuery = createAnalyticsQueryService(c.env);
 
-      // 获取统计数据
-      const stats = await trafficRepo.getDashboardStats(range);
-
-      // 生成图表数据
-      const chartData = await trafficRepo.getChartData(range);
+      const stats = await analyticsQuery.getDashboardStats(range);
+      const chartData = await analyticsQuery.getChartData(range);
 
       return c.json(success({
-        metrics: stats,
+        ...stats,
         chartData,
         range,
         timestamp: new Date().toISOString(),
@@ -153,11 +152,15 @@ export function createAnalyticsRouter() {
         );
       }
 
-      const db = getD1Connection(c.env);
-      const trafficRepo = new TrafficRepository(db);
+      const analyticsQuery = createAnalyticsQueryService(c.env);
 
-      // 根据实体类型获取统计数据
-      const stats = await trafficRepo.getEntityStats(type, range);
+      let stats;
+      try {
+        stats = await analyticsQuery.getEntityStats(type, range);
+      } catch (entityError) {
+        console.warn(`[Analytics API] Entity stats for ${type} failed, returning empty:`, entityError);
+        stats = [];
+      }
 
       return c.json(success(stats));
     } catch (err) {

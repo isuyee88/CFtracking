@@ -270,7 +270,7 @@ export async function fetchDashboardStats(timeRange: string = 'today') {
 export async function fetchRecentClicks(limit: number = 10) {
   const response = await fetch(`${API_BASE_URL}/api/analytics/recent-clicks?limit=${limit}`);
   const result = await handleResponse(response);
-  return result.data;
+  return result.data?.list || [];
 }
 
 // 获取实体统计数据
@@ -366,4 +366,128 @@ export async function fetchClicksByVisitor(visitorId: string, limit: number = 10
   const response = await fetch(`${API_BASE_URL}/api/clicks/visitor/${visitorId}?limit=${limit}`);
   const result = await handleResponse(response);
   return result.data || [];
+}
+
+// ==================== Trends API ====================
+
+export interface TrendsFilter {
+  startDate?: string;
+  endDate?: string;
+  campaignId?: string;
+  flowId?: string;
+  landingPageId?: string;
+  offerId?: string;
+  trafficSourceId?: string;
+  country?: string;
+  device?: string;
+  browser?: string;
+  os?: string;
+  interval?: 'hour' | 'day' | 'week' | 'month';
+}
+
+export interface TrendsReport {
+  filter: {
+    startDate: string;
+    endDate: string;
+    interval: string;
+  };
+  summary: {
+    totalClicks: number;
+    totalUniqueClicks: number;
+    totalConversions: number;
+    totalRevenue: number;
+    totalCost: number;
+    totalProfit: number;
+    avgRoi: number;
+    avgEpc: number;
+    avgCpa: number;
+    avgCtr: number;
+    avgCr: number;
+    trend: 'up' | 'down' | 'stable';
+    changePercent: number;
+  };
+  data: Array<{
+    timestamp: string;
+    date: string;
+    clicks: number;
+    uniqueClicks: number;
+    conversions: number;
+    revenue: number;
+    cost: number;
+    profit: number;
+    roi: number;
+    epc: number;
+    cpa: number;
+    ctr: number;
+    cr: number;
+  }>;
+  breakdowns?: {
+    country: Array<{ value: string; clicks: number; conversions: number; revenue: number; profit: number; roi: number }>;
+    device: Array<{ value: string; clicks: number; conversions: number; revenue: number; profit: number; roi: number }>;
+    browser: Array<{ value: string; clicks: number; conversions: number; revenue: number; profit: number; roi: number }>;
+  };
+}
+
+export async function fetchTrendsReport(filter: TrendsFilter = {}): Promise<TrendsReport> {
+  const queryParams = new URLSearchParams();
+  
+  if (filter.startDate) queryParams.set('startDate', filter.startDate);
+  if (filter.endDate) queryParams.set('endDate', filter.endDate);
+  if (filter.campaignId) queryParams.set('campaignId', filter.campaignId);
+  if (filter.flowId) queryParams.set('flowId', filter.flowId);
+  if (filter.landingPageId) queryParams.set('landingPageId', filter.landingPageId);
+  if (filter.offerId) queryParams.set('offerId', filter.offerId);
+  if (filter.trafficSourceId) queryParams.set('trafficSourceId', filter.trafficSourceId);
+  if (filter.country) queryParams.set('country', filter.country);
+  if (filter.device) queryParams.set('device', filter.device);
+  if (filter.browser) queryParams.set('browser', filter.browser);
+  if (filter.os) queryParams.set('os', filter.os);
+  if (filter.interval) queryParams.set('interval', filter.interval);
+
+  const response = await fetch(`${API_BASE_URL}/api/trends/report?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function fetchTrendsCompare(params: {
+  currentStart: string;
+  currentEnd: string;
+  previousStart: string;
+  previousEnd: string;
+  campaignId?: string;
+}) {
+  const queryParams = new URLSearchParams();
+  queryParams.set('currentStart', params.currentStart);
+  queryParams.set('currentEnd', params.currentEnd);
+  queryParams.set('previousStart', params.previousStart);
+  queryParams.set('previousEnd', params.previousEnd);
+  if (params.campaignId) queryParams.set('campaignId', params.campaignId);
+
+  const response = await fetch(`${API_BASE_URL}/api/trends/compare?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+// ==================== Reports API ====================
+
+export interface ReportFilter {
+  startDate?: string;
+  endDate?: string;
+  groupBy?: string[];
+  metrics?: string[];
+  campaignId?: string;
+}
+
+export async function fetchReportData(filter: ReportFilter = {}) {
+  const queryParams = new URLSearchParams();
+  
+  if (filter.startDate) queryParams.set('startDate', filter.startDate);
+  if (filter.endDate) queryParams.set('endDate', filter.endDate);
+  if (filter.groupBy?.length) queryParams.set('groupBy', filter.groupBy.join(','));
+  if (filter.metrics?.length) queryParams.set('metrics', filter.metrics.join(','));
+  if (filter.campaignId) queryParams.set('campaignId', filter.campaignId);
+
+  const response = await fetch(`${API_BASE_URL}/api/reports/data?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return result.data;
 }

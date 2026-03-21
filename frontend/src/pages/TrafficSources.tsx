@@ -99,9 +99,9 @@ export const TrafficSources = () => {
     const loadTrafficSources = async () => {
       try {
         setLoading(true);
-        const response = await fetchTrafficSources();
-        if (response.success && response.data) {
-          setTrafficSources(response.data);
+        const data = await fetchTrafficSources();
+        if (Array.isArray(data)) {
+          setTrafficSources(data);
         } else {
           // Use mock data if API fails
           setTrafficSources([
@@ -238,15 +238,15 @@ export const TrafficSources = () => {
 
     try {
       if (formMode === 'create') {
-        const response = await createTrafficSource(submitData);
-        if (response.success && response.data) {
-          setTrafficSources(prev => [...prev, response.data]);
+        const source = await createTrafficSource(submitData);
+        if (source && source.id) {
+          setTrafficSources(prev => [...prev, source]);
         }
       } else if (selectedSource?.id) {
-        const response = await updateTrafficSource(selectedSource.id, submitData);
-        if (response.success && response.data) {
-          setTrafficSources(prev => 
-            prev.map(s => s.id === selectedSource.id ? response.data : s)
+        const source = await updateTrafficSource(selectedSource.id, submitData);
+        if (source && source.id) {
+          setTrafficSources(prev =>
+            prev.map(s => s.id === selectedSource.id ? source : s)
           );
         }
       }

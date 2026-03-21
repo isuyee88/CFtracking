@@ -133,9 +133,9 @@ export const Landings = () => {
     const loadLandings = async () => {
       try {
         setLoading(true);
-        const response = await fetchLandings();
-        if (response.success && response.data) {
-          setLandings(response.data);
+        const data = await fetchLandings();
+        if (Array.isArray(data)) {
+          setLandings(data);
         } else {
           // Use mock data if API fails
           setLandings([
@@ -202,15 +202,15 @@ export const Landings = () => {
   const handleFormSubmit = async (formData: Record<string, any>) => {
     try {
       if (formMode === 'create') {
-        const response = await createLanding(formData);
-        if (response.success && response.data) {
-          setLandings(prev => [...prev, response.data]);
+        const landing = await createLanding(formData);
+        if (landing && landing.id) {
+          setLandings(prev => [...prev, landing]);
         }
       } else if (selectedLanding?.id) {
-        const response = await updateLanding(selectedLanding.id, formData);
-        if (response.success && response.data) {
-          setLandings(prev => 
-            prev.map(lp => lp.id === selectedLanding.id ? response.data : lp)
+        const landing = await updateLanding(selectedLanding.id, formData);
+        if (landing && landing.id) {
+          setLandings(prev =>
+            prev.map(lp => lp.id === selectedLanding.id ? landing : lp)
           );
         }
       }

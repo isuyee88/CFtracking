@@ -89,6 +89,7 @@ export class AnalyticsQueryService {
     });
 
     try {
+      console.log('[AnalyticsQueryService] Executing SQL:', sql);
       const response = await this.executeQuery(sql);
       const list = this.parseQueryResult(response);
 
@@ -111,6 +112,8 @@ export class AnalyticsQueryService {
    * blob11=device, blob12=browser, blob13=os, blob14=visitorId
    * blob15=subId1, blob16=subId2, blob17=subId3
    * double1=cost, double2=riskScore, double3=cfBotScore
+   *
+   * 注意：数据集名称为 cf_tracking_events
    */
   private buildRecentClicksSQL(params: {
     limit: number;
@@ -162,7 +165,7 @@ export class AnalyticsQueryService {
         double2 as riskScore,
         double3 as cfBotScore,
         timestamp
-      FROM ANALYTICS
+      FROM cf_tracking_events
       ${whereClause}
       ORDER BY timestamp DESC
       LIMIT ${params.limit}
@@ -177,7 +180,7 @@ export class AnalyticsQueryService {
       throw new Error('CF_ACCOUNT_ID or CF_API_TOKEN not configured');
     }
 
-    const response = await fetch(
+    const httpResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/analytics_engine/sql`,
       {
         method: 'POST',
@@ -189,16 +192,14 @@ export class AnalyticsQueryService {
       }
     );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Analytics Engine query failed: ${response.status} ${errorText}`);
+    if (!httpResponse.ok) {
+      const errorText = await httpResponse.text();
+      throw new Error(`Analytics Engine query failed: ${httpResponse.status} ${errorText}`);
     }
 
-    const result = await response.json() as AnalyticsEngineResponse;
+    const result = await httpResponse.json() as AnalyticsEngineResponse;
 
-    if (!result.success) {
-      throw new Error(`Analytics Engine query error: ${JSON.stringify(result.errors)}`);
-    }
+    console.log('[AnalyticsQueryService] Raw response:', JSON.stringify(result, null, 2));
 
     return result;
   }
@@ -239,7 +240,7 @@ export class AnalyticsQueryService {
    */
   async healthCheck(): Promise<{ available: boolean; error?: string }> {
     try {
-      const testQuery = 'SELECT count() as cnt FROM ANALYTICS LIMIT 1';
+      const testQuery = 'SELECT count() as cnt FROM cf_tracking_events LIMIT 1';
       await this.executeQuery(testQuery);
       return { available: true };
     } catch (error) {
@@ -247,6 +248,171 @@ export class AnalyticsQueryService {
         available: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
+    }
+  }
+
+  /**
+   * 获取 Dashboard 统计数据
+   * 直接从 Analytics Engine 聚合数据，用于 Dashboard 显示
+   *
+   * @param range 时间范围 (today, yesterday, 7days, 30days)
+   * @returns 聚合统计数据
+   */
+  async getDashboardStats(range: string): Promise<{
+    metrics: Array<{ key: string; label: string; value: string; isPositive: boolean; format: string }>;
+    dataSource: 'analytics_engine';
+  }> {
+    const intervalDays = this.getIntervalDays(range);
+
+    const sql = `
+      SELECT
+        count() as clicks,
+        count(distinct blob14) as uniqueVisitors,
+        sum(double1) as totalCost,
+        count(distinct blob2) as campaignCount,
+        count(distinct blob9) as countryCount
+      FROM cf_tracking_events
+      WHERE timestamp >= NOW() - INTERVAL '${intervalDays}' DAY
+    `;
+
+    try {
+      const result = await this.executeQuery(sql);
+      const data = result.data?.[0] || {
+        clicks: 0,
+        uniqueVisitors: 0,
+        totalCost: 0,
+        campaignCount: 0,
+        countryCount: 0,
+      };
+
+      const clicks = Number(data.clicks) || 0;
+      const uniqueVisitors = Number(data.uniqueVisitors) || 0;
+      const totalCost = Number(data.totalCost) || 0;
+      const roi = totalCost > 0 ? ((0 - totalCost) / totalCost) : 0;
+
+      const metrics = [
+        { key: 'clicks', label: 'Clicks', value: clicks.toLocaleString(), isPositive: true, format: 'number' },
+        { key: 'unique_clicks_campaign', label: 'Unique clicks (campaign)', value: uniqueVisitors.toLocaleString(), isPositive: true, format: 'number' },
+        { key: 'conversions', label: 'Conversions', value: '0', isPositive: true, format: 'number' },
+        { key: 'spend', label: 'Cost', value: `$${totalCost.toFixed(2)}`, isPositive: false, format: 'currency' },
+        { key: 'revenue_confirmed', label: 'Revenue (confirmed)', value: '$0.00', isPositive: true, format: 'currency' },
+        { key: 'profit_confirmed', label: 'Profit/Loss (confirmed)', value: `$${(-totalCost).toFixed(2)}`, isPositive: totalCost === 0, format: 'currency' },
+        { key: 'roi_confirmed', label: 'ROI (confirmed)', value: `${(roi * 100).toFixed(2)}%`, isPositive: roi > 0, format: 'percentage' },
+      ];
+
+      return { metrics, dataSource: 'analytics_engine' };
+    } catch (err) {
+      console.error('[AnalyticsQueryService] Failed to get dashboard stats:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * 获取图表数据
+   * 从 Analytics Engine 获取每日聚合数据
+   *
+   * @param range 时间范围
+   * @returns 每日聚合数据
+   */
+  async getChartData(range: string): Promise<any[]> {
+    const intervalDays = this.getIntervalDays(range);
+
+    const sql = `
+      SELECT
+        toDate(timestamp) as date,
+        count() as clicks,
+        count(distinct blob14) as uniqueVisitors,
+        sum(double1) as cost
+      FROM cf_tracking_events
+      WHERE timestamp >= NOW() - INTERVAL '${intervalDays}' DAY
+      GROUP BY date
+      ORDER BY date
+    `;
+
+    try {
+      const result = await this.executeQuery(sql);
+      return result.data || [];
+    } catch (err) {
+      console.error('[AnalyticsQueryService] Failed to get chart data:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * 获取实体统计数据
+   * 从 Analytics Engine 获取按实体类型聚合的数据
+   *
+   * @param entityType 实体类型 (campaigns, landings, offers, sources, countries, device_types, browsers)
+   * @param range 时间范围
+   * @returns 实体统计数据
+   */
+  async getEntityStats(entityType: string, range: string): Promise<any[]> {
+    const intervalDays = this.getIntervalDays(range);
+
+    // 映射实体类型到 blob 字段
+    const fieldMap: Record<string, { field: string; label: string }> = {
+      campaigns: { field: 'blob2', label: 'campaignId' },
+      landings: { field: 'blob4', label: 'landingPageId' },
+      offers: { field: 'blob5', label: 'offerId' },
+      sources: { field: 'blob8', label: 'referer' },
+      countries: { field: 'blob9', label: 'country' },
+      device_types: { field: 'blob11', label: 'device' },
+      browsers: { field: 'blob12', label: 'browser' },
+      os: { field: 'blob13', label: 'os' },
+    };
+
+    const config = fieldMap[entityType] || { field: 'blob2', label: entityType };
+
+    const sql = `
+      SELECT
+        ${config.field} as name,
+        count() as clicks,
+        count(distinct blob14) as uniqueVisitors,
+        count(distinct ${config.field}) as entityCount,
+        sum(double1) as spend
+      FROM cf_tracking_events
+      WHERE timestamp >= NOW() - INTERVAL '${intervalDays}' DAY
+        AND ${config.field} IS NOT NULL
+        AND ${config.field} != ''
+      GROUP BY ${config.field}
+      ORDER BY clicks DESC
+      LIMIT 10
+    `;
+
+    try {
+      const result = await this.executeQuery(sql);
+      const data = result.data || [];
+
+      return data.map((row: any) => ({
+        name: row.name || 'Unknown',
+        clicks: Number(row.clicks) || 0,
+        impressions: 0,
+        conversions: 0,
+        spend: Number(row.spend) || 0,
+        revenue: 0,
+        unique_visitors: Number(row.uniqueVisitors) || 0,
+      }));
+    } catch (err) {
+      console.error('[AnalyticsQueryService] Failed to get entity stats:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * 根据 range 获取间隔天数
+   */
+  private getIntervalDays(range: string): number {
+    switch (range) {
+      case 'today':
+      case 'yesterday':
+        return 1;
+      case '7days':
+        return 7;
+      case '30days':
+      case 'last30days':
+        return 30;
+      default:
+        return 1;
     }
   }
 }

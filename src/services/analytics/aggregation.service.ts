@@ -138,7 +138,7 @@ export class AggregationService {
         countIf(double3 > 0) as botScoreClicks,
         avg(double3) as avgBotScore,
         countIf(double2 > 0) as highRiskClicks
-      FROM ANALYTICS
+      FROM cf_tracking_events
       WHERE toDate(timestamp) = '${date}'
       GROUP BY 
         campaignId,

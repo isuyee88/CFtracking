@@ -764,83 +764,86 @@ export const Dashboard = () => {
     recentClicksColumns: state.lastClicksColumns || ['event_id', 'datetime', 'campaign', 'os_icon', 'browser_icon', 'ip', 'destination']
   });
   
-  // 自动刷新定时器
-  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // 刷新数据函数 - 使用 ref 避免依赖循环
-  const refreshData = useCallback(async () => {
+  // 刷新统计数据和实体数据 - 仅在配置或时间范围变化时
+  const refreshStatsAndEntities = useCallback(async () => {
     setIsRefreshing(true);
-    setLoading(prev => ({ ...prev, stats: true, recentClicks: true, entities: true }));
-    setErrors(prev => ({ ...prev, stats: '', recentClicks: '', entities: '' }));
-    
+    setLoading(prev => ({ ...prev, stats: true, entities: true }));
+    setErrors(prev => ({ ...prev, stats: '', entities: '' }));
+
     try {
-      // 并行获取数据
-      const [statsData, clicksData] = await Promise.all([
-        fetchDashboardStats(state.range?.interval || 'today'),
-        fetchRecentClicks(10)
-      ]);
-      
-      // 更新统计数据
+      const statsData = await fetchDashboardStats(state.range?.interval || 'today');
+
       if (statsData) {
         setStats(statsData.metrics || []);
         setChartData(statsData.chartData || []);
       }
-      
-      // 更新最近点击数据
-      if (clicksData) {
-        setRecentClicks(clicksData);
-      }
-      
-      // 获取实体数据
-      const entityPromises = config.entities.map(entityKey => 
+
+      const entityPromises = config.entities.map(entityKey =>
         fetchEntityStats(entityKey, state.range?.interval || 'today')
       );
-      
+
       const entityResults = await Promise.all(entityPromises);
       const newEntityData: Record<string, any[]> = {};
-      
+
       config.entities.forEach((entityKey, index) => {
         newEntityData[entityKey] = entityResults[index] || [];
       });
-      
+
       setEntityData(newEntityData);
-      
+
     } catch (error) {
-      console.error('Error refreshing data:', error);
+      console.error('Error refreshing stats:', error);
       setErrors(prev => ({
         ...prev,
         stats: 'Failed to fetch stats',
-        recentClicks: 'Failed to fetch recent clicks',
         entities: 'Failed to fetch entity data'
       }));
     } finally {
-      setLoading(prev => ({ ...prev, stats: false, recentClicks: false, entities: false }));
+      setLoading(prev => ({ ...prev, stats: false, entities: false }));
       setLastUpdated(new Date());
       setIsRefreshing(false);
     }
   }, [config.entities, state.range?.interval]);
-  
-  // 处理统计数据更新
+
+  // 单独刷新 Recent Clicks 数据
+  const refreshRecentClicks = useCallback(async () => {
+    setLoading(prev => ({ ...prev, recentClicks: true }));
+    setErrors(prev => ({ ...prev, recentClicks: '' }));
+
+    try {
+      const clicksData = await fetchRecentClicks(10);
+      setRecentClicks(clicksData || []);
+    } catch (error) {
+      console.error('Error refreshing recent clicks:', error);
+      setErrors(prev => ({ ...prev, recentClicks: 'Failed to fetch recent clicks' }));
+    } finally {
+      setLoading(prev => ({ ...prev, recentClicks: false }));
+    }
+  }, []);
+
+  // 初始加载
   useEffect(() => {
-    // 当配置或时间范围变化时，刷新数据
-    refreshData();
-  }, [config, state.range?.interval, refreshData]);
-  
-  // 初始加载和自动刷新
+    refreshStatsAndEntities();
+    refreshRecentClicks();
+  }, []);
+
+  // 配置或时间范围变化时刷新统计数据
   useEffect(() => {
-    refreshData();
-    
-    refreshIntervalRef.current = setInterval(() => {
-      refreshData();
+    refreshStatsAndEntities();
+    refreshRecentClicks();
+  }, [config, state.range?.interval, refreshStatsAndEntities, refreshRecentClicks]);
+
+  // Recent Clicks 定时刷新 - 唯一需要定时刷新的模块
+  useEffect(() => {
+    const recentClicksIntervalRef = setInterval(() => {
+      refreshRecentClicks();
     }, 30000);
-    
+
     return () => {
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-      }
+      clearInterval(recentClicksIntervalRef);
     };
-  }, [refreshData]);
-  
+  }, [refreshRecentClicks]);
+
   // 处理配置变化
   const handleConfigChange = (newConfig: any) => {
     setConfig(newConfig);
@@ -943,8 +946,8 @@ export const Dashboard = () => {
             </div>
             
             {/* 刷新按钮 */}
-            <button 
-              onClick={refreshData}
+            <button
+              onClick={() => { refreshStatsAndEntities(); refreshRecentClicks(); }}
               disabled={isRefreshing}
               className={cn(
                 "p-2 border border-outline-variant/20 rounded-sm hover:bg-surface-container transition-colors",

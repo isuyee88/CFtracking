@@ -186,23 +186,19 @@ export const CampaignDetail = () => {
     const loadCampaign = async () => {
       try {
         setLoading(true);
-        
-        // Fetch campaign data first
-        const campaignRes = await fetchCampaign(id!);
-        
-        if (campaignRes.success && campaignRes.data) {
-          // Transform backend data to frontend format
-          const transformedCampaign = transformCampaign(campaignRes.data as BackendCampaign);
+
+        const campaign = await fetchCampaign(id!);
+
+        if (campaign && campaign.id) {
+          const transformedCampaign = transformCampaign(campaign);
           setCampaign(transformedCampaign);
-          
-          // Try to fetch stats separately (don't fail if stats API is not available)
+
           try {
-            const statsRes = await fetchCampaignStats(id!);
-            if (statsRes.success) {
-              setStats(statsRes.data);
+            const stats = await fetchCampaignStats(id!);
+            if (stats) {
+              setStats(stats);
             }
           } catch (statsErr) {
-            // Stats API might not be implemented yet
             console.warn('Stats API not available');
             setStats(null);
           }

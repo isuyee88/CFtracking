@@ -126,10 +126,10 @@ export const CampaignManagement = () => {
     const loadCampaigns = async () => {
       try {
         setLoading(true);
-        const response = await fetchCampaigns();
-        if (response.success && response.data) {
-          // Transform backend data to frontend format
-          const transformedCampaigns = response.data.map((item: BackendCampaign) => transformCampaign(item));
+        const data = await fetchCampaigns();
+        // fetchCampaigns returns array directly, not response object
+        if (Array.isArray(data)) {
+          const transformedCampaigns = data.map((item: BackendCampaign) => transformCampaign(item));
           setCampaigns(transformedCampaigns);
         } else {
           setError('Failed to load campaigns');
@@ -163,9 +163,10 @@ export const CampaignManagement = () => {
   const handleFormSubmit = async (formData: any) => {
     try {
       if (formMode === 'create') {
-        const response = await createCampaign(formData);
-        if (response.success && response.data) {
-          const newCampaign = transformCampaign(response.data);
+        const campaign = await createCampaign(formData);
+        // createCampaign returns the campaign object directly
+        if (campaign && campaign.id) {
+          const newCampaign = transformCampaign(campaign);
           setCampaigns(prev => [...prev, newCampaign]);
           toast.success('Campaign Created', `Campaign "${formData.name}" has been created successfully.`);
         }
