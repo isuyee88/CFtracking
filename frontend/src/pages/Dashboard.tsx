@@ -69,6 +69,24 @@ function useAutoDarkMode() {
 
 // ==================== 配置定义 ====================
 
+// 图表字段映射 - 将metrics key映射到API返回的字段名称
+const CHART_DATA_KEY_MAPPING: Record<string, string> = {
+  'clicks': 'clicks',
+  'unique_clicks_campaign': 'uniqueVisitors',
+  'unique_clicks_flow': 'uniqueVisitors',
+  'unique_clicks_global': 'uniqueVisitors',
+  'conversions': 'conversions',
+  'cost': 'cost',
+  'revenue_confirmed': 'revenue',
+  'revenue_pending': 'revenue',
+  'profit_confirmed': 'profit',
+  'profit_pending': 'profit',
+  'roi_confirmed': 'roi',
+  'roi_pending': 'roi',
+  'epc': 'epc',
+  'cr': 'cr',
+};
+
 // 所有可用的Metrics
 const ALL_METRICS = [
   { key: 'clicks', label: 'Clicks', format: 'number', category: 'basic' },
@@ -1132,11 +1150,13 @@ export const Dashboard = () => {
                     '#7dd3fc', '#fbbf24', '#a78bfa'
                   ];
                   const colors = isDarkMode ? darkColors : lightColors;
+                  // 使用映射获取正确的数据字段名称
+                  const chartDataKey = CHART_DATA_KEY_MAPPING[metric] || metric;
                   return (
                     <Area 
                       key={metric}
                       type="monotone" 
-                      dataKey={metric} 
+                      dataKey={chartDataKey}
                       stroke={colors[idx]}
                       fill={`url(#color${idx})`}
                       strokeWidth={2}
