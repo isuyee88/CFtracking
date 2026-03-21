@@ -1061,19 +1061,19 @@ textarea.form-input {
 
 /* Metric Card 渐变背景变体 */
 .metric-gradient {
-  background: linear-gradient(135deg, var(--color-surface-container-lowest) 0%, var(--color-surface-container) 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #f7f9fb 100%);
 }
 
 .dark-mode .metric-gradient {
-  background: linear-gradient(135deg, var(--color-surface-container) 0%, var(--color-surface-container-high) 100%);
+  background: linear-gradient(135deg, #1e2022 0%, #282a2c 100%);
 }
 
 .metric-gradient-alt {
-  background: linear-gradient(135deg, var(--color-surface-container) 0%, var(--color-surface-container-lowest) 100%);
+  background: linear-gradient(135deg, #f7f9fb 0%, #ffffff 100%);
 }
 
 .dark-mode .metric-gradient-alt {
-  background: linear-gradient(135deg, var(--color-surface-container-high) 0%, var(--color-surface-container) 100%);
+  background: linear-gradient(135deg, #282a2c 0%, #1e2022 100%);
 }
 
 /* Tab Button */
@@ -1164,4 +1164,161 @@ textarea.form-input {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* ============================================
+   Ant Design Dark Mode Overrides - Stitch Design
+   修复时间组件白底问题
+   ============================================ */
+
+.dark-mode .ant-picker {
+  background: #1e2022 !important;
+  border: 1px solid #424754 !important;
+  border-radius: 6px !important;
+}
+
+.dark-mode .ant-picker:hover {
+  border-color: #aec6ff !important;
+}
+
+.dark-mode .ant-picker-focused {
+  border-color: #aec6ff !important;
+  box-shadow: 0 0 0 2px rgba(174, 198, 255, 0.1) !important;
+}
+
+.dark-mode .ant-picker-input > input {
+  color: #e2e2e5 !important;
+}
+
+.dark-mode .ant-picker-input > input::placeholder {
+  color: #8c909f !important;
+}
+
+.dark-mode .ant-picker-separator {
+  color: #8c909f !important;
+}
+
+.dark-mode .ant-picker-suffix {
+  color: #8c909f !important;
+}
+
+.dark-mode .ant-picker-clear {
+  background: #1e2022 !important;
+  color: #8c909f !important;
+}
+
+/* Ant Design Dropdown/Popup Dark Mode */
+.dark-mode .ant-picker-dropdown {
+  background: #282a2c !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+}
+
+.dark-mode .ant-picker-panel-container {
+  background: #282a2c !important;
+}
+
+.dark-mode .ant-picker-header {
+  background: #282a2c !important;
+  border-bottom: 1px solid #424754 !important;
+  color: #e2e2e5 !important;
+}
+
+.dark-mode .ant-picker-header button {
+  color: #c2c6d6 !important;
+}
+
+.dark-mode .ant-picker-header button:hover {
+  color: #aec6ff !important;
+}
+
+.dark-mode .ant-picker-body {
+  background: #282a2c !important;
+}
+
+.dark-mode .ant-picker-content th {
+  color: #8c909f !important;
+}
+
+.dark-mode .ant-picker-content td {
+  color: #c2c6d6 !important;
+}
+
+.dark-mode .ant-picker-content td:hover .ant-picker-cell-inner {
+  background: #333537 !important;
+}
+
+.dark-mode .ant-picker-cell-selected .ant-picker-cell-inner {
+  background: #186ee6 !important;
+  color: #ffffff !important;
+}
+
+.dark-mode .ant-picker-cell-in-view {
+  color: #e2e2e5 !important;
+}
+
+.dark-mode .ant-picker-cell-disabled {
+  color: #424754 !important;
+}
+
+.dark-mode .ant-picker-today-btn {
+  color: #aec6ff !important;
+}
+
+.dark-mode .ant-picker-now-btn {
+  color: #aec6ff !important;
+}
+
+.dark-mode .ant-picker-ok button {
+  background: linear-gradient(135deg, #186ee6 0%, #aec6ff 100%) !important;
+  border: none !important;
+  color: #002e6b !important;
+}
+
+/* Ant Design Presets Dark Mode */
+.dark-mode .ant-picker-presets ul li {
+  background: #333537 !important;
+  color: #c2c6d6 !important;
+  border-radius: 4px !important;
+}
+
+.dark-mode .ant-picker-presets ul li:hover {
+  background: #424754 !important;
+  color: #aec6ff !important;
+}
+
+/* Ant Design TimePicker Dark Mode */
+.dark-mode .ant-picker-time-panel {
+  background: #282a2c !important;
+}
+
+.dark-mode .ant-picker-time-panel-column {
+  border-color: #424754 !important;
+}
+
+.dark-mode .ant-picker-time-panel-column > li {
+  color: #c2c6d6 !important;
+}
+
+.dark-mode .ant-picker-time-panel-column > li:hover {
+  background: #333537 !important;
+}
+
+.dark-mode .ant-picker-time-panel-column > li-selected {
+  background: #186ee6 !important;
+  color: #ffffff !important;
+}
+
+/* Ant Design RangePicker Dark Mode */
+.dark-mode .ant-picker-range {
+  background: #1e2022 !important;
+  border: 1px solid #424754 !important;
+}
+
+.dark-mode .ant-picker-range:hover {
+  border-color: #aec6ff !important;
+}
+
+.dark-mode .ant-picker-range .ant-picker-active-bar {
+  background: #aec6ff !important;
 }

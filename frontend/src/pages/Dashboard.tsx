@@ -907,7 +907,7 @@ export const Dashboard = () => {
       />
       
       {/* Header */}
-      <div className="bg-surface-container-lowest border-b border-outline-variant/10 px-6 py-4">
+      <div className="bg-surface-container-lowest dark:bg-surface-container px-6 py-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
