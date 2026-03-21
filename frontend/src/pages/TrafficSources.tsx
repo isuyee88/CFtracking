@@ -511,7 +511,17 @@ export const TrafficSources = () => {
                 onClick={() => { setFilterStatus(tab); setCurrentPage(1); }}
                 className={cn(
                   "px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-sm transition-all",
-                  filterStatus === tab ? "bg-primary text-on-primary shadow-sm" : "text-on-surface-variant hover:bg-surface-container-highest"
+                  filterStatus === tab 
+                    ? tab === 'Active' 
+                      ? "tab-status-active active" 
+                      : tab === 'Paused' 
+                        ? "tab-status-paused active" 
+                        : "tab-status-all active"
+                    : tab === 'Active'
+                      ? "tab-status-active"
+                      : tab === 'Paused'
+                        ? "tab-status-paused"
+                        : "tab-status-all"
                 )}
               >
                 {tab}
