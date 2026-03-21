@@ -499,7 +499,7 @@ export const Offers = () => {
           />
           <button 
             onClick={handleCreateOffer}
-            className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm"
+            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
           >
             <Plus size={18} />
             New Offer
@@ -515,21 +515,21 @@ export const Offers = () => {
               <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
               <button 
                 onClick={() => handleBulkAction('activate')}
-                className="p-2 text-on-surface-variant hover:text-secondary transition-colors" 
+                className="btn-icon-create p-2 rounded transition-colors" 
                 title="Activate"
               >
                 <Play size={18} />
               </button>
               <button 
                 onClick={() => handleBulkAction('pause')}
-                className="p-2 text-on-surface-variant hover:text-warning transition-colors" 
+                className="btn-icon-pause p-2 rounded transition-colors" 
                 title="Pause"
               >
                 <Pause size={18} />
               </button>
               <button 
                 onClick={() => handleBulkAction('delete')}
-                className="p-2 text-on-surface-variant hover:text-error transition-colors" 
+                className="btn-icon-delete p-2 rounded transition-colors" 
                 title="Delete"
               >
                 <Trash2 size={18} />
@@ -538,10 +538,10 @@ export const Offers = () => {
             </>
           ) : (
             <>
-              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors" title="Play"><Play size={18} /></button>
-              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors" title="Pause"><Pause size={18} /></button>
-              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors" title="Copy"><Copy size={18} /></button>
-              <button className="p-2 text-on-surface-variant hover:text-error transition-colors" title="Delete"><Trash2 size={18} /></button>
+              <button className="btn-icon-create p-2 rounded transition-colors" title="Play"><Play size={18} /></button>
+              <button className="btn-icon-pause p-2 rounded transition-colors" title="Pause"><Pause size={18} /></button>
+              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors rounded" title="Copy"><Copy size={18} /></button>
+              <button className="btn-icon-delete p-2 rounded transition-colors" title="Delete"><Trash2 size={18} /></button>
               <div className="h-6 w-px bg-outline-variant/20 mx-2" />
             </>
           )}
@@ -567,7 +567,17 @@ export const Offers = () => {
                 onClick={() => { setFilterStatus(tab); setCurrentPage(1); }}
                 className={cn(
                   "px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-sm transition-all",
-                  filterStatus === tab ? "bg-primary text-on-primary shadow-sm" : "text-on-surface-variant hover:bg-surface-container-highest"
+                  filterStatus === tab 
+                    ? tab === 'Active' 
+                      ? "tab-status-active active" 
+                      : tab === 'Paused' 
+                        ? "tab-status-paused active" 
+                        : "tab-status-all active"
+                    : tab === 'Active'
+                      ? "tab-status-active"
+                      : tab === 'Paused'
+                        ? "tab-status-paused"
+                        : "tab-status-all"
                 )}
               >
                 {tab}
@@ -643,11 +653,11 @@ export const Offers = () => {
                   <td className="px-4 py-4">
                     <div className={cn(
                       "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
-                      offer.status === 'active' ? "bg-secondary-container text-secondary" : "bg-on-surface-variant/10 text-on-surface-variant"
+                      offer.status === 'active' ? "status-active" : offer.status === 'paused' ? "status-paused" : "status-deleted"
                     )}>
                       <div className={cn(
                         "w-2 h-2 rounded-full",
-                        offer.status === 'active' ? "bg-secondary" : "bg-on-surface-variant"
+                        offer.status === 'active' ? "bg-green-500" : offer.status === 'paused' ? "bg-yellow-500" : "bg-red-500"
                       )} />
                       <span className="text-[10px] font-bold uppercase tracking-widest">{offer.status}</span>
                     </div>

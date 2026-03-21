@@ -298,7 +298,7 @@ export const CampaignManagement = () => {
           />
           <button 
             onClick={handleCreateCampaign}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-sm font-medium hover:bg-primary-container transition-colors rounded-md"
+            className="btn-create flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors rounded-md"
           >
             <Plus size={18} />
             Create Campaign
@@ -325,21 +325,21 @@ export const CampaignManagement = () => {
               <span className="text-sm text-fg-muted mr-2">{selectedItems.size} selected</span>
               <button 
                 onClick={() => handleBulkAction('activate')}
-                className="p-2 text-fg-muted hover:text-success-fg transition-colors" 
+                className="btn-icon-create p-2 rounded transition-colors" 
                 title="Activate"
               >
                 <Play size={18} />
               </button>
               <button 
                 onClick={() => handleBulkAction('pause')}
-                className="p-2 text-fg-muted hover:text-warning-fg transition-colors" 
+                className="btn-icon-pause p-2 rounded transition-colors" 
                 title="Pause"
               >
                 <Pause size={18} />
               </button>
               <button 
                 onClick={() => handleBulkAction('delete')}
-                className="p-2 text-fg-muted hover:text-danger-fg transition-colors" 
+                className="btn-icon-delete p-2 rounded transition-colors" 
                 title="Delete"
               >
                 <Trash2 size={18} />
@@ -348,10 +348,10 @@ export const CampaignManagement = () => {
             </>
           ) : (
             <>
-              <button className="p-2 text-fg-muted hover:text-accent-fg transition-colors" title="Play"><Play size={18} /></button>
-              <button className="p-2 text-fg-muted hover:text-accent-fg transition-colors" title="Pause"><Pause size={18} /></button>
-              <button className="p-2 text-fg-muted hover:text-accent-fg transition-colors" title="Copy"><Copy size={18} /></button>
-              <button className="p-2 text-fg-muted hover:text-danger-fg transition-colors" title="Delete"><Trash2 size={18} /></button>
+              <button className="btn-icon-create p-2 rounded transition-colors" title="Play"><Play size={18} /></button>
+              <button className="btn-icon-pause p-2 rounded transition-colors" title="Pause"><Pause size={18} /></button>
+              <button className="p-2 text-fg-muted hover:text-accent-fg transition-colors rounded" title="Copy"><Copy size={18} /></button>
+              <button className="btn-icon-delete p-2 rounded transition-colors" title="Delete"><Trash2 size={18} /></button>
               <div className="h-6 w-px bg-border-default mx-2" />
             </>
           )}
@@ -377,7 +377,17 @@ export const CampaignManagement = () => {
                 onClick={() => { setFilterStatus(tab); setCurrentPage(1); }}
                 className={cn(
                   "px-4 py-1.5 text-sm font-medium rounded-md transition-all",
-                  filterStatus === tab ? "bg-primary text-on-primary shadow-sm" : "text-fg-muted hover:bg-surface-container-high hover:text-fg-default"
+                  filterStatus === tab 
+                    ? tab === 'Active' 
+                      ? "tab-status-active active" 
+                      : tab === 'Paused' 
+                        ? "tab-status-paused active" 
+                        : "tab-status-all active"
+                    : tab === 'Active'
+                      ? "tab-status-active"
+                      : tab === 'Paused'
+                        ? "tab-status-paused"
+                        : "tab-status-all"
                 )}
               >
                 {tab}
@@ -451,11 +461,11 @@ export const CampaignManagement = () => {
                   <td className="px-4 py-4">
                     <div className={cn(
                       "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
-                      campaign.status === 'Active' ? "bg-secondary-container text-secondary" : "bg-on-surface-variant/10 text-on-surface-variant"
+                      campaign.status === 'Active' ? "status-active" : campaign.status === 'Paused' ? "status-paused" : "status-deleted"
                     )}>
                       <div className={cn(
                         "w-2 h-2 rounded-full",
-                        campaign.status === 'Active' ? "bg-secondary" : "bg-on-surface-variant"
+                        campaign.status === 'Active' ? "bg-green-500" : campaign.status === 'Paused' ? "bg-yellow-500" : "bg-red-500"
                       )} />
                       <span className="text-[10px] font-bold uppercase tracking-widest">{campaign.status}</span>
                     </div>

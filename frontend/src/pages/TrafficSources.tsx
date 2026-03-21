@@ -443,7 +443,7 @@ export const TrafficSources = () => {
           />
           <button 
             onClick={handleCreateSource}
-            className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm"
+            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
           >
             <Plus size={18} />
             New Traffic Source
@@ -459,21 +459,21 @@ export const TrafficSources = () => {
               <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
               <button 
                 onClick={() => handleBulkAction('activate')}
-                className="p-2 text-on-surface-variant hover:text-secondary transition-colors" 
+                className="btn-icon-create p-2 rounded transition-colors" 
                 title="Activate"
               >
                 <Play size={18} />
               </button>
               <button 
                 onClick={() => handleBulkAction('pause')}
-                className="p-2 text-on-surface-variant hover:text-warning transition-colors" 
+                className="btn-icon-pause p-2 rounded transition-colors" 
                 title="Pause"
               >
                 <Pause size={18} />
               </button>
               <button 
                 onClick={() => handleBulkAction('delete')}
-                className="p-2 text-on-surface-variant hover:text-error transition-colors" 
+                className="btn-icon-delete p-2 rounded transition-colors" 
                 title="Delete"
               >
                 <Trash2 size={18} />
@@ -482,10 +482,10 @@ export const TrafficSources = () => {
             </>
           ) : (
             <>
-              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors" title="Play"><Play size={18} /></button>
-              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors" title="Pause"><Pause size={18} /></button>
-              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors" title="Copy"><Copy size={18} /></button>
-              <button className="p-2 text-on-surface-variant hover:text-error transition-colors" title="Delete"><Trash2 size={18} /></button>
+              <button className="btn-icon-create p-2 rounded transition-colors" title="Play"><Play size={18} /></button>
+              <button className="btn-icon-pause p-2 rounded transition-colors" title="Pause"><Pause size={18} /></button>
+              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors rounded" title="Copy"><Copy size={18} /></button>
+              <button className="btn-icon-delete p-2 rounded transition-colors" title="Delete"><Trash2 size={18} /></button>
               <div className="h-6 w-px bg-outline-variant/20 mx-2" />
             </>
           )}

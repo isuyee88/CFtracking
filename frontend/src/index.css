@@ -1322,3 +1322,397 @@ textarea.form-input {
 .dark-mode .ant-picker-range .ant-picker-active-bar {
   background: #aec6ff !important;
 }
+
+/* ============================================
+   Status Badge Dynamic Colors - Stitch Design
+   动态配色方案：Active绿色，Paused黄灰色
+   ============================================ */
+
+.status-active {
+  background-color: rgba(74, 222, 128, 0.15) !important;
+  color: #22c55e !important;
+  border: 1px solid rgba(74, 222, 128, 0.3) !important;
+}
+
+.dark-mode .status-active {
+  background-color: rgba(74, 222, 128, 0.2) !important;
+  color: #4ade80 !important;
+  border: 1px solid rgba(74, 222, 128, 0.4) !important;
+}
+
+.status-paused {
+  background-color: rgba(251, 191, 36, 0.15) !important;
+  color: #d4a72c !important;
+  border: 1px solid rgba(251, 191, 36, 0.3) !important;
+}
+
+.dark-mode .status-paused {
+  background-color: rgba(251, 191, 36, 0.2) !important;
+  color: #fbbf24 !important;
+  border: 1px solid rgba(251, 191, 36, 0.4) !important;
+}
+
+.status-deleted {
+  background-color: rgba(248, 113, 113, 0.15) !important;
+  color: #dc2626 !important;
+  border: 1px solid rgba(248, 113, 113, 0.3) !important;
+}
+
+.dark-mode .status-deleted {
+  background-color: rgba(248, 113, 113, 0.2) !important;
+  color: #f87171 !important;
+  border: 1px solid rgba(248, 113, 113, 0.4) !important;
+}
+
+/* Status Tab Buttons - Dynamic Colors */
+.tab-status-all {
+  background-color: var(--color-surface-container);
+  color: var(--color-fg-default);
+}
+
+.tab-status-all.active {
+  background-color: var(--color-accent-emphasis);
+  color: var(--color-fg-on-emphasis);
+}
+
+.tab-status-active {
+  background-color: transparent;
+  color: #22c55e;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.tab-status-active.active {
+  background-color: #4ade80 !important;
+  color: #ffffff !important;
+  border-color: #4ade80 !important;
+}
+
+.dark-mode .tab-status-active {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.dark-mode .tab-status-active.active {
+  background-color: rgba(74, 222, 128, 0.3) !important;
+  color: #4ade80 !important;
+}
+
+.tab-status-paused {
+  background-color: transparent;
+  color: #d4a72c;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.tab-status-paused.active {
+  background-color: #fbbf24 !important;
+  color: #1f2937 !important;
+  border-color: #fbbf24 !important;
+}
+
+.dark-mode .tab-status-paused {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.dark-mode .tab-status-paused.active {
+  background-color: rgba(251, 191, 36, 0.3) !important;
+  color: #fbbf24 !important;
+}
+
+/* ============================================
+   Browser & OS Brand Icons - Dynamic Display
+   品牌图标动态显示方案
+   ============================================ */
+
+.brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.brand-icon-chrome {
+  background: linear-gradient(135deg, #4285f4 0%, #ea4335 100%);
+  color: white;
+}
+
+.brand-icon-safari {
+  background: linear-gradient(135deg, #006cff 0%, #00c7ff 100%);
+  color: white;
+}
+
+.brand-icon-firefox {
+  background: linear-gradient(135deg, #ff7139 0%, #ff9500 100%);
+  color: white;
+}
+
+.brand-icon-edge {
+  background: linear-gradient(135deg, #0078d4 0%, #00bcf2 100%);
+  color: white;
+}
+
+.brand-icon-opera {
+  background: linear-gradient(135deg, #ff1b2d 0%, #ff4b4b 100%);
+  color: white;
+}
+
+.brand-icon-windows {
+  background: linear-gradient(135deg, #0078d4 0%, #00bcf2 100%);
+  color: white;
+}
+
+.brand-icon-macos {
+  background: linear-gradient(135deg, #000000 0%, #555555 100%);
+  color: white;
+}
+
+.brand-icon-linux {
+  background: linear-gradient(135deg, #333333 0%, #fcc624 100%);
+  color: white;
+}
+
+.brand-icon-android {
+  background: linear-gradient(135deg, #3ddc84 0%, #00a86d 100%);
+  color: white;
+}
+
+.brand-icon-ios {
+  background: linear-gradient(135deg, #007aff 0%, #5856d6 100%);
+  color: white;
+}
+
+.dark-mode .brand-icon-macos {
+  background: linear-gradient(135deg, #333333 0%, #888888 100%);
+}
+
+.dark-mode .brand-icon-linux {
+  background: linear-gradient(135deg, #333333 0%, #fcc624 100%);
+}
+
+/* Generic brand icon for unknown */
+.brand-icon-unknown {
+  background-color: var(--color-surface-container-high);
+  color: var(--color-fg-muted);
+}
+
+.dark-mode .brand-icon-unknown {
+  background-color: var(--color-surface-container-highest);
+  color: var(--color-fg-muted);
+}
+
+/* ============================================
+   Action Buttons - Dynamic Colors
+   操作按钮动态配色：创建绿色、暂停黄色、删除红色
+   ============================================ */
+
+/* Create/New Button - Green */
+.btn-create {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3) !important;
+}
+
+.btn-create:hover {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%) !important;
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4) !important;
+  transform: translateY(-1px);
+}
+
+.btn-create:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.dark-mode .btn-create {
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%) !important;
+  color: #052e16 !important;
+  box-shadow: 0 2px 8px rgba(74, 222, 128, 0.3) !important;
+}
+
+.dark-mode .btn-create:hover {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+  box-shadow: 0 4px 12px rgba(74, 222, 128, 0.4) !important;
+}
+
+/* Pause Button - Yellow/Amber */
+.btn-pause {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+  color: #1f2937 !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.3) !important;
+}
+
+.btn-pause:hover {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4) !important;
+  transform: translateY(-1px);
+}
+
+.btn-pause:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.dark-mode .btn-pause {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+  color: #1f2937 !important;
+  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.3) !important;
+}
+
+.dark-mode .btn-pause:hover {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4) !important;
+}
+
+/* Delete Button - Red */
+.btn-delete {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3) !important;
+}
+
+.btn-delete:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4) !important;
+  transform: translateY(-1px);
+}
+
+.btn-delete:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.dark-mode .btn-delete {
+  background: linear-gradient(135deg, #f87171 0%, #ef4444 100%) !important;
+  color: #450a0a !important;
+  box-shadow: 0 2px 8px rgba(248, 113, 113, 0.3) !important;
+}
+
+.dark-mode .btn-delete:hover {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  box-shadow: 0 4px 12px rgba(248, 113, 113, 0.4) !important;
+}
+
+/* Icon Button Variants */
+.btn-icon-create {
+  color: #22c55e !important;
+  background-color: rgba(34, 197, 94, 0.1) !important;
+  border: 1px solid rgba(34, 197, 94, 0.3) !important;
+}
+
+.btn-icon-create:hover {
+  background-color: rgba(34, 197, 94, 0.2) !important;
+  color: #16a34a !important;
+}
+
+.dark-mode .btn-icon-create {
+  color: #4ade80 !important;
+  background-color: rgba(74, 222, 128, 0.15) !important;
+  border-color: rgba(74, 222, 128, 0.3) !important;
+}
+
+.dark-mode .btn-icon-create:hover {
+  background-color: rgba(74, 222, 128, 0.25) !important;
+}
+
+.btn-icon-pause {
+  color: #f59e0b !important;
+  background-color: rgba(245, 158, 11, 0.1) !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+}
+
+.btn-icon-pause:hover {
+  background-color: rgba(245, 158, 11, 0.2) !important;
+  color: #d97706 !important;
+}
+
+.dark-mode .btn-icon-pause {
+  color: #fbbf24 !important;
+  background-color: rgba(251, 191, 36, 0.15) !important;
+  border-color: rgba(251, 191, 36, 0.3) !important;
+}
+
+.dark-mode .btn-icon-pause:hover {
+  background-color: rgba(251, 191, 36, 0.25) !important;
+}
+
+.btn-icon-delete {
+  color: #ef4444 !important;
+  background-color: rgba(239, 68, 68, 0.1) !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+}
+
+.btn-icon-delete:hover {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+  color: #dc2626 !important;
+}
+
+.dark-mode .btn-icon-delete {
+  color: #f87171 !important;
+  background-color: rgba(248, 113, 113, 0.15) !important;
+  border-color: rgba(248, 113, 113, 0.3) !important;
+}
+
+.dark-mode .btn-icon-delete:hover {
+  background-color: rgba(248, 113, 113, 0.25) !important;
+}
+
+/* ============================================
+   Modal/Dialog Button Styles
+   弹窗按钮样式
+   ============================================ */
+
+.modal-btn-primary {
+  background: linear-gradient(135deg, var(--color-accent-emphasis) 0%, var(--color-accent-fg) 100%);
+  color: var(--color-btn-primary-text);
+  border: none;
+  padding: 0.625rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modal-btn-primary:hover {
+  filter: brightness(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.modal-btn-secondary {
+  background-color: var(--color-surface-container);
+  color: var(--color-fg-default);
+  border: 1px solid var(--color-border);
+  padding: 0.625rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modal-btn-secondary:hover {
+  background-color: var(--color-surface-container-high);
+  border-color: var(--color-border-strong);
+}
+
+.modal-btn-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff;
+  border: none;
+  padding: 0.625rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modal-btn-danger:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}

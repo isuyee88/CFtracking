@@ -37,6 +37,7 @@ import { twMerge } from 'tailwind-merge';
 import { useDashboardURLState } from '../hooks/useURLState';
 import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
 import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
+import { BrowserIcon, OSIcon } from '../components/BrandIcon';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -1288,12 +1289,15 @@ export const Dashboard = () => {
                               if (key === 'cost') {
                                 return <span className="text-medium-contrast font-medium">{value || '-'}</span>;
                               }
-                              // 图标字段
-                              if (key === 'os_icon' || key === 'browser_icon') {
+                              // 图标字段 - 使用品牌图标组件
+                              if (key === 'os_icon') {
                                 return (
-                                  <span className="inline-flex items-center justify-center w-8 h-8 bg-surface-container rounded">
-                                    {value || '-'}
-                                  </span>
+                                  <OSIcon name={value || ''} size="sm" />
+                                );
+                              }
+                              if (key === 'browser_icon') {
+                                return (
+                                  <BrowserIcon name={value || ''} size="sm" />
                                 );
                               }
                               // 默认渲染

@@ -330,14 +330,17 @@ export const EntityForm: React.FC<EntityFormProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-3 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors rounded-sm"
+            className="modal-btn-secondary px-6 py-3 text-xs font-bold uppercase tracking-widest transition-colors rounded-sm"
           >
             Cancel
           </button>
           <button
             type="submit"
             onClick={handleSubmit}
-            className="px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors rounded-sm"
+            className={cn(
+              "px-6 py-3 text-xs font-bold uppercase tracking-widest transition-colors rounded-sm",
+              mode === 'create' ? "btn-create" : "modal-btn-primary"
+            )}
           >
             {mode === 'create' ? 'Create' : 'Save Changes'}
           </button>
