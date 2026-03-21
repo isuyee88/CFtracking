@@ -491,3 +491,183 @@ export async function fetchReportData(filter: ReportFilter = {}) {
   const result = await handleResponse(response);
   return result.data;
 }
+
+// ==================== Rules API ====================
+
+export interface Rule {
+  id: string;
+  displayId?: string;
+  name: string;
+  description?: string;
+  type: 'campaign' | 'platform' | 'flow';
+  priority: number;
+  enabled: boolean;
+  status: 'active' | 'paused' | 'deleted';
+  conditions: Array<{
+    metric: string;
+    operator: string;
+    value: number | string;
+    duration?: string;
+  }>;
+  actions: Array<{
+    type: string;
+    platform?: string;
+    parameters: Record<string, unknown>;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRuleDTO {
+  name: string;
+  description?: string;
+  type: 'campaign' | 'platform' | 'flow';
+  priority?: number;
+  enabled?: boolean;
+  conditions: Rule['conditions'];
+  actions: Rule['actions'];
+}
+
+export interface UpdateRuleDTO {
+  name?: string;
+  description?: string;
+  type?: 'campaign' | 'platform' | 'flow';
+  priority?: number;
+  enabled?: boolean;
+  status?: 'active' | 'paused' | 'deleted';
+  conditions?: Rule['conditions'];
+  actions?: Rule['actions'];
+}
+
+export async function fetchRules(params: { page?: number; pageSize?: number; type?: string; status?: string } = {}) {
+  const queryParams = new URLSearchParams();
+  if (params.page) queryParams.set('page', params.page.toString());
+  if (params.pageSize) queryParams.set('pageSize', params.pageSize.toString());
+  if (params.type) queryParams.set('type', params.type);
+  if (params.status) queryParams.set('status', params.status);
+
+  const response = await fetch(`${API_BASE_URL}/api/rules?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return {
+    list: result.data || [],
+    meta: result.meta || { page: 1, pageSize: 20, total: 0 },
+  };
+}
+
+export async function fetchRuleById(id: string): Promise<Rule> {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function createRule(data: CreateRuleDTO): Promise<Rule> {
+  const response = await fetch(`${API_BASE_URL}/api/rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function updateRule(id: string, data: UpdateRuleDTO): Promise<Rule> {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function deleteRule(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}`, {
+    method: 'DELETE',
+  });
+  await handleResponse(response);
+}
+
+export async function enableRule(id: string): Promise<Rule> {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}/enable`, {
+    method: 'POST',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function disableRule(id: string): Promise<Rule> {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}/disable`, {
+    method: 'POST',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function getRuleExecutionHistory(id: string, limit: number = 50) {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}/history?limit=${limit}`);
+  const result = await handleResponse(response);
+  return result.data || [];
+}
+
+// ==================== Platforms API ====================
+
+export interface Platform {
+  id: string;
+  name: string;
+  type: 'soap' | 'rest';
+  version: string;
+  description?: string;
+  actions: string[];
+  configured: boolean;
+  status: 'active' | 'inactive';
+  config?: {
+    apiKey?: string;
+    wsdlUrl?: string;
+    apiUrl?: string;
+  };
+}
+
+export async function fetchPlatforms(): Promise<Platform[]> {
+  const response = await fetch(`${API_BASE_URL}/api/platforms`);
+  const result = await handleResponse(response);
+  return result.data || [];
+}
+
+export async function fetchConfiguredPlatforms(): Promise<Platform[]> {
+  const response = await fetch(`${API_BASE_URL}/api/platforms/configured`);
+  const result = await handleResponse(response);
+  return result.data || [];
+}
+
+export async function fetchPlatformById(platformId: string): Promise<Platform> {
+  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function configurePlatform(platformId: string, config: Record<string, unknown>): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}/configure`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  await handleResponse(response);
+}
+
+export async function testPlatformConnection(platformId: string): Promise<{ platformId: string; connected: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}/test`, {
+    method: 'POST',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function executePlatformAction(platformId: string, action: string, parameters: Record<string, unknown> = {}): Promise<unknown> {
+  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, parameters }),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}

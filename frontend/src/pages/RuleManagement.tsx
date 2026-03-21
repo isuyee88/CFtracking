@@ -1,370 +1,495 @@
-import React, { useState } from 'react';
+/**
+ * File: RuleManagement.tsx
+ * Purpose: 规则管理页面，创建和管理自动化规则
+ * Input/Output: 展示规则列表，支持CRUD操作
+ * Logic: 从API获取规则数据，提供创建、编辑、删除、启用/禁用功能
+ * 前后端交互: 调用 /api/rules 接口
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Plus, 
   Trash2, 
   Edit3, 
-  Check, 
   X,
   ChevronDown,
-  Menu,
-  AlertTriangle,
+  Search,
+  RefreshCw,
   AlertCircle,
-  CheckCircle,
-  Search
+  Play,
+  Pause,
+  History
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { 
+  fetchRules, createRule, updateRule, deleteRule, enableRule, disableRule,
+  type Rule, type CreateRuleDTO, type UpdateRuleDTO 
+} from '../services/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-interface Rule {
-  id: string;
-  displayId?: string;
-  name: string;
-  type: 'campaign' | 'platform';
-  priority: number;
-  enabled: boolean;
-  status: 'active' | 'paused' | 'deleted';
-  conditions: any[];
-  actions: any[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-const mockRules: Rule[] = [
-  {
-    id: '1',
-    name: 'Low ROI Blocker',
-    type: 'campaign',
-    priority: 1,
-    enabled: true,
-    status: 'active',
-    conditions: [
-      { metric: 'roi', operator: '<', value: 0.5, duration: '24h' }
-    ],
-    actions: [
-      { type: 'pause_campaign', platform: 'all', parameters: {} }
-    ],
-    createdAt: '2024-01-15T10:30:00Z',
-    updatedAt: '2024-01-15T10:30:00Z'
-  },
-  {
-    id: '2',
-    name: 'High Volume Scaler',
-    type: 'campaign',
-    priority: 2,
-    enabled: false,
-    status: 'paused',
-    conditions: [
-      { metric: 'clicks', operator: '>', value: 10000, duration: '1h' }
-    ],
-    actions: [
-      { type: 'increase_bid', platform: 'google', parameters: { percentage: 20 } }
-    ],
-    createdAt: '2024-01-14T15:45:00Z',
-    updatedAt: '2024-01-14T15:45:00Z'
-  },
-  {
-    id: '3',
-    name: 'Fraud Protection',
-    type: 'platform',
-    priority: 1,
-    enabled: true,
-    status: 'active',
-    conditions: [
-      { metric: 'cr', operator: '<', value: 0.01, duration: '6h' }
-    ],
-    actions: [
-      { type: 'block_traffic', platform: 'all', parameters: { source: 'suspicious' } }
-    ],
-    createdAt: '2024-01-13T09:15:00Z',
-    updatedAt: '2024-01-13T09:15:00Z'
-  }
-];
-
 export const RuleManagement = () => {
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedRule, setSelectedRule] = useState<Rule | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedType, setSelectedType] = useState<'all' | 'campaign' | 'platform'>('all');
+  const [selectedType, setSelectedType] = useState<'all' | 'campaign' | 'platform' | 'flow'>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'paused' | 'deleted'>('all');
+  const [total, setTotal] = useState(0);
+  const [saving, setSaving] = useState(false);
 
-  const filteredRules = mockRules.filter(rule => {
-    const matchesSearch = rule.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = selectedType === 'all' || rule.type === selectedType;
-    const matchesStatus = selectedStatus === 'all' || rule.status === selectedStatus;
-    return matchesSearch && matchesType && matchesStatus;
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    type: 'campaign' as 'campaign' | 'platform' | 'flow',
+    priority: 1,
+    enabled: true,
+    conditionsText: '[{"metric": "roi", "operator": "<", "value": 0.5, "duration": "24h"}]',
+    actionsText: '[{"type": "pause_campaign", "platform": "all", "parameters": {}}]',
   });
+
+  const loadRules = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const result = await fetchRules({
+        type: selectedType === 'all' ? undefined : selectedType,
+        status: selectedStatus === 'all' ? undefined : selectedStatus,
+      });
+      setRules(result.list);
+      setTotal(result.meta.total);
+    } catch (err) {
+      console.error('Failed to load rules:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load rules');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedType, selectedStatus]);
+
+  useEffect(() => {
+    loadRules();
+  }, [loadRules]);
+
+  const filteredRules = rules.filter(rule => 
+    rule.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const handleCreate = () => {
     setIsEditMode(false);
     setSelectedRule(null);
+    setFormData({
+      name: '',
+      description: '',
+      type: 'campaign',
+      priority: 1,
+      enabled: true,
+      conditionsText: '[{"metric": "roi", "operator": "<", "value": 0.5, "duration": "24h"}]',
+      actionsText: '[{"type": "pause_campaign", "platform": "all", "parameters": {}}]',
+    });
     setIsModalOpen(true);
   };
 
   const handleEdit = (rule: Rule) => {
     setIsEditMode(true);
     setSelectedRule(rule);
+    setFormData({
+      name: rule.name,
+      description: rule.description || '',
+      type: rule.type,
+      priority: rule.priority,
+      enabled: rule.enabled,
+      conditionsText: JSON.stringify(rule.conditions, null, 2),
+      actionsText: JSON.stringify(rule.actions, null, 2),
+    });
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    // In a real app, this would call an API
-    alert(`Deleting rule ${id}`);
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this rule?')) return;
+    
+    try {
+      await deleteRule(id);
+      setRules(prev => prev.filter(r => r.id !== id));
+      setTotal(prev => prev - 1);
+    } catch (err) {
+      console.error('Failed to delete rule:', err);
+      alert('Failed to delete rule');
+    }
   };
 
-  const handleToggleStatus = (id: string) => {
-    // In a real app, this would call an API
-    alert(`Toggling status for rule ${id}`);
+  const handleToggleStatus = async (rule: Rule) => {
+    try {
+      const updated = rule.enabled ? await disableRule(rule.id) : await enableRule(rule.id);
+      setRules(prev => prev.map(r => r.id === rule.id ? updated : r));
+    } catch (err) {
+      console.error('Failed to toggle rule status:', err);
+      alert('Failed to toggle rule status');
+    }
   };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+
+    try {
+      const conditions = JSON.parse(formData.conditionsText);
+      const actions = JSON.parse(formData.actionsText);
+
+      if (isEditMode && selectedRule) {
+        const updateData: UpdateRuleDTO = {
+          name: formData.name,
+          description: formData.description,
+          type: formData.type,
+          priority: formData.priority,
+          enabled: formData.enabled,
+          conditions,
+          actions,
+        };
+        const updated = await updateRule(selectedRule.id, updateData);
+        setRules(prev => prev.map(r => r.id === selectedRule.id ? updated : r));
+      } else {
+        const createData: CreateRuleDTO = {
+          name: formData.name,
+          description: formData.description,
+          type: formData.type,
+          priority: formData.priority,
+          enabled: formData.enabled,
+          conditions,
+          actions,
+        };
+        const created = await createRule(createData);
+        setRules(prev => [created, ...prev]);
+        setTotal(prev => prev + 1);
+      }
+
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error('Failed to save rule:', err);
+      alert(err instanceof Error ? err.message : 'Failed to save rule');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <RefreshCw className="animate-spin text-accent-fg" size={32} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 text-danger">
+        <AlertCircle size={48} className="mb-4" />
+        <p className="text-lg font-medium">{error}</p>
+        <button 
+          onClick={loadRules}
+          className="mt-4 px-4 py-2 bg-surface border border-border-default rounded-md text-fg-default hover:bg-surface-container transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-display font-bold text-primary">Rule Management</h2>
-          <p className="text-sm text-on-surface-variant">Automate campaign optimization with intelligent rules</p>
+          <h2 className="text-2xl font-display font-bold text-fg-default">Rule Management</h2>
+          <p className="text-sm text-fg-muted">Automate campaign optimization with intelligent rules</p>
         </div>
-        <button 
-          onClick={handleCreate} 
-          className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm"
-        >
-          <Plus size={18} />
-          Create Rule
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={loadRules}
+            className="p-2 text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-all"
+            title="Refresh"
+          >
+            <RefreshCw size={18} />
+          </button>
+          <button 
+            onClick={handleCreate} 
+            className="flex items-center gap-2 px-4 py-2 bg-accent-fg text-white text-sm font-medium hover:bg-accent-fg/90 transition-all rounded"
+          >
+            <Plus size={18} />
+            Create Rule
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 bg-surface p-4 rounded-lg border border-border-default">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" size={16} />
           <input 
             type="text" 
             placeholder="Search rules..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
+            className="w-full pl-10 pr-4 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg transition-all"
           />
         </div>
-        <div className="relative">
-          <div className="flex items-center justify-between w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm cursor-pointer" onClick={() => { /* Dropdown logic would go here */ }}>
-            <span className="text-sm font-medium text-on-surface-variant">All Types</span>
-            <ChevronDown size={16} className="text-on-surface-variant/60" />
-          </div>
-        </div>
-        <div className="relative">
-          <div className="flex items-center justify-between w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm cursor-pointer" onClick={() => { /* Dropdown logic would go here */ }}>
-            <span className="text-sm font-medium text-on-surface-variant">All Status</span>
-            <ChevronDown size={16} className="text-on-surface-variant/60" />
-          </div>
-        </div>
+        <select
+          value={selectedType}
+          onChange={(e) => setSelectedType(e.target.value as typeof selectedType)}
+          className="px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+        >
+          <option value="all">All Types</option>
+          <option value="campaign">Campaign</option>
+          <option value="platform">Platform</option>
+          <option value="flow">Flow</option>
+        </select>
+        <select
+          value={selectedStatus}
+          onChange={(e) => setSelectedStatus(e.target.value as typeof selectedStatus)}
+          className="px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+        >
+          <option value="all">All Status</option>
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="deleted">Deleted</option>
+        </select>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/60">{filteredRules.length} rules</span>
-          <div className="h-6 w-px bg-outline-variant/20" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/60">{mockRules.length} total</span>
+          <span className="text-xs text-fg-muted">{filteredRules.length} rules</span>
+          <div className="h-6 w-px bg-border-default" />
+          <span className="text-xs text-fg-muted">{total} total</span>
         </div>
       </div>
 
       {/* Rules Table */}
-      <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
+      <div className="bg-surface rounded-lg border border-border-default overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-container-low">
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant w-20">
-                  <div className="flex items-center">
-                    <input type="checkbox" className="rounded-none border-outline-variant" />
-                    <span className="ml-2 text-xs font-bold uppercase tracking-wider">Select</span>
-                  </div>
-                </th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">Name</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">Type</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">Priority</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">Status</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">Enabled</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/10">
-              {filteredRules.map((rule) => (
-                <tr key={rule.id} className="group hover:bg-surface-container-low transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center">
-                      <input type="checkbox" className="rounded-none border-outline-variant" />
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-primary group-hover:text-secondary transition-colors cursor-pointer">{rule.name}</span>
-                      <span className="text-[10px] text-on-surface-variant/60">{rule.updatedAt}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={cn(
-                      "px-2 py-0.5 text-[10px] font-bold rounded-sm",
-                      rule.type === 'campaign' ? "bg-primary/10 text-primary" : "bg-secondary/10 text-secondary"
-                    )}>
-                      {rule.type === 'campaign' ? 'Campaign' : 'Platform'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-[10px] font-mono text-primary">{rule.priority}</td>
-                  <td className="px-6 py-4">
-                    <span className={cn(
-                      "px-2 py-0.5 text-[10px] font-bold rounded-sm",
-                      rule.status === 'active' ? "bg-secondary/10 text-secondary" :
-                        rule.status === 'paused' ? "bg-error/10 text-error" : "bg-on-surface-variant/10 text-on-surface-variant"
-                    )}>
-                      {rule.status === 'active' ? 'Active' : rule.status === 'paused' ? 'Paused' : 'Deleted'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center">
-                      <div className={cn(
-                        "w-3 h-3 rounded-full",
-                        rule.enabled ? "bg-secondary" : "bg-on-surface-variant/30"
-                      )} />
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => handleEdit(rule)} 
-                        className="p-1.5 text-on-surface-variant hover:text-primary transition-colors"
-                        title="Edit"
-                      >
-                        <Edit3 size={14} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(rule.id)} 
-                        className="p-1.5 text-on-surface-variant hover:text-error transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
+          {filteredRules.length > 0 ? (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-surface-container border-b border-border-default">
+                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Name</th>
+                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Type</th>
+                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Priority</th>
+                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Enabled</th>
+                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider text-right">Actions</th>
                 </tr>
-              ))}
-              {filteredRules.length === 0 && (
-                <tr>
-                  <td colSpan="7" className="px-6 py-8 text-center text-on-surface-variant/60">
-                    No rules match your filters
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border-default">
+                {filteredRules.map((rule) => (
+                  <tr key={rule.id} className="group hover:bg-surface-container transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-fg-default">{rule.name}</span>
+                        {rule.description && (
+                          <span className="text-xs text-fg-muted truncate max-w-xs">{rule.description}</span>
+                        )}
+                        <span className="text-xs text-fg-muted">{new Date(rule.updatedAt).toLocaleString()}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={cn(
+                        "px-2 py-1 text-xs font-medium rounded",
+                        rule.type === 'campaign' ? "bg-accent-fg/10 text-accent-fg" : 
+                        rule.type === 'platform' ? "bg-success/10 text-success" : 
+                        "bg-warning/10 text-warning"
+                      )}>
+                        {rule.type.charAt(0).toUpperCase() + rule.type.slice(1)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm font-mono text-fg-default">{rule.priority}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn(
+                        "px-2 py-1 text-xs font-medium rounded",
+                        rule.status === 'active' ? "bg-success/10 text-success" :
+                        rule.status === 'paused' ? "bg-warning/10 text-warning" : 
+                        "bg-fg-muted/10 text-fg-muted"
+                      )}>
+                        {rule.status.charAt(0).toUpperCase() + rule.status.slice(1)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleToggleStatus(rule)}
+                        className={cn(
+                          "p-1.5 rounded transition-colors",
+                          rule.enabled ? "text-success hover:bg-success/10" : "text-fg-muted hover:bg-surface-container"
+                        )}
+                        title={rule.enabled ? 'Click to disable' : 'Click to enable'}
+                      >
+                        {rule.enabled ? <Play size={16} /> : <Pause size={16} />}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button 
+                          onClick={() => handleEdit(rule)} 
+                          className="p-1.5 text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-colors"
+                          title="Edit"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(rule.id)} 
+                          className="p-1.5 text-fg-muted hover:text-danger hover:bg-danger/10 rounded transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-fg-muted">
+              <History size={48} className="mb-4" />
+              <p>No rules found</p>
+              <p className="text-sm mt-2">Create your first rule to automate campaign optimization</p>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Modal */}
-      <div className={cn(
-        "fixed inset-0 z-50 flex items-center justify-center bg-black/50",
-        isModalOpen && "block",
-        !isModalOpen && "hidden"
-      )}>
-        <div className="bg-surface-container-lowest p-8 w-full max-w-md rounded-lg whisper-shadow relative">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-display font-bold text-primary">
-              {isEditMode ? 'Edit Rule' : 'Create Rule'}
-            </h3>
-            <button 
-              onClick={() => setIsModalOpen(false)} 
-              className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          
-          <form className="space-y-6">
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                Rule Name
-              </label>
-              <input 
-                type="text" 
-                placeholder="Enter rule name"
-                className="w-full pl-3 pr-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-              />
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-surface p-6 w-full max-w-lg rounded-lg border border-border-default shadow-xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-fg-default">
+                {isEditMode ? 'Edit Rule' : 'Create Rule'}
+              </h3>
+              <button 
+                onClick={() => setIsModalOpen(false)} 
+                className="p-2 text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-colors"
+              >
+                <X size={20} />
+              </button>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                  Rule Type
+                <label className="block text-xs font-medium text-fg-muted mb-1">
+                  Rule Name *
                 </label>
-                <div className="relative">
-                  <div className="flex items-center justify-between w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm cursor-pointer">
-                    <span className="text-sm font-medium text-on-surface-variant">Campaign</span>
-                    <ChevronDown size={16} className="text-on-surface-variant/60" />
-                  </div>
+                <input 
+                  type="text" 
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter rule name"
+                  required
+                  className="w-full px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-fg-muted mb-1">
+                  Description
+                </label>
+                <input 
+                  type="text" 
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Enter description"
+                  className="w-full px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-fg-muted mb-1">
+                    Rule Type
+                  </label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as typeof formData.type }))}
+                    className="w-full px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+                  >
+                    <option value="campaign">Campaign</option>
+                    <option value="platform">Platform</option>
+                    <option value="flow">Flow</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-fg-muted mb-1">
+                    Priority
+                  </label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={formData.priority}
+                    onChange={(e) => setFormData(prev => ({ ...prev, priority: parseInt(e.target.value) || 1 }))}
+                    className="w-full px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+                  />
                 </div>
               </div>
+              
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                  Priority
+                <label className="block text-xs font-medium text-fg-muted mb-1">
+                  Conditions (JSON)
                 </label>
-                <input 
-                  type="number" 
-                  min="1"
-                  className="w-full pl-3 pr-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
+                <textarea 
+                  rows="3"
+                  value={formData.conditionsText}
+                  onChange={(e) => setFormData(prev => ({ ...prev, conditionsText: e.target.value }))}
+                  placeholder='[{"metric": "roi", "operator": "<", "value": 0.5}]'
+                  className="w-full px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default font-mono focus:outline-none focus:border-accent-fg"
                 />
               </div>
-            </div>
-            
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                Conditions (JSON)
-              </label>
-              <textarea 
-                rows="4"
-                placeholder='[{"metric": "roi", "operator": "<", "value": 0.5, "duration": "24h"}]'
-                className="w-full pl-3 pr-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                Actions (JSON)
-              </label>
-              <textarea 
-                rows="4"
-                placeholder='[{"type": "pause_campaign", "platform": "all", "parameters": {}}]'
-                className="w-full pl-3 pr-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-              />
-            </div>
-            
-            <div className="flex items-center">
-              <div className="flex items-center">
+              
+              <div>
+                <label className="block text-xs font-medium text-fg-muted mb-1">
+                  Actions (JSON)
+                </label>
+                <textarea 
+                  rows="3"
+                  value={formData.actionsText}
+                  onChange={(e) => setFormData(prev => ({ ...prev, actionsText: e.target.value }))}
+                  placeholder='[{"type": "pause_campaign", "platform": "all"}]'
+                  className="w-full px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default font-mono focus:outline-none focus:border-accent-fg"
+                />
+              </div>
+              
+              <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" 
-                  className="w-4 h-4 bg-surface border border-outline-variant rounded"
+                  id="enabled"
+                  checked={formData.enabled}
+                  onChange={(e) => setFormData(prev => ({ ...prev, enabled: e.target.checked }))}
+                  className="w-4 h-4 rounded border-border-default"
                 />
-                <span className="ml-2 text-sm font-medium text-on-surface-variant">Enabled</span>
+                <label htmlFor="enabled" className="text-sm text-fg-default">Enabled</label>
               </div>
-            </div>
-            
-            <div className="flex justify-end gap-3 mt-6">
-              <button 
-                onClick={() => setIsModalOpen(false)} 
-                className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-all"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => setIsModalOpen(false)} 
-                className="px-6 py-3 bg-primary text-on-primary text-[10px] font-bold uppercase tracking-widest hover:bg-primary/90 transition-all"
-              >
-                {isEditMode ? 'Update' : 'Create'}
-              </button>
-            </div>
-          </form>
+              
+              <div className="flex justify-end gap-3 pt-4 border-t border-border-default">
+                <button 
+                  type="button"
+                  onClick={() => setIsModalOpen(false)} 
+                  className="px-4 py-2 text-sm text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-accent-fg text-white text-sm font-medium hover:bg-accent-fg/90 rounded disabled:opacity-50 transition-colors"
+                >
+                  {saving ? 'Saving...' : (isEditMode ? 'Update' : 'Create')}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
+
+export default RuleManagement;

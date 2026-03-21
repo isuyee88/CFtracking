@@ -301,10 +301,17 @@ export class ClickService {
       };
 
       // 异步记录分析数据到 Analytics Engine
+      console.log('[ClickService] About to track click to Analytics Engine:', {
+        clickId,
+        campaignId: campaign.id,
+        flowId: selectedFlow?.id,
+        timestamp: new Date().toISOString()
+      });
       try {
         this.analytics.trackClick(clickData);
+        console.log('[ClickService] trackClick called successfully');
       } catch (err) {
-        console.error('Failed to track click to Analytics Engine:', err);
+        console.error('[ClickService] Failed to track click to Analytics Engine:', err);
       }
 
       // D1 数据库只用于统计汇总，不存储原始点击数据

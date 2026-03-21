@@ -29,48 +29,58 @@ export class AnalyticsService {
 
   /**
    * 写入点击事件
+   *
+   * 数据模型 (Analytics Engine 限制: blobs≤20, doubles≤20, indexes≤1):
+   * - indexes[0]: campaignId (用于索引查询)
+   * - blobs: ip, country, city, device, browser, os, subId1-5, utmSource, utmMedium, utmCampaign, referer
+   * - doubles: clickId, flowId, landingPageId, offerId, visitorId, cost, riskScore, cfBotScore
    */
   trackClick(data: ClickData): void {
     try {
-      this.client.writeDataPoint({
-        blobs: [
-          data.clickId,
-          data.campaignId,
-          data.flowId || '',
-          data.landingPageId || '',
-          data.offerId || '',
-          data.ip,
-          data.userAgent,
-          data.referer || '',
-          data.country || '',
-          data.city || '',
-          data.device || '',
-          data.browser || '',
-          data.os || '',
-          data.visitorId,
-          data.subId1 || '',
-          data.subId2 || '',
-          data.subId3 || '',
-          data.subId4 || '',
-          data.subId5 || '',
-          data.utmSource || '',
-          data.utmMedium || '',
-          data.utmCampaign || '',
-          data.timestamp,
-        ],
-        doubles: [
-          data.cost || 0,
-          data.riskScore || 0,
-          data.cfBotScore || 0,
-        ],
-        indexes: [
-          data.campaignId, // 主要索引用于按活动查询
-          data.flowId || '', // 辅助索引用于按流量查询
-          data.country || '', // 辅助索引用于按国家查询
-        ],
+      const blobs = [
+        data.ip,
+        data.country || '',
+        data.city || '',
+        data.device || '',
+        data.browser || '',
+        data.os || '',
+        data.subId1 || '',
+        data.subId2 || '',
+        data.subId3 || '',
+        data.subId4 || '',
+        data.subId5 || '',
+        data.utmSource || '',
+        data.utmMedium || '',
+        data.utmCampaign || '',
+        data.referer || '',
+      ];
+
+      const doubles = [
+        0, // clickId numeric (暂用0，后续ID数值化后替换)
+        data.flowId ? 0 : 0, // flowId numeric
+        data.landingPageId ? 0 : 0, // landingPageId numeric
+        data.offerId ? 0 : 0, // offerId numeric
+        0, // visitorId numeric
+        data.cost || 0,
+        data.riskScore || 0,
+        data.cfBotScore || 0,
+      ];
+
+      console.log('[AnalyticsService] Writing click:', {
+        campaignId: data.campaignId,
+        blobCount: blobs.length,
+        doubleCount: doubles.length,
       });
+
+      this.client.writeDataPoint({
+        blobs,
+        doubles,
+        indexes: [data.campaignId],
+      });
+
+      console.log('[AnalyticsService] Click written successfully');
     } catch (error) {
-      console.error('Error tracking click to Analytics Engine:', error);
+      console.error('[AnalyticsService] Error tracking click to Analytics Engine:', error);
     }
   }
 

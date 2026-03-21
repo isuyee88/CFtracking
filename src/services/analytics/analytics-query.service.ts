@@ -21,7 +21,6 @@ export interface AnalyticsClickRecord {
   landingPageId: string;
   offerId: string;
   ip: string;
-  userAgent: string;
   referer: string;
   country: string;
   city: string;
@@ -32,6 +31,11 @@ export interface AnalyticsClickRecord {
   subId1: string;
   subId2: string;
   subId3: string;
+  subId4: string;
+  subId5: string;
+  utmSource: string;
+  utmMedium: string;
+  utmCampaign: string;
   cost: number;
   riskScore: number;
   cfBotScore: number;
@@ -107,11 +111,13 @@ export class AnalyticsQueryService {
 
   /**
    * 构建 Recent Clicks SQL 查询
-   * blob1=clickId, blob2=campaignId, blob3=flowId, blob4=landingPageId, blob5=offerId
-   * blob6=ip, blob7=userAgent, blob8=referer, blob9=country, blob10=city
-   * blob11=device, blob12=browser, blob13=os, blob14=visitorId
-   * blob15=subId1, blob16=subId2, blob17=subId3
-   * double1=cost, double2=riskScore, double3=cfBotScore
+   *
+   * 数据模型 (Analytics Engine 限制: blobs≤20, doubles≤20, indexes≤1):
+   * - indexes[0]: campaignId (用于索引查询)
+   * - blobs: blob1=ip, blob2=country, blob3=city, blob4=device, blob5=browser, blob6=os
+   *           blob7-11=subId1-5, blob12=utmSource, blob13=utmMedium, blob14=utmCampaign, blob15=referer
+   * - doubles: double1=clickId, double2=flowId, double3=landingPageId, double4=offerId
+   *            double5=visitorId, double6=cost, double7=riskScore, double8=cfBotScore
    *
    * 注意：数据集名称为 cf_tracking_events
    */
@@ -129,41 +135,45 @@ export class AnalyticsQueryService {
     }
 
     if (params.campaignId) {
-      conditions.push(`blob2 = '${params.campaignId}'`);
+      conditions.push(`index = '${params.campaignId}'`);
     }
 
     if (params.country) {
-      conditions.push(`blob9 = '${params.country}'`);
+      conditions.push(`blob2 = '${params.country}'`);
     }
 
     if (params.device) {
-      conditions.push(`blob11 = '${params.device}'`);
+      conditions.push(`blob4 = '${params.device}'`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     return `
       SELECT
-        blob1 as clickId,
-        blob2 as campaignId,
-        blob3 as flowId,
-        blob4 as landingPageId,
-        blob5 as offerId,
-        blob6 as ip,
-        blob7 as userAgent,
-        blob8 as referer,
-        blob9 as country,
-        blob10 as city,
-        blob11 as device,
-        blob12 as browser,
-        blob13 as os,
-        blob14 as visitorId,
-        blob15 as subId1,
-        blob16 as subId2,
-        blob17 as subId3,
-        double1 as cost,
-        double2 as riskScore,
-        double3 as cfBotScore,
+        double1 as clickIdNumeric,
+        index as campaignId,
+        double2 as flowIdNumeric,
+        double3 as landingPageIdNumeric,
+        double4 as offerIdNumeric,
+        blob1 as ip,
+        blob2 as country,
+        blob3 as city,
+        blob4 as device,
+        blob5 as browser,
+        blob6 as os,
+        double5 as visitorIdNumeric,
+        blob7 as subId1,
+        blob8 as subId2,
+        blob9 as subId3,
+        blob10 as subId4,
+        blob11 as subId5,
+        blob12 as utmSource,
+        blob13 as utmMedium,
+        blob14 as utmCampaign,
+        blob15 as referer,
+        double6 as cost,
+        double7 as riskScore,
+        double8 as cfBotScore,
         timestamp
       FROM cf_tracking_events
       ${whereClause}
@@ -206,28 +216,33 @@ export class AnalyticsQueryService {
 
   /**
    * 解析 Analytics Engine 查询结果
+   * 注意：clickId/flowId/landingPageId/offerId/visitorId 现在是 numeric，存储在 double 中
    */
   private parseQueryResult(response: AnalyticsEngineResponse): AnalyticsClickRecord[] {
     const data = response.data || [];
 
     return data.map((row: any) => ({
-      clickId: row.clickId || '',
+      clickId: row.clickIdNumeric ? `clk_${row.clickIdNumeric}` : '',
       campaignId: row.campaignId || '',
-      flowId: row.flowId || '',
-      landingPageId: row.landingPageId || '',
-      offerId: row.offerId || '',
+      flowId: row.flowIdNumeric ? String(row.flowIdNumeric) : '',
+      landingPageId: row.landingPageIdNumeric ? String(row.landingPageIdNumeric) : '',
+      offerId: row.offerIdNumeric ? String(row.offerIdNumeric) : '',
       ip: row.ip || '',
-      userAgent: row.userAgent || '',
       referer: row.referer || '',
       country: row.country || '',
       city: row.city || '',
       device: row.device || '',
       browser: row.browser || '',
       os: row.os || '',
-      visitorId: row.visitorId || '',
+      visitorId: row.visitorIdNumeric ? String(row.visitorIdNumeric) : '',
       subId1: row.subId1 || '',
       subId2: row.subId2 || '',
       subId3: row.subId3 || '',
+      subId4: row.subId4 || '',
+      subId5: row.subId5 || '',
+      utmSource: row.utmSource || '',
+      utmMedium: row.utmMedium || '',
+      utmCampaign: row.utmCampaign || '',
       cost: row.cost || 0,
       riskScore: row.riskScore || 0,
       cfBotScore: row.cfBotScore || 0,
@@ -267,10 +282,10 @@ export class AnalyticsQueryService {
     const sql = `
       SELECT
         count() as clicks,
-        count(distinct blob14) as uniqueVisitors,
-        sum(double1) as totalCost,
-        count(distinct blob2) as campaignCount,
-        count(distinct blob9) as countryCount
+        count(distinct double5) as uniqueVisitors,
+        sum(double6) as totalCost,
+        count(distinct index) as campaignCount,
+        count(distinct blob2) as countryCount
       FROM cf_tracking_events
       WHERE timestamp >= NOW() - INTERVAL '${intervalDays}' DAY
     `;
@@ -321,8 +336,8 @@ export class AnalyticsQueryService {
       SELECT
         toDate(timestamp) as date,
         count() as clicks,
-        count(distinct blob14) as uniqueVisitors,
-        sum(double1) as cost
+        count(distinct double5) as uniqueVisitors,
+        sum(double6) as cost
       FROM cf_tracking_events
       WHERE timestamp >= NOW() - INTERVAL '${intervalDays}' DAY
       GROUP BY date
@@ -351,14 +366,14 @@ export class AnalyticsQueryService {
 
     // 映射实体类型到 blob 字段
     const fieldMap: Record<string, { field: string; label: string }> = {
-      campaigns: { field: 'blob2', label: 'campaignId' },
-      landings: { field: 'blob4', label: 'landingPageId' },
-      offers: { field: 'blob5', label: 'offerId' },
-      sources: { field: 'blob8', label: 'referer' },
-      countries: { field: 'blob9', label: 'country' },
-      device_types: { field: 'blob11', label: 'device' },
-      browsers: { field: 'blob12', label: 'browser' },
-      os: { field: 'blob13', label: 'os' },
+      campaigns: { field: 'index', label: 'campaignId' },
+      landings: { field: 'double3', label: 'landingPageId' },
+      offers: { field: 'double4', label: 'offerId' },
+      sources: { field: 'blob12', label: 'utmSource' },
+      countries: { field: 'blob2', label: 'country' },
+      device_types: { field: 'blob4', label: 'device' },
+      browsers: { field: 'blob5', label: 'browser' },
+      os: { field: 'blob6', label: 'os' },
     };
 
     const config = fieldMap[entityType] || { field: 'blob2', label: entityType };
@@ -367,9 +382,9 @@ export class AnalyticsQueryService {
       SELECT
         ${config.field} as name,
         count() as clicks,
-        count(distinct blob14) as uniqueVisitors,
+        count(distinct double5) as uniqueVisitors,
         count(distinct ${config.field}) as entityCount,
-        sum(double1) as spend
+        sum(double6) as spend
       FROM cf_tracking_events
       WHERE timestamp >= NOW() - INTERVAL '${intervalDays}' DAY
         AND ${config.field} IS NOT NULL
@@ -432,28 +447,13 @@ export class AnalyticsQueryService {
     interval: 'hour' | 'day' | 'week' | 'month' = 'day',
     campaignId?: string
   ): Promise<any[]> {
-    let dateFormat: string;
-    switch (interval) {
-      case 'hour':
-        dateFormat = 'toStartOfHour(timestamp)';
-        break;
-      case 'week':
-        dateFormat = 'toStartOfWeek(timestamp)';
-        break;
-      case 'month':
-        dateFormat = 'toStartOfMonth(timestamp)';
-        break;
-      case 'day':
-      default:
-        dateFormat = 'toDate(timestamp)';
-    }
-
-    const start = new Date(startDate).toISOString().replace('T', ' ').substring(0, 19);
-    const end = new Date(endDate).toISOString().replace('T', ' ').substring(0, 19);
+    const start = new Date(startDate);
+    const now = new Date();
+    const diffStartDays = Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    const intervalDays = Math.max(diffStartDays, 1);
 
     const conditions: string[] = [];
-    conditions.push(`timestamp >= parseDateTime('${start}')`);
-    conditions.push(`timestamp <= parseDateTime('${end}')`);
+    conditions.push(`timestamp >= NOW() - INTERVAL '${intervalDays}' DAY`);
 
     if (campaignId) {
       conditions.push(`blob2 = '${campaignId}'`);
@@ -461,16 +461,25 @@ export class AnalyticsQueryService {
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
+    let dateSelectExpr = 'toDate(timestamp)';
+    if (interval === 'hour') {
+      dateSelectExpr = 'toStartOfHour(timestamp)';
+    } else if (interval === 'week') {
+      dateSelectExpr = 'toStartOfWeek(timestamp)';
+    } else if (interval === 'month') {
+      dateSelectExpr = 'toStartOfMonth(timestamp)';
+    }
+
     const sql = `
       SELECT
-        ${dateFormat} as date,
+        ${dateSelectExpr} as date,
         count() as clicks,
-        count(distinct blob14) as uniqueVisitors,
-        sum(double1) as cost
+        count(distinct double5) as uniqueVisitors,
+        sum(double6) as cost
       FROM cf_tracking_events
       ${whereClause}
-      GROUP BY ${dateFormat}
-      ORDER BY ${dateFormat}
+      GROUP BY date
+      ORDER BY date
     `;
 
     try {

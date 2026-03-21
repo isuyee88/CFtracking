@@ -6,12 +6,12 @@
  * @output Flow configuration
  */
 
-import React, { useState, useCallback, useRef } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  Edit3, 
-  Save, 
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import {
+  Plus,
+  Trash2,
+  Edit3,
+  Save,
   X,
   ArrowRight,
   GitBranch,
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { fetchLandings, fetchOffers } from '../services/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -55,19 +56,6 @@ interface FlowDesignerProps {
   onCancel?: () => void;
 }
 
-// Mock data for available landing pages and offers
-const AVAILABLE_LANDINGS = [
-  { id: 'lp1', name: 'Landing Page A - Product Demo', url: 'https://example.com/lp-a' },
-  { id: 'lp2', name: 'Landing Page B - Lead Form', url: 'https://example.com/lp-b' },
-  { id: 'lp3', name: 'Landing Page C - VSL', url: 'https://example.com/lp-c' },
-];
-
-const AVAILABLE_OFFERS = [
-  { id: 'offer1', name: 'Weight Loss Supplement', payout: 45 },
-  { id: 'offer2', name: 'MMO Course', payout: 97 },
-  { id: 'offer3', name: 'Dating Premium', payout: 25 },
-];
-
 export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   campaignId,
   initialFlows = [],
@@ -79,13 +67,35 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
     { id: 'flow-1', type: 'landing', name: 'Landing Page A', weight: 50 },
     { id: 'flow-2', type: 'landing', name: 'Landing Page B', weight: 50 },
   ]);
-  
+  const [landings, setLandings] = useState<{id: string; name: string; url?: string}[]>([]);
+  const [offers, setOffers] = useState<{id: string; name: string; payout?: number}[]>([]);
+
   const [connections, setConnections] = useState<FlowConnection[]>(initialConnections);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<FlowNode>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [landingsData, offersData] = await Promise.all([
+          fetchLandings(false),
+          fetchOffers(false),
+        ]);
+        if (Array.isArray(landingsData)) {
+          setLandings(landingsData.map((lp: any) => ({ id: lp.id, name: lp.name, url: lp.url })));
+        }
+        if (Array.isArray(offersData)) {
+          setOffers(offersData.map((o: any) => ({ id: o.id, name: o.name, payout: o.payout })));
+        }
+      } catch (err) {
+        console.error('Failed to load landings/offers:', err);
+      }
+    };
+    loadData();
+  }, []);
 
   // Calculate total weight
   const totalWeight = flows.reduce((sum, f) => sum + f.weight, 0);
@@ -391,8 +401,8 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
               Available Landings
             </h3>
             <div className="space-y-1 max-h-40 overflow-y-auto">
-              {AVAILABLE_LANDINGS.map(lp => (
-                <div 
+              {landings.map(lp => (
+                <div
                   key={lp.id}
                   className="px-2 py-1.5 text-xs text-on-surface bg-surface-container rounded cursor-pointer hover:bg-surface-container-high"
                   onClick={() => handleAddNode('landing')}
@@ -408,13 +418,13 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
               Available Offers
             </h3>
             <div className="space-y-1 max-h-40 overflow-y-auto">
-              {AVAILABLE_OFFERS.map(offer => (
-                <div 
+              {offers.map(offer => (
+                <div
                   key={offer.id}
                   className="px-2 py-1.5 text-xs text-on-surface bg-surface-container rounded cursor-pointer hover:bg-surface-container-high"
                   onClick={() => handleAddNode('offer')}
                 >
-                  {offer.name} (${offer.payout})
+                  {offer.name}{offer.payout !== undefined && ` ($${offer.payout})`}
                 </div>
               ))}
             </div>

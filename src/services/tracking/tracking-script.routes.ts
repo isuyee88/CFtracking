@@ -141,7 +141,7 @@ export function createTrackingScriptRouter() {
           body.touchSupport || 0,
           body.cookieEnabled || 0,
         ],
-        indexes: [body.campaignId, 'pageview', body.timestamp]
+        indexes: [body.campaignId]
       });
 
       return c.json(success({
@@ -193,7 +193,7 @@ export function createTrackingScriptRouter() {
           'USD',
         ],
         doubles: [body.payout || 0, body.payout || 0],
-        indexes: [body.campaignId, '', timestamp]
+        indexes: [body.campaignId]
       });
 
       return c.json(success({
@@ -235,7 +235,7 @@ export function createTrackingScriptRouter() {
           'update'
         ],
         doubles: [],
-        indexes: [body.campaignId, 'update', new Date().toISOString()]
+        indexes: [body.campaignId]
       });
 
       return c.json(success({

@@ -5,13 +5,15 @@
  * Logic: 多标签页表单，包含Main、Schema、Filters、Monitoring、Notes
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Settings, Filter, Activity, FileText, GripVertical } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { FilterBuilder } from './filters';
 import type { FilterConfig } from './filters';
 import { FlowDesigner, type FlowNode, type FlowConnection } from './FlowDesigner';
+import { fetchTrafficSources } from '../services/api';
+import type { TrafficSource } from '../types/trafficSource';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -58,6 +60,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
   mode
 }) => {
   const [activeTab, setActiveTab] = useState('main');
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
   const [formData, setFormData] = useState<CampaignFormData>({
     name: initialData?.name || '',
     alias: initialData?.alias || '',
@@ -82,6 +85,22 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
     flows: initialData?.flows || [],
     connections: initialData?.connections || [],
   });
+
+  useEffect(() => {
+    const loadTrafficSources = async () => {
+      try {
+        const data = await fetchTrafficSources(false);
+        if (Array.isArray(data)) {
+          setTrafficSources(data);
+        }
+      } catch (err) {
+        console.error('Failed to load traffic sources:', err);
+      }
+    };
+    if (isOpen) {
+      loadTrafficSources();
+    }
+  }, [isOpen]);
 
   const handleChange = (field: keyof CampaignFormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -202,10 +221,11 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                   >
                     <option value="">Select source...</option>
-                    <option value="google">Google Ads</option>
-                    <option value="facebook">Facebook</option>
-                    <option value="tiktok">TikTok</option>
-                    <option value="native">Native Ads</option>
+                    {trafficSources.map(source => (
+                      <option key={source.id} value={source.id}>
+                        {source.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
