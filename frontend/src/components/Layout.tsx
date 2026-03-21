@@ -43,7 +43,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// 昼夜模式 Hook
+// 昼夜模式 Hook - Stitch Design: 添加过渡动画
 function useDarkMode() {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     // 从 localStorage 读取用户偏好，如果没有则根据时间自动判断
@@ -60,12 +60,22 @@ function useDarkMode() {
     // 保存用户偏好到 localStorage
     localStorage.setItem('dark-mode', isDarkMode.toString());
     
+    // 添加过渡动画类
+    document.documentElement.classList.add('theme-transitioning');
+    
     // 应用或移除 dark-mode 类
     if (isDarkMode) {
       document.documentElement.classList.add('dark-mode');
     } else {
       document.documentElement.classList.remove('dark-mode');
     }
+    
+    // 移除过渡动画类
+    const timer = setTimeout(() => {
+      document.documentElement.classList.remove('theme-transitioning');
+    }, 300);
+    
+    return () => clearTimeout(timer);
   }, [isDarkMode]);
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
@@ -187,31 +197,46 @@ export const Layout = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
             onClick={() => setSidebarOpen(true)}
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
           />
         )}
       </AnimatePresence>
 
-      {/* Sidebar - 优化：添加ARIA标签 */}
-      <aside 
+      {/* Sidebar - Stitch Design: 流畅滑动动画 */}
+      <motion.aside
+        initial={false}
+        animate={{ 
+          x: isSidebarOpen ? 0 : -256,
+          width: 256 
+        }}
+        transition={{ 
+          type: "spring", 
+          stiffness: 300, 
+          damping: 30,
+          mass: 0.8
+        }}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 bg-surface border-r border-border-default w-64 transition-transform duration-300 lg:relative lg:translate-x-0 flex flex-col",
-          !isSidebarOpen && "-translate-x-full"
+          "fixed inset-y-0 left-0 z-50 bg-surface-container-lowest dark:bg-surface-container flex flex-col",
+          "lg:relative lg:translate-x-0"
         )}
         aria-label="Main navigation"
         role="navigation"
       >
-        <div className="p-6 flex items-center justify-between shrink-0 border-b border-border-default">
+        <div className="p-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary flex items-center justify-center rounded-md" aria-hidden="true">
+            <div 
+              className="w-8 h-8 bg-accent-fg flex items-center justify-center rounded-md" 
+              aria-hidden="true"
+            >
               <TrendingUp size={18} className="text-on-primary" />
             </div>
             <h1 className="text-xl font-display font-bold tracking-tight text-fg-default">CFTracking</h1>
           </div>
           <button 
             onClick={() => setSidebarOpen(false)} 
-            className="lg:hidden text-fg-muted hover:text-fg-default focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 rounded-md p-1"
+            className="lg:hidden text-fg-muted hover:text-fg-default hover:bg-surface-container focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 rounded-md p-1 transition-colors"
             aria-label="Close sidebar"
           >
             <X size={20} aria-hidden="true" />
@@ -256,17 +281,20 @@ export const Layout = () => {
             </div>
           ))}
         </nav>
-      </aside>
+      </motion.aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header - 优化：添加ARIA标签和无障碍支持 */}
-        <header className="h-16 bg-surface flex items-center justify-between px-6 border-b border-border-default" role="banner">
+        {/* Header - Stitch Design: No-Line 规则 */}
+        <header 
+          className="h-16 bg-surface-container-lowest dark:bg-surface-container flex items-center justify-between px-6" 
+          role="banner"
+        >
           <div className="flex items-center gap-4 flex-1 max-w-md">
             <button 
               onClick={() => setSidebarOpen(true)} 
               className={cn(
-                "lg:hidden text-fg-muted hover:text-fg-default focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 rounded-md p-1",
+                "lg:hidden text-fg-muted hover:text-fg-default hover:bg-surface-container focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 rounded-md p-1 transition-colors",
                 isSidebarOpen && "hidden"
               )}
               aria-label="Open sidebar"

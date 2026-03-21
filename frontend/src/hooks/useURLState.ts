@@ -144,40 +144,41 @@ export function useURLState<T extends Record<string, any>>(
   return { state, setState, resetState };
 }
 
+// Dashboard默认状态 - 移到组件外部避免每次渲染创建新对象
+const DASHBOARD_DEFAULT_STATE: DashboardState = {
+  range: {
+    from: new Date().toISOString().split('T')[0],
+    to: new Date().toISOString().split('T')[0],
+    interval: 'today',
+    timezone: 'UTC'
+  },
+  enabledMetrics: [
+    'clicks',
+    'unique_clicks_campaign',
+    'conversions',
+    'cost',
+    'revenue_confirmed',
+    'profit_confirmed',
+    'roi_confirmed'
+  ],
+  enabledEntities: ['campaigns', 'landings', 'offers', 'sources'],
+  lastClicksColumns: [
+    'event_id',
+    'datetime',
+    'campaign',
+    'os_icon',
+    'browser_icon',
+    'ip',
+    'destination'
+  ],
+  topMetrics: ['clicks', 'campaign_unique_clicks', 'conversions'],
+  selectedCampaign: null,
+  filters: {}
+};
+
 // Dashboard专用Hook
 export const useDashboardURLState = () => {
-  const defaultState: DashboardState = {
-    range: {
-      from: new Date().toISOString().split('T')[0],
-      to: new Date().toISOString().split('T')[0],
-      interval: 'today',
-      timezone: 'UTC'
-    },
-    enabledMetrics: [
-      'clicks',
-      'unique_clicks_campaign',
-      'conversions',
-      'cost',
-      'revenue_confirmed',
-      'profit_confirmed',
-      'roi_confirmed'
-    ],
-    enabledEntities: ['campaigns', 'landings', 'offers', 'sources'],
-    lastClicksColumns: [
-      'event_id',
-      'datetime',
-      'campaign',
-      'os_icon',
-      'browser_icon',
-      'ip',
-      'destination'
-    ],
-    topMetrics: ['clicks', 'campaign_unique_clicks', 'conversions'],
-    selectedCampaign: null,
-    filters: {}
-  };
-
-  return useURLState<DashboardState>('s', defaultState);
+  return useURLState<DashboardState>('s', DASHBOARD_DEFAULT_STATE);
 };
 
 // Campaigns页面专用Hook

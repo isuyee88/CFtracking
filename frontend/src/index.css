@@ -126,74 +126,114 @@
 }
 
 /* ============================================
+   主题切换过渡动画 - 平滑切换
+   ============================================ */
+
+html {
+  transition: background-color 0.3s ease;
+}
+
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition: background-color 0.2s ease, 
+              border-color 0.2s ease, 
+              color 0.2s ease,
+              box-shadow 0.2s ease !important;
+}
+
+/* ============================================
    Dark Mode - Linear Style
    ============================================ */
 
 .dark-mode {
-  /* Background - 优化：非纯黑，减少眼睛疲劳 */
-  --color-bg-primary: #0a0a0a;
-  --color-bg-secondary: #141414;
-  --color-bg-tertiary: #1e1e1e;
-  --color-bg-elevated: #242424;
+  /* ============================================
+     Stitch Design System - Dark Mode Colors
+     基于 "The Precision Observer" 设计理念
+     ============================================ */
   
-  /* Text - 优化：非纯白，更柔和 */
-  --color-text-primary: #f0f0f0;
-  --color-text-secondary: #a0a0a0;
-  --color-text-tertiary: #666666;
-  --color-text-disabled: #444444;
+  /* Background - Stitch 规范：非纯黑，使用层级背景 */
+  --color-bg-primary: #121416;      /* surface - 主背景 */
+  --color-bg-secondary: #1e2022;    /* surface_container */
+  --color-bg-tertiary: #282a2c;     /* surface_container_high */
+  --color-bg-elevated: #333537;     /* surface_container_highest */
   
-  /* Border - 优化：增强边框可见性 */
-  --color-border: #333333;
-  --color-border-strong: #444444;
+  /* Text - Stitch 规范：非纯白，柔和文字 */
+  --color-text-primary: #e2e2e5;
+  --color-text-secondary: #c2c6d6;
+  --color-text-tertiary: #8c909f;
+  --color-text-disabled: #424754;
   
-  /* Legacy compatibility - 优化：更好的层级对比 */
-  --color-surface: #0d0d0d;
-  --color-surface-container: #161616;
-  --color-surface-container-low: #1f1f1f;
-  --color-surface-container-lowest: #0a0a0a;
-  --color-surface-container-high: #2a2a2a;
+  /* Border - Stitch 规范：Ghost Border */
+  --color-border: rgba(66, 71, 84, 0.5);    /* outline_variant at 50% */
+  --color-border-strong: #424754;
   
-  --color-on-surface: #f0f0f0;
-  --color-on-surface-variant: #a0a0a0;
-  --color-outline-variant: #333333;
+  /* Surface Hierarchy - Stitch 规范：层级系统 */
+  --color-surface: #121416;                    /* 基础层 */
+  --color-surface-container: #1e2022;          /* 结构区域 */
+  --color-surface-container-low: #1a1c1e;      /* 低对比区域 */
+  --color-surface-container-lowest: #0c0e10;   /* 最深背景 */
+  --color-surface-container-high: #282a2c;     /* 交互组件 */
   
-  --color-fg-default: #f0f0f0;
-  --color-fg-muted: #a0a0a0;
-  --color-fg-subtle: #666666;
+  --color-on-surface: #e2e2e5;
+  --color-on-surface-variant: #c2c6d6;
+  --color-outline-variant: #424754;
+  
+  --color-fg-default: #e2e2e5;
+  --color-fg-muted: #c2c6d6;
+  --color-fg-subtle: #8c909f;
   --color-fg-on-emphasis: #000000;
   
-  --color-canvas: #0a0a0a;
-  --color-canvas-inset: #0a0a0a;
-  --color-border-default: #333333;
-  --color-border-muted: #1f1f1f;
+  --color-canvas: #121416;
+  --color-canvas-inset: #0c0e10;
+  --color-border-default: rgba(66, 71, 84, 0.5);
+  --color-border-muted: #1a1c1e;
   
-  /* 优化：调整强调色亮度，更柔和 */
-  --color-accent-fg: #7b8fd4;
-  --color-accent-emphasis: #8b9dff;
-  --color-accent-muted: rgba(123, 143, 212, 0.15);
-  --color-accent-subtle: rgba(123, 143, 212, 0.1);
+  /* Accent Colors - Stitch 规范：Primary & Secondary */
+  --color-accent: #aec6ff;
+  --color-accent-hover: #5e6ad2;
+  --color-accent-light: rgba(174, 198, 255, 0.1);
+  --color-accent-fg: #aec6ff;                  /* primary */
+  --color-accent-emphasis: #186ee6;            /* primary_container */
+  --color-accent-muted: rgba(174, 198, 255, 0.15);
+  --color-accent-subtle: rgba(174, 198, 255, 0.05);
   
-  /* 优化：状态色饱和度调整 */
+  /* Secondary - 用于增长/积极指标 */
+  --color-secondary: #53dcbc;
+  --color-secondary-container: rgba(83, 220, 188, 0.15);
+  --color-secondary-fixed-dim: #53dcbc;
+  
+  /* Status Colors - Stitch 规范：调整饱和度 */
+  --color-success: #4ade80;
   --color-success-fg: #4ade80;
-  --color-danger-fg: #f87171;
+  --color-warning: #fbbf24;
   --color-warning-fg: #fbbf24;
+  --color-danger: #f87171;
+  --color-danger-fg: #f87171;
+  --color-info: #7dd3fc;
   
-  /* Button text colors - 按钮文字颜色 */
-  --color-btn-primary-text: #0a0a0a;
-  --color-btn-secondary-text: #f0f0f0;
-  --color-btn-ghost-text: #a0a0a0;
-  --color-btn-ghost-text-hover: #f0f0f0;
+  /* Button text colors */
+  --color-btn-primary-text: #002e6b;           /* on_primary */
+  --color-btn-secondary-text: #e2e2e5;
+  --color-btn-ghost-text: #c2c6d6;
+  --color-btn-ghost-text-hover: #e2e2e5;
   
-  /* Legacy compatibility - 暗黑模式覆盖 */
-  --color-primary: #f0f0f0;
-  --color-primary-container: #e5e5e5;
-  --color-on-primary: #0a0a0a;
+  /* Legacy compatibility */
+  --color-primary: #e2e2e5;
+  --color-primary-container: #aec6ff;
+  --color-on-primary: #002e6b;
   
-  --color-secondary: #7b8fd4;
-  --color-secondary-container: rgba(123, 143, 212, 0.15);
-  --color-secondary-fixed-dim: #a5b4ff;
+  --color-error: #ffb4ab;
   
-  --color-error: #f87171;
+  /* 图表专用颜色 - 高对比度 */
+  --color-chart-1: #aec6ff;
+  --color-chart-2: #53dcbc;
+  --color-chart-3: #c0c1ff;
+  --color-chart-4: #ff7eb3;
+  --color-chart-5: #7dd3fc;
+  --color-chart-6: #fbbf24;
+  --color-chart-7: #a78bfa;
 }
 
 /* ============================================
@@ -357,18 +397,29 @@
 }
 
 /* ============================================
-   Card & Container Styles - Linear
+   Card & Container Styles - Stitch Design
+   No-Line 规则：使用背景色层级而非边框分隔
    ============================================ */
 
 .card {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border-default);
+  background-color: var(--color-surface-container-lowest);
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  will-change: box-shadow, transform;
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .dark-mode .card {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  background-color: var(--color-surface-container);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.dark-mode .card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 /* 优化：黑夜模式图片适配 */
@@ -389,26 +440,35 @@
 .card-header {
   padding: 1rem 1.25rem;
   background-color: var(--color-surface-container);
-  border-bottom: 1px solid var(--color-border-default);
   border-radius: 8px 8px 0 0;
+}
+
+.dark-mode .card-header {
+  background-color: var(--color-surface-container-high);
 }
 
 .card-body {
   padding: 1.25rem;
 }
 
-/* Section Card */
+/* Section Card - No-Line 规则 */
 .section-card {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border-default);
+  background-color: var(--color-surface-container-lowest);
   border-radius: 8px;
+  overflow: hidden;
+}
+
+.dark-mode .section-card {
+  background-color: var(--color-surface-container);
 }
 
 .section-header {
   padding: 1rem 1.25rem;
   background-color: var(--color-surface-container);
-  border-bottom: 1px solid var(--color-border-default);
-  border-radius: 8px 8px 0 0;
+}
+
+.dark-mode .section-header {
+  background-color: var(--color-surface-container-high);
 }
 
 .section-header h3 {
@@ -418,7 +478,8 @@
 }
 
 /* ============================================
-   Button Styles - Linear
+   Button Styles - Stitch Design
+   Glass & Gradient 规则：主按钮使用渐变
    ============================================ */
 
 .btn {
@@ -433,51 +494,63 @@
   border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.15s ease;
-  /* 优化：添加焦点指示 */
   outline: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* 优化：按钮点击反馈动画 */
+/* 优化：按钮点击反馈动画 - scale + opacity */
 .btn:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
-/* 优化：按钮焦点状态 */
+/* 优化：按钮焦点状态 - 无障碍 */
 .btn:focus-visible {
   box-shadow: 0 0 0 2px var(--color-canvas), 0 0 0 4px var(--color-accent-fg);
 }
 
+/* Primary Button - Stitch 规范：渐变效果 */
 .btn-primary {
-  background-color: var(--color-fg-default);
+  background: linear-gradient(135deg, var(--color-accent-emphasis, #186ee6) 0%, var(--color-accent-fg, #aec6ff) 100%);
   color: var(--color-btn-primary-text);
-  border-color: var(--color-fg-default);
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn-primary:hover {
-  opacity: 0.85;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  filter: brightness(1.05);
 }
 
 .btn-primary:active {
-  transform: scale(0.98);
-  opacity: 0.75;
+  transform: scale(0.97);
+  filter: brightness(0.95);
 }
 
+.dark-mode .btn-primary {
+  background: linear-gradient(135deg, var(--color-accent-emphasis, #186ee6) 0%, var(--color-accent-fg, #aec6ff) 100%);
+  color: var(--color-btn-primary-text);
+}
+
+/* Secondary Button - Stitch 规范：Ghost Border */
 .btn-secondary {
   background-color: var(--color-surface-container);
   color: var(--color-btn-secondary-text);
-  border-color: var(--color-border-default);
+  border: 1px solid var(--color-border);
 }
 
 .btn-secondary:hover {
   background-color: var(--color-surface-container-low);
   border-color: var(--color-border-strong);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 
 .btn-secondary:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
   background-color: var(--color-surface-container-high);
 }
 
+/* Ghost Button - Stitch 规范：无背景 */
 .btn-ghost {
   background-color: transparent;
   color: var(--color-btn-ghost-text);
@@ -490,32 +563,73 @@
 }
 
 .btn-ghost:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
   background-color: var(--color-surface-container-low);
 }
 
+/* Accent Button - 强调色 */
 .btn-accent {
-  background-color: var(--color-accent);
+  background: linear-gradient(135deg, var(--color-accent, #5e6ad2) 0%, var(--color-accent-hover, #4f5ac0) 100%);
   color: #ffffff;
-  border-color: var(--color-accent);
+  border: none;
+  box-shadow: 0 1px 3px rgba(94, 106, 210, 0.3);
 }
 
 .dark-mode .btn-accent {
-  background-color: var(--color-accent-emphasis);
-  color: #0a0a0a;
+  background: linear-gradient(135deg, var(--color-accent-emphasis, #186ee6) 0%, var(--color-accent-fg, #aec6ff) 100%);
+  color: var(--color-btn-primary-text);
 }
 
 .btn-accent:hover {
-  opacity: 0.9;
+  box-shadow: 0 2px 8px rgba(94, 106, 210, 0.4);
+  filter: brightness(1.05);
 }
 
 .btn-accent:active {
-  transform: scale(0.98);
-  opacity: 0.8;
+  transform: scale(0.97);
+  filter: brightness(0.95);
+}
+
+/* Success Button - 增长/积极操作 */
+.btn-success {
+  background: linear-gradient(135deg, #00af91 0%, #53dcbc 100%);
+  color: #ffffff;
+  border: none;
+}
+
+.dark-mode .btn-success {
+  background: linear-gradient(135deg, #00af91 0%, #53dcbc 100%);
+  color: #002019;
+}
+
+.btn-success:hover {
+  filter: brightness(1.05);
+}
+
+.btn-success:active {
+  transform: scale(0.97);
+  filter: brightness(0.95);
+}
+
+/* Danger Button - 危险操作 */
+.btn-danger {
+  background: linear-gradient(135deg, #dc2626 0%, #f87171 100%);
+  color: #ffffff;
+  border: none;
+}
+
+.btn-danger:hover {
+  filter: brightness(1.05);
+}
+
+.btn-danger:active {
+  transform: scale(0.97);
+  filter: brightness(0.95);
 }
 
 /* ============================================
-   Form Elements - Linear
+   Form Elements - Stitch Design
+   左侧高亮边框聚焦效果
    ============================================ */
 
 .form-input {
@@ -525,39 +639,58 @@
   line-height: 1.5;
   color: var(--color-fg-default);
   background-color: var(--color-canvas);
-  border: 1px solid var(--color-border-default);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  /* 优化：无障碍焦点指示 */
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
   outline: none;
 }
 
+/* Stitch 规范：聚焦时使用左侧高亮边框 */
 .form-input:focus {
-  outline: none;
-  border-color: var(--color-accent-fg);
-  /* 优化：增强聚焦glow效果 */
-  box-shadow: 
-    0 0 0 3px var(--color-accent-subtle),
-    0 0 0 1px var(--color-accent-fg);
+  border-color: transparent;
+  border-left: 2px solid var(--color-accent-fg);
+  background-color: var(--color-surface-container-lowest);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
 }
 
-/* 优化：输入框焦点可见状态 */
 .form-input:focus-visible {
-  box-shadow: 
-    0 0 0 3px var(--color-accent-subtle),
-    0 0 0 1px var(--color-accent-fg);
+  border-color: transparent;
+  border-left: 2px solid var(--color-accent-fg);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
 }
 
 .form-input::placeholder {
   color: var(--color-fg-subtle);
 }
 
-/* 优化：禁用状态 */
+/* 禁用状态 */
 .form-input:disabled {
   background-color: var(--color-surface-container);
   color: var(--color-fg-subtle);
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+/* 错误状态 */
+.form-input.error,
+.form-input:invalid:not(:placeholder-shown) {
+  border-color: var(--color-danger-fg);
+}
+
+.form-input.error:focus,
+.form-input:invalid:not(:placeholder-shown):focus {
+  border-left-color: var(--color-danger-fg);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.15);
+}
+
+/* 成功状态 */
+.form-input.success {
+  border-color: var(--color-success-fg);
+}
+
+.form-input.success:focus {
+  border-left-color: var(--color-success-fg);
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.15);
 }
 
 .form-select {
@@ -569,18 +702,72 @@
 }
 
 .dark-mode .form-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6L8 10L12 6' stroke='%23a0a0a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6L8 10L12 6' stroke='%23c2c6d6' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Textarea */
+textarea.form-input {
+  min-height: 80px;
+  resize: vertical;
+}
+
+/* Checkbox & Radio - Stitch 规范 */
+.form-checkbox,
+.form-radio {
+  width: 1rem;
+  height: 1rem;
+  appearance: none;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-canvas);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.form-checkbox {
+  border-radius: 4px;
+}
+
+.form-radio {
+  border-radius: 50%;
+}
+
+.form-checkbox:checked,
+.form-radio:checked {
+  background-color: var(--color-accent-fg);
+  border-color: var(--color-accent-fg);
+}
+
+.form-checkbox:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 6L5 9L10 3' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.form-radio:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8' fill='none'%3E%3Ccircle cx='4' cy='4' r='3' fill='white'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.form-checkbox:focus-visible,
+.form-radio:focus-visible {
+  outline: 2px solid var(--color-accent-fg);
+  outline-offset: 2px;
 }
 
 /* ============================================
-   Chart & Visualization
+   Chart & Visualization - Stitch Design
    ============================================ */
 
 .chart-container {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border-default);
+  background-color: var(--color-surface-container-lowest);
   border-radius: 8px;
   padding: 1.5rem;
+  position: relative;
+}
+
+.dark-mode .chart-container {
+  background-color: var(--color-surface-container);
 }
 
 .chart-title {
@@ -588,40 +775,133 @@
   font-weight: 600;
   color: var(--color-fg-default);
   margin-bottom: 1rem;
+  font-family: var(--font-display);
+}
+
+/* 图表网格线 - Stitch 规范：10% opacity */
+.chart-grid-line {
+  stroke: var(--color-outline-variant);
+  stroke-opacity: 0.1;
+}
+
+/* 图表 Tooltip - Stitch 规范：Glassmorphism */
+.chart-tooltip {
+  background-color: var(--color-surface-container-highest);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(12px);
+  padding: 0.75rem 1rem;
+  border: none;
+}
+
+.dark-mode .chart-tooltip {
+  background-color: var(--color-surface-container-high);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.chart-tooltip-label {
+  font-size: 0.75rem;
+  color: var(--color-fg-muted);
+  margin-bottom: 0.25rem;
+}
+
+.chart-tooltip-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-fg-default);
+}
+
+/* 图表图例 */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-fg-muted);
+}
+
+.chart-legend-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
 }
 
 /* ============================================
-   Status Badges - Linear
+   Status Badges - Stitch Design
+   使用 full 圆角，与矩形布局形成对比
    ============================================ */
 
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 0.25rem 0.625rem;
+  padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 500;
-  border-radius: 4px;
+  border-radius: 9999px;
+  transition: all 0.15s ease;
 }
 
 .badge-success {
-  background-color: rgba(46, 160, 67, 0.15);
+  background-color: rgba(74, 222, 128, 0.15);
   color: var(--color-success-fg);
 }
 
+.dark-mode .badge-success {
+  background-color: rgba(74, 222, 128, 0.2);
+}
+
 .badge-danger {
-  background-color: rgba(248, 81, 73, 0.15);
+  background-color: rgba(248, 113, 113, 0.15);
   color: var(--color-danger-fg);
 }
 
+.dark-mode .badge-danger {
+  background-color: rgba(248, 113, 113, 0.2);
+}
+
 .badge-warning {
-  background-color: rgba(212, 167, 44, 0.15);
+  background-color: rgba(251, 191, 36, 0.15);
   color: var(--color-warning-fg);
+}
+
+.dark-mode .badge-warning {
+  background-color: rgba(251, 191, 36, 0.2);
+}
+
+.badge-info {
+  background-color: rgba(125, 211, 252, 0.15);
+  color: var(--color-info);
+}
+
+.dark-mode .badge-info {
+  background-color: rgba(125, 211, 252, 0.2);
 }
 
 .badge-default {
   background-color: var(--color-surface-container);
   color: var(--color-fg-muted);
+}
+
+.dark-mode .badge-default {
+  background-color: var(--color-surface-container-high);
+}
+
+.badge-primary {
+  background-color: var(--color-accent-muted);
+  color: var(--color-accent-fg);
+}
+
+.badge-secondary {
+  background-color: var(--color-secondary-container);
+  color: var(--color-secondary);
 }
 
 /* ============================================
@@ -705,21 +985,44 @@
   color: var(--color-accent-fg);
 }
 
-/* Metric Card */
+/* Metric Card - Stitch Design */
 .metric-card {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border-default);
+  background-color: var(--color-surface-container-lowest);
   border-radius: 8px;
   padding: 1.25rem;
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  will-change: box-shadow, transform;
+  position: relative;
+  overflow: hidden;
+}
+
+.dark-mode .metric-card {
+  background-color: var(--color-surface-container);
 }
 
 .metric-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
 }
 
 .dark-mode .metric-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Metric Card 装饰性渐变 */
+.metric-card-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-accent-fg), var(--color-secondary));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.metric-card:hover .metric-card-accent {
+  opacity: 1;
 }
 
 .metric-label {
@@ -735,6 +1038,38 @@
   font-weight: 600;
   color: var(--color-fg-default);
   margin-top: 0.25rem;
+  font-family: var(--font-display);
+}
+
+.metric-trend {
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-top: 0.5rem;
+}
+
+.metric-trend-up {
+  color: var(--color-success-fg);
+}
+
+.metric-trend-down {
+  color: var(--color-danger-fg);
+}
+
+/* Metric Card 渐变背景变体 */
+.metric-gradient {
+  background: linear-gradient(135deg, var(--color-surface-container-lowest) 0%, var(--color-surface-container) 100%);
+}
+
+.dark-mode .metric-gradient {
+  background: linear-gradient(135deg, var(--color-surface-container) 0%, var(--color-surface-container-high) 100%);
+}
+
+.metric-gradient-alt {
+  background: linear-gradient(135deg, var(--color-surface-container) 0%, var(--color-surface-container-lowest) 100%);
+}
+
+.dark-mode .metric-gradient-alt {
+  background: linear-gradient(135deg, var(--color-surface-container-high) 0%, var(--color-surface-container) 100%);
 }
 
 /* Tab Button */

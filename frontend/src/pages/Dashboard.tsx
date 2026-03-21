@@ -6,7 +6,7 @@
  * 样式优化：统一主色调、玻璃拟态效果、自动昼夜模式
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   TrendingUp, 
@@ -764,6 +764,11 @@ export const Dashboard = () => {
     recentClicksColumns: state.lastClicksColumns || ['event_id', 'datetime', 'campaign', 'os_icon', 'browser_icon', 'ip', 'destination']
   });
   
+  // 使用 useMemo 稳定依赖值，避免无限循环
+  const metricsKey = useMemo(() => config.metrics.join(','), [config.metrics]);
+  const entitiesKey = useMemo(() => config.entities.join(','), [config.entities]);
+  const timeRangeKey = useMemo(() => state.range?.interval || 'today', [state.range?.interval]);
+  
   // 刷新统计数据和实体数据 - 仅在配置或时间范围变化时
   const refreshStatsAndEntities = useCallback(async () => {
     setIsRefreshing(true);
@@ -771,21 +776,22 @@ export const Dashboard = () => {
     setErrors(prev => ({ ...prev, stats: '', entities: '' }));
 
     try {
-      const statsData = await fetchDashboardStats(state.range?.interval || 'today');
+      const statsData = await fetchDashboardStats(timeRangeKey);
 
       if (statsData) {
         setStats(statsData.metrics || []);
         setChartData(statsData.chartData || []);
       }
 
-      const entityPromises = config.entities.map(entityKey =>
-        fetchEntityStats(entityKey, state.range?.interval || 'today')
+      const currentEntities = config.entities;
+      const entityPromises = currentEntities.map(entityKey =>
+        fetchEntityStats(entityKey, timeRangeKey)
       );
 
       const entityResults = await Promise.all(entityPromises);
       const newEntityData: Record<string, any[]> = {};
 
-      config.entities.forEach((entityKey, index) => {
+      currentEntities.forEach((entityKey, index) => {
         newEntityData[entityKey] = entityResults[index] || [];
       });
 
@@ -803,7 +809,9 @@ export const Dashboard = () => {
       setLastUpdated(new Date());
       setIsRefreshing(false);
     }
-  }, [config.entities, state.range?.interval]);
+  // 使用稳定的字符串依赖而非数组引用
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entitiesKey, timeRangeKey]);
 
   // 单独刷新 Recent Clicks 数据
   const refreshRecentClicks = useCallback(async () => {
@@ -821,17 +829,19 @@ export const Dashboard = () => {
     }
   }, []);
 
-  // 初始加载
+  // 初始加载 - 仅执行一次
   useEffect(() => {
     refreshStatsAndEntities();
     refreshRecentClicks();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 配置或时间范围变化时刷新统计数据
+  // 配置或时间范围变化时刷新统计数据 - 使用稳定的依赖
   useEffect(() => {
     refreshStatsAndEntities();
     refreshRecentClicks();
-  }, [config, state.range?.interval, refreshStatsAndEntities, refreshRecentClicks]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metricsKey, entitiesKey, timeRangeKey]);
 
   // Recent Clicks 定时刷新 - 唯一需要定时刷新的模块
   useEffect(() => {
@@ -1031,11 +1041,16 @@ export const Dashboard = () => {
               {config.metrics.slice(0, 7).map((metric, idx) => {
                 const m = ALL_METRICS.find(am => am.key === metric);
                 if (!m) return null;
-                // 统一使用主色调和辅助色的变体
-                const colors = [
+                // Stitch 规范：亮色/暗色模式图表颜色
+                const lightColors = [
                   '#041627', '#1a2b3c', '#006b5c', '#0d2137', 
                   '#38485a', '#005145', '#44ddc1'
                 ];
+                const darkColors = [
+                  '#aec6ff', '#53dcbc', '#c0c1ff', '#ff7eb3', 
+                  '#7dd3fc', '#fbbf24', '#a78bfa'
+                ];
+                const colors = isDarkMode ? darkColors : lightColors;
                 return (
                   <div key={metric} className="flex items-center gap-1.5">
                     <span 
@@ -1052,51 +1067,81 @@ export const Dashboard = () => {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
-                  {config.metrics.slice(0, 7).map((metric, idx) => (
-                    <linearGradient key={metric} id={`color${idx}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop 
-                        offset="5%" 
-                        stopColor={['#041627', '#1a2b3c', '#006b5c', '#0d2137', '#38485a', '#005145', '#44ddc1'][idx]}
-                        stopOpacity={0.2}
-                      />
-                      <stop 
-                        offset="95%" 
-                        stopColor={['#041627', '#1a2b3c', '#006b5c', '#0d2137', '#38485a', '#005145', '#44ddc1'][idx]}
-                        stopOpacity={0}
-                      />
-                    </linearGradient>
-                  ))}
+                  {config.metrics.slice(0, 7).map((metric, idx) => {
+                    const lightColors = [
+                      '#041627', '#1a2b3c', '#006b5c', '#0d2137', 
+                      '#38485a', '#005145', '#44ddc1'
+                    ];
+                    const darkColors = [
+                      '#aec6ff', '#53dcbc', '#c0c1ff', '#ff7eb3', 
+                      '#7dd3fc', '#fbbf24', '#a78bfa'
+                    ];
+                    const colors = isDarkMode ? darkColors : lightColors;
+                    return (
+                      <linearGradient key={metric} id={`color${idx}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop 
+                          offset="5%" 
+                          stopColor={colors[idx]}
+                          stopOpacity={0.2}
+                        />
+                        <stop 
+                          offset="95%" 
+                          stopColor={colors[idx]}
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                    );
+                  })}
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(196, 198, 205, 0.3)" />
+                <CartesianGrid 
+                  strokeDasharray="3 3" 
+                  vertical={false} 
+                  stroke={isDarkMode ? 'rgba(66, 71, 84, 0.3)' : 'rgba(196, 198, 205, 0.3)'} 
+                />
                 <XAxis 
                   dataKey="name" 
                   axisLine={false} 
                   tickLine={false} 
-                  tick={{ fontSize: 10, fill: '#44474c' }} 
+                  tick={{ fontSize: 10, fill: isDarkMode ? '#c2c6d6' : '#44474c' }} 
                 />
                 <YAxis 
                   axisLine={false} 
                   tickLine={false} 
-                  tick={{ fontSize: 10, fill: '#44474c' }} 
+                  tick={{ fontSize: 10, fill: isDarkMode ? '#c2c6d6' : '#44474c' }} 
                 />
                 <Tooltip 
                   contentStyle={{ 
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                    border: '1px solid rgba(196, 198, 205, 0.3)',
-                    borderRadius: '4px',
-                    boxShadow: '0 8px 24px rgba(25, 28, 30, 0.06)'
+                    backgroundColor: isDarkMode ? 'rgba(40, 42, 44, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    boxShadow: isDarkMode 
+                      ? '0 8px 32px rgba(0, 0, 0, 0.4)' 
+                      : '0 8px 24px rgba(25, 28, 30, 0.06)',
+                    backdropFilter: 'blur(12px)',
+                    color: isDarkMode ? '#e2e2e5' : '#111111'
                   }}
                 />
-                {config.metrics.slice(0, 7).map((metric, idx) => (
-                  <Area 
-                    key={metric}
-                    type="monotone" 
-                    dataKey={metric} 
-                    stroke={['#041627', '#1a2b3c', '#006b5c', '#0d2137', '#38485a', '#005145', '#44ddc1'][idx]}
-                    fill={`url(#color${idx})`}
-                    strokeWidth={2}
-                  />
-                ))}
+                {config.metrics.slice(0, 7).map((metric, idx) => {
+                  const lightColors = [
+                    '#041627', '#1a2b3c', '#006b5c', '#0d2137', 
+                    '#38485a', '#005145', '#44ddc1'
+                  ];
+                  const darkColors = [
+                    '#aec6ff', '#53dcbc', '#c0c1ff', '#ff7eb3', 
+                    '#7dd3fc', '#fbbf24', '#a78bfa'
+                  ];
+                  const colors = isDarkMode ? darkColors : lightColors;
+                  return (
+                    <Area 
+                      key={metric}
+                      type="monotone" 
+                      dataKey={metric} 
+                      stroke={colors[idx]}
+                      fill={`url(#color${idx})`}
+                      strokeWidth={2}
+                    />
+                  );
+                })}
               </AreaChart>
             </ResponsiveContainer>
           </div>
