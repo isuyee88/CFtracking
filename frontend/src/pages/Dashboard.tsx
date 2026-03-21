@@ -799,7 +799,18 @@ export const Dashboard = () => {
 
       if (statsData) {
         setStats(statsData.metrics || []);
-        setChartData(statsData.chartData || []);
+        // 转换chartData中的字符串值为数字
+        const processedChartData = (statsData.chartData || []).map((item: any) => ({
+          ...item,
+          clicks: parseInt(item.clicks) || 0,
+          uniqueVisitors: parseInt(item.uniqueVisitors) || 0,
+          conversions: parseInt(item.conversions) || 0,
+          cost: parseFloat(item.cost) || 0,
+          revenue: parseFloat(item.revenue) || 0,
+          profit: parseFloat(item.profit) || 0,
+          roi: parseFloat(item.roi) || 0,
+        }));
+        setChartData(processedChartData);
       }
 
       const currentEntities = config.entities;
@@ -1118,7 +1129,7 @@ export const Dashboard = () => {
                   stroke={isDarkMode ? 'rgba(66, 71, 84, 0.3)' : 'rgba(196, 198, 205, 0.3)'} 
                 />
                 <XAxis 
-                  dataKey="name" 
+                  dataKey="date"
                   axisLine={false} 
                   tickLine={false} 
                   tick={{ fontSize: 10, fill: isDarkMode ? '#c2c6d6' : '#44474c' }} 
