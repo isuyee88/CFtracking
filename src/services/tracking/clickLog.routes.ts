@@ -1,25 +1,29 @@
 /**
  * @fileoverview Click Log API 路由
- * @description 处理点击日志相关的 HTTP 请求，包括列表查询、详情获取和实时 SSE 流
+ * @description 处理点击日志相关的 HTTP 请求，支持双数据源查询
  * @module services/tracking/clickLog.routes
  * 
+ * 数据源策略:
+ * - 3个月以内: 从 Analytics Engine 实时查询
+ * - 3个月以上: 从 D1 数据库查询历史汇总数据
+ * 
  * 输入: HTTP 请求（查询参数、路径参数）
- * 输出: HTTP 响应（JSON 数据或 SSE 流）
- * 逻辑交互: 
- *   - 调用 ClickRepository 查询点击数据
- *   - 支持分页、筛选、排序等功能
- * 前后端交互: 
- *   - GET /api/clicks - 返回点击日志列表
- *   - GET /api/clicks/:id - 返回单条点击详情
- *   - GET /api/clicks/stream - SSE 实时点击流
+ * 输出: HTTP 响应（JSON 数据）
  */
 
 import { Hono } from 'hono';
 import { ClickRepository } from '@/handlers/d1/click.repo';
 import { getD1Connection } from '@/handlers/d1';
+import { createAnalyticsQueryService } from '@/services/analytics/analytics-query.service';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
+
+function isWithinThreeMonths(startDate: string): boolean {
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  return new Date(startDate) >= threeMonthsAgo;
+}
 
 export function createClickLogRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -27,21 +31,24 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
   /**
    * GET /api/clicks
    * 获取点击日志列表（支持分页、筛选）
+   * 
+   * 数据源选择:
+   * - startDate >= 3个月前: Analytics Engine
+   * - startDate < 3个月前: D1 数据库
    */
   router.get('/', async (c) => {
     try {
-      const db = getD1Connection(c.env);
-      const clickRepo = new ClickRepository(db);
-
       const page = parseInt(c.req.query('page') || '1');
       const pageSize = Math.min(parseInt(c.req.query('pageSize') || '20'), 100);
+      const startDate = c.req.query('startDate') || new Date().toISOString().split('T')[0];
+      const endDate = c.req.query('endDate') || new Date().toISOString().split('T')[0];
 
       const params = {
         page,
         pageSize,
         campaignId: c.req.query('campaignId') || undefined,
-        startDate: c.req.query('startDate') || undefined,
-        endDate: c.req.query('endDate') || undefined,
+        startDate,
+        endDate,
         country: c.req.query('country') || undefined,
         device: c.req.query('device') || undefined,
         browser: c.req.query('browser') || undefined,
@@ -54,14 +61,59 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
         search: c.req.query('search') || undefined,
       };
 
-      const result = await clickRepo.findClicks(params);
+      if (startDate && isWithinThreeMonths(startDate)) {
+        const analyticsQuery = createAnalyticsQueryService(c.env);
+        const aeResult = await analyticsQuery.getRecentClicks({
+          limit: pageSize,
+          campaignId: params.campaignId,
+          country: params.country,
+          device: params.device,
+        });
 
-      return c.json(success(result.list, {
-        page: result.page,
-        pageSize: result.pageSize,
-        total: result.total,
-        totalPages: Math.ceil(result.total / result.pageSize),
-      }));
+        const formattedList = aeResult.list.map((item) => ({
+          clickId: item.clickId,
+          campaignId: item.campaignId,
+          flowId: item.flowId,
+          landingPageId: item.landingPageId,
+          offerId: item.offerId,
+          timestamp: item.timestamp,
+          ip: item.ip,
+          userAgent: '',
+          referer: item.referer,
+          country: item.country,
+          city: item.city,
+          device: item.device,
+          browser: item.browser,
+          os: item.os,
+          isp: '',
+          connectionType: null,
+          visitorId: item.visitorId,
+          subId1: item.subId1,
+          subId2: item.subId2,
+          subId3: item.subId3,
+          cost: item.cost,
+        }));
+
+        return c.json(success(formattedList, {
+          page,
+          pageSize,
+          total: aeResult.total,
+          totalPages: Math.ceil(aeResult.total / pageSize),
+          dataSource: 'analytics_engine',
+        }));
+      } else {
+        const db = getD1Connection(c.env);
+        const clickRepo = new ClickRepository(db);
+        const result = await clickRepo.findClicks(params);
+
+        return c.json(success(result.list, {
+          page: result.page,
+          pageSize: result.pageSize,
+          total: result.total,
+          totalPages: Math.ceil(result.total / result.pageSize),
+          dataSource: 'd1_database',
+        }));
+      }
     } catch (err) {
       console.error('[ClickLog] Failed to fetch clicks:', err);
       return c.json(
@@ -77,12 +129,13 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
   /**
    * GET /api/clicks/stats
    * 获取点击统计概览
+   * 
+   * 数据源选择:
+   * - startDate >= 3个月前: Analytics Engine
+   * - startDate < 3个月前: D1 数据库
    */
   router.get('/stats', async (c) => {
     try {
-      const db = getD1Connection(c.env);
-      const clickRepo = new ClickRepository(db);
-
       const startDate = c.req.query('startDate');
       const endDate = c.req.query('endDate');
       const campaignId = c.req.query('campaignId') || undefined;
@@ -94,9 +147,34 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
         );
       }
 
-      const stats = await clickRepo.getClickStats(startDate, endDate, campaignId);
+      if (isWithinThreeMonths(startDate)) {
+        const analyticsQuery = createAnalyticsQueryService(c.env);
+        const aeResult = await analyticsQuery.getRecentClicks({
+          limit: 1000,
+          campaignId,
+        });
 
-      return c.json(success(stats));
+        const uniqueVisitors = new Set(aeResult.list.map(c => c.visitorId)).size;
+        const countries = new Set(aeResult.list.map(c => c.country)).size;
+        const devices = new Set(aeResult.list.map(c => c.device)).size;
+
+        return c.json(success({
+          totalClicks: aeResult.total,
+          uniqueClicks: uniqueVisitors,
+          countries,
+          deviceTypes: devices,
+          dataSource: 'analytics_engine',
+        }));
+      } else {
+        const db = getD1Connection(c.env);
+        const clickRepo = new ClickRepository(db);
+        const stats = await clickRepo.getClickStats(startDate, endDate, campaignId);
+
+        return c.json(success({
+          ...stats,
+          dataSource: 'd1_database',
+        }));
+      }
     } catch (err) {
       console.error('[ClickLog] Failed to fetch stats:', err);
       return c.json(

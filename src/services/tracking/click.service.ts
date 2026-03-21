@@ -314,8 +314,6 @@ export class ClickService {
         console.error('[ClickService] Failed to track click to Analytics Engine:', err);
       }
 
-      // D1 数据库只用于统计汇总，不存储原始点击数据
-
       // 更新计数器
       await this.doService.incrementCounter(`campaign:${campaign.id}:today`, {
         clicks: 1,

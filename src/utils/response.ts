@@ -19,6 +19,7 @@ export interface ApiResponse<T> {
     pageSize?: number;
     total?: number;
     totalPages?: number;
+    dataSource?: 'analytics_engine' | 'd1_database';
   };
 }
 
