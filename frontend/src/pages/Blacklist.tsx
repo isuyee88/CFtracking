@@ -516,7 +516,7 @@ export const Blacklist = () => {
                   <td className="px-4 py-4">
                     <span className={cn(
                       "px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm",
-                      entry.status === 'active' ? "bg-error/10 text-error" : "bg-on-surface-variant/10 text-on-surface-variant"
+                      entry.status === 'active' ? "status-deleted" : "status-paused"
                     )}>
                       {entry.status}
                     </span>

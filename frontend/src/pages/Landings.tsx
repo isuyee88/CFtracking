@@ -566,11 +566,11 @@ export const Landings = () => {
                   <td className="px-4 py-4">
                     <div className={cn(
                       "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
-                      landing.status === 'active' ? "bg-secondary-container text-secondary" : "bg-on-surface-variant/10 text-on-surface-variant"
+                      landing.status === 'active' ? "status-active" : "status-paused"
                     )}>
                       <div className={cn(
                         "w-2 h-2 rounded-full",
-                        landing.status === 'active' ? "bg-secondary" : "bg-on-surface-variant"
+                        landing.status === 'active' ? "bg-green-500" : "bg-yellow-500"
                       )} />
                       <span className="text-[10px] font-bold uppercase tracking-widest">{landing.status}</span>
                     </div>

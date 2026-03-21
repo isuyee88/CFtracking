@@ -594,11 +594,11 @@ export const TrafficSources = () => {
                   <td className="px-4 py-4">
                     <div className={cn(
                       "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
-                      source.status === 'active' ? "bg-secondary-container text-secondary" : "bg-on-surface-variant/10 text-on-surface-variant"
+                      source.status === 'active' ? "status-active" : "status-paused"
                     )}>
                       <div className={cn(
                         "w-2 h-2 rounded-full",
-                        source.status === 'active' ? "bg-secondary" : "bg-on-surface-variant"
+                        source.status === 'active' ? "bg-green-500" : "bg-yellow-500"
                       )} />
                       <span className="text-[10px] font-bold uppercase tracking-widest">{source.status}</span>
                     </div>

@@ -529,11 +529,11 @@ eval(atob('${btoa(script)}'));
               <h1 className="text-3xl font-display font-bold text-primary">{campaign.name}</h1>
               <div className={cn(
                 "flex items-center gap-2 px-3 py-1 rounded-sm",
-                campaign.status === 'Active' ? "bg-secondary-container text-secondary" : "bg-on-surface-variant/10 text-on-surface-variant"
+                campaign.status === 'Active' ? "status-active" : "status-paused"
               )}>
                 <div className={cn(
                   "w-2 h-2 rounded-full",
-                  campaign.status === 'Active' ? "bg-secondary" : "bg-on-surface-variant"
+                  campaign.status === 'Active' ? "bg-green-500" : "bg-yellow-500"
                 )} />
                 <span className="text-[10px] font-bold uppercase tracking-widest">{campaign.status}</span>
               </div>

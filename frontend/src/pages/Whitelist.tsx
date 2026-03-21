@@ -517,7 +517,7 @@ export const Whitelist = () => {
                   <td className="px-4 py-4">
                     <span className={cn(
                       "px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm",
-                      entry.status === 'active' ? "bg-secondary/10 text-secondary" : "bg-on-surface-variant/10 text-on-surface-variant"
+                      entry.status === 'active' ? "status-active" : "status-paused"
                     )}>
                       {entry.status}
                     </span>
