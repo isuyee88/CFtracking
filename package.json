@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "npm run build:frontend && wrangler deploy",
+    "prebuild:frontend": "cd frontend && npm install",
     "build:frontend": "cd frontend && npm run build",
     "build:backend": "tsc --noEmit",
     "build": "npm run build:backend && npm run build:frontend",
