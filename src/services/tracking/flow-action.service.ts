@@ -53,7 +53,7 @@ export class FlowActionService {
         return this.executeShowLanding(actionConfig, landingPage, request);
 
       case 'traffic_loss':
-        return this.executeTrafficLoss(request);
+        return this.executeTrafficLoss();
 
       default:
         return this.executeRedirect(actionConfig, request);
@@ -91,13 +91,13 @@ export class FlowActionService {
    * 执行显示 Offer 动作
    */
   private executeShowOffer(
-    config: FlowActionConfig,
+    _config: FlowActionConfig,
     offer: Offer | undefined,
     request: ClickRequest
   ): FlowActionResult {
     if (!offer) {
       // 如果没有 Offer，返回 traffic loss
-      return this.executeTrafficLoss(request);
+      return this.executeTrafficLoss();
     }
 
     const redirectUrl = this.replaceUrlParams(offer.url, request);
@@ -117,13 +117,13 @@ export class FlowActionService {
    * 执行显示落地页动作
    */
   private executeShowLanding(
-    config: FlowActionConfig,
+    _config: FlowActionConfig,
     landingPage: LandingPage | undefined,
     request: ClickRequest
   ): FlowActionResult {
     if (!landingPage) {
       // 如果没有落地页，返回 traffic loss
-      return this.executeTrafficLoss(request);
+      return this.executeTrafficLoss();
     }
 
     const redirectUrl = this.replaceUrlParams(landingPage.url, request);
@@ -142,7 +142,7 @@ export class FlowActionService {
   /**
    * 执行流量丢失动作
    */
-  private executeTrafficLoss(request: ClickRequest): FlowActionResult {
+  private executeTrafficLoss(): FlowActionResult {
     return {
       actionType: 'traffic_loss',
       statusCode: 204,
@@ -166,7 +166,6 @@ export class FlowActionService {
     
     // 基础参数替换
     const replacements: Record<string, string> = {
-      '{clickid}': request.clickId || '',
       '{campaign}': request.campaignId || '',
       '{campaign_id}': request.campaignId || '',
       '{subid1}': request.subId1 || '',
@@ -174,7 +173,6 @@ export class FlowActionService {
       '{subid3}': request.subId3 || '',
       '{subid4}': request.subId4 || '',
       '{subid5}': request.subId5 || '',
-      '{source}': request.source || '',
       '{referer}': request.referer || '',
       '{ip}': request.ip || '',
       '{country}': request.country || '',
