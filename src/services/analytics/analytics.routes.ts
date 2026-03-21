@@ -13,8 +13,6 @@ import { Hono } from 'hono';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
-import { getD1Connection } from '@/handlers/d1';
-import { TrafficRepository } from '@/handlers/d1/traffic.repo';
 import { createAnalyticsQueryService } from './analytics-query.service';
 
 export function createAnalyticsRouter() {
@@ -117,7 +115,7 @@ export function createAnalyticsRouter() {
         bot: item.cfBotScore > 50 ? 'Yes' : 'No',
         unique_stream: 'Yes',
         unique_campaign: 'Yes',
-        user_agent: item.userAgent || '',
+        user_agent: item.visitorId ? `vst_${item.visitorId}` : '',
         visitor_code: item.visitorId || '',
       }));
 

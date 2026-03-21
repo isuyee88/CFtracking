@@ -5,7 +5,7 @@
  */
 
 import type { Env } from '@/config/env';
-import type { FraudDetectionResult, TrafficEvent, AntiFraudConfig, TrafficQualityMetrics, FraudRecord, FraudReason } from '@/types/antiFraud';
+import type { FraudDetectionResult, TrafficEvent, AntiFraudConfig, TrafficQualityMetrics, FraudRecord, FraudReason, FraudScore, FraudStatus } from '@/types/antiFraud';
 import { KV } from '@/handlers/kv';
 import { nanoid } from 'nanoid';
 
@@ -14,7 +14,7 @@ export class AntiFraudService {
   private config: AntiFraudConfig;
 
   constructor(env: Env) {
-    this.kv = new KV(env);
+    this.kv = new KV(env.UNIQUENESS_KV);
     this.config = this.getDefaultConfig();
   }
 
@@ -57,7 +57,7 @@ export class AntiFraudService {
   async detectFraud(event: TrafficEvent): Promise<FraudDetectionResult> {
     const reasons: FraudReason[] = [];
     const details: Record<string, any> = {};
-    let score: FraudScore = 0;
+    let score: number = 0;
 
     // 检查IP速度
     if (this.config.rules.ipVelocity.enabled) {
@@ -111,9 +111,9 @@ export class AntiFraudService {
     const status = this.calculateStatus(score);
 
     // 记录欺诈检测结果
-    await this.recordFraudResult(event, { score, status, reasons, details });
+    await this.recordFraudResult(event, { score: score as FraudScore, status, reasons, details });
 
-    return { score, status, reasons, details };
+    return { score: score as FraudScore, status, reasons, details };
   }
 
   /**
@@ -129,8 +129,8 @@ export class AntiFraudService {
     const existingClicks = await this.kv.get<Array<{ timestamp: number }>>(key) || [];
 
     // 过滤时间窗口内的点击
-    const recentMinuteClicks = existingClicks.filter(c => c.timestamp >= minuteWindow);
-    const recentHourClicks = existingClicks.filter(c => c.timestamp >= hourWindow);
+    const recentMinuteClicks = existingClicks.filter((c: { timestamp: number }) => c.timestamp >= minuteWindow);
+    const recentHourClicks = existingClicks.filter((c: { timestamp: number }) => c.timestamp >= hourWindow);
 
     // 检查是否超过阈值
     const fraudulent = 
@@ -142,7 +142,7 @@ export class AntiFraudService {
       recentHourClicks.length >= this.config.rules.ipVelocity.maxClicksPerHour * 0.5;
 
     // 更新IP点击记录
-    const updatedClicks = [...existingClicks.filter(c => c.timestamp >= hourWindow), { timestamp: now }];
+    const updatedClicks = [...existingClicks.filter((c: { timestamp: number }) => c.timestamp >= hourWindow), { timestamp: now }];
     await this.kv.set(key, updatedClicks, 60 * 60); // 1 hour TTL
 
     return {
@@ -296,7 +296,7 @@ export class AntiFraudService {
   /**
    * 获取流量质量指标
    */
-  async getTrafficQualityMetrics(campaignId: string, startDate: string, endDate: string): Promise<TrafficQualityMetrics> {
+  async getTrafficQualityMetrics(_campaignId: string, _startDate: string, _endDate: string): Promise<TrafficQualityMetrics> {
     // 这里可以从KV或数据库中获取流量质量数据
     // 简化版：返回模拟数据
     return {
@@ -319,7 +319,7 @@ export class AntiFraudService {
   /**
    * 获取欺诈记录
    */
-  async getFraudRecords(campaignId: string, limit = 50): Promise<FraudRecord[]> {
+  async getFraudRecords(_campaignId: string, _limit = 50): Promise<FraudRecord[]> {
     // 这里可以从KV或数据库中获取欺诈记录
     // 简化版：返回空数组
     return [];

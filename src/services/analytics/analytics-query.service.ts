@@ -58,12 +58,10 @@ export interface AnalyticsQueryResult {
 }
 
 export class AnalyticsQueryService {
-  private env: Env;
   private accountId: string;
   private apiToken: string;
 
   constructor(env: Env) {
-    this.env = env;
     this.accountId = env.CF_ACCOUNT_ID || '';
     this.apiToken = env.CF_API_TOKEN || '';
   }
@@ -444,7 +442,7 @@ export class AnalyticsQueryService {
    */
   async getTrendReport(
     startDate: string,
-    endDate: string,
+    _endDate: string,
     interval: 'hour' | 'day' | 'week' | 'month' = 'day',
     campaignId?: string
   ): Promise<any[]> {

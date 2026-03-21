@@ -6,7 +6,7 @@
 
 import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
-import type { ABTest, ABTestVariant, CreateABTestDTO, UpdateABTestDTO } from '@/types/abTest';
+import type { ABTest, CreateABTestDTO, UpdateABTestDTO } from '@/types/abTest';
 
 export class ABTestRepository extends BaseRepository<ABTest> {
   constructor(db: D1Database) {

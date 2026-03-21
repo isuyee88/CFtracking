@@ -7,9 +7,9 @@
 import { ABTestRepository } from '@/handlers/d1/abTest.repo';
 import { getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
-import type { ABTest, CreateABTestDTO, UpdateABTestDTO, ABTestResult, ABTestVariant } from '@/types/abTest';
+import type { ABTest, CreateABTestDTO, UpdateABTestDTO, ABTestResult } from '@/types/abTest';
 import { NotFoundError } from '@/middleware/error';
-import { calculateSignificance, determineWinner, selectVariant } from '@/types/abTest';
+import { determineWinner, selectVariant } from '@/types/abTest';
 
 export class ABTestService {
   private repo: ABTestRepository;
@@ -97,10 +97,12 @@ export class ABTestService {
       throw new Error('A/B Test is already running');
     }
 
-    return this.repo.update(id, {
+    const updated = await this.repo.update(id, {
       status: 'running',
       startDate: new Date().toISOString(),
     });
+    if (!updated) throw new Error('Failed to update A/B Test');
+    return updated;
   }
 
   /**
@@ -112,9 +114,11 @@ export class ABTestService {
       throw new Error('A/B Test is not running');
     }
 
-    return this.repo.update(id, {
+    const updated = await this.repo.update(id, {
       status: 'paused',
     });
+    if (!updated) throw new Error('Failed to update A/B Test');
+    return updated;
   }
 
   /**
@@ -126,10 +130,12 @@ export class ABTestService {
       throw new Error('A/B Test is already completed');
     }
 
-    return this.repo.update(id, {
+    const updated = await this.repo.update(id, {
       status: 'completed',
       endDate: new Date().toISOString(),
     });
+    if (!updated) throw new Error('Failed to update A/B Test');
+    return updated;
   }
 
   /**
@@ -188,7 +194,7 @@ export class ABTestService {
     }
 
     // 确定获胜者
-    const { winnerId, confidence } = determineWinner(
+    const { winnerId } = determineWinner(
       test.variants,
       test.winnerCriteria as any,
       test.minConfidence || 95
@@ -229,7 +235,7 @@ export class ABTestService {
     });
 
     // 确定获胜者
-    let winner = null;
+    let winner: { variantId: string; variantName: string; confidence: number; } | undefined;
     if (test.status === 'completed') {
       const winningVariant = test.variants.find(v => v.isWinner);
       if (winningVariant) {

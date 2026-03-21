@@ -54,7 +54,7 @@ export class ClickRepository extends BaseRepository<ClickData> {
    * @deprecated Option C: 点击数据已迁移至 Analytics Engine，不再写入 D1
    *             保留方法签名用于历史兼容性，但不再被调用
    */
-  async saveClick(data: ClickData): Promise<void> {
+  async saveClick(_data: ClickData): Promise<void> {
     console.warn('[ClickRepository] saveClick() is deprecated. Click data is stored in Analytics Engine.');
     // 点击数据已迁移至 Analytics Engine
     // D1 clicks 表不再写入原始点击数据

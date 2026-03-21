@@ -179,7 +179,6 @@ export function createTrackingScriptRouter() {
 
       // 创建转化记录
       const conversionId = body.tid || crypto.randomUUID();
-      const timestamp = new Date().toISOString();
 
       // 记录转化到 Analytics Engine
       c.env.ANALYTICS.writeDataPoint({
