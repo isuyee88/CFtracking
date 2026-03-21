@@ -760,14 +760,16 @@ textarea.form-input {
    ============================================ */
 
 .chart-container {
-  background-color: var(--color-surface-container-lowest);
+  background-color: #ffffff;
   border-radius: 8px;
   padding: 1.5rem;
   position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .dark-mode .chart-container {
-  background-color: var(--color-surface-container);
+  background-color: #1e2022;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .chart-title {
@@ -987,26 +989,28 @@ textarea.form-input {
 
 /* Metric Card - Stitch Design */
 .metric-card {
-  background-color: var(--color-surface-container-lowest);
+  background-color: #ffffff;
   border-radius: 8px;
   padding: 1.25rem;
   transition: box-shadow 0.2s ease, transform 0.2s ease;
   will-change: box-shadow, transform;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .dark-mode .metric-card {
-  background-color: var(--color-surface-container);
+  background-color: #1e2022;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .metric-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
   transform: translateY(-2px);
 }
 
 .dark-mode .metric-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 /* Metric Card 装饰性渐变 */

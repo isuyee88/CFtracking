@@ -354,3 +354,88 @@ Month 4          Month 5          Month 6
 4. **开始实施** - 确认后 Dev 团队开始编写代码
 
 **建议:** 先实现 US-001 (URL 状态管理) 和 US-006 (实时点击流)，这两个功能对用户体验提升最大。
+
+---
+
+## 📊 Analytics Engine 字段映射
+
+### 数据模型 (Analytics Engine 限制: blobs≤20, doubles≤20, indexes≤1)
+
+#### indexes (1个)
+
+| 索引 | 字段名 | 说明 |
+|------|--------|------|
+| index1 | campaignId | Campaign ID (用于索引查询) |
+
+#### blobs (18个)
+
+| 索引 | 字段名 | 说明 |
+|------|--------|------|
+| blob1 | ip | IP 地址 |
+| blob2 | country | 国家代码 (如 HK, SG, US) |
+| blob3 | city | 城市名称 |
+| blob4 | device | 设备类型 (desktop, mobile, tablet) |
+| blob5 | browser | 浏览器名称 (Chrome, Firefox, Safari) |
+| blob6 | os | 操作系统 (Windows, macOS, iOS, Android) |
+| blob7 | subId1 | 子 ID 1 |
+| blob8 | subId2 | 子 ID 2 |
+| blob9 | subId3 | 子 ID 3 |
+| blob10 | subId4 | 子 ID 4 |
+| blob11 | subId5 | 子 ID 5 |
+| blob12 | utmSource | UTM 来源 |
+| blob13 | utmMedium | UTM 媒介 |
+| blob14 | utmCampaign | UTM 活动 |
+| blob15 | referer | 来源页面 URL |
+| blob16 | userAgent | 浏览器 User Agent 字符串 |
+| blob17 | isp | 网络提供商名称 |
+| blob18 | fingerprint | 硬件指纹 ID |
+
+#### doubles (11个)
+
+| 索引 | 字段名 | 说明 |
+|------|--------|------|
+| double1 | clickId | 点击 ID (数字格式，16位) |
+| double2 | flowId | 流程 ID (数字格式) |
+| double3 | landingPageId | 落地页 ID (数字格式) |
+| double4 | offerId | Offer ID (数字格式) |
+| double5 | visitorId | 访客 ID (数字格式，16位) |
+| double6 | cost | 点击成本 |
+| double7 | riskScore | 风险分数 (0-100) |
+| double8 | cfBotScore | Cloudflare Bot 分数 (0-100) |
+| double9 | connectionType | 连接类型编码 (0=未知, 4=4G, 5=5G, 6=WiFi) |
+| double10 | proxy | 是否代理 (0=否, 1=是) |
+| double11 | isBot | 是否机器人 (0=否, 1=是) |
+
+### ID 生成规则
+
+| ID 类型 | 格式 | 示例 | 数字位数 |
+|---------|------|------|----------|
+| Click ID | `clk_{时间戳13位}{随机数3位}` | `clk_1774106597680676` | 16 位 |
+| Visitor ID | `vst_{时间戳13位}{随机数3位}` | `vst_1774106597123456` | 16 位 |
+| Conversion ID | `cnv_{时间戳13位}{随机数3位}` | `cnv_1774106597987654` | 16 位 |
+| Campaign ID | `c{数字}` | `c1`, `c100` | 自增 |
+| Flow ID | `f{数字}` | `f1`, `f50` | 自增 |
+| Landing Page ID | `lp{数字}` | `lp1`, `lp20` | 自增 |
+| Offer ID | `o{数字}` | `o1`, `o50` | 自增 |
+
+### 数据流架构
+
+```
+点击请求 → ClickService → Analytics Engine (实时写入)
+                           ↓
+                    D1 数据库 (通过定时任务聚合)
+                           ↓
+查询请求 → /api/clicks → 判断日期范围
+                           ↓
+           < 3个月 → Analytics Engine (实时查询)
+           >= 3个月 → D1 数据库 (历史查询)
+```
+
+### 字段映射代码位置
+
+| 文件 | 说明 |
+|------|------|
+| `src/handlers/analytics/index.ts` | Analytics Engine 写入逻辑 |
+| `src/services/analytics/analytics-query.service.ts` | Analytics Engine 查询逻辑 |
+| `src/services/analytics/analytics.routes.ts` | API 输出格式化 |
+| `src/utils/crypto.ts` | ID 生成函数 |
