@@ -5,10 +5,12 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "npm run build:frontend && wrangler deploy",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "tsc --noEmit",
+    "build": "npm run build:backend && npm run build:frontend",
     "db:migrate": "wrangler d1 execute cf-tracking-db --file=./schema/migrations/001_init.sql",
     "db:migrate:local": "wrangler d1 execute cf-tracking-db --local --file=./schema/migrations/001_init.sql",
-    "build": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "test": "vitest"
   },
