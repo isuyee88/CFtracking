@@ -6,6 +6,7 @@
 
 import type { Env } from '@/config/env';
 import type { ClickData, ConversionData } from '@/types/tracking';
+import { extractNumericId } from '@/utils/crypto';
 
 export type AnalyticsClient = AnalyticsEngineDataset;
 
@@ -38,7 +39,7 @@ export class AnalyticsService {
   trackClick(data: ClickData): void {
     try {
       const blobs = [
-        data.campaignId, // blob1: 用于查询
+        data.campaignId,
         data.ip,
         data.country || '',
         data.city || '',
@@ -57,14 +58,14 @@ export class AnalyticsService {
       ];
 
       const doubles = [
-        this.extractNumericId(data.clickId), // double1: clickId numeric
-        data.flowId ? this.extractNumericId(data.flowId) : 0, // double2: flowId numeric
-        data.landingPageId ? this.extractNumericId(data.landingPageId) : 0, // double3: landingPageId numeric
-        data.offerId ? this.extractNumericId(data.offerId) : 0, // double4: offerId numeric
-        this.extractNumericId(data.visitorId), // double5: visitorId numeric
-        data.cost || 0, // double6: cost
-        data.riskScore || 0, // double7: riskScore
-        data.cfBotScore || 0, // double8: cfBotScore
+        extractNumericId(data.clickId),
+        data.flowId ? extractNumericId(data.flowId) : 0,
+        data.landingPageId ? extractNumericId(data.landingPageId) : 0,
+        data.offerId ? extractNumericId(data.offerId) : 0,
+        extractNumericId(data.visitorId),
+        data.cost || 0,
+        data.riskScore || 0,
+        data.cfBotScore || 0,
       ];
 
       console.log('[AnalyticsService] Writing click:', {
@@ -83,13 +84,6 @@ export class AnalyticsService {
     } catch (error) {
       console.error('[AnalyticsService] Error tracking click to Analytics Engine:', error);
     }
-  }
-
-  private extractNumericId(id: string): number {
-    if (!id) return 0;
-    const uuidPart = id.replace(/[^0-9a-f]/gi, '');
-    const numericPart = uuidPart.replace(/^0+/, '').slice(0, 15);
-    return numericPart ? parseInt(numericPart, 16) : 0;
   }
 
   /**
