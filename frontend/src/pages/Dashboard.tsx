@@ -897,7 +897,7 @@ export const Dashboard = () => {
   };
   
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-canvas-inset dark:bg-surface">
       {/* Preferences Modal */}
       <PreferencesModal 
         isOpen={showPreferences}
