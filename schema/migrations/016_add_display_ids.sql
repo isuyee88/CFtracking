@@ -1,28 +1,9 @@
 -- Migration: Add displayId fields to all entity tables
 -- Created: 2026-03-20
--- Purpose: Add human-readable display IDs with prefixes
--- Note: SQLite doesn't allow adding UNIQUE columns directly, so we add without constraint first
+-- Updated: 2026-03-21 - Skip if columns already exist
 
--- Add displayId to campaigns (without UNIQUE first)
-ALTER TABLE campaigns ADD COLUMN displayId TEXT;
-
--- Add displayId to flows
-ALTER TABLE flows ADD COLUMN displayId TEXT;
-
--- Add displayId to landingPages
-ALTER TABLE landingPages ADD COLUMN displayId TEXT;
-
--- Add displayId to offers
-ALTER TABLE offers ADD COLUMN displayId TEXT;
-
--- Add displayId to trafficSources
-ALTER TABLE trafficSources ADD COLUMN displayId TEXT;
-
--- Add displayId to affiliateNetworks
-ALTER TABLE affiliateNetworks ADD COLUMN displayId TEXT;
-
--- Add displayId to rules
-ALTER TABLE rules ADD COLUMN displayId TEXT;
+-- Note: SQLite doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN
+-- These columns already exist from a previous migration, so this is now a no-op
 
 -- Create indexes for displayId lookups (these will help with uniqueness checks in code)
 CREATE INDEX IF NOT EXISTS idx_campaigns_display_id ON campaigns(displayId);

@@ -1,5 +1,6 @@
 -- Migration: Add isBot field to clicks table
 -- Created: 2026-03-20
+-- Updated: 2026-03-21 - Add column first, then index
 
 -- Add isBot column for bot detection
 ALTER TABLE clicks ADD COLUMN isBot INTEGER DEFAULT 0;
