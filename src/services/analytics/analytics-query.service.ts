@@ -114,8 +114,9 @@ export class AnalyticsQueryService {
    *
    * 数据模型 (Analytics Engine 限制: blobs≤20, doubles≤20, indexes≤1):
    * - indexes[0]: campaignId (用于索引查询)
-   * - blobs: blob1=ip, blob2=country, blob3=city, blob4=device, blob5=browser, blob6=os
-   *           blob7-11=subId1-5, blob12=utmSource, blob13=utmMedium, blob14=utmCampaign, blob15=referer
+   * - blobs: blob1=campaignId, blob2=ip, blob3=country, blob4=city, blob5=device
+   *           blob6=browser, blob7=os, blob8-12=subId1-5, blob13=utmSource
+   *           blob14=utmMedium, blob15=utmCampaign, blob16=referer
    * - doubles: double1=clickId, double2=flowId, double3=landingPageId, double4=offerId
    *            double5=visitorId, double6=cost, double7=riskScore, double8=cfBotScore
    *
@@ -135,15 +136,15 @@ export class AnalyticsQueryService {
     }
 
     if (params.campaignId) {
-      conditions.push(`index = '${params.campaignId}'`);
+      conditions.push(`blob1 = '${params.campaignId}'`);
     }
 
     if (params.country) {
-      conditions.push(`blob2 = '${params.country}'`);
+      conditions.push(`blob3 = '${params.country}'`);
     }
 
     if (params.device) {
-      conditions.push(`blob4 = '${params.device}'`);
+      conditions.push(`blob5 = '${params.device}'`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -151,26 +152,26 @@ export class AnalyticsQueryService {
     return `
       SELECT
         double1 as clickIdNumeric,
-        index as campaignId,
+        blob1 as campaignId,
         double2 as flowIdNumeric,
         double3 as landingPageIdNumeric,
         double4 as offerIdNumeric,
-        blob1 as ip,
-        blob2 as country,
-        blob3 as city,
-        blob4 as device,
-        blob5 as browser,
-        blob6 as os,
+        blob2 as ip,
+        blob3 as country,
+        blob4 as city,
+        blob5 as device,
+        blob6 as browser,
+        blob7 as os,
         double5 as visitorIdNumeric,
-        blob7 as subId1,
-        blob8 as subId2,
-        blob9 as subId3,
-        blob10 as subId4,
-        blob11 as subId5,
-        blob12 as utmSource,
-        blob13 as utmMedium,
-        blob14 as utmCampaign,
-        blob15 as referer,
+        blob8 as subId1,
+        blob9 as subId2,
+        blob10 as subId3,
+        blob11 as subId4,
+        blob12 as subId5,
+        blob13 as utmSource,
+        blob14 as utmMedium,
+        blob15 as utmCampaign,
+        blob16 as referer,
         double6 as cost,
         double7 as riskScore,
         double8 as cfBotScore,
@@ -284,8 +285,8 @@ export class AnalyticsQueryService {
         count() as clicks,
         count(distinct double5) as uniqueVisitors,
         sum(double6) as totalCost,
-        count(distinct index) as campaignCount,
-        count(distinct blob2) as countryCount
+        count(distinct blob1) as campaignCount,
+        count(distinct blob3) as countryCount
       FROM cf_tracking_events
       WHERE timestamp >= NOW() - INTERVAL '${intervalDays}' DAY
     `;
@@ -366,14 +367,14 @@ export class AnalyticsQueryService {
 
     // 映射实体类型到 blob 字段
     const fieldMap: Record<string, { field: string; label: string }> = {
-      campaigns: { field: 'index', label: 'campaignId' },
+      campaigns: { field: 'blob1', label: 'campaignId' },
       landings: { field: 'double3', label: 'landingPageId' },
       offers: { field: 'double4', label: 'offerId' },
-      sources: { field: 'blob12', label: 'utmSource' },
-      countries: { field: 'blob2', label: 'country' },
-      device_types: { field: 'blob4', label: 'device' },
-      browsers: { field: 'blob5', label: 'browser' },
-      os: { field: 'blob6', label: 'os' },
+      sources: { field: 'blob13', label: 'utmSource' },
+      countries: { field: 'blob3', label: 'country' },
+      device_types: { field: 'blob5', label: 'device' },
+      browsers: { field: 'blob6', label: 'browser' },
+      os: { field: 'blob7', label: 'os' },
     };
 
     const config = fieldMap[entityType] || { field: 'blob2', label: entityType };
@@ -456,7 +457,7 @@ export class AnalyticsQueryService {
     conditions.push(`timestamp >= NOW() - INTERVAL '${intervalDays}' DAY`);
 
     if (campaignId) {
-      conditions.push(`blob2 = '${campaignId}'`);
+      conditions.push(`blob1 = '${campaignId}'`);
     }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;

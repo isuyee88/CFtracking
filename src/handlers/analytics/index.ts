@@ -38,6 +38,7 @@ export class AnalyticsService {
   trackClick(data: ClickData): void {
     try {
       const blobs = [
+        data.campaignId, // blob1: 用于查询
         data.ip,
         data.country || '',
         data.city || '',
