@@ -1289,15 +1289,17 @@ export const Dashboard = () => {
                               if (key === 'cost') {
                                 return <span className="text-medium-contrast font-medium">{value || '-'}</span>;
                               }
-                              // 图标字段 - 使用品牌图标组件
+                              // 图标字段 - 使用品牌图标组件，从os/browser字段获取值
                               if (key === 'os_icon') {
+                                const osValue = click.os || click.os_icon || '';
                                 return (
-                                  <OSIcon name={value || ''} size="sm" />
+                                  <OSIcon name={osValue} size="sm" />
                                 );
                               }
                               if (key === 'browser_icon') {
+                                const browserValue = click.browser || click.browser_icon || '';
                                 return (
-                                  <BrowserIcon name={value || ''} size="sm" />
+                                  <BrowserIcon name={browserValue} size="sm" />
                                 );
                               }
                               // 默认渲染
