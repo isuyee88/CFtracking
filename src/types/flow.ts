@@ -8,8 +8,17 @@ import type { FlowFilter } from './flow.schema';
 
 export type FlowType = 'regular' | 'forced' | 'default';
 export type FlowStatus = 'active' | 'paused' | 'deleted';
+export type FlowActionType = 'redirect' | 'show_offer' | 'show_landing' | 'traffic_loss';
 
 export { type FlowFilter };
+
+export interface FlowActionConfig {
+  type: FlowActionType;
+  redirectUrl?: string;
+  offerId?: string;
+  landingPageId?: string;
+  statusCode?: 302 | 301;
+}
 
 export interface Flow {
   id: string;
@@ -20,7 +29,8 @@ export interface Flow {
   weight: number;
   status: FlowStatus;
   filters: FlowFilter[];
-  /** 点击限制（0 表示无限制） */
+  actionType: FlowActionType;
+  actionConfig: FlowActionConfig;
   limit?: number;
   createdAt: string;
   updatedAt: string;
@@ -31,6 +41,8 @@ export interface CreateFlowDTO {
   name: string;
   type?: FlowType;
   weight?: number;
+  actionType?: FlowActionType;
+  actionConfig?: FlowActionConfig;
 }
 
 export interface UpdateFlowDTO {
@@ -39,6 +51,8 @@ export interface UpdateFlowDTO {
   weight?: number;
   status?: FlowStatus;
   filters?: FlowFilter[];
+  actionType?: FlowActionType;
+  actionConfig?: FlowActionConfig;
 }
 
 export interface FlowLandingPage {

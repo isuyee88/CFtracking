@@ -366,20 +366,28 @@ export class ClickService {
 
   /**
    * 执行去重检查
+   * 优先使用请求中的配置，否则使用 Campaign 的默认配置
    */
   private async checkUniqueness(
     request: ClickRequest,
     clickId: string,
-    campaign: { id: string; uniquenessTTL: number }
+    campaign: { 
+      id: string; 
+      uniquenessTTL: number;
+      uniquenessMethod?: string;
+      uniquenessParameter?: string | null;
+    }
   ) {
-    const method = request.uniquenessMethod || 'none';
+    // 优先使用请求中的配置，否则使用 Campaign 的默认配置
+    const method = (request.uniquenessMethod || campaign.uniquenessMethod || 'none') as UniquenessMethod;
     const ttl = request.uniquenessTTL || campaign.uniquenessTTL || 86400;
+    const uniquenessParameter = request.uniquenessParameter || campaign.uniquenessParameter || undefined;
 
     return this.uniquenessService.check(
       {
         campaignId: campaign.id,
         method,
-        uniquenessParameter: request.uniquenessParameter,
+        uniquenessParameter,
         ttl,
         ip: request.ip,
         userAgent: request.userAgent,

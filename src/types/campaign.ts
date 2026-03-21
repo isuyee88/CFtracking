@@ -8,6 +8,7 @@ export type CampaignStatus = 'active' | 'paused' | 'deleted';
 export type FlowRotation = 'position' | 'weight';
 export type CostModel = 'cpc' | 'cpm' | 'cpa' | 'cps' | 'revshare';
 export type VisitorBinding = 'none' | 'cookie' | 'ip';
+export type UniquenessMethod = 'ip' | 'ip_ua' | 'cookie' | 'parameter' | 'none';
 
 export interface Campaign {
   id: string;
@@ -19,7 +20,11 @@ export interface Campaign {
   trafficSource: string | null;
   flowRotation: FlowRotation;
   costModel: CostModel;
+  costValue: number;
+  currency: string;
   trafficLoss: number;
+  uniquenessMethod: UniquenessMethod;
+  uniquenessParameter: string | null;
   uniquenessTTL: number;
   visitorBinding: VisitorBinding;
   apiToken: string | null;
@@ -37,7 +42,11 @@ export interface CreateCampaignDTO {
   trafficSource?: string;
   flowRotation?: FlowRotation;
   costModel?: CostModel;
+  costValue?: number;
+  currency?: string;
   trafficLoss?: number;
+  uniquenessMethod?: UniquenessMethod;
+  uniquenessParameter?: string;
   uniquenessTTL?: number;
   visitorBinding?: VisitorBinding;
   parameters?: Record<string, unknown>;
@@ -51,7 +60,11 @@ export interface UpdateCampaignDTO {
   trafficSource?: string;
   flowRotation?: FlowRotation;
   costModel?: CostModel;
+  costValue?: number;
+  currency?: string;
   trafficLoss?: number;
+  uniquenessMethod?: UniquenessMethod;
+  uniquenessParameter?: string;
   uniquenessTTL?: number;
   visitorBinding?: VisitorBinding;
   parameters?: Record<string, unknown>;

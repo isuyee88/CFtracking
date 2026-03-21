@@ -27,6 +27,9 @@ export class FlowRepository extends BaseRepository<Flow> {
     return {
       ...row,
       id: row.displayId || row.id,
+      actionConfig: typeof row.actionConfig === 'string' 
+        ? JSON.parse(row.actionConfig) 
+        : row.actionConfig || {},
     } as Flow;
   }
 
@@ -46,13 +49,15 @@ export class FlowRepository extends BaseRepository<Flow> {
     const id = crypto.randomUUID();
     const displayId = await this.idService.generateId('flows');
     const now = new Date().toISOString();
+    const actionType = data.actionType || 'redirect';
+    const actionConfig = data.actionConfig ? JSON.stringify(data.actionConfig) : '{}';
 
     await this.db
       .prepare(`
-        INSERT INTO flows (id, displayId, campaignId, name, type, weight, status, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO flows (id, displayId, campaignId, name, type, weight, status, actionType, actionConfig, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      .bind(id, displayId, data.campaignId, data.name, data.type || 'regular', data.weight || 100, 'active', now, now)
+      .bind(id, displayId, data.campaignId, data.name, data.type || 'regular', data.weight || 100, 'active', actionType, actionConfig, now, now)
       .run();
 
     const flow = await this.findById(id);
@@ -71,6 +76,8 @@ export class FlowRepository extends BaseRepository<Flow> {
     if (data.weight !== undefined) { fields.push('weight = ?'); values.push(data.weight); }
     if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
     if (data.filters !== undefined) { fields.push('filters = ?'); values.push(JSON.stringify(data.filters)); }
+    if (data.actionType !== undefined) { fields.push('actionType = ?'); values.push(data.actionType); }
+    if (data.actionConfig !== undefined) { fields.push('actionConfig = ?'); values.push(JSON.stringify(data.actionConfig)); }
 
     if (fields.length === 0) {
       return this.findById(id);

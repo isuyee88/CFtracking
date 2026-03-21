@@ -17,6 +17,7 @@ import type { Env } from '@/config/env';
  */
 export type UniquenessMethod = 
   | 'ip'           // IP 地址去重
+  | 'ip_ua'        // IP + User Agent 组合去重
   | 'cookie'       // Cookie 去重
   | 'fingerprint'  // 浏览器指纹去重
   | 'parameter'    // URL 参数去重
@@ -127,6 +128,11 @@ export class UniquenessService {
     switch (request.method) {
       case 'ip':
         return UniquenessKV.generateIPKey(request.campaignId, request.ip);
+
+      case 'ip_ua':
+        // IP + User Agent 组合去重
+        const ipUaFingerprint = this.generateSimpleFingerprint(request.ip, request.userAgent);
+        return UniquenessKV.generateFingerprintKey(request.campaignId, `ipua:${ipUaFingerprint}`);
 
       case 'cookie':
         return UniquenessKV.generateCookieKey(request.campaignId, request.visitorId);

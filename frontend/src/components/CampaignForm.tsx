@@ -3,10 +3,11 @@
  * Purpose: Campaign创建和编辑表单组件
  * Input/Output: 接收campaign数据，输出表单提交事件
  * Logic: 多标签页表单，包含Main、Schema、Filters、Monitoring、Notes
+ * Features: Campaign URL自动生成、Uniqueness配置、Cost配置
  */
 
-import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Settings, Filter, Activity, FileText, GripVertical } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Plus, Trash2, Settings, Filter, Activity, FileText, GripVertical, Copy, Check, Link } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { FilterBuilder } from './filters';
@@ -19,6 +20,8 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+type UniquenessMethod = 'ip' | 'ip_ua' | 'cookie' | 'parameter' | 'none';
+
 interface CampaignFormData {
   name: string;
   alias: string;
@@ -26,7 +29,11 @@ interface CampaignFormData {
   group: string;
   trafficSource: string;
   flowRotation: 'weight' | 'priority' | 'random';
-  costModel: 'cpc' | 'cpa' | 'cpm';
+  costModel: 'cpc' | 'cpa' | 'cpm' | 'cps' | 'revshare';
+  costValue: number;
+  currency: string;
+  uniquenessMethod: UniquenessMethod;
+  uniquenessParameter: string;
   uniquenessTTL: number;
   visitorBinding: 'none' | 'cookie' | 'ip';
   status: 'active' | 'paused';
@@ -61,6 +68,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState('main');
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const [formData, setFormData] = useState<CampaignFormData>({
     name: initialData?.name || '',
     alias: initialData?.alias || '',
@@ -69,6 +77,10 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
     trafficSource: initialData?.trafficSource || '',
     flowRotation: initialData?.flowRotation || 'weight',
     costModel: initialData?.costModel || 'cpc',
+    costValue: initialData?.costValue || 0,
+    currency: initialData?.currency || 'USD',
+    uniquenessMethod: initialData?.uniquenessMethod || 'none',
+    uniquenessParameter: initialData?.uniquenessParameter || '',
     uniquenessTTL: initialData?.uniquenessTTL || 86400,
     visitorBinding: initialData?.visitorBinding || 'none',
     status: initialData?.status || 'active',
@@ -85,6 +97,37 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
     flows: initialData?.flows || [],
     connections: initialData?.connections || [],
   });
+
+  // 自动生成 Campaign URL
+  const campaignUrl = useMemo(() => {
+    if (!formData.domain || !formData.alias) return '';
+    const protocol = formData.domain.startsWith('http') ? '' : 'https://';
+    return `${protocol}${formData.domain}/${formData.alias}`;
+  }, [formData.domain, formData.alias]);
+
+  // 自动生成 alias（基于 name）
+  const generateAlias = (name: string) => {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 30);
+  };
+
+  // 复制 URL 到剪贴板
+  const copyToClipboard = async () => {
+    if (campaignUrl) {
+      await navigator.clipboard.writeText(campaignUrl);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
+    }
+  };
+
+  // 处理 name 变化，自动生成 alias
+  const handleNameChange = (name: string) => {
+    const alias = generateAlias(name);
+    setFormData(prev => ({ ...prev, name, alias }));
+  };
 
   useEffect(() => {
     const loadTrafficSources = async () => {
@@ -153,6 +196,29 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
           {/* Main Tab */}
           {activeTab === 'main' && (
             <div className="space-y-6">
+              {/* Campaign URL Display */}
+              {campaignUrl && (
+                <div className="bg-primary-container/10 border border-primary/20 rounded-sm p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-primary">
+                      <Link size={14} />
+                      Campaign URL
+                    </label>
+                    <button
+                      type="button"
+                      onClick={copyToClipboard}
+                      className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10 rounded-sm transition-colors"
+                    >
+                      {copiedUrl ? <Check size={14} /> : <Copy size={14} />}
+                      {copiedUrl ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <code className="block text-sm text-on-surface bg-surface px-3 py-2 rounded-sm font-mono break-all">
+                    {campaignUrl}
+                  </code>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
@@ -161,7 +227,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => handleChange('name', e.target.value)}
+                    onChange={(e) => handleNameChange(e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                     placeholder="Enter campaign name"
                     required
@@ -175,7 +241,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     type="text"
                     value={formData.alias}
                     onChange={(e) => handleChange('alias', e.target.value)}
-                    className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                    className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all font-mono"
                     placeholder="campaign-alias"
                     required
                   />
@@ -244,45 +310,116 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                    Cost Model
-                  </label>
-                  <select
-                    value={formData.costModel}
-                    onChange={(e) => handleChange('costModel', e.target.value)}
-                    className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
-                  >
-                    <option value="cpc">CPC</option>
-                    <option value="cpa">CPA</option>
-                    <option value="cpm">CPM</option>
-                  </select>
+              {/* Cost Configuration */}
+              <div className="bg-surface-container p-4 rounded-sm">
+                <h3 className="text-sm font-bold text-primary mb-4">Cost Configuration</h3>
+                <div className="grid grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                      Cost Model
+                    </label>
+                    <select
+                      value={formData.costModel}
+                      onChange={(e) => handleChange('costModel', e.target.value)}
+                      className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                    >
+                      <option value="cpc">CPC (Cost Per Click)</option>
+                      <option value="cpa">CPA (Cost Per Action)</option>
+                      <option value="cpm">CPM (Cost Per Mille)</option>
+                      <option value="cps">CPS (Cost Per Sale)</option>
+                      <option value="revshare">RevShare</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                      Cost Value
+                    </label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={formData.costValue}
+                      onChange={(e) => handleChange('costValue', parseFloat(e.target.value) || 0)}
+                      className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                      placeholder="0.0000"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                      Currency
+                    </label>
+                    <select
+                      value={formData.currency}
+                      onChange={(e) => handleChange('currency', e.target.value)}
+                      className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                    >
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
+                      <option value="GBP">GBP</option>
+                      <option value="CNY">CNY</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                    Uniqueness (seconds)
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.uniquenessTTL}
-                    onChange={(e) => handleChange('uniquenessTTL', parseInt(e.target.value))}
-                    className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                    Visitor Binding
-                  </label>
-                  <select
-                    value={formData.visitorBinding}
-                    onChange={(e) => handleChange('visitorBinding', e.target.value)}
-                    className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
-                  >
-                    <option value="none">None</option>
-                    <option value="cookie">Cookie</option>
-                    <option value="ip">IP Address</option>
-                  </select>
+              </div>
+
+              {/* Uniqueness Configuration */}
+              <div className="bg-surface-container p-4 rounded-sm">
+                <h3 className="text-sm font-bold text-primary mb-4">Uniqueness (Deduplication)</h3>
+                <div className="grid grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                      Uniqueness Method
+                    </label>
+                    <select
+                      value={formData.uniquenessMethod}
+                      onChange={(e) => handleChange('uniquenessMethod', e.target.value as UniquenessMethod)}
+                      className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                    >
+                      <option value="none">None (No Dedup)</option>
+                      <option value="ip">IP Address</option>
+                      <option value="ip_ua">IP + User Agent</option>
+                      <option value="cookie">Cookie</option>
+                      <option value="parameter">URL Parameter</option>
+                    </select>
+                  </div>
+                  {formData.uniquenessMethod === 'parameter' && (
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                        Parameter Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.uniquenessParameter}
+                        onChange={(e) => handleChange('uniquenessParameter', e.target.value)}
+                        className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                        placeholder="clickid"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                      TTL (seconds)
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.uniquenessTTL}
+                      onChange={(e) => handleChange('uniquenessTTL', parseInt(e.target.value) || 86400)}
+                      className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                      Visitor Binding
+                    </label>
+                    <select
+                      value={formData.visitorBinding}
+                      onChange={(e) => handleChange('visitorBinding', e.target.value as 'none' | 'cookie' | 'ip')}
+                      className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                    >
+                      <option value="none">None</option>
+                      <option value="cookie">Cookie</option>
+                      <option value="ip">IP Address</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 

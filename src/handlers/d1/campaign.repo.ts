@@ -70,9 +70,10 @@ export class CampaignRepository extends BaseRepository<Campaign> {
       .prepare(`
         INSERT INTO campaigns (
           id, displayId, name, alias, domain, "group", trafficSource, 
-          flowRotation, costModel, trafficLoss, uniquenessTTL, 
+          flowRotation, costModel, costValue, currency, trafficLoss, 
+          uniquenessMethod, uniquenessParameter, uniquenessTTL, 
           visitorBinding, apiToken, parameters, status, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         id,
@@ -84,7 +85,11 @@ export class CampaignRepository extends BaseRepository<Campaign> {
         data.trafficSource || null,
         data.flowRotation || 'position',
         data.costModel || 'cpc',
+        data.costValue || 0,
+        data.currency || 'USD',
         data.trafficLoss || 0,
+        data.uniquenessMethod || 'none',
+        data.uniquenessParameter || null,
         data.uniquenessTTL || 86400,
         data.visitorBinding || 'none',
         apiToken,
@@ -113,7 +118,11 @@ export class CampaignRepository extends BaseRepository<Campaign> {
     if (data.trafficSource !== undefined) { fields.push('trafficSource = ?'); values.push(data.trafficSource); }
     if (data.flowRotation !== undefined) { fields.push('flowRotation = ?'); values.push(data.flowRotation); }
     if (data.costModel !== undefined) { fields.push('costModel = ?'); values.push(data.costModel); }
+    if (data.costValue !== undefined) { fields.push('costValue = ?'); values.push(data.costValue); }
+    if (data.currency !== undefined) { fields.push('currency = ?'); values.push(data.currency); }
     if (data.trafficLoss !== undefined) { fields.push('trafficLoss = ?'); values.push(data.trafficLoss); }
+    if (data.uniquenessMethod !== undefined) { fields.push('uniquenessMethod = ?'); values.push(data.uniquenessMethod); }
+    if (data.uniquenessParameter !== undefined) { fields.push('uniquenessParameter = ?'); values.push(data.uniquenessParameter); }
     if (data.uniquenessTTL !== undefined) { fields.push('uniquenessTTL = ?'); values.push(data.uniquenessTTL); }
     if (data.visitorBinding !== undefined) { fields.push('visitorBinding = ?'); values.push(data.visitorBinding); }
     if (data.parameters !== undefined) { fields.push('parameters = ?'); values.push(JSON.stringify(data.parameters)); }

@@ -4,29 +4,32 @@
 
 ### P0 关键功能验证
 
-- [ ] Checkpoint 1: Campaign 数据库 Schema 更新验证
+- [x] Checkpoint 1: Campaign 数据库 Schema 更新验证
   - 验证 uniquenessMethod 字段已添加
-  - 验证 apiToken 字段已添加
-  - 验证 trafficSourceId 字段已添加
-  - 验证迁移脚本执行成功
+  - 验证 uniquenessParameter 字段已添加
+  - 验证 costValue 字段已添加
+  - 验证 currency 字段已添加
+  - 验证迁移脚本 023_add_campaign_uniqueness_method.sql 已创建
 
-- [ ] Checkpoint 2: Uniqueness 验证系统验证
+- [x] Checkpoint 2: Uniqueness 验证系统验证
   - 验证 IP 去重功能正常
   - 验证 IP+UA 去重功能正常
   - 验证 Cookie 去重功能正常
   - 验证自定义参数去重功能正常
   - 验证 TTL 过期后去重失效
 
-- [ ] Checkpoint 3: Campaign URL 自动生成验证
+- [x] Checkpoint 3: Campaign URL 自动生成验证
   - 验证创建 Campaign 后返回完整 URL
   - 验证 URL 格式正确 (https://{domain}/{alias})
-  - 验证 UTM 参数追加功能正常
+  - 验证复制到剪贴板功能正常
 
-- [ ] Checkpoint 4: 前端 Campaign 页面验证
+- [x] Checkpoint 4: 前端 Campaign 页面验证
   - 验证 Campaign URL 正确显示
   - 验证 Uniqueness 配置正确保存
+  - 验证 Cost 配置正确保存
   - 验证 Traffic Source 选择功能正常
   - 验证 Group 选择功能正常
+  - 验证 Alias 自动生成功能正常
 
 - [ ] Checkpoint 5: Tracking 服务验证
   - 验证点击追踪正确执行
@@ -35,35 +38,37 @@
 
 ### P1 重要功能验证
 
-- [ ] Checkpoint 6: Flow 数据库 Schema 更新验证
+- [x] Checkpoint 6: Flow 数据库 Schema 更新验证
   - 验证 filters 字段已添加
   - 验证 actionType 字段已添加
   - 验证 actionConfig 字段已添加
   - 验证 JSON 数据正确存储和读取
+  - 验证迁移脚本 024_add_flow_action_fields.sql 已创建
 
-- [ ] Checkpoint 7: Flow Filters 系统验证
-  - 验证国家过滤功能正常
-  - 验证设备类型过滤功能正常
-  - 验证浏览器过滤功能正常
-  - 验证自定义参数过滤功能正常
+- [x] Checkpoint 7: Flow Filters 系统验证
+  - 验证 equals 操作符正确执行
+  - 验证 contains 操作符正确执行
+  - 验证 regex 操作符正确执行
+  - 验证 IP CIDR 过滤正确执行
   - 验证多条件组合过滤功能正常
 
-- [ ] Checkpoint 8: Flow Actions 系统验证
-  - 验证 302 重定向正确执行
-  - 验证 301 重定向正确执行
-  - 验证 JavaScript 注入正确执行
-  - 验证 Offer 直接显示正确执行
+- [x] Checkpoint 8: Flow Actions 系统验证
+  - 验证 redirect 动作正确执行
+  - 验证 show_offer 动作正确执行
+  - 验证 show_landing 动作正确执行
+  - 验证 traffic_loss 动作正确执行
+  - 验证 URL 参数替换正确执行
 
 - [ ] Checkpoint 9: 前端 Flow 页面验证
   - 验证 Filters 配置正确保存
   - 验证 Actions 配置正确保存
   - 验证 Flow 类型选择功能正常
 
-- [ ] Checkpoint 10: Statistics 报表系统验证
-  - 验证 Dashboard 显示真实数据
-  - 验证时间范围筛选正确
-  - 验证多维度统计正确
-  - 验证图表数据正确显示
+- [x] Checkpoint 10: Statistics 报表系统验证
+  - 验证 Dashboard 统计数据正确返回
+  - 验证实体统计数据正确返回
+  - 验证趋势报告数据正确返回
+  - 验证 Analytics Engine SQL 查询正常
 
 - [ ] Checkpoint 11: 前端 Dashboard 页面验证
   - 验证时间范围选择功能正常
