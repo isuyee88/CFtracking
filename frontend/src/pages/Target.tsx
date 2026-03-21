@@ -86,7 +86,7 @@ export const TargetPage: React.FC = () => {
           </div>
           <button
             onClick={() => setIsCreating(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-sm font-medium hover:bg-primary-container transition-colors rounded-md"
+            className="btn-create flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors rounded-md"
           >
             <Plus size={16} />
             Add Target

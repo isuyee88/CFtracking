@@ -347,7 +347,7 @@ export const Blacklist = () => {
           </button>
           <button 
             onClick={openAddModal}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors"
+            className="btn-create flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest transition-colors"
           >
             <Plus size={16} />
             Add Entry
@@ -452,7 +452,7 @@ export const Blacklist = () => {
               key={ts.id}
               onClick={() => handleSync(ts.id)}
               disabled={syncing === ts.id}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors disabled:opacity-50"
+              className="modal-btn-primary flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest disabled:opacity-50"
             >
               {syncing === ts.id ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -830,7 +830,7 @@ export const Blacklist = () => {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                    className="btn-create flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
                   >
                     {submitting && <Loader2 size={16} className="animate-spin" />}
                     {isEditMode ? 'Update' : 'Add'} Entry

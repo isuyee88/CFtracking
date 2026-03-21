@@ -363,7 +363,7 @@ export const Reports = () => {
           </button>
           <button 
             onClick={() => window.location.reload()}
-            className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm"
+            className="modal-btn-primary flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm"
           >
             <RefreshCw size={18} />
             Refresh
@@ -612,7 +612,7 @@ export const Reports = () => {
                   ))}
                 </select>
                 <button
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-on-secondary text-xs font-bold uppercase tracking-widest hover:bg-secondary/90 transition-colors"
+                  className="btn-create flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-widest"
                   title="Add to Whitelist"
                 >
                   <ThumbsUp size={14} />
@@ -807,7 +807,7 @@ export const Reports = () => {
               </button>
               <button
                 onClick={saveReport}
-                className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm"
+                className="modal-btn-primary flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm"
               >
                 <Check size={16} />
                 Save

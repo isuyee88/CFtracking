@@ -323,7 +323,7 @@ export const Settings: React.FC = () => {
           <div className="p-6 border-t border-outline-variant/10">
             <button
               onClick={handleSave}
-              className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors"
+              className="modal-btn-primary flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest"
             >
               <Save size={16} />
               Save Changes

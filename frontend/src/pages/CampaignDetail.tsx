@@ -233,7 +233,7 @@ export const CampaignDetail = () => {
         <p className="text-on-surface-variant">{error || 'The campaign you\'re looking for doesn\'t exist.'}</p>
         <button 
           onClick={() => navigate('/campaigns')}
-          className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm"
+          className="modal-btn-secondary flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm"
         >
           <ArrowLeft size={18} />
           Back to Campaigns
@@ -563,7 +563,7 @@ eval(atob('${btoa(script)}'));
           </button>
           <button 
             onClick={handleEditClick}
-            className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm"
+            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm"
           >
             <Edit3 size={18} />
             Edit Campaign
@@ -822,7 +822,7 @@ eval(atob('${btoa(script)}'));
           
           <button
             onClick={handleEditClick}
-            className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm mx-auto mt-6"
+            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm mx-auto mt-6"
           >
             <Plus size={18} />
             Add Filter
@@ -897,7 +897,7 @@ eval(atob('${btoa(script)}'));
                     navigator.clipboard.writeText(code);
                     alert('KClient JS copied to clipboard!');
                   }}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm"
+                  className="modal-btn-primary flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-sm"
                 >
                   <Copy size={16} />
                   Copy Code
@@ -1214,7 +1214,7 @@ eval(atob('${btoa(script)}'));
               </button>
               <button
                 onClick={handleSave}
-                className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-all rounded-sm"
+                className="modal-btn-primary flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm"
               >
                 <Save size={16} />
                 Save Changes
