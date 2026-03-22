@@ -26,6 +26,7 @@ import {
   Filter,
   ChevronDown,
   AlertCircle,
+  AlertTriangle,
   Bot,
   Clock,
   Smartphone,
@@ -776,9 +777,31 @@ eval(atob('${btoa(script)}'));
       )}
 
       {activeTab === 'flow' && (
-        <FlowDesigner
-          campaignId={id || ''}
-          onSave={async (flows, connections) => {
+        <div className="space-y-4">
+          {/* Flow Configuration Warning */}
+          <div className="bg-warning/10 border border-warning p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="text-warning" size={20} />
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-warning mb-2">Flow Configuration Required</h3>
+                <p className="text-sm text-on-surface mb-2">
+                  This campaign needs at least one Flow to properly redirect traffic to Offers or Landing Pages.
+                </p>
+                <p className="text-sm text-on-surface-variant">
+                  <strong>Current Issue:</strong> Without a Flow, all clicks will be redirected to the traffic-loss page instead of converting.
+                </p>
+                <ul className="text-xs text-on-surface-variant mt-2 space-y-1">
+                  <li>• Click "Edit Flow" below to configure your first Flow</li>
+                  <li>• Associate Offers or Landing Pages with the Flow</li>
+                  <li>• Set up Filters if needed (optional)</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          
+          <FlowDesigner
+            campaignId={id || ''}
+            onSave={async (flows, connections) => {
             try {
               // Fetch existing flows
               const existingFlows = await fetchFlows(id || '');
