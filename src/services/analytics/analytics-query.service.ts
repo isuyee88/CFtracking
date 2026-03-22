@@ -382,6 +382,7 @@ export class AnalyticsQueryService {
     const intervalDays = this.getIntervalDays(range);
 
     // 映射实体类型到 blob 字段
+    // 注意: Analytics Engine 对 blob 字段有限制，避免使用 count(distinct blob)
     const fieldMap: Record<string, { field: string; label: string }> = {
       campaigns: { field: 'index1', label: 'campaignId' },
       landings: { field: 'double3', label: 'landingPageId' },
@@ -395,12 +396,14 @@ export class AnalyticsQueryService {
 
     const config = fieldMap[entityType] || { field: 'blob2', label: entityType };
 
+    // Analytics Engine SQL 限制:
+    // 1. 不能对 blob 字段使用 count(distinct)
+    // 2. 简化查询，避免复杂聚合
     const sql = `
       SELECT
         ${config.field} as name,
         count() as clicks,
         count(distinct double5) as uniqueVisitors,
-        count(distinct ${config.field}) as entityCount,
         sum(double6) as spend
       FROM cf_tracking_events
       WHERE timestamp >= NOW() - INTERVAL '${intervalDays}' DAY
