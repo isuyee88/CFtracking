@@ -1912,7 +1912,7 @@ textarea.form-input {
    移动端响应式优化
    ============================================ */
 
-/* Mobile Bottom Navigation Bar */
+/* Mobile Bottom Navigation Bar - 支持横向滚动 */
 .mobile-bottom-nav {
   display: none;
   position: fixed;
@@ -1925,8 +1925,18 @@ textarea.form-input {
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
   z-index: 100;
   padding: 0 8px;
-  justify-content: space-around;
+  justify-content: flex-start; /* 改为左对齐以支持滚动 */
   align-items: center;
+  overflow-x: auto; /* 允许横向滚动 */
+  overflow-y: hidden;
+  white-space: nowrap; /* 防止换行 */
+  -webkit-overflow-scrolling: touch; /* iOS 平滑滚动 */
+  scrollbar-width: none; /* Firefox 隐藏滚动条 */
+}
+
+/* 隐藏滚动条但保留滚动功能 */
+.mobile-bottom-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .dark-mode .mobile-bottom-nav {
@@ -1939,14 +1949,15 @@ textarea.form-input {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 12px;
+  padding: 8px 16px; /* 增加左右间距 */
   border-radius: 12px;
   transition: all 0.2s ease;
-  min-width: 56px;
+  min-width: 64px; /* 增加最小宽度 */
   min-height: 44px;
   color: var(--color-fg-muted);
   text-decoration: none;
   gap: 4px;
+  flex-shrink: 0; /* 防止压缩 */
 }
 
 .mobile-nav-item:active {

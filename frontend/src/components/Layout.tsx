@@ -117,7 +117,7 @@ const SidebarItem = ({
 );
 
 export const Layout = () => {
-  // 移动端默认收起侧边栏，桌面端默认展开
+  // 桌面端默认展开侧边栏，移动端不显示侧边栏（只用底部导航）
   const [isSidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth >= 1024; // lg breakpoint
@@ -127,17 +127,11 @@ export const Layout = () => {
   const location = useLocation();
   const { isDarkMode, toggleDarkMode } = useDarkMode();
 
-  // 监听窗口大小变化，自动调整侧边栏状态
+  // 监听窗口大小变化，自动调整侧边栏状态（仅桌面端）
   useEffect(() => {
     const handleResize = () => {
       const shouldBeOpen = window.innerWidth >= 1024;
-      setSidebarOpen(prev => {
-        // 只在状态需要变化时才更新，避免不必要的渲染
-        if (prev !== shouldBeOpen) {
-          return shouldBeOpen;
-        }
-        return prev;
-      });
+      setSidebarOpen(shouldBeOpen);
     };
 
     window.addEventListener('resize', handleResize);
@@ -190,16 +184,7 @@ export const Layout = () => {
 
   return (
     <div className="flex min-h-screen bg-canvas-inset selection:bg-accent-muted">
-      {/* Mobile Sidebar Overlay - 侧边栏打开时显示遮罩 */}
-      {isSidebarOpen && (
-        <div 
-          onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden animate-fade-in"
-          aria-hidden="true"
-        />
-      )}
-
-      {/* Sidebar - CSS 动画替代 motion */}
+      {/* Desktop Sidebar only */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 bg-surface-container-lowest dark:bg-surface-container flex flex-col",
@@ -221,13 +206,6 @@ export const Layout = () => {
             </div>
             <h1 className="text-xl font-display font-bold tracking-tight text-fg-default">CFTracking</h1>
           </div>
-          <button 
-            onClick={() => setSidebarOpen(false)} 
-            className="lg:hidden text-fg-muted hover:text-fg-default hover:bg-surface-container focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 rounded-md p-1 transition-colors"
-            aria-label="Close sidebar"
-          >
-            <X size={20} aria-hidden="true" />
-          </button>
         </div>
 
         {/* 优化：导航区域添加ARIA标签 */}
@@ -254,12 +232,6 @@ export const Layout = () => {
                         label={item.label} 
                         to={item.to}
                         active={isActive}
-                        onClick={() => {
-                          // Close sidebar on mobile when navigating
-                          if (window.innerWidth < 1024) {
-                            setSidebarOpen(false);
-                          }
-                        }}
                       />
                     </div>
                   );
@@ -358,25 +330,41 @@ export const Layout = () => {
         </div>
       </main>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Navigation - Scrollable */}
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <Link to="/" className={cn("mobile-nav-item", (location.pathname === "/" || location.pathname === "") && "active")}>
-          <Home size={20} aria-hidden="true" />
-          <span>Home</span>
+        <Link to="/" className={cn("mobile-nav-item", (location.pathname === "/" || location.pathname === "") && "active")} title="Dashboard">
+          <LayoutDashboard size={20} aria-hidden="true" />
+          <span>Dashboard</span>
         </Link>
-        <Link to="/campaigns" className={cn("mobile-nav-item", location.pathname === "/campaigns" && "active")}>
+        <Link to="/campaigns" className={cn("mobile-nav-item", location.pathname === "/campaigns" && "active")} title="Campaigns">
           <Zap size={20} aria-hidden="true" />
           <span>Campaigns</span>
         </Link>
-        <Link to="/trends" className={cn("mobile-nav-item", location.pathname === "/trends" && "active")}>
+        <Link to="/landings" className={cn("mobile-nav-item", location.pathname === "/landings" && "active")} title="Landings">
+          <Image size={20} aria-hidden="true" />
+          <span>Landings</span>
+        </Link>
+        <Link to="/offers" className={cn("mobile-nav-item", location.pathname === "/offers" && "active")} title="Offers">
+          <Gift size={20} aria-hidden="true" />
+          <span>Offers</span>
+        </Link>
+        <Link to="/traffic-sources" className={cn("mobile-nav-item", location.pathname === "/traffic-sources" && "active")} title="Traffic Sources">
+          <Globe size={20} aria-hidden="true" />
+          <span>Sources</span>
+        </Link>
+        <Link to="/trends" className={cn("mobile-nav-item", location.pathname === "/trends" && "active")} title="Trends">
           <LineChart size={20} aria-hidden="true" />
           <span>Trends</span>
         </Link>
-        <Link to="/audit" className={cn("mobile-nav-item", location.pathname === "/audit" && "active")}>
+        <Link to="/audit" className={cn("mobile-nav-item", location.pathname === "/audit" && "active")} title="Click Log">
           <MousePointerClick size={20} aria-hidden="true" />
           <span>Clicks</span>
         </Link>
-        <Link to="/settings" className={cn("mobile-nav-item", location.pathname === "/settings" && "active")}>
+        <Link to="/rules" className={cn("mobile-nav-item", location.pathname === "/rules" && "active")} title="Autorules">
+          <Shield size={20} aria-hidden="true" />
+          <span>Rules</span>
+        </Link>
+        <Link to="/settings" className={cn("mobile-nav-item", location.pathname === "/settings" && "active")} title="Settings">
           <Settings size={20} aria-hidden="true" />
           <span>Settings</span>
         </Link>
