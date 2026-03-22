@@ -5,7 +5,7 @@
  * Logic: 使用LZ-String压缩状态，编码到URL参数中
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 // 压缩库使用简单的Base64编码，避免引入额外依赖
@@ -93,8 +93,8 @@ export function useURLState<T extends Record<string, any>>(
 } {
   const [searchParams, setSearchParams] = useSearchParams();
   
-  // 从URL解码状态
-  const getStateFromURL = useCallback((): T => {
+  // 从URL解码状态 - 使用 useMemo 避免重复计算
+  const urlState = useMemo(() => {
     const encoded = searchParams.get(paramName);
     if (encoded) {
       const decoded = decodeState(encoded);
@@ -105,17 +105,21 @@ export function useURLState<T extends Record<string, any>>(
     return defaultState;
   }, [searchParams, paramName, defaultState]);
 
-  const [state, setInternalState] = useState<T>(getStateFromURL);
+  const [state, setInternalState] = useState<T>(urlState);
 
-  // 同步URL到状态 - 只在当前路径是根路径时执行（避免影响其他页面导航）
+  // 同步URL到状态 - 只在URL参数变化时执行
+  const prevUrlStateRef = useRef<string>('');
   useEffect(() => {
-    // 检查当前路径是否是根路径（Dashboard页面）
     const currentPath = window.location.hash.replace('#', '') || '/';
     if (currentPath === '/' || currentPath === '') {
-      const urlState = getStateFromURL();
-      setInternalState(urlState);
+      const encoded = searchParams.get(paramName) || '';
+      // 只有URL真正变化时才更新状态
+      if (encoded !== prevUrlStateRef.current) {
+        prevUrlStateRef.current = encoded;
+        setInternalState(urlState);
+      }
     }
-  }, [getStateFromURL]);
+  }, [urlState, paramName, searchParams]);
 
   // 设置新状态并更新URL
   const setState = useCallback((

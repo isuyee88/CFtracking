@@ -4,10 +4,85 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="description" content="CF Tracking - Real-time tracking and analytics dashboard" />
+    <title>CF Tracking</title>
+    <!-- Preconnect to Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Inline critical CSS for instant skeleton - no external blocking -->
+    <style>
+      /* 系统字体作为后备，确保立即显示 */
+      :root {
+        --font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --font-display: Manrope, var(--font-sans);
+      }
+      /* 骨架屏动画 */
+      @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+      /* 初始骨架屏样式 */
+      .skeleton-container {
+        padding: 20px;
+        background: #fafafa;
+        min-height: 100vh;
+        font-family: var(--font-sans);
+      }
+      .skeleton-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      .skeleton-card {
+        background: #fff;
+        border-radius: 8px;
+        padding: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      .skeleton-line {
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+        border-radius: 4px;
+      }
+      .skeleton-box {
+        background: #fff;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+    </style>
+    <!-- 异步加载字体 - 不阻塞渲染 -->
+    <link rel="preload" href="https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSvfedN4.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
-    <div id="root"></div>
+    <!-- 内联骨架屏 - 在JS加载前显示 -->
+    <div id="root">
+      <div class="skeleton-container">
+        <div class="skeleton-grid">
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
+        </div>
+        <div class="skeleton-box">
+          <div class="skeleton-line" style="height:16px;width:150px;margin-bottom:20px"></div>
+          <div class="skeleton-line" style="height:200px;background:linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px"></div>
+        </div>
+        <div class="skeleton-box">
+          <div class="skeleton-line" style="height:16px;width:150px;margin-bottom:16px"></div>
+        </div>
+      </div>
+    </div>
+    <!-- 异步加载字体CSS - 使用 media="print" 技巧 -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

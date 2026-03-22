@@ -5,7 +5,7 @@
  * Logic: 使用 Linear 现代极简配色方案，高对比度，纯黑/纯白设计
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap');
+/* Font loaded via HTML link for better performance */
 @import "tailwindcss";
 
 @theme {

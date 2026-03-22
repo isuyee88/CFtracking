@@ -6,6 +6,32 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
+// 简单的内存缓存 - 用于减少重复请求
+const apiCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 5000; // 5秒缓存
+
+function getCached<T>(key: string): T | null {
+  const cached = apiCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data as T;
+  }
+  apiCache.delete(key);
+  return null;
+}
+
+function setCache(key: string, data: any) {
+  apiCache.set(key, { data, timestamp: Date.now() });
+}
+
+function createCacheKey(endpoint: string, params?: Record<string, any>): string {
+  if (!params) return endpoint;
+  const sortedParams = Object.keys(params)
+    .sort()
+    .map(k => `${k}=${params[k]}`)
+    .join('&');
+  return `${endpoint}?${sortedParams}`;
+}
+
 // 通用响应处理函数
 async function handleResponse(response: Response) {
   if (!response.ok) {
@@ -261,22 +287,38 @@ export async function deleteLanding(id: string | number) {
 
 // 获取仪表板统计数据
 export async function fetchDashboardStats(timeRange: string = 'today') {
+  const cacheKey = createCacheKey('/api/analytics/dashboard', { range: timeRange });
+  const cached = getCached<any>(cacheKey);
+  if (cached) return cached;
+  
   const response = await fetch(`${API_BASE_URL}/api/analytics/dashboard?range=${timeRange}`);
   const result = await handleResponse(response);
+  setCache(cacheKey, result.data);
   return result.data;
 }
 
 // 获取最近点击数据
 export async function fetchRecentClicks(limit: number = 10) {
+  const cacheKey = createCacheKey('/api/analytics/recent-clicks', { limit });
+  const cached = getCached<any[]>(cacheKey);
+  if (cached) return cached;
+  
   const response = await fetch(`${API_BASE_URL}/api/analytics/recent-clicks?limit=${limit}`);
   const result = await handleResponse(response);
-  return result.data?.list || [];
+  const data = result.data?.list || [];
+  setCache(cacheKey, data);
+  return data;
 }
 
 // 获取实体统计数据
 export async function fetchEntityStats(entityType: string, timeRange: string = 'today') {
+  const cacheKey = createCacheKey('/api/analytics/entity-stats', { type: entityType, range: timeRange });
+  const cached = getCached<any[]>(cacheKey);
+  if (cached) return cached;
+  
   const response = await fetch(`${API_BASE_URL}/api/analytics/entity-stats?type=${entityType}&range=${timeRange}`);
   const result = await handleResponse(response);
+  setCache(cacheKey, result.data);
   return result.data;
 }
 
