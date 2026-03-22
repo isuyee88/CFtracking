@@ -117,27 +117,31 @@ export class AggregationService {
     }
 
     // 构建 SQL 查询，使用 Analytics Engine 聚合函数
+    // 数据模型参考：src/handlers/analytics/index.ts
+    // indexes[0]: campaignId
+    // blobs[0-17]: ip, country, city, device, browser, os, subId1-5, utmSource, utmMedium, utmCampaign, referer, userAgent, isp, fingerprint
+    // doubles[0-10]: clickId, flowId, landingPageId, offerId, visitorId, cost, riskScore, cfBotScore, connectionType, proxy, isBot
     const sql = `
       SELECT 
-        blob2 as campaignId,
-        blob3 as flowId,
-        blob4 as landingPageId,
-        blob5 as offerId,
-        blob9 as country,
-        blob11 as device,
-        blob12 as browser,
-        blob13 as os,
-        blob20 as utmSource,
-        blob21 as utmMedium,
-        blob22 as utmCampaign,
+        index1 as campaignId,
+        double2 as flowId,
+        double3 as landingPageId,
+        double4 as offerId,
+        blob2 as country,
+        blob4 as device,
+        blob5 as browser,
+        blob6 as os,
+        blob12 as utmSource,
+        blob13 as utmMedium,
+        blob14 as utmCampaign,
         count() as clicks,
-        sum(double1) as totalCost,
-        avg(double1) as avgCost,
-        count(distinct blob14) as uniqueVisitors,
-        countIf(double1 > 0) as paidClicks,
-        countIf(double3 > 0) as botScoreClicks,
-        avg(double3) as avgBotScore,
-        countIf(double2 > 0) as highRiskClicks
+        sum(double6) as totalCost,
+        avg(double6) as avgCost,
+        count(distinct double5) as uniqueVisitors,
+        countIf(double6 > 0) as paidClicks,
+        countIf(double8 > 0) as botScoreClicks,
+        avg(double8) as avgBotScore,
+        countIf(double11 > 0) as highRiskClicks
       FROM cf_tracking_events
       WHERE toDate(timestamp) = '${date}'
       GROUP BY 
