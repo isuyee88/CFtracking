@@ -1,10 +1,27 @@
 # Deployment Record - 2026-03-22 Campaign Fixes
 
 ## 部署状态
-- **时间**: 2026-03-22 18:23
-- **状态**: ❌ 失败（超时）
+- **时间**: 2026-03-22 18:29
+- **状态**: ✅ 成功
+- **部署版本 ID**: `8d8f9b26-7e55-4ae0-b36c-8e3c436cd6c2`
+- **部署大小**: 538.52 KiB / gzip: 94.90 KiB
+- **部署耗时**: 8.98 秒
+- **访问地址**: https://cf-tracking.suyee88.workers.dev
+
+### 部署历史
+
+#### 第一次尝试 (18:23) - ❌ 失败
 - **错误**: Cloudflare API Timeout
-- **错误信息**: `X [ERROR] The request to Cloudflare's API timed out.`
+- **原因**: 网络连接问题
+
+#### 第二次尝试 (18:27) - ❌ 失败
+- **错误**: TypeScript 编译错误
+- **原因**: analytics-query.service.ts 第 440 行有多余的大括号 `}`
+- **修复**: 删除多余的大括号
+
+#### 第三次尝试 (18:29) - ✅ 成功
+- **版本 ID**: `8d8f9b26-7e55-4ae0-b36c-8e3c436cd6c2`
+- **状态**: 部署成功
 
 ## 修复内容
 
@@ -101,7 +118,7 @@ wrangler deploy
 ## 版本信息
 
 - **Previous Version ID**: `89a74646-00c6-43ec-a891-52d4ea8bbdd6`
-- **Expected Version ID**: 待成功部署后生成
+- **Current Version ID**: `8d8f9b26-7e55-4ae0-b36c-8e3c436cd6c2` ✅
 - **Script Version**: cf-tracking
 - **Environment**: production
 
