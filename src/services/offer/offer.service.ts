@@ -81,7 +81,7 @@ export class OfferService {
   }
 
   /**
-   * 删除 Offer
+   * 删除 Offer（硬删除）
    */
   async delete(id: string): Promise<void> {
     const existing = await this.repo.findById(id);
@@ -89,7 +89,7 @@ export class OfferService {
       throw new NotFoundError('Offer not found');
     }
 
-    await this.repo.update(id, { status: 'deleted' });
+    await this.repo.deleteById(id);
   }
 
   /**

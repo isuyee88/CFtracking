@@ -111,6 +111,38 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
   }
 
   /**
+   * 查询列表（支持分页和过滤）
+   */
+  async findList(page = 1, pageSize = 20, status?: string): Promise<{ list: AffiliateNetwork[]; total: number }> {
+    const offset = (page - 1) * pageSize;
+
+    let countSql = 'SELECT COUNT(*) as count FROM affiliateNetworks WHERE 1=1';
+    let listSql = 'SELECT * FROM affiliateNetworks WHERE 1=1';
+    const params: unknown[] = [];
+    const countParams: unknown[] = [];
+
+    if (status) {
+      countSql += ' AND status = ?';
+      listSql += ' AND status = ?';
+      params.push(status);
+      countParams.push(status);
+    }
+
+    listSql += ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
+    params.push(pageSize, offset);
+
+    const [countResult, listResult] = await Promise.all([
+      this.db.prepare(countSql).bind(...countParams).first(),
+      this.db.prepare(listSql).bind(...params).all(),
+    ]);
+
+    return {
+      list: (listResult.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [],
+      total: (countResult?.count as number) || 0,
+    };
+  }
+
+  /**
    * 获取关联的 Offer 数量
    */
   async getOfferCount(networkId: string): Promise<number> {

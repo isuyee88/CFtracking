@@ -40,12 +40,7 @@ export class TrafficSourceService {
    * 获取 Traffic Source 列表
    */
   async getList(page = 1, pageSize = 20): Promise<{ list: TrafficSource[]; total: number }> {
-    const offset = (page - 1) * pageSize;
-    const [list, total] = await Promise.all([
-      this.repo.findAll(pageSize, offset),
-      this.repo.count(),
-    ]);
-    return { list, total };
+    return this.repo.findList(page, pageSize);
   }
 
   /**
@@ -69,7 +64,7 @@ export class TrafficSourceService {
   }
 
   /**
-   * 删除 Traffic Source
+   * 删除 Traffic Source（硬删除）
    */
   async delete(id: string): Promise<void> {
     const existing = await this.repo.findById(id);
@@ -77,7 +72,7 @@ export class TrafficSourceService {
       throw new NotFoundError('Traffic Source not found');
     }
 
-    await this.repo.update(id, { status: 'deleted' });
+    await this.repo.deleteById(id);
   }
 
   /**

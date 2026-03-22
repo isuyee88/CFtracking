@@ -149,10 +149,42 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
   }
 
   /**
-   * 按模板ID查询
+   * 按模板 ID 查询
    */
   async findByTemplate(templateId: string): Promise<TrafficSource[]> {
     return this.findBy('templateId', templateId);
+  }
+
+  /**
+   * 查询列表（支持分页和过滤）
+   */
+  async findList(page = 1, pageSize = 20, status?: string): Promise<{ list: TrafficSource[]; total: number }> {
+    const offset = (page - 1) * pageSize;
+
+    let countSql = 'SELECT COUNT(*) as count FROM trafficSources WHERE 1=1';
+    let listSql = 'SELECT * FROM trafficSources WHERE 1=1';
+    const params: unknown[] = [];
+    const countParams: unknown[] = [];
+
+    if (status) {
+      countSql += ' AND status = ?';
+      listSql += ' AND status = ?';
+      params.push(status);
+      countParams.push(status);
+    }
+
+    listSql += ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
+    params.push(pageSize, offset);
+
+    const [countResult, listResult] = await Promise.all([
+      this.db.prepare(countSql).bind(...countParams).first(),
+      this.db.prepare(listSql).bind(...params).all(),
+    ]);
+
+    return {
+      list: (listResult.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [],
+      total: (countResult?.count as number) || 0,
+    };
   }
 
   /**

@@ -177,11 +177,17 @@ export class ClickService {
 
       // 3. 获取活跃的 Flows
       const flows = await this.flowRepo.findByCampaignIdAndStatus(campaign.id, 'active');
-      console.log('Found flows:', flows.length);
+      console.log('[ClickService] Found flows:', flows.length, 'for campaign:', campaign.id);
       
       // 4. 执行 Flow Filters 选择合适的 Flow
       const selectedFlow = await this.selectFlow(flows, request);
-      console.log('Selected flow:', selectedFlow?.id || 'No flow selected');
+      console.log('[ClickService] Selected flow:', selectedFlow?.id || 'No flow selected');
+      console.log('[ClickService] Selected flow details:', selectedFlow ? {
+        id: selectedFlow.id,
+        name: selectedFlow.name,
+        actionType: selectedFlow.actionType,
+        filters: selectedFlow.filters?.length || 0
+      } : null);
 
       // 5. 准备 Action 执行
       let actionConfig: ActionConfig;

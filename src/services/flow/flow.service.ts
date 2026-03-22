@@ -79,7 +79,7 @@ export class FlowService {
   }
 
   /**
-   * 删除 Flow
+   * 删除 Flow（硬删除）
    */
   async delete(id: string): Promise<void> {
     const existing = await this.repo.findById(id);
@@ -87,7 +87,7 @@ export class FlowService {
       throw new NotFoundError('Flow not found');
     }
 
-    await this.repo.update(id, { status: 'deleted' });
+    await this.repo.deleteById(id);
   }
 
   /**

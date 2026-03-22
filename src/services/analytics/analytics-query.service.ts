@@ -415,7 +415,12 @@ export class AnalyticsQueryService {
     `;
 
     try {
+      console.log('[AnalyticsQueryService] Executing entity stats SQL:', sql);
+      console.log('[AnalyticsQueryService] Entity type:', entityType, 'Field:', config.field);
+      
       const result = await this.executeQuery(sql);
+      console.log('[AnalyticsQueryService] Entity stats result:', result);
+      
       const data = result.data || [];
 
       return data.map((row: any) => ({
@@ -429,7 +434,9 @@ export class AnalyticsQueryService {
       }));
     } catch (err) {
       console.error('[AnalyticsQueryService] Failed to get entity stats:', err);
-      throw err;
+      // 返回空数组而不是抛出错误，避免影响页面加载
+      return [];
+    }
     }
   }
 

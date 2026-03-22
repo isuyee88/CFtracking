@@ -81,7 +81,7 @@ export class LandingPageService {
   }
 
   /**
-   * 删除 Landing Page
+   * 删除 Landing Page（硬删除）
    */
   async delete(id: string): Promise<void> {
     const existing = await this.repo.findById(id);
@@ -89,7 +89,7 @@ export class LandingPageService {
       throw new NotFoundError('Landing Page not found');
     }
 
-    await this.repo.update(id, { status: 'deleted' });
+    await this.repo.deleteById(id);
   }
 
   /**

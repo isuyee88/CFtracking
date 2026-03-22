@@ -170,18 +170,18 @@ export class RuleRepository extends BaseRepository<Rule> {
     const params: unknown[] = [];
     const countParams: unknown[] = [];
 
-    if (type) {
-      countSql += ' AND type = ?';
-      listSql += ' AND type = ?';
-      params.push(type);
-      countParams.push(type);
-    }
-
     if (status) {
       countSql += ' AND status = ?';
       listSql += ' AND status = ?';
       params.push(status);
       countParams.push(status);
+    }
+
+    if (type) {
+      countSql += ' AND type = ?';
+      listSql += ' AND type = ?';
+      params.push(type);
+      countParams.push(type);
     }
 
     listSql += ' ORDER BY priority DESC, createdAt DESC LIMIT ? OFFSET ?';

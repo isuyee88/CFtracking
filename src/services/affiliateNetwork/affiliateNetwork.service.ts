@@ -40,12 +40,7 @@ export class AffiliateNetworkService {
    * 获取 Affiliate Network 列表
    */
   async getList(page = 1, pageSize = 20): Promise<{ list: AffiliateNetwork[]; total: number }> {
-    const offset = (page - 1) * pageSize;
-    const [list, total] = await Promise.all([
-      this.repo.findAll(pageSize, offset),
-      this.repo.count(),
-    ]);
-    return { list, total };
+    return this.repo.findList(page, pageSize);
   }
 
   /**
@@ -69,7 +64,7 @@ export class AffiliateNetworkService {
   }
 
   /**
-   * 删除 Affiliate Network
+   * 删除 Affiliate Network（硬删除）
    */
   async delete(id: string): Promise<void> {
     const existing = await this.repo.findById(id);
@@ -77,7 +72,7 @@ export class AffiliateNetworkService {
       throw new NotFoundError('Affiliate Network not found');
     }
 
-    await this.repo.update(id, { status: 'deleted' });
+    await this.repo.deleteById(id);
   }
 
   /**

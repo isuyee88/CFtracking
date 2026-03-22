@@ -72,7 +72,7 @@ export class CampaignService {
   }
 
   /**
-   * 删除 Campaign（软删除）
+   * 删除 Campaign（硬删除）
    */
   async delete(id: string): Promise<void> {
     const existing = await this.repo.findById(id);
@@ -80,7 +80,7 @@ export class CampaignService {
       throw new NotFoundError('Campaign not found');
     }
 
-    await this.repo.update(id, { status: 'deleted' });
+    await this.repo.deleteById(id);
   }
 
   /**

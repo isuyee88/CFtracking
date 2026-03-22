@@ -241,6 +241,62 @@ export async function deleteAffiliateNetwork(id: string | number) {
   return result.data;
 }
 
+// ==================== Flow API ====================
+
+export async function fetchFlows(campaignId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/flows/campaign/${campaignId}`);
+  const result = await handleResponse(response);
+  return result.data || [];
+}
+
+export async function createFlow(data: any) {
+  const response = await fetch(`${API_BASE_URL}/api/flows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function updateFlow(id: string | number, data: any) {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function deleteFlow(id: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${id}`, {
+    method: 'DELETE',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function addLandingPageToFlow(flowId: string, landingPageId: string, weight?: number) {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/landing-pages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ landingPageId, weight }),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function addOfferToFlow(flowId: string, offerId: string, weight?: number) {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/offers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ offerId, weight }),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
 // ==================== Landings API ====================
 
 export async function fetchLandings(withStats = true) {

@@ -50,7 +50,7 @@ import {
   LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer,
   LazyBarChart, LazyBar
 } from '../components/ChartWrapper';
-import { fetchCampaign, updateCampaign, fetchCampaignStats } from '../services/api';
+import { fetchCampaign, updateCampaign, fetchCampaignStats, fetchFlows, createFlow, updateFlow, deleteFlow } from '../services/api';
 import { FlowDesigner } from '../components/FlowDesigner';
 
 function cn(...inputs: ClassValue[]) {
@@ -273,6 +273,27 @@ export const CampaignDetail = () => {
     setIsEditModalOpen(false);
     setEditedCampaign(null);
     setActiveEditSection('basic');
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      const trackingUrl = campaign.url;
+      await navigator.clipboard.writeText(trackingUrl);
+      alert('Tracking URL copied to clipboard!');
+    } catch (err) {
+      console.error('Failed to copy URL:', err);
+      alert('Failed to copy URL to clipboard');
+    }
+  };
+
+  const handleCopyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(campaign.url);
+      alert('Tracking URL copied to clipboard!');
+    } catch (err) {
+      console.error('Failed to copy URL:', err);
+      alert('Failed to copy URL to clipboard');
+    }
   };
 
   const handleInputChange = (field: keyof Campaign, value: any) => {
@@ -546,7 +567,10 @@ eval(atob('${btoa(script)}'));
           </div>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
+          <button 
+            onClick={handleCopyLink}
+            className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+          >
             <Copy size={16} />
             Copy Link
           </button>
@@ -581,7 +605,10 @@ eval(atob('${btoa(script)}'));
           <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Tracking URL</span>
           <p className="text-sm font-mono text-primary truncate">{campaign.url}</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-3 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
+        <button 
+          onClick={handleCopyUrl}
+          className="flex items-center gap-2 px-4 py-3 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+        >
           <Copy size={16} />
           Copy
         </button>
@@ -751,9 +778,43 @@ eval(atob('${btoa(script)}'));
       {activeTab === 'flow' && (
         <FlowDesigner
           campaignId={id || ''}
-          onSave={(flows, connections) => {
-            console.log('Saving flow:', flows, connections);
-            // TODO: Save flow configuration to backend
+          onSave={async (flows, connections) => {
+            try {
+              // Fetch existing flows
+              const existingFlows = await fetchFlows(id || '');
+              
+              // Create or update flows
+              for (const flow of flows) {
+                const existingFlow = existingFlows.find((f: any) => f.name === flow.name);
+                const flowData = {
+                  campaignId: id,
+                  name: flow.name,
+                  type: 'regular',
+                  weight: flow.weight,
+                  status: 'active' as const,
+                  actionType: flow.type === 'landing' ? 'show_landing' : 'show_offer',
+                };
+                
+                if (existingFlow) {
+                  await updateFlow(existingFlow.id, flowData);
+                } else {
+                  await createFlow(flowData);
+                }
+              }
+              
+              // Delete removed flows
+              const flowNames = flows.map(f => f.name);
+              const flowsToDelete = existingFlows.filter((f: any) => !flowNames.includes(f.name));
+              for (const flowToDelete of flowsToDelete) {
+                await deleteFlow(flowToDelete.id);
+              }
+              
+              alert('Flow saved successfully!');
+              setActiveTab('overview');
+            } catch (err) {
+              console.error('Failed to save flow:', err);
+              alert('Failed to save flow configuration');
+            }
           }}
           onCancel={() => setActiveTab('overview')}
         />
