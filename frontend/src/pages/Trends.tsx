@@ -6,11 +6,12 @@
  * 前后端交互: 调用 /api/trends/report 接口
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar 
-} from 'recharts';
+  ChartWrapper,
+  LazyLineChart, LazyLine, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyLegend, LazyResponsiveContainer, 
+  LazyAreaChart, LazyArea, LazyPieChart, LazyPie, LazyCell, LazyBarChart, LazyBar 
+} from '../components/ChartWrapper';
 import { Calendar, TrendingUp, TrendingDown, Minus, Filter, Download, RefreshCw, ChevronDown, AlertCircle } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -94,26 +95,30 @@ const PieChartCard = ({ title, data, dataKey, nameKey }: {
   <div className="bg-surface p-6 rounded-lg border border-border-default">
     <h3 className="text-lg font-semibold text-fg-default mb-4">{title}</h3>
     {data && data.length > 0 ? (
-      <ResponsiveContainer width="100%" height={250}>
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%"
-            cy="50%"
-            labelLine={false}
-            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-            outerRadius={80}
-            fill="#8884d8"
-            dataKey={dataKey}
-            nameKey={nameKey}
-          >
-            {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip />
-        </PieChart>
-      </ResponsiveContainer>
+      <ChartWrapper height={250}>
+        <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+          <LazyResponsiveContainer width="100%" height="100%">
+            <LazyPieChart>
+              <LazyPie
+                data={data}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey={dataKey}
+                nameKey={nameKey}
+              >
+                {data.map((entry, index) => (
+                  <LazyCell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </LazyPie>
+              <LazyTooltip />
+            </LazyPieChart>
+          </LazyResponsiveContainer>
+        </Suspense>
+      </ChartWrapper>
     ) : (
       <div className="h-[250px] flex items-center justify-center text-fg-muted">
         No data available
@@ -130,15 +135,19 @@ const BarChartCard = ({ title, data, dataKey }: {
   <div className="bg-surface p-6 rounded-lg border border-border-default">
     <h3 className="text-lg font-semibold text-fg-default mb-4">{title}</h3>
     {data && data.length > 0 ? (
-      <ResponsiveContainer width="100%" height={250}>
-        <BarChart data={data} layout="vertical">
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis type="number" tick={{ fontSize: 12 }} />
-          <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} />
-          <Tooltip />
-          <Bar dataKey={dataKey} fill="#6366f1" radius={[0, 4, 4, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+      <ChartWrapper height={250}>
+        <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+          <LazyResponsiveContainer width="100%" height="100%">
+            <LazyBarChart data={data} layout="vertical">
+              <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <LazyXAxis type="number" tick={{ fontSize: 12 }} />
+              <LazyYAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} />
+              <LazyTooltip />
+              <LazyBar dataKey={dataKey} fill="#6366f1" radius={[0, 4, 4, 0]} />
+            </LazyBarChart>
+          </LazyResponsiveContainer>
+        </Suspense>
+      </ChartWrapper>
     ) : (
       <div className="h-[250px] flex items-center justify-center text-fg-muted">
         No data available
@@ -429,27 +438,31 @@ export const Trends = () => {
         <div className="bg-surface p-6 rounded-lg border border-border-default">
           <h3 className="text-lg font-semibold text-fg-default mb-4">Clicks & Conversions</h3>
           {report.data && report.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={report.data}>
-                <defs>
-                  <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorConversions" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
-                <Area type="monotone" dataKey="clicks" stroke="#6366f1" fillOpacity={1} fill="url(#colorClicks)" />
-                <Area type="monotone" dataKey="conversions" stroke="#22c55e" fillOpacity={1} fill="url(#colorConversions)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <ChartWrapper height={300}>
+              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyAreaChart data={report.data}>
+                    <defs>
+                      <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorConversions" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
+                    <LazyYAxis tick={{ fontSize: 12 }} />
+                    <LazyTooltip />
+                    <LazyLegend />
+                    <LazyArea type="monotone" dataKey="clicks" stroke="#6366f1" fillOpacity={1} fill="url(#colorClicks)" />
+                    <LazyArea type="monotone" dataKey="conversions" stroke="#22c55e" fillOpacity={1} fill="url(#colorConversions)" />
+                  </LazyAreaChart>
+                </LazyResponsiveContainer>
+              </Suspense>
+            </ChartWrapper>
           ) : (
             <div className="h-[300px] flex items-center justify-center text-fg-muted">
               No trend data available. Select a campaign to view trends.
@@ -461,27 +474,31 @@ export const Trends = () => {
         <div className="bg-surface p-6 rounded-lg border border-border-default">
           <h3 className="text-lg font-semibold text-fg-default mb-4">Revenue & Cost</h3>
           {report.data && report.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={report.data}>
-                <defs>
-                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
-                <Legend />
-                <Area type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" />
-                <Area type="monotone" dataKey="cost" stroke="#ef4444" fillOpacity={1} fill="url(#colorCost)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <ChartWrapper height={300}>
+              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyAreaChart data={report.data}>
+                    <defs>
+                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
+                    <LazyYAxis tick={{ fontSize: 12 }} />
+                    <LazyTooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
+                    <LazyLegend />
+                    <LazyArea type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" />
+                    <LazyArea type="monotone" dataKey="cost" stroke="#ef4444" fillOpacity={1} fill="url(#colorCost)" />
+                  </LazyAreaChart>
+                </LazyResponsiveContainer>
+              </Suspense>
+            </ChartWrapper>
           ) : (
             <div className="h-[300px] flex items-center justify-center text-fg-muted">
               No trend data available. Select a campaign to view trends.
@@ -493,16 +510,20 @@ export const Trends = () => {
         <div className="bg-surface p-6 rounded-lg border border-border-default">
           <h3 className="text-lg font-semibold text-fg-default mb-4">ROI Trend</h3>
           {report.data && report.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={report.data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
-                <Legend />
-                <Line type="monotone" dataKey="roi" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <ChartWrapper height={300}>
+              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyLineChart data={report.data}>
+                    <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
+                    <LazyYAxis tick={{ fontSize: 12 }} />
+                    <LazyTooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
+                    <LazyLegend />
+                    <LazyLine type="monotone" dataKey="roi" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                  </LazyLineChart>
+                </LazyResponsiveContainer>
+              </Suspense>
+            </ChartWrapper>
           ) : (
             <div className="h-[300px] flex items-center justify-center text-fg-muted">
               No trend data available
@@ -514,17 +535,21 @@ export const Trends = () => {
         <div className="bg-surface p-6 rounded-lg border border-border-default">
           <h3 className="text-lg font-semibold text-fg-default mb-4">EPC & CPA</h3>
           {report.data && report.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={report.data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
-                <Legend />
-                <Line type="monotone" dataKey="epc" stroke="#06b6d4" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="cpa" stroke="#f59e0b" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <ChartWrapper height={300}>
+              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyLineChart data={report.data}>
+                    <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
+                    <LazyYAxis tick={{ fontSize: 12 }} />
+                    <LazyTooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
+                    <LazyLegend />
+                    <LazyLine type="monotone" dataKey="epc" stroke="#06b6d4" strokeWidth={2} dot={false} />
+                    <LazyLine type="monotone" dataKey="cpa" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                  </LazyLineChart>
+                </LazyResponsiveContainer>
+              </Suspense>
+            </ChartWrapper>
           ) : (
             <div className="h-[300px] flex items-center justify-center text-fg-muted">
               No trend data available

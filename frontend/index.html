@@ -21,24 +21,40 @@
         0% { background-position: -200% 0; }
         100% { background-position: 200% 0; }
       }
-      /* 初始骨架屏样式 */
+      /* 初始骨架屏样式 - 匹配实际布局减少 CLS */
       .skeleton-container {
-        padding: 20px;
+        padding: 24px;
         background: #fafafa;
         min-height: 100vh;
         font-family: var(--font-sans);
+        box-sizing: border-box;
       }
+      /* 匹配 Dashboard 的 grid-cols-2 md:grid-cols-4 lg:grid-cols-7 */
       .skeleton-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 16px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
         margin-bottom: 24px;
+      }
+      @media (min-width: 768px) {
+        .skeleton-grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+      @media (min-width: 1024px) {
+        .skeleton-grid {
+          grid-template-columns: repeat(7, 1fr);
+        }
       }
       .skeleton-card {
         background: #fff;
-        border-radius: 8px;
+        border-radius: 12px;
         padding: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        min-height: 100px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
       }
       .skeleton-line {
         background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
@@ -48,10 +64,28 @@
       }
       .skeleton-box {
         background: #fff;
-        border-radius: 8px;
+        border-radius: 12px;
         padding: 20px;
         margin-bottom: 24px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      }
+      /* 图表区域固定高度 */
+      .skeleton-chart {
+        height: 300px;
+        background: linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+        border-radius: 8px;
+        margin-top: 16px;
+      }
+      /* 表格区域固定高度 */
+      .skeleton-table {
+        height: 200px;
+        background: linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+        border-radius: 8px;
+        margin-top: 16px;
       }
     </style>
     <!-- 异步加载字体 - 不阻塞渲染 -->
@@ -59,24 +93,28 @@
     <link rel="preload" href="https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSvfedN4.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
-    <!-- 内联骨架屏 - 在JS加载前显示 -->
+    <!-- 内联骨架屏 - 在JS加载前显示，匹配实际布局 -->
     <div id="root">
       <div class="skeleton-container">
+        <!-- 7 个指标卡片 -->
         <div class="skeleton-grid">
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:60%;margin-bottom:12px"></div><div class="skeleton-line" style="height:24px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
         </div>
+        <!-- 图表区域 -->
         <div class="skeleton-box">
-          <div class="skeleton-line" style="height:16px;width:150px;margin-bottom:20px"></div>
-          <div class="skeleton-line" style="height:200px;background:linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px"></div>
+          <div class="skeleton-line" style="height:16px;width:180px"></div>
+          <div class="skeleton-chart"></div>
         </div>
+        <!-- 表格区域 -->
         <div class="skeleton-box">
-          <div class="skeleton-line" style="height:16px;width:150px;margin-bottom:16px"></div>
+          <div class="skeleton-line" style="height:16px;width:120px;margin-bottom:16px"></div>
+          <div class="skeleton-table"></div>
         </div>
       </div>
     </div>

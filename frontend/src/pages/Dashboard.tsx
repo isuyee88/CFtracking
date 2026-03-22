@@ -25,16 +25,11 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-// 延迟加载 recharts - 减少初始 Script Evaluation 时间
-const AreaChart = lazy(() => import('recharts').then(m => ({ default: m.AreaChart })));
-const Area = lazy(() => import('recharts').then(m => ({ default: m.Area })));
-const XAxis = lazy(() => import('recharts').then(m => ({ default: m.XAxis })));
-const YAxis = lazy(() => import('recharts').then(m => ({ default: m.YAxis })));
-const CartesianGrid = lazy(() => import('recharts').then(m => ({ default: m.CartesianGrid })));
-const Tooltip = lazy(() => import('recharts').then(m => ({ default: m.Tooltip })));
-const ResponsiveContainer = lazy(() => import('recharts').then(m => ({ default: m.ResponsiveContainer })));
+import { 
+  ChartWrapper,
+  LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer
+} from '../components/ChartWrapper';
 import { useDashboardURLState } from '../hooks/useURLState';
-// 懒加载 DateRangePicker - 避免初始加载 antd
 const QuickDateRangePicker = lazy(() => import('@/components/DateRangePicker').then(m => ({ default: m.QuickDateRangePicker })));
 type DateRangeValue = { interval: string; from?: string; to?: string };
 import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
@@ -1100,10 +1095,10 @@ export const Dashboard = () => {
               }).filter(Boolean)}
             </div>
           </div>
-          <div className="h-[300px]">
+          <ChartWrapper height={300}>
             <Suspense fallback={<div className="h-full flex items-center justify-center text-on-surface-variant">Loading chart...</div>}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
+              <LazyResponsiveContainer width="100%" height="100%">
+                <LazyAreaChart data={chartData}>
                 <defs>
                   {config.metrics.slice(0, 7).map((metric, idx) => {
                     const lightColors = [
@@ -1131,23 +1126,23 @@ export const Dashboard = () => {
                     );
                   })}
                 </defs>
-                <CartesianGrid 
+                <LazyCartesianGrid 
                   strokeDasharray="3 3" 
                   vertical={false} 
                   stroke={isDarkMode ? 'rgba(66, 71, 84, 0.3)' : 'rgba(196, 198, 205, 0.3)'} 
                 />
-                <XAxis 
+                <LazyXAxis 
                   dataKey="date"
                   axisLine={false} 
                   tickLine={false} 
                   tick={{ fontSize: 10, fill: isDarkMode ? '#c2c6d6' : '#44474c' }} 
                 />
-                <YAxis 
+                <LazyYAxis 
                   axisLine={false} 
                   tickLine={false} 
                   tick={{ fontSize: 10, fill: isDarkMode ? '#c2c6d6' : '#44474c' }} 
                 />
-                <Tooltip 
+                <LazyTooltip 
                   contentStyle={{ 
                     backgroundColor: isDarkMode ? 'rgba(40, 42, 44, 0.95)' : 'rgba(255, 255, 255, 0.95)',
                     border: 'none',
@@ -1169,10 +1164,9 @@ export const Dashboard = () => {
                     '#7dd3fc', '#fbbf24', '#a78bfa'
                   ];
                   const colors = isDarkMode ? darkColors : lightColors;
-                  // 使用映射获取正确的数据字段名称
                   const chartDataKey = CHART_DATA_KEY_MAPPING[metric] || metric;
                   return (
-                    <Area 
+                    <LazyArea 
                       key={metric}
                       type="monotone" 
                       dataKey={chartDataKey}
@@ -1182,10 +1176,10 @@ export const Dashboard = () => {
                     />
                   );
                 })}
-              </AreaChart>
-              </ResponsiveContainer>
+              </LazyAreaChart>
+              </LazyResponsiveContainer>
             </Suspense>
-          </div>
+          </ChartWrapper>
         </div>
         
         {/* Entity Tables - 新样式 */}

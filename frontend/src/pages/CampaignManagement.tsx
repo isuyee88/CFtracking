@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { fetchCampaigns, createCampaign, fetchEntityStats } from '../services/api';
+import { fetchCampaigns, createCampaign, updateCampaign, deleteCampaign, fetchEntityStats } from '../services/api';
 import { CampaignForm } from '../components/CampaignForm';
 import { ExportButton } from '../components/ExportButton';
 import { formatCampaignForExport } from '../utils/export';
@@ -239,8 +239,38 @@ export const CampaignManagement = () => {
     setSelectedItems(newSelected);
   };
   
-  const handleBulkAction = (action: 'activate' | 'pause' | 'delete') => {
-    console.log(`Bulk ${action} for items:`, Array.from(selectedItems));
+  const handleBulkAction = async (action: 'activate' | 'pause' | 'delete') => {
+    const ids = Array.from(selectedItems);
+    
+    if (ids.length === 0) {
+      toast.warning('No Selection', 'Please select at least one campaign.');
+      return;
+    }
+
+    if (action === 'delete') {
+      if (!confirm(`Are you sure you want to delete ${ids.length} campaigns?`)) return;
+    }
+
+    try {
+      if (action === 'delete') {
+        await Promise.all(ids.map(id => deleteCampaign(id)));
+        setCampaigns(prev => prev.filter(c => !ids.includes(c.id)));
+        toast.success('Campaigns Deleted', `${ids.length} campaigns have been deleted.`);
+      } else {
+        const newStatus = action === 'activate' ? 'active' : 'paused';
+        await Promise.all(ids.map(id => updateCampaign(id, { status: newStatus })));
+        setCampaigns(prev => 
+          prev.map(c => 
+            ids.includes(c.id) ? { ...c, status: action === 'activate' ? 'Active' : 'Paused' } : c
+          )
+        );
+        toast.success('Status Updated', `${ids.length} campaigns have been ${action === 'activate' ? 'activated' : 'paused'}.`);
+      }
+      setSelectedItems(new Set());
+    } catch (err) {
+      console.error('Bulk action failed:', err);
+      toast.error('Action Failed', err instanceof Error ? err.message : 'Failed to perform bulk action.');
+    }
   };
 
   // Group By options for campaigns

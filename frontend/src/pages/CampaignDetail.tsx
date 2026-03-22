@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, 
@@ -45,7 +45,11 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { 
+  ChartWrapper,
+  LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer,
+  LazyBarChart, LazyBar
+} from '../components/ChartWrapper';
 import { fetchCampaign, updateCampaign, fetchCampaignStats } from '../services/api';
 import { FlowDesigner } from '../components/FlowDesigner';
 
@@ -655,34 +659,36 @@ eval(atob('${btoa(script)}'));
           {/* Main Chart */}
           <div className="lg:col-span-2 bg-surface-container-lowest p-6 whisper-shadow">
             <h3 className="text-sm font-bold text-primary uppercase tracking-widest mb-6">Performance Overview</h3>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--secondary))" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--outline-variant))" />
-                  <XAxis dataKey="name" stroke="hsl(var(--on-surface-variant))" fontSize={12} />
-                  <YAxis stroke="hsl(var(--on-surface-variant))" fontSize={12} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--surface-container))',
-                      border: '1px solid hsl(var(--outline-variant))',
-                      borderRadius: '4px'
-                    }}
-                  />
-                  <Area type="monotone" dataKey="revenue" stroke="hsl(var(--secondary))" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="profit" stroke="hsl(var(--primary))" fillOpacity={1} fill="url(#colorProfit)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <ChartWrapper height={320}>
+              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyAreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--secondary))" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <LazyCartesianGrid strokeDasharray="3 3" stroke="hsl(var(--outline-variant))" />
+                    <LazyXAxis dataKey="name" stroke="hsl(var(--on-surface-variant))" fontSize={12} />
+                    <LazyYAxis stroke="hsl(var(--on-surface-variant))" fontSize={12} />
+                    <LazyTooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--surface-container))',
+                        border: '1px solid hsl(var(--outline-variant))',
+                        borderRadius: '4px'
+                      }}
+                    />
+                    <LazyArea type="monotone" dataKey="revenue" stroke="hsl(var(--secondary))" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
+                    <LazyArea type="monotone" dataKey="profit" stroke="hsl(var(--primary))" fillOpacity={1} fill="url(#colorProfit)" strokeWidth={2} />
+                  </LazyAreaChart>
+                </LazyResponsiveContainer>
+              </Suspense>
+            </ChartWrapper>
           </div>
 
           {/* Side Panel */}

@@ -6,7 +6,7 @@
  * 前后端交互: 调用 /api/analytics/entity-stats 和 /api/trends/report 接口
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   BarChart3, Filter, Calendar, Download, ChevronDown, ChevronRight,
@@ -16,9 +16,10 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell
-} from 'recharts';
+  ChartWrapper,
+  LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer,
+  LazyBarChart, LazyBar, LazyPieChart, LazyPie, LazyCell
+} from '../components/ChartWrapper';
 import { 
   fetchEntityStats, fetchTrendsReport, fetchTrafficSources, fetchCampaigns,
   type TrendsReport
@@ -517,29 +518,31 @@ export const Reports = () => {
         <div className="lg:col-span-2 bg-surface-container-lowest p-6 whisper-shadow">
           <h3 className="text-sm font-bold text-primary mb-6">Trend Analysis</h3>
           {chartData.length > 0 ? (
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="date" tick={{fontSize: 10}} />
-                  <YAxis yAxisId="left" tick={{fontSize: 10}} />
-                  <YAxis yAxisId="right" orientation="right" tick={{fontSize: 10}} />
-                  <Tooltip />
-                  <Area yAxisId="left" type="monotone" dataKey="clicks" stroke="#4f46e5" fillOpacity={1} fill="url(#colorClicks)" />
-                  <Area yAxisId="right" type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <ChartWrapper height={300}>
+              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyAreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <LazyXAxis dataKey="date" tick={{fontSize: 10}} />
+                    <LazyYAxis yAxisId="left" tick={{fontSize: 10}} />
+                    <LazyYAxis yAxisId="right" orientation="right" tick={{fontSize: 10}} />
+                    <LazyTooltip />
+                    <LazyArea yAxisId="left" type="monotone" dataKey="clicks" stroke="#4f46e5" fillOpacity={1} fill="url(#colorClicks)" />
+                    <LazyArea yAxisId="right" type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" />
+                  </LazyAreaChart>
+                </LazyResponsiveContainer>
+              </Suspense>
+            </ChartWrapper>
           ) : (
             <div className="h-[300px] flex items-center justify-center text-fg-muted">
               No trend data available. Select a campaign to view trends.
@@ -552,26 +555,28 @@ export const Reports = () => {
           <h3 className="text-sm font-bold text-primary mb-6">Geo Distribution</h3>
           {geoData.length > 0 ? (
             <>
-              <div className="h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={geoData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={70}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {geoData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+              <ChartWrapper height={200}>
+                <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                  <LazyResponsiveContainer width="100%" height="100%">
+                    <LazyPieChart>
+                      <LazyPie
+                        data={geoData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={70}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {geoData.map((entry, index) => (
+                          <LazyCell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </LazyPie>
+                      <LazyTooltip />
+                    </LazyPieChart>
+                  </LazyResponsiveContainer>
+                </Suspense>
+              </ChartWrapper>
               <div className="mt-4 space-y-2">
                 {geoData.map((geo) => (
                   <div key={geo.name} className="flex items-center justify-between text-xs">
