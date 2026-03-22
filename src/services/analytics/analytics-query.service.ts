@@ -383,14 +383,14 @@ export class AnalyticsQueryService {
 
     // 映射实体类型到 blob 字段
     const fieldMap: Record<string, { field: string; label: string }> = {
-      campaigns: { field: 'blob1', label: 'campaignId' },
+      campaigns: { field: 'index1', label: 'campaignId' },
       landings: { field: 'double3', label: 'landingPageId' },
       offers: { field: 'double4', label: 'offerId' },
-      sources: { field: 'blob13', label: 'utmSource' },
-      countries: { field: 'blob3', label: 'country' },
-      device_types: { field: 'blob5', label: 'device' },
-      browsers: { field: 'blob6', label: 'browser' },
-      os: { field: 'blob7', label: 'os' },
+      sources: { field: 'blob12', label: 'utmSource' },
+      countries: { field: 'blob2', label: 'country' },
+      device_types: { field: 'blob4', label: 'device' },
+      browsers: { field: 'blob5', label: 'browser' },
+      os: { field: 'blob6', label: 'os' },
     };
 
     const config = fieldMap[entityType] || { field: 'blob2', label: entityType };
@@ -473,7 +473,7 @@ export class AnalyticsQueryService {
     conditions.push(`timestamp >= NOW() - INTERVAL '${intervalDays}' DAY`);
 
     if (campaignId) {
-      conditions.push(`blob1 = '${campaignId}'`);
+      conditions.push(`index1 = '${campaignId}'`);
     }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;

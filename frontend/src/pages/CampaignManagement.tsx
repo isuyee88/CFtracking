@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Zap, 
@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { fetchCampaigns, createCampaign } from '../services/api';
+import { fetchCampaigns, createCampaign, fetchEntityStats } from '../services/api';
 import { CampaignForm } from '../components/CampaignForm';
 import { ExportButton } from '../components/ExportButton';
 import { formatCampaignForExport } from '../utils/export';
@@ -73,22 +73,31 @@ interface Campaign {
 }
 
 // Transform backend data to frontend format
-const transformCampaign = (backend: BackendCampaign): Campaign => ({
-  id: backend.displayId || backend.id,  // Use displayId as the primary ID
+interface CampaignStats {
+  name: string;
+  clicks: number;
+  conversions: number;
+  revenue: number;
+  spend: number;
+  unique_visitors: number;
+}
+
+const transformCampaign = (backend: BackendCampaign, stats?: CampaignStats): Campaign => ({
+  id: backend.displayId || backend.id,
   name: backend.name,
   status: backend.status === 'active' ? 'Active' : backend.status === 'paused' ? 'Paused' : 'Deleted',
   type: 'Redirect',
   group: backend.group || 'Default',
   flow: backend.flowRotation || 'Default',
   source: backend.trafficSource || 'Direct',
-  clicks: 0,
-  conversions: 0,
-  revenue: '$0.00',
-  profit: '$0.00',
-  roi: '0%',
-  epc: '$0.00',
-  cpc: '$0.00',
-  cr: '0%'
+  clicks: stats?.clicks || 0,
+  conversions: stats?.conversions || 0,
+  revenue: `$${(stats?.revenue || 0).toFixed(2)}`,
+  profit: `$${((stats?.revenue || 0) - (stats?.spend || 0)).toFixed(2)}`,
+  roi: stats?.spend ? `${((((stats?.revenue || 0) - stats.spend) / stats.spend) * 100).toFixed(1)}%` : '0%',
+  epc: stats?.clicks ? `$${((stats?.revenue || 0) / stats.clicks).toFixed(2)}` : '$0.00',
+  cpc: stats?.clicks ? `$${((stats?.spend || 0) / stats.clicks).toFixed(2)}` : '$0.00',
+  cr: stats?.clicks ? `${(((stats?.conversions || 0) / stats.clicks) * 100).toFixed(1)}%` : '0%'
 });
 
 export const CampaignManagement = () => {
@@ -118,31 +127,65 @@ export const CampaignManagement = () => {
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
-  // Group By state
   const [groupByStates, setGroupByStates] = useState<GroupByState[]>([]);
 
-  // Fetch campaigns from API
-  useEffect(() => {
-    const loadCampaigns = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchCampaigns();
-        // fetchCampaigns returns array directly, not response object
-        if (Array.isArray(data)) {
-          const transformedCampaigns = data.map((item: BackendCampaign) => transformCampaign(item));
-          setCampaigns(transformedCampaigns);
-        } else {
-          setError('Failed to load campaigns');
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load campaigns');
-      } finally {
-        setLoading(false);
-      }
-    };
+  const getRangeFromDates = (from: string, to: string): string => {
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const diffDays = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      const isToday = fromDate.toDateString() === today.toDateString();
+      return isToday ? 'today' : 'yesterday';
+    } else if (diffDays === 6) {
+      return '7days';
+    } else if (diffDays === 29) {
+      return '30days';
+    }
+    return 'custom';
+  };
 
-    loadCampaigns();
-  }, []);
+  const loadCampaignsWithStats = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const [campaignsData, statsData] = await Promise.all([
+        fetchCampaigns(),
+        fetchEntityStats('campaigns', getRangeFromDates(dateRange.from, dateRange.to))
+      ]);
+      
+      if (Array.isArray(campaignsData)) {
+        const statsMap = new Map<string, CampaignStats>();
+        if (Array.isArray(statsData)) {
+          statsData.forEach((stat: any) => {
+            if (stat.name) {
+              statsMap.set(stat.name, stat);
+            }
+          });
+        }
+        
+        const transformedCampaigns = campaignsData.map((item: BackendCampaign) => {
+          const campaignStats = statsMap.get(item.name) || statsMap.get(item.displayId) || statsMap.get(item.id);
+          return transformCampaign(item, campaignStats);
+        });
+        setCampaigns(transformedCampaigns);
+      } else {
+        setError('Failed to load campaigns');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load campaigns');
+    } finally {
+      setLoading(false);
+    }
+  }, [dateRange.from, dateRange.to]);
+
+  useEffect(() => {
+    loadCampaignsWithStats();
+  }, [loadCampaignsWithStats]);
 
   const handleCampaignClick = (id: string) => {
     navigate(`/campaigns/${id}`);
