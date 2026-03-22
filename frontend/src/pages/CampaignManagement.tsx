@@ -169,7 +169,7 @@ export const CampaignManagement = () => {
         }
         
         const transformedCampaigns = campaignsData.map((item: BackendCampaign) => {
-          const campaignStats = statsMap.get(item.name) || statsMap.get(item.displayId) || statsMap.get(item.id);
+          const campaignStats = statsMap.get(item.displayId) || statsMap.get(item.id) || statsMap.get(item.name);
           return transformCampaign(item, campaignStats);
         });
         setCampaigns(transformedCampaigns);
