@@ -190,11 +190,12 @@ export const Layout = () => {
 
   return (
     <div className="flex min-h-screen bg-canvas-inset selection:bg-accent-muted">
-      {/* Mobile Sidebar Overlay - CSS 动画替代 motion */}
-      {!isSidebarOpen && (
+      {/* Mobile Sidebar Overlay - 侧边栏打开时显示遮罩 */}
+      {isSidebarOpen && (
         <div 
-          onClick={() => setSidebarOpen(true)}
+          onClick={() => setSidebarOpen(false)}
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden animate-fade-in"
+          aria-hidden="true"
         />
       )}
 
