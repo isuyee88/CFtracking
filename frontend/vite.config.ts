@@ -16,19 +16,36 @@ export default defineConfig({
     host: true
   },
   build: {
+    // 禁用模块预加载 - 让浏览器按需加载
+    modulePreload: {
+      resolveDependencies: (url, deps) => {
+        // 只预加载核心依赖，不预加载 recharts/antd 等大型库
+        return deps.filter(dep => 
+          dep.includes('react-vendor') || 
+          dep.includes('router') ||
+          dep.includes('index')
+        );
+      }
+    },
     rollupOptions: {
       output: {
-        manualChunks: {
-          // React 核心
-          'react-vendor': ['react', 'react-dom'],
-          // React Router
-          'router': ['react-router-dom'],
-          // 图表库 - 较大的库单独分割
-          'recharts': ['recharts'],
-          // UI 组件库
-          'antd': ['antd'],
-          // 动画库
-          'motion': ['motion'],
+        manualChunks: (id) => {
+          // React 核心 - 初始加载需要
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
+            return 'react-vendor';
+          }
+          // React Router - 初始加载需要
+          if (id.includes('node_modules/react-router-dom/')) {
+            return 'router';
+          }
+          // antd - 延迟加载
+          if (id.includes('node_modules/antd/') || id.includes('node_modules/@ant-design/')) {
+            return 'antd';
+          }
+          // recharts - 延迟加载
+          if (id.includes('node_modules/recharts/')) {
+            return 'recharts';
+          }
         }
       }
     },
