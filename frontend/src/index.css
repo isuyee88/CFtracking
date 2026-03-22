@@ -1324,6 +1324,48 @@ textarea.form-input {
 }
 
 /* ============================================
+   Native Date/Time Input Dark Mode
+   原生日期时间输入框暗黑模式样式
+   ============================================ */
+
+.dark-mode input[type="date"],
+.dark-mode input[type="time"],
+.dark-mode input[type="datetime-local"] {
+  background: #1e2022 !important;
+  border: 1px solid #424754 !important;
+  color: #e2e2e5 !important;
+  border-radius: 6px !important;
+}
+
+.dark-mode input[type="date"]:hover,
+.dark-mode input[type="time"]:hover,
+.dark-mode input[type="datetime-local"]:hover {
+  border-color: #aec6ff !important;
+}
+
+.dark-mode input[type="date"]:focus,
+.dark-mode input[type="time"]:focus,
+.dark-mode input[type="datetime-local"]:focus {
+  border-color: #aec6ff !important;
+  box-shadow: 0 0 0 2px rgba(174, 198, 255, 0.1) !important;
+  outline: none !important;
+}
+
+/* Webkit Calendar Picker Icon */
+.dark-mode input[type="date"]::-webkit-calendar-picker-indicator,
+.dark-mode input[type="time"]::-webkit-calendar-picker-indicator,
+.dark-mode input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+
+.dark-mode input[type="date"]::-webkit-calendar-picker-indicator:hover,
+.dark-mode input[type="time"]::-webkit-calendar-picker-indicator:hover,
+.dark-mode input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+  filter: invert(0.9);
+}
+
+/* ============================================
    Status Badge Dynamic Colors - Stitch Design
    动态配色方案：Active绿色，Paused黄灰色
    ============================================ */
@@ -1839,4 +1881,223 @@ textarea.form-input {
 .dark-mode .modal-content-no-border {
   background-color: var(--color-surface-container-highest);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================
+   Mobile Responsive Optimizations - Stitch Design
+   移动端响应式优化
+   ============================================ */
+
+/* Mobile Bottom Navigation Bar */
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--color-surface-container);
+  border-top: none;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  padding: 0 8px;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.dark-mode .mobile-bottom-nav {
+  background: #1e2022;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  min-width: 56px;
+  min-height: 44px;
+  color: var(--color-fg-muted);
+  text-decoration: none;
+  gap: 4px;
+}
+
+.mobile-nav-item:active {
+  transform: scale(0.95);
+}
+
+.mobile-nav-item.active {
+  color: var(--color-accent-fg);
+  background: var(--color-accent-muted);
+}
+
+.dark-mode .mobile-nav-item.active {
+  background: rgba(174, 198, 255, 0.15);
+}
+
+.mobile-nav-item span {
+  font-size: 10px;
+  font-weight: 500;
+}
+
+/* Mobile Touch Target Optimization */
+@media (max-width: 768px) {
+  /* Increase touch targets */
+  button,
+  [role="button"],
+  a,
+  input[type="checkbox"],
+  input[type="radio"],
+  select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Smaller touch targets for icon-only buttons */
+  button.btn-icon,
+  button[class*="p-2"],
+  button[class*="p-1"] {
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  /* Mobile header adjustments */
+  header {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* Hide search on very small screens */
+  header .max-w-md {
+    display: none;
+  }
+
+  /* Mobile page content padding */
+  main > div[role="main"] {
+    padding: 12px !important;
+    padding-bottom: 80px !important;
+  }
+
+  /* Mobile card adjustments */
+  .card,
+  [class*="bg-surface-container"],
+  [class*="bg-surface"] {
+    border-radius: 12px;
+  }
+
+  /* Mobile table - horizontal scroll */
+  .table-container,
+  [class*="overflow-x-auto"] {
+    margin: 0 -12px;
+    padding: 0 12px;
+  }
+
+  /* Mobile stats cards */
+  .stats-grid,
+  [class*="grid-cols-"][class*="gap-"] {
+    gap: 8px !important;
+  }
+
+  /* Mobile modal adjustments */
+  .modal-content,
+  [role="dialog"] {
+    width: 95% !important;
+    max-width: 95% !important;
+    margin: 10px auto !important;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  /* Mobile form inputs */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Mobile tabs */
+  [class*="flex gap-"][class*="bg-surface"] {
+    flex-wrap: wrap;
+    gap: 4px !important;
+  }
+
+  /* Mobile action buttons */
+  .btn-create,
+  .btn-pause,
+  .btn-delete {
+    padding: 10px 16px !important;
+    font-size: 14px !important;
+  }
+
+  /* Show mobile bottom nav */
+  .mobile-bottom-nav {
+    display: flex;
+  }
+
+  /* Adjust main content for bottom nav */
+  main {
+    padding-bottom: 64px;
+  }
+
+  /* Mobile chart container */
+  .recharts-wrapper,
+  [class*="h-64"],
+  [class*="h-80"],
+  [class*="h-96"] {
+    min-height: 200px !important;
+  }
+}
+
+/* Tablet adjustments */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* Tablet sidebar - narrower */
+  aside {
+    width: 200px !important;
+  }
+
+  /* Tablet content padding */
+  main > div[role="main"] {
+    padding: 16px !important;
+  }
+}
+
+/* Small mobile devices */
+@media (max-width: 375px) {
+  /* Compact layout for small phones */
+  header {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  main > div[role="main"] {
+    padding: 8px !important;
+    padding-bottom: 72px !important;
+  }
+
+  /* Smaller bottom nav */
+  .mobile-bottom-nav {
+    height: 56px;
+  }
+
+  .mobile-nav-item {
+    padding: 6px 8px;
+    min-width: 48px;
+  }
+}
+
+/* Safe area for notched devices */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .mobile-bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+    height: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  @media (max-width: 768px) {
+    main {
+      padding-bottom: calc(64px + env(safe-area-inset-bottom));
+    }
+  }
 }

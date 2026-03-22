@@ -32,7 +32,8 @@ import {
   CheckCircle,
   Shield,
   ThumbsUp,
-  Target
+  Target,
+  Home
 } from 'lucide-react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -374,6 +375,30 @@ export const Layout = () => {
           <Outlet />
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
+        <Link to="/" className={cn("mobile-nav-item", (location.pathname === "/" || location.pathname === "") && "active")}>
+          <Home size={20} aria-hidden="true" />
+          <span>Home</span>
+        </Link>
+        <Link to="/campaigns" className={cn("mobile-nav-item", location.pathname === "/campaigns" && "active")}>
+          <Zap size={20} aria-hidden="true" />
+          <span>Campaigns</span>
+        </Link>
+        <Link to="/trends" className={cn("mobile-nav-item", location.pathname === "/trends" && "active")}>
+          <LineChart size={20} aria-hidden="true" />
+          <span>Trends</span>
+        </Link>
+        <Link to="/audit" className={cn("mobile-nav-item", location.pathname === "/audit" && "active")}>
+          <MousePointerClick size={20} aria-hidden="true" />
+          <span>Clicks</span>
+        </Link>
+        <Link to="/settings" className={cn("mobile-nav-item", location.pathname === "/settings" && "active")}>
+          <Settings size={20} aria-hidden="true" />
+          <span>Settings</span>
+        </Link>
+      </nav>
     </div>
   );
 };
