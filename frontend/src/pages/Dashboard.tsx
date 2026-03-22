@@ -35,7 +35,9 @@ const CartesianGrid = lazy(() => import('recharts').then(m => ({ default: m.Cart
 const Tooltip = lazy(() => import('recharts').then(m => ({ default: m.Tooltip })));
 const ResponsiveContainer = lazy(() => import('recharts').then(m => ({ default: m.ResponsiveContainer })));
 import { useDashboardURLState } from '../hooks/useURLState';
-import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
+// 懒加载 DateRangePicker - 避免初始加载 antd
+const QuickDateRangePicker = lazy(() => import('@/components/DateRangePicker').then(m => ({ default: m.QuickDateRangePicker })));
+type DateRangeValue = { interval: string; from?: string; to?: string };
 import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
 import { BrowserIcon, OSIcon } from '../components/BrandIcon';
 
@@ -975,22 +977,24 @@ export const Dashboard = () => {
             
             {/* 时间范围 - 使用新的日期选择器组件 */}
             <div className="w-[320px]">
-              <QuickDateRangePicker
-                value={state.range?.interval || 'today'}
-                onChange={(preset, range) => {
-                  if (range) {
-                    setState(prev => ({
-                      range: {
-                        interval: preset as any,
-                        from: range.startDate.split('T')[0],
-                        to: range.endDate.split('T')[0]
-                      }
-                    }));
-                  }
-                }}
-                showTime={false}
-                maxRangeDays={365}
-              />
+              <Suspense fallback={<div className="h-10 w-full bg-surface-container rounded animate-pulse" />}>
+                <QuickDateRangePicker
+                  value={state.range?.interval || 'today'}
+                  onChange={(preset, range) => {
+                    if (range) {
+                      setState(prev => ({
+                        range: {
+                          interval: preset as any,
+                          from: range.startDate.split('T')[0],
+                          to: range.endDate.split('T')[0]
+                        }
+                      }));
+                    }
+                  }}
+                  showTime={false}
+                  maxRangeDays={365}
+                />
+              </Suspense>
             </div>
             
             {/* 刷新按钮 */}
