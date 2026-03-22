@@ -6,7 +6,7 @@
  * 样式优化：统一主色调、玻璃拟态效果、自动昼夜模式
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   TrendingUp, 
@@ -22,18 +22,18 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer 
-} from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+
+// 延迟加载 recharts - 减少初始 Script Evaluation 时间
+const AreaChart = lazy(() => import('recharts').then(m => ({ default: m.AreaChart })));
+const Area = lazy(() => import('recharts').then(m => ({ default: m.Area })));
+const XAxis = lazy(() => import('recharts').then(m => ({ default: m.XAxis })));
+const YAxis = lazy(() => import('recharts').then(m => ({ default: m.YAxis })));
+const CartesianGrid = lazy(() => import('recharts').then(m => ({ default: m.CartesianGrid })));
+const Tooltip = lazy(() => import('recharts').then(m => ({ default: m.Tooltip })));
+const ResponsiveContainer = lazy(() => import('recharts').then(m => ({ default: m.ResponsiveContainer })));
 import { useDashboardURLState } from '../hooks/useURLState';
 import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
 import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
@@ -859,30 +859,38 @@ export const Dashboard = () => {
     }
   }, []);
 
-  // 初始加载 - 仅执行一次
+  // 初始加载标记 - 避免重复请求
+  const isInitialMount = useRef(true);
+  
+  // 数据加载 - 统一管理，避免重复请求
   useEffect(() => {
+    // 首次加载时执行
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      refreshStatsAndEntities();
+      refreshRecentClicks();
+      return;
+    }
+    
+    // 配置或时间范围变化时刷新 - 仅刷新统计数据
+    // Recent Clicks 有独立的定时刷新机制
     refreshStatsAndEntities();
-    refreshRecentClicks();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 配置或时间范围变化时刷新统计数据 - 使用稳定的依赖
-  useEffect(() => {
-    refreshStatsAndEntities();
-    refreshRecentClicks();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metricsKey, entitiesKey, timeRangeKey]);
 
-  // Recent Clicks 定时刷新 - 唯一需要定时刷新的模块
+  // Recent Clicks 定时刷新 - 使用 ref 避免依赖变化导致的重复执行
+  const refreshRecentClicksRef = useRef(refreshRecentClicks);
+  refreshRecentClicksRef.current = refreshRecentClicks;
+  
   useEffect(() => {
-    const recentClicksIntervalRef = setInterval(() => {
-      refreshRecentClicks();
+    const intervalId = setInterval(() => {
+      refreshRecentClicksRef.current();
     }, 30000);
 
     return () => {
-      clearInterval(recentClicksIntervalRef);
+      clearInterval(intervalId);
     };
-  }, [refreshRecentClicks]);
+  }, []);
 
   // 处理配置变化
   const handleConfigChange = (newConfig: any) => {
@@ -1094,8 +1102,9 @@ export const Dashboard = () => {
             </div>
           </div>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
+            <Suspense fallback={<div className="h-full flex items-center justify-center text-on-surface-variant">Loading chart...</div>}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
                 <defs>
                   {config.metrics.slice(0, 7).map((metric, idx) => {
                     const lightColors = [
@@ -1175,7 +1184,8 @@ export const Dashboard = () => {
                   );
                 })}
               </AreaChart>
-            </ResponsiveContainer>
+              </ResponsiveContainer>
+            </Suspense>
           </div>
         </div>
         
