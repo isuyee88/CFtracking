@@ -26,11 +26,13 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
+import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
 import { fetchLandings, createLanding, updateLanding, deleteLanding } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatLandingPageForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
+import { useToast } from '../components/Toast';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -98,6 +100,7 @@ const LANDING_FIELDS: FormField[] = [
 ];
 
 export const Landings = () => {
+  const toast = useToast();
   const [landings, setLandings] = useState<LandingPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -216,7 +219,7 @@ export const Landings = () => {
       }
       setIsFormOpen(false);
     } catch (err) {
-      console.error('Failed to save landing page:', err);
+      toast.error('Failed to save landing page', err instanceof Error ? err.message : 'Unknown error');
       // For demo, add to local state
       if (formMode === 'create') {
         const newLanding: LandingPage = {
@@ -251,8 +254,9 @@ export const Landings = () => {
     try {
       await deleteLanding(id);
       setLandings(prev => prev.filter(lp => lp.id !== id));
+      toast.success('Landing page deleted successfully');
     } catch (err) {
-      console.error('Failed to delete landing page:', err);
+      toast.error('Failed to delete landing page', err instanceof Error ? err.message : 'Unknown error');
       setLandings(prev => prev.filter(lp => lp.id !== id));
     }
   };
@@ -296,8 +300,9 @@ export const Landings = () => {
         );
       }
       setSelectedItems(new Set());
+      toast.success('Bulk action completed successfully');
     } catch (err) {
-      console.error('Bulk action failed:', err);
+      toast.error('Bulk action failed', err instanceof Error ? err.message : 'Unknown error');
     }
   };
 
@@ -513,128 +518,151 @@ export const Landings = () => {
         </div>
       </div>
 
-      {/* Landing Pages Table */}
+      {/* Landing Pages Table - 使用虚拟滚动 */}
       <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-container-low">
-                <th className="px-4 py-4 w-10">
-                  <input 
-                    type="checkbox" 
-                    className="rounded border-outline-variant"
-                    checked={selectedItems.size === filteredLandings.length && filteredLandings.length > 0}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-  <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Landing Page</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Status</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Group</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-center">Campaigns</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Clicks</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Conv.</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">CR</th>
-                <th className="px-4 py-4 w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedLandings.map((landing) => (
-                <tr 
-                  key={landing.id} 
-                  className={cn(
-                    "border-t border-outline-variant/10 hover:bg-surface-container/50 transition-colors",
-                    selectedItems.has(landing.id) && "bg-surface-container/30"
-                  )}
-                >
-                  <td className="px-4 py-4">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-outline-variant"
-                      checked={selectedItems.has(landing.id)}
-                      onChange={() => handleSelectItem(landing.id)}
-                    />
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
-                        <Image size={20} className="text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-primary">{landing.name}</h3>
-                        <a 
-                          href={landing.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-xs text-secondary hover:underline flex items-center gap-1"
-                        >
-                          {landing.url}
-                          <ExternalLink size={12} />
-                        </a>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
-                      landing.status === 'active' ? "status-active" : "status-paused"
-                    )}>
-                      <div className={cn(
-                        "w-2 h-2 rounded-full",
-                        landing.status === 'active' ? "bg-green-500" : "bg-yellow-500"
-                      )} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">{landing.status}</span>
-                    </div>
-                  </td>
-<td className="px-4 py-4">
-                    <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm">
-                      {landing.group || 'Default'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className="text-sm font-medium text-on-surface">
-                      {landing.campaignCount !== undefined ? landing.campaignCount : '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-on-surface">{(landing.clicks || 0).toLocaleString()}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-on-surface">{(landing.conversions || 0).toLocaleString()}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-secondary">
-                      {typeof landing.cr === 'number' ? `${landing.cr}%` : landing.cr}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={() => handleEditLanding(landing)}
-                        className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                        title="Edit"
-                      >
-                        <Edit3 size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteLanding(landing.id)}
-                        className="p-2 text-on-surface-variant hover:text-error transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredLandings.length === 0 && (
-          <div className="p-8 text-center text-on-surface-variant">
-            <p>No landing pages found</p>
-          </div>
-        )}
+        <VirtualTableEnhanced
+          columns={[
+            {
+              key: 'select',
+              label: '',
+              width: '50px',
+              render: (_, row) => (
+                <input
+                  type="checkbox"
+                  className="rounded border-outline-variant"
+                  checked={selectedItems.has(row.id)}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    handleSelectItem(row.id);
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'name',
+              label: 'Landing Page',
+              width: '300px',
+              render: (_, row) => (
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
+                    <Image size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-primary">{row.name}</h3>
+                    <a 
+                      href={row.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-secondary hover:underline flex items-center gap-1"
+                    >
+                      {row.url}
+                      <ExternalLink size={12} />
+                    </a>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              width: '120px',
+              render: (_, row) => (
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
+                  row.status === 'active' ? "status-active" : "status-paused"
+                )}>
+                  <div className={cn(
+                    "w-2 h-2 rounded-full",
+                    row.status === 'active' ? "bg-green-500" : "bg-yellow-500"
+                  )} />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">{row.status}</span>
+                </div>
+              ),
+            },
+            {
+              key: 'group',
+              label: 'Group',
+              width: '150px',
+              render: (_, row) => (
+                <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm">
+                  {row.group || 'Default'}
+                </span>
+              ),
+            },
+            {
+              key: 'campaignCount',
+              label: 'Campaigns',
+              width: '100px',
+              align: 'center',
+              render: (value) => (
+                <span className="text-sm font-medium text-on-surface">
+                  {value !== undefined ? value : '-'}
+                </span>
+              ),
+            },
+            {
+              key: 'clicks',
+              label: 'Clicks',
+              width: '100px',
+              align: 'right',
+              render: (value) => (
+                <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
+              ),
+            },
+            {
+              key: 'conversions',
+              label: 'Conv.',
+              width: '80px',
+              align: 'right',
+              render: (value) => (
+                <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
+              ),
+            },
+            {
+              key: 'cr',
+              label: 'CR',
+              width: '80px',
+              align: 'right',
+              render: (value) => (
+                <span className="text-sm font-medium text-secondary">
+                  {typeof value === 'number' ? `${value}%` : value}
+                </span>
+              ),
+            },
+            {
+              key: 'actions',
+              label: '',
+              width: '100px',
+              render: (_, row) => (
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={() => handleEditLanding(row as LandingPage)}
+                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    title="Edit"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                  <button 
+                    onClick={() => handleDeleteLanding(row.id)}
+                    className="p-2 text-on-surface-variant hover:text-error transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+          data={paginatedLandings}
+          rowHeight={72}
+          height={400}
+          overscan={5}
+          selectable={false}
+          selectedRows={selectedItems}
+          onSelectionChange={setSelectedItems}
+          getRowId={(row) => row.id}
+          emptyMessage="No landing pages found"
+        />
 
         {/* Pagination */}
         {totalPages > 1 && (

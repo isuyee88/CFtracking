@@ -33,6 +33,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { TrafficSourceForm } from '../components/TrafficSourceForm';
+import { useToast } from '../components/Toast';
 import { fetchTrafficSources, createTrafficSource, updateTrafficSource, deleteTrafficSource } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatTrafficSourceForExport } from '../utils/export';
@@ -67,6 +68,7 @@ const getTemplateName = (templateId?: string): string => {
 };
 
 export const TrafficSources = () => {
+  const toast = useToast();
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -252,7 +254,7 @@ export const TrafficSources = () => {
       }
       setIsFormOpen(false);
     } catch (err) {
-      console.error('Failed to save traffic source:', err);
+      toast.error('Failed to save traffic source', err instanceof Error ? err.message : 'Unknown error');
       // For demo, add to local state with apiConfig preserved
       if (formMode === 'create') {
         const newSource: TrafficSource = {
@@ -294,8 +296,9 @@ export const TrafficSources = () => {
     try {
       await deleteTrafficSource(id);
       setTrafficSources(prev => prev.filter(s => s.id !== id));
+      toast.success('Traffic source deleted successfully');
     } catch (err) {
-      console.error('Failed to delete traffic source:', err);
+      toast.error('Failed to delete traffic source', err instanceof Error ? err.message : 'Unknown error');
       setTrafficSources(prev => prev.filter(s => s.id !== id));
     }
   };
@@ -339,8 +342,9 @@ export const TrafficSources = () => {
         );
       }
       setSelectedItems(new Set());
+      toast.success('Bulk action completed successfully');
     } catch (err) {
-      console.error('Bulk action failed:', err);
+      toast.error('Bulk action failed', err instanceof Error ? err.message : 'Unknown error');
     }
   };
 

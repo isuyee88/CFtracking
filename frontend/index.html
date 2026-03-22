@@ -5,7 +5,13 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="CF Tracking - Real-time tracking and analytics dashboard" />
+    <meta name="theme-color" content="#ffffff" />
     <title>CF Tracking</title>
+    
+    <!-- DNS Prefetch for external resources -->
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
+    
     <!-- Preconnect to Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -88,9 +94,6 @@
         margin-top: 16px;
       }
     </style>
-    <!-- 异步加载字体 - 不阻塞渲染 -->
-    <link rel="preload" href="https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSvfedN4.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <!-- 内联骨架屏 - 在JS加载前显示，匹配实际布局 -->
@@ -118,9 +121,15 @@
         </div>
       </div>
     </div>
-    <!-- 异步加载字体CSS - 使用 media="print" 技巧 -->
+    <!-- 异步加载字体 - 使用 media="print" 技巧 -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'" />
     <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
+    
+    <!-- 关键资源预加载提示 - 由 Vite 自动注入 -->
+    <!-- 页面预取 - 用户可能访问的下一个页面 -->
+    <link rel="prefetch" href="/src/pages/Dashboard.tsx" as="script" />
+    
+    <!-- 主入口脚本 -->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

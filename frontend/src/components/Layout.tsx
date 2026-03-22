@@ -38,6 +38,7 @@ import {
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { LazyImage } from './LazyImage';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -308,10 +309,12 @@ export const Layout = () => {
                 <p className="text-sm font-semibold text-fg-default group-hover:text-accent-fg transition-colors">User Name</p>
                 <p className="text-xs text-fg-subtle">Elite Partner</p>
               </div>
-              <img 
+              <LazyImage 
                 src="https://picsum.photos/seed/avatar/100/100" 
                 alt="User profile" 
                 className="w-8 h-8 rounded-md border border-border-default"
+                placeholderColor="#e0e0e0"
+                effect="fade"
                 referrerPolicy="no-referrer"
               />
             </button>

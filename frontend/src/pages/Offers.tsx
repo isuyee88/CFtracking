@@ -29,11 +29,13 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
+import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
 import { fetchOffers, createOffer, updateOffer, deleteOffer } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatOfferForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
+import { useToast } from '../components/Toast';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -131,6 +133,7 @@ const OFFER_FIELDS: FormField[] = [
 ];
 
 export const Offers = () => {
+  const toast = useToast();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -267,7 +270,7 @@ export const Offers = () => {
       }
       setIsFormOpen(false);
     } catch (err) {
-      console.error('Failed to save offer:', err);
+      toast.error('Failed to save offer', err instanceof Error ? err.message : 'Unknown error');
       // For demo, add to local state
       if (formMode === 'create') {
         const newOffer: Offer = {
@@ -308,8 +311,9 @@ export const Offers = () => {
     try {
       await deleteOffer(id);
       setOffers(prev => prev.filter(o => o.id !== id));
+      toast.success('Offer deleted successfully');
     } catch (err) {
-      console.error('Failed to delete offer:', err);
+      toast.error('Failed to delete offer', err instanceof Error ? err.message : 'Unknown error');
       setOffers(prev => prev.filter(o => o.id !== id));
     }
   };
@@ -353,8 +357,9 @@ export const Offers = () => {
         );
       }
       setSelectedItems(new Set());
+      toast.success('Bulk action completed successfully');
     } catch (err) {
-      console.error('Bulk action failed:', err);
+      toast.error('Bulk action failed', err instanceof Error ? err.message : 'Unknown error');
     }
   };
 
@@ -587,150 +592,187 @@ export const Offers = () => {
         </div>
       </div>
 
-      {/* Offers Table */}
+      {/* Offers Table - 使用虚拟滚动 */}
       <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-container-low">
-                <th className="px-4 py-4 w-10">
-                  <input 
-                    type="checkbox" 
-                    className="rounded border-outline-variant"
-                    checked={selectedItems.size === filteredOffers.length && filteredOffers.length > 0}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-<th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Offer</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Status</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Payout</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Network</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-center">Campaigns</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Clicks</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Conv.</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Revenue</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">EPC</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">CR</th>
-                <th className="px-4 py-4 w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedOffers.map((offer) => (
-                <tr 
-                  key={offer.id} 
-                  className={cn(
-                    "border-t border-outline-variant/10 hover:bg-surface-container/50 transition-colors",
-                    selectedItems.has(offer.id) && "bg-surface-container/30"
-                  )}
-                >
-                  <td className="px-4 py-4">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-outline-variant"
-                      checked={selectedItems.has(offer.id)}
-                      onChange={() => handleSelectItem(offer.id)}
-                    />
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
-                        <Gift size={20} className="text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-primary">{offer.name}</h3>
-                        <a 
-                          href={offer.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-xs text-secondary hover:underline flex items-center gap-1"
-                        >
-                          {offer.url.substring(0, 40)}...
-                          <ExternalLink size={12} />
-                        </a>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
-                      offer.status === 'active' ? "status-active" : offer.status === 'paused' ? "status-paused" : "status-deleted"
-                    )}>
-                      <div className={cn(
-                        "w-2 h-2 rounded-full",
-                        offer.status === 'active' ? "bg-green-500" : offer.status === 'paused' ? "bg-yellow-500" : "bg-red-500"
-                      )} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">{offer.status}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-secondary">${offer.payout.toFixed(2)}</span>
-                      <span className="text-[10px] text-on-surface-variant uppercase">{offer.payoutType}</span>
-                    </div>
-                  </td>
-<td className="px-4 py-4">
-                    <div className="flex flex-col">
-                      <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm w-fit">
-                        {offer.network || 'Default'}
-                      </span>
-                      <span className="text-[10px] text-on-surface-variant mt-1">{offer.group || 'Default'}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className="text-sm font-medium text-on-surface">
-                      {offer.campaignCount !== undefined ? offer.campaignCount : '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-on-surface">{(offer.clicks || 0).toLocaleString()}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-on-surface">{(offer.conversions || 0).toLocaleString()}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-secondary">
-                      ${typeof offer.revenue === 'number' ? offer.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : offer.revenue}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-primary">
-                      ${typeof offer.epc === 'number' ? offer.epc.toFixed(2) : offer.epc}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-primary">
-                      {typeof offer.cr === 'number' ? `${offer.cr}%` : offer.cr}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={() => handleEditOffer(offer)}
-                        className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                        title="Edit"
-                      >
-                        <Edit3 size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteOffer(offer.id)}
-                        className="p-2 text-on-surface-variant hover:text-error transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredOffers.length === 0 && (
-          <div className="p-8 text-center text-on-surface-variant">
-            <p>No offers found</p>
-          </div>
-        )}
+        <VirtualTableEnhanced
+          columns={[
+            {
+              key: 'select',
+              label: '',
+              width: '50px',
+              render: (_, row) => (
+                <input
+                  type="checkbox"
+                  className="rounded border-outline-variant"
+                  checked={selectedItems.has(row.id)}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    handleSelectItem(row.id);
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'name',
+              label: 'Offer',
+              width: '300px',
+              render: (_, row) => (
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
+                    <Gift size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-primary">{row.name}</h3>
+                    <a 
+                      href={row.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-secondary hover:underline flex items-center gap-1"
+                    >
+                      {row.url.substring(0, 40)}...
+                      <ExternalLink size={12} />
+                    </a>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              width: '120px',
+              render: (_, row) => (
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
+                  row.status === 'active' ? "status-active" : row.status === 'paused' ? "status-paused" : "status-deleted"
+                )}>
+                  <div className={cn(
+                    "w-2 h-2 rounded-full",
+                    row.status === 'active' ? "bg-green-500" : row.status === 'paused' ? "bg-yellow-500" : "bg-red-500"
+                  )} />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">{row.status}</span>
+                </div>
+              ),
+            },
+            {
+              key: 'payout',
+              label: 'Payout',
+              width: '120px',
+              render: (_, row) => (
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold text-secondary">${row.payout.toFixed(2)}</span>
+                  <span className="text-[10px] text-on-surface-variant uppercase">{row.payoutType}</span>
+                </div>
+              ),
+            },
+            {
+              key: 'network',
+              label: 'Network',
+              width: '200px',
+              render: (_, row) => (
+                <div className="flex flex-col">
+                  <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm w-fit">
+                    {row.network || 'Default'}
+                  </span>
+                  <span className="text-[10px] text-on-surface-variant mt-1">{row.group || 'Default'}</span>
+                </div>
+              ),
+            },
+            {
+              key: 'campaignCount',
+              label: 'Campaigns',
+              width: '100px',
+              align: 'center',
+              render: (value) => (
+                <span className="text-sm font-medium text-on-surface">
+                  {value !== undefined ? value : '-'}
+                </span>
+              ),
+            },
+            {
+              key: 'clicks',
+              label: 'Clicks',
+              width: '100px',
+              align: 'right',
+              render: (value) => (
+                <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
+              ),
+            },
+            {
+              key: 'conversions',
+              label: 'Conv.',
+              width: '80px',
+              align: 'right',
+              render: (value) => (
+                <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
+              ),
+            },
+            {
+              key: 'revenue',
+              label: 'Revenue',
+              width: '100px',
+              align: 'right',
+              render: (value) => (
+                <span className="text-sm font-medium text-secondary">
+                  ${typeof value === 'number' ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}
+                </span>
+              ),
+            },
+            {
+              key: 'epc',
+              label: 'EPC',
+              width: '80px',
+              align: 'right',
+              render: (value) => (
+                <span className="text-sm font-medium text-primary">
+                  ${typeof value === 'number' ? value.toFixed(2) : value}
+                </span>
+              ),
+            },
+            {
+              key: 'cr',
+              label: 'CR',
+              width: '80px',
+              align: 'right',
+              render: (value) => (
+                <span className="text-sm font-medium text-primary">
+                  {typeof value === 'number' ? `${value}%` : value}
+                </span>
+              ),
+            },
+            {
+              key: 'actions',
+              label: '',
+              width: '100px',
+              render: (_, row) => (
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={() => handleEditOffer(row as Offer)}
+                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    title="Edit"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                  <button 
+                    onClick={() => handleDeleteOffer(row.id)}
+                    className="p-2 text-on-surface-variant hover:text-error transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+          data={paginatedOffers}
+          rowHeight={72}
+          height={400}
+          overscan={5}
+          selectable={false}
+          selectedRows={selectedItems}
+          onSelectionChange={setSelectedItems}
+          getRowId={(row) => row.id}
+          emptyMessage="No offers found"
+        />
 
         {/* Pagination */}
         {totalPages > 1 && (

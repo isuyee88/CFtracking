@@ -171,7 +171,19 @@ export const Trends = () => {
   const [tempDateRange, setTempDateRange] = useState(dateRange);
   const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [activeChart, setActiveChart] = useState<'clicks' | 'revenue' | 'roi' | 'epc'>('clicks');
+  const [isMobile, setIsMobile] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Detect mobile viewport
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Load campaigns for filter
   useEffect(() => {
@@ -432,130 +444,168 @@ export const Trends = () => {
         <StatCard title="ROI" value={report.summary.avgRoi} prefix="%" />
       </div>
 
-      {/* Time Series Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Clicks & Conversions Chart */}
-        <div className="bg-surface p-6 rounded-lg border border-border-default">
-          <h3 className="text-lg font-semibold text-fg-default mb-4">Clicks & Conversions</h3>
-          {report.data && report.data.length > 0 ? (
-            <ChartWrapper height={300}>
-              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                <LazyResponsiveContainer width="100%" height="100%">
-                  <LazyAreaChart data={report.data}>
-                    <defs>
-                      <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorConversions" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <LazyYAxis tick={{ fontSize: 12 }} />
-                    <LazyTooltip />
-                    <LazyLegend />
-                    <LazyArea type="monotone" dataKey="clicks" stroke="#6366f1" fillOpacity={1} fill="url(#colorClicks)" />
-                    <LazyArea type="monotone" dataKey="conversions" stroke="#22c55e" fillOpacity={1} fill="url(#colorConversions)" />
-                  </LazyAreaChart>
-                </LazyResponsiveContainer>
-              </Suspense>
-            </ChartWrapper>
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-fg-muted">
-              No trend data available. Select a campaign to view trends.
-            </div>
-          )}
+      {/* Mobile Chart Tabs */}
+      {isMobile && (
+        <div className="mobile-chart-tabs">
+          <button
+            onClick={() => setActiveChart('clicks')}
+            className={cn("tab-btn", activeChart === 'clicks' && 'active')}
+          >
+            Clicks
+          </button>
+          <button
+            onClick={() => setActiveChart('revenue')}
+            className={cn("tab-btn", activeChart === 'revenue' && 'active')}
+          >
+            Revenue
+          </button>
+          <button
+            onClick={() => setActiveChart('roi')}
+            className={cn("tab-btn", activeChart === 'roi' && 'active')}
+          >
+            ROI
+          </button>
+          <button
+            onClick={() => setActiveChart('epc')}
+            className={cn("tab-btn", activeChart === 'epc' && 'active')}
+          >
+            EPC
+          </button>
         </div>
+      )}
+
+      {/* Time Series Charts */}
+      <div className={cn("grid gap-6", isMobile ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2")}>
+        {/* Clicks & Conversions Chart */}
+        {( !isMobile || activeChart === 'clicks') && (
+          <div className="bg-surface p-6 rounded-lg border border-border-default">
+            <h3 className="text-lg font-semibold text-fg-default mb-4">Clicks & Conversions</h3>
+            {report.data && report.data.length > 0 ? (
+              <ChartWrapper height={300}>
+                <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                  <LazyResponsiveContainer width="100%" height="100%">
+                    <LazyAreaChart data={report.data}>
+                      <defs>
+                        <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorConversions" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
+                      <LazyYAxis tick={{ fontSize: 12 }} />
+                      <LazyTooltip />
+                      <LazyLegend />
+                      <LazyArea type="monotone" dataKey="clicks" stroke="#6366f1" fillOpacity={1} fill="url(#colorClicks)" />
+                      <LazyArea type="monotone" dataKey="conversions" stroke="#22c55e" fillOpacity={1} fill="url(#colorConversions)" />
+                    </LazyAreaChart>
+                  </LazyResponsiveContainer>
+                </Suspense>
+              </ChartWrapper>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-fg-muted">
+                No trend data available. Select a campaign to view trends.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Revenue & Cost Chart */}
-        <div className="bg-surface p-6 rounded-lg border border-border-default">
-          <h3 className="text-lg font-semibold text-fg-default mb-4">Revenue & Cost</h3>
-          {report.data && report.data.length > 0 ? (
-            <ChartWrapper height={300}>
-              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                <LazyResponsiveContainer width="100%" height="100%">
-                  <LazyAreaChart data={report.data}>
-                    <defs>
-                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <LazyYAxis tick={{ fontSize: 12 }} />
-                    <LazyTooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
-                    <LazyLegend />
-                    <LazyArea type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" />
-                    <LazyArea type="monotone" dataKey="cost" stroke="#ef4444" fillOpacity={1} fill="url(#colorCost)" />
-                  </LazyAreaChart>
-                </LazyResponsiveContainer>
-              </Suspense>
-            </ChartWrapper>
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-fg-muted">
-              No trend data available. Select a campaign to view trends.
-            </div>
-          )}
-        </div>
+        {( !isMobile || activeChart === 'revenue') && (
+          <div className="bg-surface p-6 rounded-lg border border-border-default">
+            <h3 className="text-lg font-semibold text-fg-default mb-4">Revenue & Cost</h3>
+            {report.data && report.data.length > 0 ? (
+              <ChartWrapper height={300}>
+                <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                  <LazyResponsiveContainer width="100%" height="100%">
+                    <LazyAreaChart data={report.data}>
+                      <defs>
+                        <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
+                      <LazyYAxis tick={{ fontSize: 12 }} />
+                      <LazyTooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
+                      <LazyLegend />
+                      <LazyArea type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" />
+                      <LazyArea type="monotone" dataKey="cost" stroke="#ef4444" fillOpacity={1} fill="url(#colorCost)" />
+                    </LazyAreaChart>
+                  </LazyResponsiveContainer>
+                </Suspense>
+              </ChartWrapper>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-fg-muted">
+                No trend data available. Select a campaign to view trends.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ROI Chart */}
-        <div className="bg-surface p-6 rounded-lg border border-border-default">
-          <h3 className="text-lg font-semibold text-fg-default mb-4">ROI Trend</h3>
-          {report.data && report.data.length > 0 ? (
-            <ChartWrapper height={300}>
-              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                <LazyResponsiveContainer width="100%" height="100%">
-                  <LazyLineChart data={report.data}>
-                    <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <LazyYAxis tick={{ fontSize: 12 }} />
-                    <LazyTooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
-                    <LazyLegend />
-                    <LazyLine type="monotone" dataKey="roi" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                  </LazyLineChart>
-                </LazyResponsiveContainer>
-              </Suspense>
-            </ChartWrapper>
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-fg-muted">
-              No trend data available
-            </div>
-          )}
-        </div>
+        {( !isMobile || activeChart === 'roi') && (
+          <div className="bg-surface p-6 rounded-lg border border-border-default">
+            <h3 className="text-lg font-semibold text-fg-default mb-4">ROI Trend</h3>
+            {report.data && report.data.length > 0 ? (
+              <ChartWrapper height={300}>
+                <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                  <LazyResponsiveContainer width="100%" height="100%">
+                    <LazyLineChart data={report.data}>
+                      <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
+                      <LazyYAxis tick={{ fontSize: 12 }} />
+                      <LazyTooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
+                      <LazyLegend />
+                      <LazyLine type="monotone" dataKey="roi" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                    </LazyLineChart>
+                  </LazyResponsiveContainer>
+                </Suspense>
+              </ChartWrapper>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-fg-muted">
+                No trend data available
+              </div>
+            )}
+          </div>
+        )}
 
         {/* EPC & CPA Chart */}
-        <div className="bg-surface p-6 rounded-lg border border-border-default">
-          <h3 className="text-lg font-semibold text-fg-default mb-4">EPC & CPA</h3>
-          {report.data && report.data.length > 0 ? (
-            <ChartWrapper height={300}>
-              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                <LazyResponsiveContainer width="100%" height="100%">
-                  <LazyLineChart data={report.data}>
-                    <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <LazyYAxis tick={{ fontSize: 12 }} />
-                    <LazyTooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
-                    <LazyLegend />
-                    <LazyLine type="monotone" dataKey="epc" stroke="#06b6d4" strokeWidth={2} dot={false} />
-                    <LazyLine type="monotone" dataKey="cpa" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                  </LazyLineChart>
-                </LazyResponsiveContainer>
-              </Suspense>
-            </ChartWrapper>
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-fg-muted">
-              No trend data available
-            </div>
-          )}
-        </div>
+        {( !isMobile || activeChart === 'epc') && (
+          <div className="bg-surface p-6 rounded-lg border border-border-default">
+            <h3 className="text-lg font-semibold text-fg-default mb-4">EPC & CPA</h3>
+            {report.data && report.data.length > 0 ? (
+              <ChartWrapper height={300}>
+                <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+                  <LazyResponsiveContainer width="100%" height="100%">
+                    <LazyLineChart data={report.data}>
+                      <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
+                      <LazyYAxis tick={{ fontSize: 12 }} />
+                      <LazyTooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
+                      <LazyLegend />
+                      <LazyLine type="monotone" dataKey="epc" stroke="#06b6d4" strokeWidth={2} dot={false} />
+                      <LazyLine type="monotone" dataKey="cpa" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                    </LazyLineChart>
+                  </LazyResponsiveContainer>
+                </Suspense>
+              </ChartWrapper>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-fg-muted">
+                No trend data available
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Dimension Breakdown Charts */}

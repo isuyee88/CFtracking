@@ -30,6 +30,8 @@ import {
   LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer
 } from '../components/ChartWrapper';
 import { useDashboardURLState } from '../hooks/useURLState';
+import { useTableScroll } from '../hooks/useTableScroll';
+import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
 const QuickDateRangePicker = lazy(() => import('@/components/DateRangePicker').then(m => ({ default: m.QuickDateRangePicker })));
 type DateRangeValue = { interval: string; from?: string; to?: string };
 import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
@@ -1182,7 +1184,7 @@ export const Dashboard = () => {
           </ChartWrapper>
         </div>
         
-        {/* Entity Tables - 新样式 */}
+        {/* Entity Tables - 使用虚拟滚动 */}
         {config.entities.length > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {config.entities.map(entityKey => {
@@ -1192,54 +1194,40 @@ export const Dashboard = () => {
               // Skip if entity config not found
               if (!entityConfig) return null;
               
+              // 转换为 VirtualTable 列配置
+              const virtualColumns: VirtualTableColumn[] = entityConfig.columns.map(col => ({
+                key: col.key,
+                label: col.label,
+                width: col.width,
+                align: col.align || 'left',
+                render: (value: any, row: any) => {
+                  if (col.key === 'name') {
+                    return (
+                      <Link 
+                        to={`/${entityKey}/${row.id}`}
+                        className="font-semibold text-high-contrast hover:text-secondary transition-colors cursor-pointer link-primary"
+                      >
+                        {value}
+                      </Link>
+                    );
+                  }
+                  return <span className="text-medium-contrast">{value?.toLocaleString() || '-'}</span>;
+                },
+              }));
+              
               return (
                 <div key={entityKey} className="section-card overflow-hidden">
                   <div className="section-header">
                     <h3 className="font-display font-semibold text-on-surface">{entityConfig?.label || entityKey}</h3>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          {entityConfig.columns.map(col => (
-                            <th 
-                              key={col.key} 
-                              className={cn(
-                                col.align === 'right' ? "text-right" : "text-left"
-                              )}
-                            >
-                              {col.label}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.map((row, idx) => (
-                          <tr key={idx}>
-                            {entityConfig.columns.map(col => (
-                              <td 
-                                key={col.key}
-                                className={cn(
-                                  col.align === 'right' ? "text-right" : "text-left"
-                                )}
-                              >
-                                {col.key === 'name' ? (
-                                  <Link 
-                                    to={`/${entityKey}/${row.id}`}
-                                    className="font-semibold text-high-contrast hover:text-secondary transition-colors cursor-pointer link-primary"
-                                  >
-                                    {row[col.key]}
-                                  </Link>
-                                ) : (
-                                  <span className="text-medium-contrast">{row[col.key]?.toLocaleString() || '-'}</span>
-                                )}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <VirtualTableEnhanced
+                    columns={virtualColumns}
+                    data={data}
+                    rowHeight={48}
+                    height={300}
+                    overscan={5}
+                    emptyMessage={`No ${entityConfig?.label || entityKey} found`}
+                  />
                 </div>
               );
             })}
@@ -1256,109 +1244,75 @@ export const Dashboard = () => {
                 <span className="font-medium">Live</span>
               </div>
             </div>
-            <div className="overflow-x-auto">
-              {loading.recentClicks ? (
-                <div className="p-8 flex items-center justify-center">
-                  <LoadingSpinner size={40} />
-                </div>
-              ) : errors.recentClicks ? (
-                <div className="p-4">
-                  <ErrorMessage message={errors.recentClicks} />
-                </div>
-              ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {config.recentClicksColumns.map(key => {
-                        const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
+            {loading.recentClicks ? (
+              <div className="p-8 flex items-center justify-center">
+                <LoadingSpinner size={40} />
+              </div>
+            ) : errors.recentClicks ? (
+              <div className="p-4">
+                <ErrorMessage message={errors.recentClicks} />
+              </div>
+            ) : (
+              <VirtualTableEnhanced
+                columns={config.recentClicksColumns.map(key => {
+                  const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
+                  return {
+                    key: key,
+                    label: col?.label || key,
+                    width: col?.width,
+                    align: 'left',
+                    render: (value: any, row: any) => {
+                      if (key === 'datetime') {
+                        return <span className="text-medium-contrast">{value ? new Date(value).toLocaleString() : '-'}</span>;
+                      }
+                      if (key === 'destination' || key === 'referrer') {
                         return (
-                          <th key={key} className="text-left">
-                            {col?.label || key}
-                          </th>
+                          <span className="text-high-contrast hover:text-secondary transition-colors truncate max-w-[150px] block cursor-pointer link-primary" title={value}>
+                            {value || '-'}
+                          </span>
                         );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentClicks.length > 0 ? (
-                      recentClicks.map((click, idx) => (
-                        <tr key={idx}>
-                          {config.recentClicksColumns.map(key => {
-                            const value = click[key];
-                            const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
-
-                            // 根据字段类型渲染不同样式
-                            const renderCell = () => {
-                              if (key === 'datetime') {
-                                return <span className="text-medium-contrast">{value ? new Date(value).toLocaleString() : '-'}</span>;
-                              }
-                              if (key === 'destination' || key === 'referrer') {
-                                return (
-                                  <span className="text-high-contrast hover:text-secondary transition-colors truncate max-w-[150px] block cursor-pointer link-primary" title={value}>
-                                    {value || '-'}
-                                  </span>
-                                );
-                              }
-                              if (key === 'user_agent') {
-                                return (
-                                  <span className="text-medium-contrast truncate max-w-[200px] block" title={value}>
-                                    {value || '-'}
-                                  </span>
-                                );
-                              }
-                              // Yes/No 状态字段
-                              if (['bot', 'proxy', 'unique_stream', 'unique_campaign'].includes(key)) {
-                                const isYes = value === 'Yes';
-                                return (
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                    isYes
-                                      ? key === 'bot' ? 'bg-danger-fg/10 text-danger-fg' : 'bg-success-fg/10 text-success-fg'
-                                      : 'bg-surface-container text-fg-muted'
-                                  }`}>
-                                    {value || 'No'}
-                                  </span>
-                                );
-                              }
-                              // 成本字段
-                              if (key === 'cost') {
-                                return <span className="text-medium-contrast font-medium">{value || '-'}</span>;
-                              }
-                              // 图标字段 - 使用品牌图标组件，从os/browser字段获取值
-                              if (key === 'os_icon') {
-                                const osValue = click.os || click.os_icon || '';
-                                return (
-                                  <OSIcon name={osValue} size="sm" />
-                                );
-                              }
-                              if (key === 'browser_icon') {
-                                const browserValue = click.browser || click.browser_icon || '';
-                                return (
-                                  <BrowserIcon name={browserValue} size="sm" />
-                                );
-                              }
-                              // 默认渲染
-                              return <span className="text-medium-contrast">{value || '-'}</span>;
-                            };
-
-                            return (
-                              <td key={key} style={{ width: col?.width, minWidth: col?.width }}>
-                                {renderCell()}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={config.recentClicksColumns.length} className="text-center py-8 text-fg-muted">
-                          No recent clicks found
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                      }
+                      if (key === 'user_agent') {
+                        return (
+                          <span className="text-medium-contrast truncate max-w-[200px] block" title={value}>
+                            {value || '-'}
+                          </span>
+                        );
+                      }
+                      if (['bot', 'proxy', 'unique_stream', 'unique_campaign'].includes(key)) {
+                        const isYes = value === 'Yes';
+                        return (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            isYes
+                              ? key === 'bot' ? 'bg-danger-fg/10 text-danger-fg' : 'bg-success-fg/10 text-success-fg'
+                              : 'bg-surface-container text-fg-muted'
+                          }`}>
+                            {value || 'No'}
+                          </span>
+                        );
+                      }
+                      if (key === 'cost') {
+                        return <span className="text-medium-contrast font-medium">{value || '-'}</span>;
+                      }
+                      if (key === 'os_icon') {
+                        const osValue = row.os || row.os_icon || '';
+                        return <OSIcon name={osValue} size="sm" />;
+                      }
+                      if (key === 'browser_icon') {
+                        const browserValue = row.browser || row.browser_icon || '';
+                        return <BrowserIcon name={browserValue} size="sm" />;
+                      }
+                      return <span className="text-medium-contrast">{value || '-'}</span>;
+                    },
+                  };
+                })}
+                data={recentClicks}
+                rowHeight={48}
+                height={400}
+                overscan={5}
+                emptyMessage="No recent clicks found"
+              />
+            )}
           </div>
         )}
       </div>
