@@ -22,7 +22,6 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -1028,11 +1027,9 @@ export const Dashboard = () => {
               Array(config.metrics.length).fill(0).map((_, index) => {
                 const style = getMetricStyle(index);
                 return (
-                  <motion.div 
+                  <div 
                     key={index} 
-                    className={cn("metric-card", style.gradient)}
-                    whileHover={{ y: -2 }}
-                    transition={{ duration: 0.2 }}
+                    className={cn("metric-card metric-card-hover", style.gradient)}
                   >
                     <div className={cn("metric-card-accent", style.accent)} />
                     <p className="metric-label">Loading...</p>
@@ -1040,7 +1037,7 @@ export const Dashboard = () => {
                       <LoadingSpinner size={20} />
                     </h3>
                     <p className="metric-trend">--</p>
-                  </motion.div>
+                  </div>
                 );
               })
             ) : errors.stats ? (
@@ -1051,11 +1048,9 @@ export const Dashboard = () => {
               stats.filter(Boolean).map((stat: any, index: number) => {
                 const style = getMetricStyle(index);
                 return (
-                  <motion.div 
+                  <div 
                     key={stat?.key || index} 
-                    className={cn("metric-card", style.gradient)}
-                    whileHover={{ y: -2 }}
-                    transition={{ duration: 0.2 }}
+                    className={cn("metric-card metric-card-hover", style.gradient)}
                   >
                     {/* 装饰性渐变光晕 */}
                     <div className={cn("metric-card-accent", style.accent)} />
@@ -1068,7 +1063,7 @@ export const Dashboard = () => {
                     )}>
                       {stat?.isPositive ? '↑' : '↓'} {stat?.trend || ''}
                     </p>
-                  </motion.div>
+                  </div>
                 );
               })
             )}

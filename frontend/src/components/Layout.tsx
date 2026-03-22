@@ -36,7 +36,6 @@ import {
   Home
 } from 'lucide-react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -191,37 +190,23 @@ export const Layout = () => {
 
   return (
     <div className="flex min-h-screen bg-canvas-inset selection:bg-accent-muted">
-      {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
-        {!isSidebarOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => setSidebarOpen(true)}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
-          />
-        )}
-      </AnimatePresence>
+      {/* Mobile Sidebar Overlay - CSS 动画替代 motion */}
+      {!isSidebarOpen && (
+        <div 
+          onClick={() => setSidebarOpen(true)}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden animate-fade-in"
+        />
+      )}
 
-      {/* Sidebar - Stitch Design: 流畅滑动动画 */}
-      <motion.aside
-        initial={false}
-        animate={{ 
-          x: isSidebarOpen ? 0 : -256,
-          width: 256 
-        }}
-        transition={{ 
-          type: "spring", 
-          stiffness: 300, 
-          damping: 30,
-          mass: 0.8
-        }}
+      {/* Sidebar - CSS 动画替代 motion */}
+      <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 bg-surface-container-lowest dark:bg-surface-container flex flex-col",
-          "lg:relative lg:translate-x-0"
+          "lg:relative lg:translate-x-0",
+          "transition-transform duration-300 ease-out",
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
+        style={{ width: 256 }}
         aria-label="Main navigation"
         role="navigation"
       >
@@ -282,7 +267,7 @@ export const Layout = () => {
             </div>
           ))}
         </nav>
-      </motion.aside>
+      </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -326,13 +311,9 @@ export const Layout = () => {
               aria-pressed={isDarkMode}
               title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
             >
-              <motion.div
-                initial={false}
-                animate={{ rotate: isDarkMode ? 180 : 0 }}
-                transition={{ duration: 0.3 }}
-              >
+              <div className="transition-transform duration-300" style={{ transform: isDarkMode ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                 {isDarkMode ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
-              </motion.div>
+              </div>
             </button>
             
             {/* 优化：通知按钮 - 添加ARIA标签 */}

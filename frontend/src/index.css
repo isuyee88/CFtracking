@@ -1166,6 +1166,30 @@ textarea.form-input {
   }
 }
 
+/* 用于 overlay 的简单淡入动画 */
+.animate-fade-in {
+  animation: fadeInOverlay 0.2s ease-out forwards;
+}
+
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Metric card hover effect - CSS 替代 motion */
+.metric-card-hover {
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+.metric-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
 /* ============================================
    Ant Design Dark Mode Overrides - Stitch Design
    修复时间组件白底问题
