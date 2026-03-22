@@ -60,7 +60,6 @@ export class CampaignRepository extends BaseRepository<Campaign> {
    * 创建 Campaign
    */
   async create(data: CreateCampaignDTO): Promise<Campaign> {
-    const id = crypto.randomUUID();
     const displayId = await this.idService.generateId('campaigns');
     const now = new Date().toISOString();
     const apiToken = generateApiToken();
@@ -76,7 +75,7 @@ export class CampaignRepository extends BaseRepository<Campaign> {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
-        id,
+        displayId,
         displayId,
         data.name,
         data.alias,
@@ -100,7 +99,7 @@ export class CampaignRepository extends BaseRepository<Campaign> {
       )
       .run();
 
-    const campaign = await this.findById(id);
+    const campaign = await this.findById(displayId);
     return campaign!;
   }
 

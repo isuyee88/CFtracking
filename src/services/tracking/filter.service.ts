@@ -73,7 +73,9 @@ export class FilterService {
    * 从请求中获取字段值
    */
   private getFieldValue(field: string, request: ClickRequest): unknown {
-    // visitor.* 字段映射
+    if (!field || typeof field !== 'string') {
+      return undefined;
+    }
     if (field.startsWith('visitor.')) {
       const visitorField = field.replace('visitor.', '');
       switch (visitorField) {

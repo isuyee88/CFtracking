@@ -24,6 +24,7 @@ import { getD1Connection, getAnalyticsClient } from '@/handlers/d1';
 import { DOService } from '@/handlers/do';
 import { UniquenessService, type UniquenessMethod } from './uniqueness.service';
 import { FilterService } from './filter.service';
+import { FlowActionService } from './flow-action.service';
 
 import type { Env } from '@/config/env';
 import type { ClickData } from '@/types/tracking';
@@ -94,6 +95,10 @@ export interface ClickResult {
   isTrafficLoss: boolean;
   /** 执行的操作类型 */
   actionType: 'redirect' | 'show_offer' | 'traffic_loss';
+  /** 重定向类型 */
+  redirectType?: 'http' | 'meta' | 'js' | 'js_blank' | 'double' | 'remote';
+  /** 响应 body（用于非 HTTP 重定向） */
+  responseBody?: string;
 }
 
 /**
@@ -115,6 +120,7 @@ export class ClickService {
   private doService: DOService;
   private uniquenessService: UniquenessService;
   private filterService: FilterService;
+  private flowActionService: FlowActionService;
 
   constructor(env: Env) {
     const db = getD1Connection(env);
@@ -126,6 +132,7 @@ export class ClickService {
     this.doService = new DOService(env);
     this.uniquenessService = new UniquenessService(env);
     this.filterService = new FilterService();
+    this.flowActionService = new FlowActionService();
   }
 
   /**
@@ -160,16 +167,16 @@ export class ClickService {
         // 确保 originalUrl 是有效的
         if (originalUrl && typeof originalUrl === 'string') {
           const requestUrl = new URL(originalUrl);
-          baseUrl = campaign.domain || requestUrl.origin;
+          baseUrl = (campaign.domain && typeof campaign.domain === 'string') ? campaign.domain : requestUrl.origin;
         } else {
           // 如果没有原始URL，使用默认值
-          baseUrl = campaign.domain || 'http://localhost';
+          baseUrl = (campaign.domain && typeof campaign.domain === 'string') ? campaign.domain : 'http://localhost';
         }
         console.log('Base URL:', baseUrl);
       } catch (err) {
         console.error('URL creation error:', err);
         // Fallback to localhost if URL creation fails
-        baseUrl = campaign.domain || 'http://localhost';
+        baseUrl = (campaign.domain && typeof campaign.domain === 'string') ? campaign.domain : 'http://localhost';
       }
 
       // 2. 执行去重检查
@@ -229,8 +236,34 @@ export class ClickService {
 
       console.log('Action config:', actionConfig);
 
-      // 6. 执行 Action 获取重定向 URL
-      const redirectUrl = await this.executeAction(actionConfig, clickId, visitorId, request, baseUrl);
+      // 6. 执行 Action 获取重定向 URL 和响应信息
+      let redirectUrl: string;
+      let redirectType: ClickResult['redirectType'] = 'http';
+      let responseBody: string | undefined;
+
+      if (selectedFlow && selectedOffer) {
+        // 使用 FlowActionService 执行 action
+        const actionResult = await this.flowActionService.execute({
+          flow: selectedFlow,
+          request,
+          offer: selectedOffer,
+          landingPage: selectedLP || undefined,
+        });
+
+        redirectUrl = actionResult.redirectUrl || '';
+        redirectType = actionResult.redirectType;
+        responseBody = actionResult.body;
+
+        console.log('FlowAction result:', {
+          redirectUrl,
+          redirectType,
+          hasBody: !!responseBody,
+        });
+      } else {
+        // 使用旧的执行方式
+        redirectUrl = await this.executeAction(actionConfig, clickId, visitorId, request, baseUrl);
+      }
+
       console.log('Redirect URL:', redirectUrl);
 
       // 7. 记录点击数据（包含 Cloudflare 信息）
@@ -351,6 +384,8 @@ export class ClickService {
         existingClickId: uniquenessResult.existingClickId,
         isTrafficLoss: actionConfig.type === 'traffic_loss',
         actionType: actionConfig.type,
+        redirectType,
+        responseBody,
       };
     } catch (err) {
       console.error('Handle click error:', err);
@@ -464,7 +499,10 @@ export class ClickService {
     const params = this.buildTrackingParams(clickId, visitorId, request);
 
     // 确保 baseUrl 是完整的 URL 格式
-    let fullBaseUrl = baseUrl;
+    let fullBaseUrl = baseUrl || 'http://localhost';
+    if (typeof fullBaseUrl !== 'string') {
+      fullBaseUrl = 'http://localhost';
+    }
     if (!fullBaseUrl.startsWith('http://') && !fullBaseUrl.startsWith('https://')) {
       fullBaseUrl = `https://${fullBaseUrl}`;
     }
@@ -522,6 +560,9 @@ export class ClickService {
    * 追加参数到 URL
    */
   private appendParams(url: string, params: URLSearchParams): string {
+    if (!url || typeof url !== 'string') {
+      return `/traffic-loss?${params.toString()}`;
+    }
     const separator = url.includes('?') ? '&' : '?';
     return `${url}${separator}${params.toString()}`;
   }

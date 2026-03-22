@@ -1,6 +1,6 @@
 /**
  * @fileoverview Flow Action 服务
- * @description 处理 Flow 的动作执行逻辑，支持多种动作类型
+ * @description 处理 Flow 的动作执行逻辑，支持多种动作类型和重定向方式
  * @module services/tracking/flow-action.service
  *
  * 输入: Flow action 配置和点击请求信息
@@ -11,7 +11,7 @@
 
 import type { Flow, FlowActionType, FlowActionConfig } from '@/types/flow';
 import type { ClickRequest } from './click.service';
-import type { Offer } from '@/types/offer';
+import type { Offer, RedirectType } from '@/types/offer';
 import type { LandingPage } from '@/types/landingPage';
 
 export interface FlowActionResult {
@@ -21,6 +21,8 @@ export interface FlowActionResult {
   landingPage?: LandingPage;
   statusCode: number;
   headers?: Record<string, string>;
+  body?: string;
+  redirectType?: RedirectType;
 }
 
 export interface FlowActionContext {
@@ -96,21 +98,216 @@ export class FlowActionService {
     request: ClickRequest
   ): FlowActionResult {
     if (!offer) {
-      // 如果没有 Offer，返回 traffic loss
       return this.executeTrafficLoss();
     }
 
     const redirectUrl = this.replaceUrlParams(offer.url, request);
+    const redirectType = offer.redirectType || 'http';
 
-    return {
+    return this.buildRedirectResult(redirectType, redirectUrl, offer);
+  }
+
+  /**
+   * 根据重定向类型构建结果
+   */
+  private buildRedirectResult(
+    redirectType: RedirectType,
+    redirectUrl: string,
+    offer?: Offer
+  ): FlowActionResult {
+    const baseResult: FlowActionResult = {
       actionType: 'show_offer',
       offer,
       redirectUrl,
-      statusCode: 302,
-      headers: {
-        'Location': redirectUrl,
-      },
+      redirectType,
+      statusCode: 200,
     };
+
+    switch (redirectType) {
+      case 'http':
+        return {
+          ...baseResult,
+          statusCode: 302,
+          headers: {
+            'Location': redirectUrl,
+          },
+        };
+
+      case 'meta':
+        return {
+          ...baseResult,
+          statusCode: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+          },
+          body: this.buildMetaRedirectHtml(redirectUrl),
+        };
+
+      case 'js':
+        return {
+          ...baseResult,
+          statusCode: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+          },
+          body: this.buildJsRedirectHtml(redirectUrl),
+        };
+
+      case 'js_blank':
+        return {
+          ...baseResult,
+          statusCode: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+          },
+          body: this.buildJsBlankRedirectHtml(redirectUrl),
+        };
+
+      case 'double':
+        return {
+          ...baseResult,
+          statusCode: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+          },
+          body: this.buildDoubleMetaRedirectHtml(redirectUrl),
+        };
+
+      case 'remote':
+        return {
+          ...baseResult,
+          statusCode: 302,
+          headers: {
+            'Location': redirectUrl,
+          },
+        };
+
+      default:
+        return {
+          ...baseResult,
+          statusCode: 302,
+          headers: {
+            'Location': redirectUrl,
+          },
+        };
+    }
+  }
+
+  /**
+   * 构建 Meta 重定向 HTML
+   */
+  private buildMetaRedirectHtml(url: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="0;url=${this.escapeHtml(url)}">
+  <title>Redirecting...</title>
+</head>
+<body>
+  <p>Redirecting to <a href="${this.escapeHtml(url)}">${this.escapeHtml(url)}</a></p>
+</body>
+</html>`;
+  }
+
+  /**
+   * 构建 JS 重定向 HTML
+   */
+  private buildJsRedirectHtml(url: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Redirecting...</title>
+  <script type="text/javascript">
+    window.location.href = "${this.escapeJs(url)}";
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>`;
+  }
+
+  /**
+   * 构建 JS 清除 Referrer 重定向 HTML
+   */
+  private buildJsBlankRedirectHtml(url: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Redirecting...</title>
+  <script type="text/javascript">
+    (function() {
+      var url = "${this.escapeJs(url)}";
+      var a = document.createElement('a');
+      a.href = url;
+      a.rel = 'noreferrer';
+      document.body.appendChild(a);
+      a.click();
+    })();
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>`;
+  }
+
+  /**
+   * 构建双重 Meta 重定向 HTML
+   * 通过两次重定向来隐藏来源
+   */
+  private buildDoubleMetaRedirectHtml(url: string): string {
+    const intermediateUrl = 'about:blank';
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="0;url=${this.escapeHtml(intermediateUrl)}">
+  <title>Redirecting...</title>
+  <script type="text/javascript">
+    (function() {
+      var targetUrl = "${this.escapeJs(url)}";
+      setTimeout(function() {
+        var a = document.createElement('a');
+        a.href = targetUrl;
+        a.rel = 'noreferrer';
+        document.body.appendChild(a);
+        a.click();
+      }, 100);
+    })();
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>`;
+  }
+
+  /**
+   * HTML 转义
+   */
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  /**
+   * JS 字符串转义
+   */
+  private escapeJs(str: string): string {
+    return str
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/'/g, "\\'")
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r');
   }
 
   /**

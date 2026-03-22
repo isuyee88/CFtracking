@@ -47,7 +47,6 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
    * 创建 Traffic Source
    */
   async create(data: CreateTrafficSourceDTO): Promise<TrafficSource> {
-    const id = crypto.randomUUID();
     const displayId = await this.idService.generateId('trafficSources');
     const now = new Date().toISOString();
 
@@ -65,7 +64,7 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
-        id,
+        displayId,
         displayId,
         data.name,
         data.type || 'other',
@@ -83,7 +82,7 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
       )
       .run();
 
-    const ts = await this.findById(id);
+    const ts = await this.findById(displayId);
     return ts!;
   }
 

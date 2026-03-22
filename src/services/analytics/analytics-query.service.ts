@@ -395,10 +395,12 @@ export class AnalyticsQueryService {
     };
 
     const config = fieldMap[entityType] || { field: 'blob2', label: entityType };
+    
+    const isNumericField = config.field.startsWith('double');
+    const notEmptyCondition = isNumericField 
+      ? `${config.field} > 0` 
+      : `${config.field} IS NOT NULL AND ${config.field} != ''`;
 
-    // Analytics Engine SQL 限制:
-    // 1. 不能对 blob 字段使用 count(distinct)
-    // 2. 简化查询，避免复杂聚合
     const sql = `
       SELECT
         ${config.field} as name,
@@ -407,8 +409,7 @@ export class AnalyticsQueryService {
         sum(double6) as spend
       FROM cf_tracking_events
       WHERE timestamp >= NOW() - INTERVAL '${intervalDays}' DAY
-        AND ${config.field} IS NOT NULL
-        AND ${config.field} != ''
+        AND ${notEmptyCondition}
       GROUP BY ${config.field}
       ORDER BY clicks DESC
       LIMIT 10

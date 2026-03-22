@@ -37,7 +37,6 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
    * 创建 Affiliate Network
    */
   async create(data: CreateAffiliateNetworkDTO): Promise<AffiliateNetwork> {
-    const id = crypto.randomUUID();
     const displayId = await this.idService.generateId('affiliateNetworks');
     const now = new Date().toISOString();
 
@@ -47,7 +46,7 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
-        id,
+        displayId,
         displayId,
         data.name,
         data.type || 'api',
@@ -61,7 +60,7 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
       )
       .run();
 
-    const network = await this.findById(id);
+    const network = await this.findById(displayId);
     return network!;
   }
 

@@ -129,7 +129,28 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
         );
       }
 
-      // 构建重定向响应
+      // 根据重定向类型返回不同的响应
+      if (result.redirectType && result.redirectType !== 'http' && result.responseBody) {
+        // 非 HTTP 重定向类型，返回 HTML body
+        const response = new Response(result.responseBody, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+          },
+        });
+
+        // 如果需要设置 Cookie，添加 Set-Cookie 头
+        if (result.shouldSetCookie) {
+          response.headers.set(
+            'Set-Cookie',
+            generateCookieHeader(result.visitorId, uniquenessTTL || 86400 * 30)
+          );
+        }
+
+        return response;
+      }
+
+      // HTTP 重定向
       const response = c.redirect(result.redirectUrl, 302);
       
       // 如果需要设置 Cookie，添加 Set-Cookie 头

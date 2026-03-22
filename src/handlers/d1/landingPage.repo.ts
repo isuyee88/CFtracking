@@ -37,7 +37,6 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
    * 创建 Landing Page
    */
   async create(data: CreateLandingPageDTO): Promise<LandingPage> {
-    const id = crypto.randomUUID();
     const displayId = await this.idService.generateId('landingPages');
     const now = new Date().toISOString();
 
@@ -46,10 +45,10 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
         INSERT INTO landingPages (id, displayId, name, url, status, createdAt, updatedAt)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `)
-      .bind(id, displayId, data.name, data.url, 'active', now, now)
+      .bind(displayId, displayId, data.name, data.url, 'active', now, now)
       .run();
 
-    const lp = await this.findById(id);
+    const lp = await this.findById(displayId);
     return lp!;
   }
 

@@ -84,18 +84,21 @@ export default {
     // 格式：http://custom-domain.com/:campaignAlias
     // 注意：排除静态资源文件（.svg, .png, .ico, .css, .js, .woff2 等）
     if (url.pathname.length > 1 && !url.pathname.startsWith('/__')) {
-      // 检查是否为静态资源文件
       const isStaticResource = /\.(svg|png|ico|jpg|jpeg|gif|css|js|woff2|ttf|eot|otf|webmanifest)$/i.test(url.pathname);
       
       if (!isStaticResource) {
         const pathParts = url.pathname.split('/').filter(Boolean);
         if (pathParts.length === 1) {
           const campaignAlias = pathParts[0];
-          // 重定向到追踪 API
-          const trackingUrl = new URL('/api/tracking/click/' + campaignAlias, request.url);
-          // 保留所有查询参数
+          console.log('[Tracking] Campaign alias:', campaignAlias, 'Original URL:', request.url);
+          const trackingUrl = new URL('/api/tracking/click/' + campaignAlias, url.origin);
           trackingUrl.search = url.search;
-          const trackingRequest = new Request(trackingUrl.toString(), request);
+          console.log('[Tracking] Tracking URL:', trackingUrl.toString());
+          const trackingRequest = new Request(trackingUrl.toString(), {
+            method: request.method,
+            headers: request.headers,
+            redirect: 'manual'
+          });
           return app.fetch(trackingRequest, env, ctx);
         }
       }

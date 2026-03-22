@@ -24,9 +24,22 @@ export class FlowRepository extends BaseRepository<Flow> {
   }
 
   protected transform(row: Record<string, unknown>): Flow {
+    let filters = row.filters;
+    if (typeof filters === 'string') {
+      try {
+        filters = JSON.parse(filters);
+      } catch {
+        filters = [];
+      }
+    }
+    if (!Array.isArray(filters)) {
+      filters = [];
+    }
+    
     return {
       ...row,
-      id: row.displayId || row.id,
+      id: row.id as string,
+      filters: filters as Flow['filters'],
       actionConfig: typeof row.actionConfig === 'string' 
         ? JSON.parse(row.actionConfig) 
         : row.actionConfig || {},
@@ -46,7 +59,6 @@ export class FlowRepository extends BaseRepository<Flow> {
    * 创建 Flow
    */
   async create(data: CreateFlowDTO): Promise<Flow> {
-    const id = crypto.randomUUID();
     const displayId = await this.idService.generateId('flows');
     const now = new Date().toISOString();
     const actionType = data.actionType || 'redirect';
@@ -57,10 +69,10 @@ export class FlowRepository extends BaseRepository<Flow> {
         INSERT INTO flows (id, displayId, campaignId, name, type, weight, status, actionType, actionConfig, createdAt, updatedAt)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      .bind(id, displayId, data.campaignId, data.name, data.type || 'regular', data.weight || 100, 'active', actionType, actionConfig, now, now)
+      .bind(displayId, displayId, data.campaignId, data.name, data.type || 'regular', data.weight || 100, 'active', actionType, actionConfig, now, now)
       .run();
 
-    const flow = await this.findById(id);
+    const flow = await this.findById(displayId);
     return flow!;
   }
 
@@ -104,13 +116,15 @@ export class FlowRepository extends BaseRepository<Flow> {
 
   /**
    * 按 Campaign ID 和 Status 查询
+   * 支持 UUID 和短 ID 格式
    */
   async findByCampaignIdAndStatus(campaignId: string, status: string): Promise<Flow[]> {
     const result = await this.db
-      .prepare('SELECT * FROM flows WHERE campaignId = ? AND status = ?')
-      .bind(campaignId, status)
+      .prepare('SELECT * FROM flows WHERE (campaignId = ? OR campaignId IN (SELECT id FROM campaigns WHERE displayId = ?)) AND status = ?')
+      .bind(campaignId, campaignId, status)
       .all();
-    return (result.results as unknown as Flow[]) || [];
+    const rows = (result.results as unknown as Record<string, unknown>[]) || [];
+    return rows.map(row => this.transform(row));
   }
 
   /**
@@ -207,7 +221,6 @@ export class FlowRepository extends BaseRepository<Flow> {
    * 创建 Flow 规则
    */
   async createFlowRule(data: CreateFlowRuleDTO): Promise<FlowRule> {
-    const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const priority = data.priority ?? 0;
 
@@ -221,7 +234,7 @@ export class FlowRepository extends BaseRepository<Flow> {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
-        id,
+        data.flowId,
         data.flowId,
         data.name,
         data.description || null,
@@ -234,7 +247,7 @@ export class FlowRepository extends BaseRepository<Flow> {
       )
       .run();
 
-    const rule = await this.getFlowRuleById(id);
+    const rule = await this.getFlowRuleById(data.flowId);
     return rule!;
   }
 

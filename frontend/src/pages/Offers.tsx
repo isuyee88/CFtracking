@@ -41,6 +41,8 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+type RedirectType = 'http' | 'meta' | 'js' | 'js_blank' | 'double' | 'remote';
+
 interface Offer {
   id: string;
   displayId?: string;
@@ -48,6 +50,7 @@ interface Offer {
   url: string;
   payout: number;
   payoutType: 'fixed' | 'revshare' | 'cpa';
+  redirectType: RedirectType;
   currency: string;
   status: 'active' | 'paused' | 'deleted';
   network: string;
@@ -100,6 +103,20 @@ const OFFER_FIELDS: FormField[] = [
       { value: 'fixed', label: 'Fixed' },
       { value: 'revshare', label: 'RevShare' },
       { value: 'cpa', label: 'CPA' }
+    ]
+  },
+  {
+    name: 'redirectType',
+    label: 'Redirect Type',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'http', label: 'HTTP Redirect (302)' },
+      { value: 'meta', label: 'Meta Redirect' },
+      { value: 'js', label: 'JS Redirect' },
+      { value: 'js_blank', label: 'JS Redirect (Blank Referrer)' },
+      { value: 'double', label: 'Double Meta Redirect' },
+      { value: 'remote', label: 'Remote Redirect' }
     ]
   },
   {
@@ -279,6 +296,7 @@ export const Offers = () => {
           url: formData.url,
           payout: parseFloat(formData.payout) || 0,
           payoutType: formData.payoutType || 'fixed',
+          redirectType: formData.redirectType || 'http',
           currency: 'USD',
           status: formData.status || 'active',
           network: formData.network || 'Default',

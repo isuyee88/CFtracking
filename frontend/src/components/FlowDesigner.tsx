@@ -67,8 +67,8 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
     { id: 'flow-1', type: 'landing', name: 'Landing Page A', weight: 50 },
     { id: 'flow-2', type: 'landing', name: 'Landing Page B', weight: 50 },
   ]);
-  const [landings, setLandings] = useState<{id: string; name: string; url?: string}[]>([]);
-  const [offers, setOffers] = useState<{id: string; name: string; payout?: number}[]>([]);
+  const [landings, setLandings] = useState<{id: string; name: string; url?: string; group?: string}[]>([]);
+  const [offers, setOffers] = useState<{id: string; name: string; payout?: number; network?: string; payoutType?: string; group?: string}[]>([]);
 
   const [connections, setConnections] = useState<FlowConnection[]>(initialConnections);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -76,6 +76,11 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<FlowNode>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [landingSearch, setLandingSearch] = useState('');
+  const [offerSearch, setOfferSearch] = useState('');
+  const [offerNetworkFilter, setOfferNetworkFilter] = useState('');
+  const [offerPayoutTypeFilter, setOfferPayoutTypeFilter] = useState('');
 
   useEffect(() => {
     const loadData = async () => {
@@ -85,10 +90,22 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
           fetchOffers(false),
         ]);
         if (Array.isArray(landingsData)) {
-          setLandings(landingsData.map((lp: any) => ({ id: lp.id, name: lp.name, url: lp.url })));
+          setLandings(landingsData.map((lp: any) => ({ 
+            id: lp.id, 
+            name: lp.name, 
+            url: lp.url,
+            group: lp.group 
+          })));
         }
         if (Array.isArray(offersData)) {
-          setOffers(offersData.map((o: any) => ({ id: o.id, name: o.name, payout: o.payout })));
+          setOffers(offersData.map((o: any) => ({ 
+            id: o.id, 
+            name: o.name, 
+            payout: o.payout,
+            network: o.network,
+            payoutType: o.payoutType,
+            group: o.group
+          })));
         }
       } catch (err) {
         console.error('Failed to load landings/offers:', err);
@@ -101,11 +118,11 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   const totalWeight = flows.reduce((sum, f) => sum + f.weight, 0);
 
   // Add new flow node
-  const handleAddNode = (type: FlowNode['type']) => {
+  const handleAddNode = (type: FlowNode['type'], item?: { id: string; name: string }) => {
     const newNode: FlowNode = {
-      id: `flow-${Date.now()}`,
+      id: item?.id || `flow-${Date.now()}`,
       type,
-      name: type === 'landing' ? 'New Landing Page' : type === 'offer' ? 'New Offer' : 'New Node',
+      name: item?.name || (type === 'landing' ? 'New Landing Page' : type === 'offer' ? 'New Offer' : 'New Node'),
       weight: 50,
     };
     setFlows([...flows, newNode]);
@@ -113,7 +130,11 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
 
   // Delete flow node
   const handleDeleteNode = (id: string) => {
-    setFlows(flows.filter(f => f.id !== id));
+    console.log('[FlowDesigner] Deleting node:', id);
+    console.log('[FlowDesigner] Flows before delete:', flows);
+    const newFlows = flows.filter(f => f.id !== id);
+    console.log('[FlowDesigner] Flows after delete:', newFlows);
+    setFlows(newFlows);
     setConnections(connections.filter(c => c.from !== id && c.to !== id));
     if (selectedNode === id) setSelectedNode(null);
   };
@@ -366,10 +387,10 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
 
       <div className="flex">
         {/* Left Sidebar - Tools */}
-        <div className="w-64 border-r border-outline-variant/10 p-4 space-y-4">
+        <div className="w-72 border-r border-outline-variant/10 p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-200px)]">
           <div>
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-3">
-              Add Nodes
+              Add Nodes (Empty)
             </h3>
             <div className="space-y-2">
               <button
@@ -377,56 +398,121 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
                 className="w-full flex items-center gap-3 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 text-sm hover:bg-blue-100 transition-colors"
               >
                 <Layers size={16} />
-                Landing Page
+                + Landing Page
               </button>
               <button
                 onClick={() => handleAddNode('offer')}
                 className="w-full flex items-center gap-3 px-3 py-2 bg-green-50 border border-green-200 text-green-700 text-sm hover:bg-green-100 transition-colors"
               >
                 <Target size={16} />
-                Offer
+                + Offer
               </button>
               <button
                 onClick={() => handleAddNode('condition')}
                 className="w-full flex items-center gap-3 px-3 py-2 bg-yellow-50 border border-yellow-200 text-yellow-700 text-sm hover:bg-yellow-100 transition-colors"
               >
                 <GitBranch size={16} />
-                Condition
+                + Condition
               </button>
             </div>
           </div>
 
           <div className="border-t border-outline-variant/10 pt-4">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-3">
-              Available Landings
+              Select Landing Page
             </h3>
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {landings.map(lp => (
-                <div
-                  key={lp.id}
-                  className="px-2 py-1.5 text-xs text-on-surface bg-surface-container rounded cursor-pointer hover:bg-surface-container-high"
-                  onClick={() => handleAddNode('landing')}
-                >
-                  {lp.name}
-                </div>
-              ))}
+            <input
+              type="text"
+              placeholder="Search landing pages..."
+              value={landingSearch}
+              onChange={(e) => setLandingSearch(e.target.value)}
+              className="w-full px-2 py-1.5 text-xs border border-outline-variant bg-surface rounded mb-2"
+            />
+            <div className="space-y-1 max-h-32 overflow-y-auto">
+              {landings
+                .filter(lp => lp.name.toLowerCase().includes(landingSearch.toLowerCase()))
+                .map(lp => (
+                  <div
+                    key={lp.id}
+                    className="px-2 py-1.5 text-xs text-on-surface bg-surface-container rounded cursor-pointer hover:bg-blue-50 hover:text-blue-700 border border-transparent hover:border-blue-200 transition-colors"
+                    onClick={() => handleAddNode('landing', { id: lp.id, name: lp.name })}
+                  >
+                    <div className="font-medium">{lp.name}</div>
+                    {lp.url && <div className="text-[10px] text-on-surface-variant truncate">{lp.url}</div>}
+                  </div>
+                ))}
+              {landings.filter(lp => lp.name.toLowerCase().includes(landingSearch.toLowerCase())).length === 0 && (
+                <div className="text-xs text-on-surface-variant text-center py-2">No landing pages found</div>
+              )}
             </div>
           </div>
 
           <div className="border-t border-outline-variant/10 pt-4">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-3">
-              Available Offers
+              Select Offer
             </h3>
+            <input
+              type="text"
+              placeholder="Search offers..."
+              value={offerSearch}
+              onChange={(e) => setOfferSearch(e.target.value)}
+              className="w-full px-2 py-1.5 text-xs border border-outline-variant bg-surface rounded mb-2"
+            />
+            <div className="flex gap-2 mb-2">
+              <select
+                value={offerNetworkFilter}
+                onChange={(e) => setOfferNetworkFilter(e.target.value)}
+                className="flex-1 px-2 py-1 text-xs border border-outline-variant bg-surface rounded"
+              >
+                <option value="">All Networks</option>
+                {[...new Set(offers.map(o => o.network).filter(Boolean))].map(network => (
+                  <option key={network} value={network}>{network}</option>
+                ))}
+              </select>
+              <select
+                value={offerPayoutTypeFilter}
+                onChange={(e) => setOfferPayoutTypeFilter(e.target.value)}
+                className="flex-1 px-2 py-1 text-xs border border-outline-variant bg-surface rounded"
+              >
+                <option value="">All Types</option>
+                <option value="fixed">Fixed</option>
+                <option value="percentage">Percentage</option>
+              </select>
+            </div>
             <div className="space-y-1 max-h-40 overflow-y-auto">
-              {offers.map(offer => (
-                <div
-                  key={offer.id}
-                  className="px-2 py-1.5 text-xs text-on-surface bg-surface-container rounded cursor-pointer hover:bg-surface-container-high"
-                  onClick={() => handleAddNode('offer')}
-                >
-                  {offer.name}{offer.payout !== undefined && ` ($${offer.payout})`}
-                </div>
-              ))}
+              {offers
+                .filter(o => {
+                  const matchesSearch = o.name.toLowerCase().includes(offerSearch.toLowerCase());
+                  const matchesNetwork = !offerNetworkFilter || o.network === offerNetworkFilter;
+                  const matchesPayoutType = !offerPayoutTypeFilter || o.payoutType === offerPayoutTypeFilter;
+                  return matchesSearch && matchesNetwork && matchesPayoutType;
+                })
+                .map(offer => (
+                  <div
+                    key={offer.id}
+                    className="px-2 py-1.5 text-xs text-on-surface bg-surface-container rounded cursor-pointer hover:bg-green-50 hover:text-green-700 border border-transparent hover:border-green-200 transition-colors"
+                    onClick={() => handleAddNode('offer', { id: offer.id, name: offer.name })}
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium">{offer.name}</span>
+                      {offer.payout !== undefined && (
+                        <span className="text-green-600 font-bold">${offer.payout}</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2 text-[10px] text-on-surface-variant">
+                      {offer.network && <span>{offer.network}</span>}
+                      {offer.payoutType && <span>• {offer.payoutType}</span>}
+                    </div>
+                  </div>
+                ))}
+              {offers.filter(o => {
+                const matchesSearch = o.name.toLowerCase().includes(offerSearch.toLowerCase());
+                const matchesNetwork = !offerNetworkFilter || o.network === offerNetworkFilter;
+                const matchesPayoutType = !offerPayoutTypeFilter || o.payoutType === offerPayoutTypeFilter;
+                return matchesSearch && matchesNetwork && matchesPayoutType;
+              }).length === 0 && (
+                <div className="text-xs text-on-surface-variant text-center py-2">No offers found</div>
+              )}
             </div>
           </div>
         </div>

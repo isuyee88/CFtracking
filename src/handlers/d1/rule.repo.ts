@@ -40,7 +40,6 @@ export class RuleRepository extends BaseRepository<Rule> {
    * 创建 Rule
    */
   async create(data: CreateRuleDTO): Promise<Rule> {
-    const id = crypto.randomUUID();
     const displayId = await this.idService.generateId('rules');
     const now = new Date().toISOString();
 
@@ -50,7 +49,7 @@ export class RuleRepository extends BaseRepository<Rule> {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
-        id,
+        displayId,
         displayId,
         data.name,
         data.description || null,
@@ -65,7 +64,7 @@ export class RuleRepository extends BaseRepository<Rule> {
       )
       .run();
 
-    const rule = await this.findById(id);
+    const rule = await this.findById(displayId);
     return rule!;
   }
 

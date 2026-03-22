@@ -37,29 +37,32 @@ export class OfferRepository extends BaseRepository<Offer> {
    * 创建 Offer
    */
   async create(data: CreateOfferDTO): Promise<Offer> {
-    const id = crypto.randomUUID();
     const displayId = await this.idService.generateId('offers');
     const now = new Date().toISOString();
 
     await this.db
       .prepare(`
-        INSERT INTO offers (id, displayId, name, url, payout, currency, status, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO offers (id, displayId, name, url, payout, currency, payoutType, redirectType, network, "group", status, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
-        id, 
+        displayId, 
         displayId,
         data.name, 
         data.url, 
         data.payout || 0, 
         data.currency || 'USD',
+        data.payoutType || 'fixed',
+        data.redirectType || 'http',
+        data.network || '',
+        data.group || '',
         'active', 
         now, 
         now
       )
       .run();
 
-    const offer = await this.findById(id);
+    const offer = await this.findById(displayId);
     return offer!;
   }
 
@@ -75,6 +78,7 @@ export class OfferRepository extends BaseRepository<Offer> {
     if (data.payout !== undefined) { fields.push('payout = ?'); values.push(data.payout); }
     if (data.currency !== undefined) { fields.push('currency = ?'); values.push(data.currency); }
     if (data.payoutType !== undefined) { fields.push('payoutType = ?'); values.push(data.payoutType); }
+    if (data.redirectType !== undefined) { fields.push('redirectType = ?'); values.push(data.redirectType); }
     if (data.network !== undefined) { fields.push('network = ?'); values.push(data.network); }
     if (data.group !== undefined) { fields.push('"group" = ?'); values.push(data.group); }
     if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }

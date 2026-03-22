@@ -51,7 +51,7 @@ import {
   LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer,
   LazyBarChart, LazyBar
 } from '../components/ChartWrapper';
-import { fetchCampaign, updateCampaign, fetchCampaignStats, fetchFlows, createFlow, updateFlow, deleteFlow } from '../services/api';
+import { fetchCampaign, updateCampaign, fetchCampaignStats, fetchFlows, createFlow, updateFlow, deleteFlow, addOfferToFlow, addLandingPageToFlow } from '../services/api';
 import { FlowDesigner } from '../components/FlowDesigner';
 
 function cn(...inputs: ClassValue[]) {
@@ -185,6 +185,8 @@ export const CampaignDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<any>(null);
+  const [flows, setFlows] = useState<any[]>([]);
+  const [connections, setConnections] = useState<any[]>([]);
 
   // Fetch campaign data
   useEffect(() => {
@@ -193,18 +195,41 @@ export const CampaignDetail = () => {
         setLoading(true);
 
         const campaign = await fetchCampaign(id!);
+        console.log('[CampaignDetail] Fetched campaign:', {
+          urlParamId: id,
+          campaignId: campaign?.id,
+          campaignAlias: campaign?.alias,
+          campaignName: campaign?.name
+        });
 
         if (campaign && campaign.id) {
           const transformedCampaign = transformCampaign(campaign);
           setCampaign(transformedCampaign);
+          console.log('[CampaignDetail] Transformed campaign:', {
+            id: transformedCampaign.id,
+            name: transformedCampaign.name
+          });
 
           try {
             const stats = await fetchCampaignStats(id!);
             if (stats) {
               setStats(stats);
             }
+            
+            // Load flows for this campaign
+            const flowsData = await fetchFlows(id!);
+            console.log('[CampaignDetail] Loaded flows:', flowsData);
+            if (Array.isArray(flowsData)) {
+              setFlows(flowsData.map((flow: any) => ({
+                id: flow.id,
+                type: flow.actionType === 'show_landing' ? 'landing' : 'offer',
+                name: flow.name,
+                weight: flow.weight,
+                config: flow.actionConfig,
+              })));
+            }
           } catch (statsErr) {
-            console.warn('Stats API not available');
+            console.warn('Stats API not available:', statsErr);
             setStats(null);
           }
         } else {
@@ -801,16 +826,27 @@ eval(atob('${btoa(script)}'));
           
           <FlowDesigner
             campaignId={id || ''}
+            initialFlows={flows}
+            initialConnections={connections}
             onSave={async (flows, connections) => {
               try {
-                // Fetch existing flows
-                const existingFlows = await fetchFlows(id || '');
+                const campaignUUID = campaign?.id || id;
+                console.log('[FlowDesigner] Saving flows for campaign:', {
+                  displayId: id,
+                  uuid: campaignUUID,
+                  campaignName: campaign?.name,
+                  flowCount: flows.length
+                });
                 
-                // Create or update flows
+                console.log('[FlowDesigner] Flows to save:', flows.map(f => ({ id: f.id, name: f.name, type: f.type })));
+                
+                const existingFlows = await fetchFlows(id || '');
+                console.log('[FlowDesigner] Existing flows from API:', existingFlows);
+                
                 for (const flow of flows) {
                   const existingFlow = existingFlows.find((f: any) => f.name === flow.name);
                   const flowData = {
-                    campaignId: id,
+                    campaignId: campaignUUID,
                     name: flow.name,
                     type: 'regular',
                     weight: flow.weight,
@@ -818,17 +854,33 @@ eval(atob('${btoa(script)}'));
                     actionType: flow.type === 'landing' ? 'show_landing' : 'show_offer',
                   };
                   
+                  let flowId: string;
                   if (existingFlow) {
+                    console.log('[FlowDesigner] Updating flow:', existingFlow.id, flow.name);
                     await updateFlow(existingFlow.id, flowData);
+                    flowId = existingFlow.id;
                   } else {
-                    await createFlow(flowData);
+                    console.log('[FlowDesigner] Creating flow:', flow.name);
+                    const newFlow = await createFlow(flowData);
+                    flowId = newFlow.id;
+                  }
+                  
+                  // 关联 Offer 或 Landing Page
+                  // flow.id 是 Offer 或 Landing Page 的 ID
+                  if (flow.type === 'offer' && flow.id) {
+                    console.log('[FlowDesigner] Adding offer to flow:', flowId, flow.id);
+                    await addOfferToFlow(flowId, flow.id, flow.weight);
+                  } else if (flow.type === 'landing' && flow.id) {
+                    console.log('[FlowDesigner] Adding landing page to flow:', flowId, flow.id);
+                    await addLandingPageToFlow(flowId, flow.id, flow.weight);
                   }
                 }
                 
-                // Delete removed flows
                 const flowNames = flows.map(f => f.name);
                 const flowsToDelete = existingFlows.filter((f: any) => !flowNames.includes(f.name));
+                console.log('[FlowDesigner] Flows to delete:', flowsToDelete.map(f => ({ id: f.id, name: f.name })));
                 for (const flowToDelete of flowsToDelete) {
+                  console.log('[FlowDesigner] Deleting flow:', flowToDelete.id, flowToDelete.name);
                   await deleteFlow(flowToDelete.id);
                 }
                 
@@ -836,7 +888,7 @@ eval(atob('${btoa(script)}'));
                 setActiveTab('overview');
               } catch (err) {
                 console.error('Failed to save flow:', err);
-                alert('Failed to save flow configuration');
+                alert(`Failed to save flow configuration: ${err instanceof Error ? err.message : 'Unknown error'}`);
               }
             }}
             onCancel={() => setActiveTab('overview')}
