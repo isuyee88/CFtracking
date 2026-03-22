@@ -802,45 +802,46 @@ eval(atob('${btoa(script)}'));
           <FlowDesigner
             campaignId={id || ''}
             onSave={async (flows, connections) => {
-            try {
-              // Fetch existing flows
-              const existingFlows = await fetchFlows(id || '');
-              
-              // Create or update flows
-              for (const flow of flows) {
-                const existingFlow = existingFlows.find((f: any) => f.name === flow.name);
-                const flowData = {
-                  campaignId: id,
-                  name: flow.name,
-                  type: 'regular',
-                  weight: flow.weight,
-                  status: 'active' as const,
-                  actionType: flow.type === 'landing' ? 'show_landing' : 'show_offer',
-                };
+              try {
+                // Fetch existing flows
+                const existingFlows = await fetchFlows(id || '');
                 
-                if (existingFlow) {
-                  await updateFlow(existingFlow.id, flowData);
-                } else {
-                  await createFlow(flowData);
+                // Create or update flows
+                for (const flow of flows) {
+                  const existingFlow = existingFlows.find((f: any) => f.name === flow.name);
+                  const flowData = {
+                    campaignId: id,
+                    name: flow.name,
+                    type: 'regular',
+                    weight: flow.weight,
+                    status: 'active' as const,
+                    actionType: flow.type === 'landing' ? 'show_landing' : 'show_offer',
+                  };
+                  
+                  if (existingFlow) {
+                    await updateFlow(existingFlow.id, flowData);
+                  } else {
+                    await createFlow(flowData);
+                  }
                 }
+                
+                // Delete removed flows
+                const flowNames = flows.map(f => f.name);
+                const flowsToDelete = existingFlows.filter((f: any) => !flowNames.includes(f.name));
+                for (const flowToDelete of flowsToDelete) {
+                  await deleteFlow(flowToDelete.id);
+                }
+                
+                alert('Flow saved successfully!');
+                setActiveTab('overview');
+              } catch (err) {
+                console.error('Failed to save flow:', err);
+                alert('Failed to save flow configuration');
               }
-              
-              // Delete removed flows
-              const flowNames = flows.map(f => f.name);
-              const flowsToDelete = existingFlows.filter((f: any) => !flowNames.includes(f.name));
-              for (const flowToDelete of flowsToDelete) {
-                await deleteFlow(flowToDelete.id);
-              }
-              
-              alert('Flow saved successfully!');
-              setActiveTab('overview');
-            } catch (err) {
-              console.error('Failed to save flow:', err);
-              alert('Failed to save flow configuration');
-            }
-          }}
-          onCancel={() => setActiveTab('overview')}
-        />
+            }}
+            onCancel={() => setActiveTab('overview')}
+          />
+        </div>
       )}
 
       {activeTab === 'reports' && (
