@@ -24,6 +24,59 @@ export class OfferRepository extends BaseRepository<Offer> {
     } as Offer;
   }
 
+  protected getExcludedStatusesCondition(): string {
+    return "status != 'deleted'";
+  }
+
+  async findAll(limit = 100, offset = 0): Promise<Offer[]> {
+    const excluded = this.getExcludedStatusesCondition();
+    const result = await this.db
+      .prepare(`SELECT * FROM ${this.tableName} WHERE ${excluded} LIMIT ? OFFSET ?`)
+      .bind(limit, offset)
+      .all();
+    return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [];
+  }
+
+  async findBy(field: string, value: unknown): Promise<Offer[]> {
+    const excluded = this.getExcludedStatusesCondition();
+    const result = await this.db
+      .prepare(`SELECT * FROM ${this.tableName} WHERE ${excluded} AND ${field} = ?`)
+      .bind(value)
+      .all();
+    return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [];
+  }
+
+  async findOneBy(field: string, value: unknown): Promise<Offer | null> {
+    const excluded = this.getExcludedStatusesCondition();
+    const result = await this.db
+      .prepare(`SELECT * FROM ${this.tableName} WHERE ${excluded} AND ${field} = ? LIMIT 1`)
+      .bind(value)
+      .first();
+    if (!result) return null;
+    return this.transform(result as Record<string, unknown>);
+  }
+
+  async count(conditions?: string, params?: unknown[]): Promise<number> {
+    const excluded = this.getExcludedStatusesCondition();
+    let sql = `SELECT COUNT(*) as count FROM ${this.tableName} WHERE ${excluded}`;
+    if (conditions) {
+      sql += ` AND ${conditions}`;
+    }
+    const stmt = this.db.prepare(sql);
+    const bound = params ? stmt.bind(...params) : stmt;
+    const result = await bound.first();
+    return (result?.count as number) || 0;
+  }
+
+  async exists(id: string): Promise<boolean> {
+    const excluded = this.getExcludedStatusesCondition();
+    const result = await this.db
+      .prepare(`SELECT 1 FROM ${this.tableName} WHERE ${excluded} AND id = ? LIMIT 1`)
+      .bind(id)
+      .first();
+    return result !== null;
+  }
+
   async findByDisplayId(displayId: string): Promise<Offer | null> {
     const result = await this.db
       .prepare(`SELECT * FROM offers WHERE displayId = ?`)
