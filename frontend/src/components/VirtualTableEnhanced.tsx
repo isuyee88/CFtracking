@@ -175,10 +175,10 @@ export function VirtualTableEnhanced<T = any>({
       <div className="relative" style={{ height: totalHeight }}>
         {/* 固定表头 */}
         <div 
-          className="sticky top-0 z-10 bg-surface-container-low border-b border-outline-variant/10"
+          className="sticky top-0 z-10 bg-surface-container-low border-b border-outline-variant/10 overflow-hidden"
           style={{ height: rowHeight }}
         >
-          <div className="flex h-full items-center">
+          <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
             {selectable && (
               <div 
                 className="px-4 flex items-center"
@@ -243,7 +243,7 @@ export function VirtualTableEnhanced<T = any>({
                 }}
                 onClick={() => onRowClick?.(row, actualIndex)}
               >
-                <div className="flex h-full items-center">
+                <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
                   {selectable && (
                     <div 
                       className="px-4 flex items-center"
