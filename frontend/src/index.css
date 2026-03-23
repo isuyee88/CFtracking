@@ -2148,13 +2148,64 @@ textarea.form-input {
   }
 }
 
-/* Mobile Checkbox & Radio Optimization - 缩小多选框尺寸 */
+/* ============================================
+   Global Checkbox & Radio Optimization - 统一缩小多选框尺寸
+   所有页面 checkbox 尺寸统一缩小到 8px (0.5rem)
+   ============================================ */
+
+/* 桌面端和移动端统一 checkbox 尺寸 */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 0.5rem !important; /* 从 1rem 减小到 0.5rem (8px) */
+  height: 0.5rem !important; /* 从 1rem 减小到 0.5rem (8px) */
+  min-width: 0.5rem !important;
+  min-height: 0.5rem !important;
+  cursor: pointer;
+  accent-color: #6366f1; /* 使用主题色 */
+}
+
+/* 表格中的 checkbox 特殊优化 */
+table input[type="checkbox"],
+table input[type="radio"] {
+  width: 0.5rem !important;
+  height: 0.5rem !important;
+  margin: 0;
+  padding: 0;
+}
+
+/* 表格单元格中的 checkbox 容器优化 */
+td:has(input[type="checkbox"]),
+th:has(input[type="checkbox"]),
+td:has(input[type="radio"]),
+th:has(input[type="radio"]) {
+  padding: 12px 8px;
+  vertical-align: middle;
+  text-align: center;
+}
+
+/* 保持标签的可点击区域符合 WCAG 44x44px 标准 */
+input[type="checkbox"] + label,
+input[type="radio"] + label,
+label:has(input[type="checkbox"]),
+label:has(input[type="radio"]),
+.checkbox-label,
+.radio-label {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding-left: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Mobile Checkbox & Radio Optimization - 移动端进一步优化 */
 @media (max-width: 768px) {
-  /* 缩小多选框和单选框尺寸到 50% */
+  /* 移动端 checkbox 尺寸保持 0.5rem */
   .form-checkbox,
   .form-radio {
-    width: 0.5rem; /* 从 1rem 减小到 0.5rem */
-    height: 0.5rem; /* 从 1rem 减小到 0.5rem */
+    width: 0.5rem;
+    height: 0.5rem;
     cursor: pointer;
   }
   
