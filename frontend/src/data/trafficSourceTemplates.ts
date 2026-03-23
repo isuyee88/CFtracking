@@ -198,6 +198,35 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       clickId: '{conversions_tracking}',
       revenue: '{{revenue}}'
     }
+  },
+  {
+    id: 'oddbytes',
+    name: 'OddBytes',
+    domain: 'oddbytes.com',
+    type: 'native',
+    parameters: [
+      { alias: 'Campaign', paramName: 'utm_campaign', macro: '{campaignName}' },
+      { alias: 'Campaign ID', paramName: 'utm_campaign_id', macro: '{campaignID}' },
+      { alias: 'Creative', paramName: 'utm_content', macro: '{creativeName}' },
+      { alias: 'Creative ID', paramName: 'utmcreativeid', macro: '{creativeID}' },
+      { alias: 'Keyword ID', paramName: 'utm_keyword_id', macro: '{keywordID}' },
+      { alias: 'Domain ID', paramName: 'utm_domain_id', macro: '{targetingDomainId}' },
+      { alias: 'City', paramName: 'utm_city', macro: '{city}' },
+      { alias: 'State', paramName: 'utm_state', macro: '{state}' },
+      { alias: 'City/State', paramName: 'utm_location', macro: '{citystate}' },
+      { alias: 'Bid', paramName: 'utm_bid', macro: '{bid}' },
+      { alias: 'Token', paramName: 'token', macro: '{token}' },
+      { alias: 'Timestamp', paramName: 'timestamp', macro: '{timestamp}' },
+    ],
+    postbackUrl: 'https://your-tracking-domain.com/postback?token={token}&amount={{revenue}}&currency={{currency}}&status={clickStatus}',
+    postbackMacros: {
+      clickId: '{token}',
+      revenue: '{{revenue}}',
+      currency: '{{currency}}',
+      bid: '{bid}',
+      clickStatus: '{clickStatus}',
+      timestamp: '{timestamp}'
+    }
   }
 ];
 
