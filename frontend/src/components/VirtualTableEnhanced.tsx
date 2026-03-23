@@ -227,7 +227,7 @@ export function VirtualTableEnhanced<T = any>({
       <div className="relative" style={{ height: totalHeight }}>
         {/* 固定表头 */}
         <div 
-          className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 overflow-hidden"
+          className="sticky top-0 z-10 bg-surface-container-low dark:bg-surface-container border-b border-outline-variant/20 overflow-hidden"
           style={{ height: rowHeight }}
         >
           <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
@@ -255,7 +255,7 @@ export function VirtualTableEnhanced<T = any>({
                 <div
                   key={column.key}
                   className={cn(
-                    'px-4 flex items-center text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors',
+                    'px-4 flex items-center text-sm font-medium text-fg-default cursor-pointer hover:bg-surface-container/50 transition-colors',
                     column.align === 'center' && 'justify-center',
                     column.align === 'right' && 'justify-end',
                     column.align === 'left' && 'justify-start',
