@@ -2095,9 +2095,6 @@ textarea.form-input {
    移动端响应式优化
    ============================================ */
 
-/* Mobile Optimizations - 使用 Ant Design 默认样式 */
-/* 移除所有强制字体大小，使用 Ant Design 默认值 */
-
 /* Mobile Bottom Navigation Bar - 支持横向滚动 */
 .mobile-bottom-nav {
   display: none;
@@ -2135,15 +2132,13 @@ textarea.form-input {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 16px; /* 增加左右间距 */
+  padding: 8px 16px;
   border-radius: 12px;
   transition: all 0.2s ease;
-  min-width: 64px; /* 增加最小宽度 */
-  min-height: 44px;
   color: var(--color-fg-muted);
   text-decoration: none;
   gap: 4px;
-  flex-shrink: 0; /* 防止压缩 */
+  flex-shrink: 0;
 }
 
 .mobile-nav-item:active {
@@ -2165,171 +2160,10 @@ textarea.form-input {
 }
 
 /* ============================================
-   Global Minimum Clickable Areas - WCAG 无障碍标准
-   所有可点击元素最小尺寸 44x44px
+   Mobile Responsive Optimizations - Stitch Design
+   移动端响应式优化
    ============================================ */
 
-/* 全局最小可点击区域 */
-button,
-a,
-[role="button"] {
-  min-height: 44px;
-  min-width: 44px;
-}
-
-/* 图标按钮 - 增加 padding 确保可点击区域 */
-.icon-button,
-.btn-icon,
-button[class*="p-2"],
-button[class*="p-1"] {
-  padding: 12px !important;
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px !important;
-  min-width: 44px !important;
-}
-
-/* 表格操作按钮 - 移动端优化 */
-@media (max-width: 768px) {
-  .table-action-button {
-    padding: 12px 16px !important;
-    font-size: 16px !important;
-    min-height: 44px !important;
-    min-width: 44px !important;
-  }
-
-  /* Increase touch targets */
-  button,
-  [role="button"],
-  a,
-  input[type="checkbox"],
-  input[type="radio"],
-  select {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  /* Smaller touch targets for icon-only buttons */
-  button.btn-icon,
-  button[class*="p-2"],
-  button[class*="p-1"] {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  /* Mobile table font optimization - Minimum 14px */
-  table th,
-  table td {
-    font-size: 14px;
-    line-height: 1.5;
-    padding: 12px 8px;
-  }
-
-  /* Table headers bold */
-  table th {
-    font-weight: 600;
-    font-size: 13px;
-  }
-
-  /* Data table specific optimization */
-  .data-table tbody td {
-    font-size: 14px;
-    padding: 12px 8px;
-  }
-
-  .data-table thead th {
-    font-size: 13px;
-    font-weight: 600;
-    padding: 12px 8px;
-  }
-
-  /* Mobile header adjustments */
-  header {
-    padding-left: 12px !important;
-    padding-right: 12px !important;
-  }
-
-  /* Hide search on very small screens */
-  header .max-w-md {
-    display: none;
-  }
-
-  /* Mobile page content padding */
-  main > div[role="main"] {
-    padding: 12px !important;
-    padding-bottom: 80px !important;
-  }
-
-  /* Mobile card adjustments */
-  .card,
-  [class*="bg-surface-container"],
-  [class*="bg-surface"] {
-    border-radius: 12px;
-  }
-
-  /* Mobile table - horizontal scroll */
-  .table-container,
-  [class*="overflow-x-auto"] {
-    margin: 0 -12px;
-    padding: 0 12px;
-  }
-
-  /* Mobile stats cards */
-  .stats-grid,
-  [class*="grid-cols-"][class*="gap-"] {
-    gap: 8px !important;
-  }
-
-  /* Mobile modal adjustments */
-  .modal-content,
-  [role="dialog"] {
-    width: 95% !important;
-    max-width: 95% !important;
-    margin: 10px auto !important;
-    max-height: 90vh;
-    overflow-y: auto;
-  }
-
-  /* Mobile form inputs */
-  input,
-  select,
-  textarea {
-    font-size: 16px !important;
-  }
-
-  /* Mobile tabs */
-  [class*="flex gap-"][class*="bg-surface"] {
-    flex-wrap: wrap;
-    gap: 4px !important;
-  }
-
-  /* Mobile action buttons */
-  .btn-create,
-  .btn-pause,
-  .btn-delete {
-    padding: 10px 16px !important;
-    font-size: 14px !important;
-  }
-
-  /* Show mobile bottom nav */
-  .mobile-bottom-nav {
-    display: flex;
-  }
-
-  /* Adjust main content for bottom nav */
-  main {
-    padding-bottom: 64px;
-  }
-
-  /* Mobile chart container */
-  .recharts-wrapper,
-  [class*="h-64"],
-  [class*="h-80"],
-  [class*="h-96"] {
-    min-height: 200px !important;
-  }
-}
 
 /* Tablet adjustments */
 @media (min-width: 769px) and (max-width: 1024px) {
