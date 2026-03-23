@@ -24,8 +24,7 @@ import {
   Loader2,
   Link,
   Key,
-  Shield,
-  CopyToClipboard
+  Shield
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
