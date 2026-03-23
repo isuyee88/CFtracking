@@ -2095,77 +2095,8 @@ textarea.form-input {
    移动端响应式优化
    ============================================ */
 
-/* Mobile Font Size Optimization - 修复字体大小合规性 */
-@media (max-width: 768px) {
-  /* 强制移动端最小字体 14px - WCAG 无障碍标准 */
-  body,
-  p,
-  span,
-  div:not([class*="badge"]):not([class*="tag"]),
-  td:not([class*="badge"]),
-  th:not([class*="badge"]),
-  label,
-  input:not([type="checkbox"]):not([type="radio"]),
-  select,
-  textarea {
-    font-size: min(16px, max(14px, 1rem)) !important;
-  }
-  
-  /* Sidebar 标题字体优化 - 从 10px 提升到 12px */
-  .sidebar-section-title,
-  .sidebar-item span,
-  [class*="sidebar"] .text-fg-subtle {
-    font-size: 12px !important;
-  }
-  
-  /* 标签文字优化 - 从 10-12px 提升到 12px */
-  .metric-label,
-  .chart-label,
-  .badge,
-  .badge span,
-  [class*="label"] {
-    font-size: 12px !important;
-  }
-  
-  /* 图表数据标签优化 */
-  .recharts-text,
-  .recharts-label,
-  [class*="chart"] .text-fg-muted {
-    font-size: 12px !important;
-  }
-  
-  /* Current Path 提示优化 */
-  .breadcrumb,
-  .path-indicator,
-  [class*="path"] {
-    font-size: 12px !important;
-  }
-  
-  /* 用户等级标签优化 */
-  .user-level,
-  .partner-badge {
-    font-size: 12px !important;
-  }
-}
-
-/* Mobile Checkbox & Radio Optimization - 移动端优化 */
-@media (max-width: 768px) {
-  /* 移动端保持标签的可点击区域符合 WCAG 44x44px 标准 */
-  .form-checkbox + label,
-  .form-radio + label,
-  label:has(.form-checkbox),
-  label:has(.form-radio),
-  .checkbox-label,
-  .radio-label {
-    min-height: 44px;
-    min-width: 44px;
-    display: inline-flex;
-    align-items: center;
-    padding-left: 0.5rem;
-    cursor: pointer;
-    user-select: none;
-  }
-}
+/* Mobile Optimizations - 使用 Ant Design 默认样式 */
+/* 移除所有强制字体大小，使用 Ant Design 默认值 */
 
 /* Mobile Bottom Navigation Bar - 支持横向滚动 */
 .mobile-bottom-nav {

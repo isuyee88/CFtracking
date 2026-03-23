@@ -196,7 +196,7 @@ export function VirtualTableEnhanced<T = any>({
               <div
                 key={column.key}
                 className={cn(
-                  'px-4 text-xs font-bold uppercase text-on-surface-variant overflow-hidden text-ellipsis whitespace-nowrap',
+                  'px-4 text-xs font-bold uppercase text-on-surface-variant',
                   column.align === 'center' && 'text-center justify-center',
                   column.align === 'right' && 'text-right justify-end',
                   column.align === 'left' && 'text-left justify-start',
@@ -268,7 +268,7 @@ export function VirtualTableEnhanced<T = any>({
                       <div
                         key={column.key}
                         className={cn(
-                          'px-4 flex items-center overflow-hidden text-ellipsis whitespace-nowrap',
+                          'px-4 flex items-center',
                           column.align === 'center' && 'justify-center text-center',
                           column.align === 'right' && 'justify-end text-right',
                           column.align === 'left' && 'justify-start text-left',
