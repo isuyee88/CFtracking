@@ -293,8 +293,27 @@ export const CampaignDetail = () => {
   const handleSave = async () => {
     if (editedCampaign) {
       try {
-        const response = await updateCampaign(campaign.id, editedCampaign);
-        if (response.success) {
+        // 只发送需要更新的字段
+        const updateData = {
+          name: editedCampaign.name,
+          alias: editedCampaign.alias,
+          domain: editedCampaign.domain,
+          group: editedCampaign.group,
+          trafficSource: editedCampaign.source,
+          flowRotation: editedCampaign.flowRotation,
+          costModel: editedCampaign.costModel,
+          costValue: editedCampaign.costValue,
+          currency: editedCampaign.currency,
+          uniquenessMethod: editedCampaign.uniquenessMethod,
+          uniquenessParameter: editedCampaign.uniquenessParameter,
+          uniquenessTTL: editedCampaign.uniquenessTTL,
+          visitorBinding: editedCampaign.visitorBinding,
+          status: editedCampaign.status,
+          notes: editedCampaign.notes,
+        };
+
+        const response = await updateCampaign(campaign.id, updateData);
+        if (response) {
           setCampaign({ ...editedCampaign, updatedAt: new Date().toISOString().split('T')[0] });
           setIsEditModalOpen(false);
           toast.success('Campaign Updated', 'Campaign has been updated successfully.');
@@ -302,6 +321,7 @@ export const CampaignDetail = () => {
           toast.error('Update Failed', 'Failed to update campaign');
         }
       } catch (err) {
+        console.error('Update campaign error:', err);
         toast.error('Update Failed', err instanceof Error ? err.message : 'Failed to update campaign');
       }
     }
