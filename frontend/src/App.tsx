@@ -173,6 +173,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="campaigns" element={<CampaignManagement />} />
             <Route path="campaigns/:id" element={<CampaignDetail />} />
             <Route path="rules" element={<RuleManagement />} />
