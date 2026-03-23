@@ -454,7 +454,6 @@ export const getPresetTimeRange = (preset: PresetQueryType): { startDate: string
       break;
     case 'lastmonth': {
       const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
       startDate = lastMonth.toISOString();
       break;
     }
@@ -483,7 +482,7 @@ const AE_FREE_TIER_DAYS = 90;
  */
 export type DataSource = 'AE' | 'D1';
 
-export const determineDataSource = (startDate: string, endDate: string): DataSource => {
+export const determineDataSource = (startDate: string, _endDate: string): DataSource => {
   const now = new Date();
   const start = new Date(startDate);
   const daysDiff = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));

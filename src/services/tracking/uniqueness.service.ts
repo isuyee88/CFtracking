@@ -77,7 +77,7 @@ export class UniquenessService {
    */
   async check(
     request: UniquenessCheckRequest,
-    clickId: string
+    _clickId: string
   ): Promise<UniquenessResult> {
     if (request.method === 'none') {
       return {

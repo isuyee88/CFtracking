@@ -76,7 +76,7 @@ export class UniquenessDurableObject {
   private storage: DurableObjectStorage;
   private records: Map<string, UniquenessRecord> = new Map();
 
-  constructor(private state: DurableObjectState, private env: Env) {
+  constructor(state: DurableObjectState, _env: Env) {
     this.storage = state.storage;
   }
 
@@ -143,7 +143,7 @@ export class UniquenessDurableObject {
     this.records.set(key, record);
 
     const ttlSeconds = req.ttl || 86400;
-    await this.storage.put(key, record, { expirationTtl: ttlSeconds });
+    await this.storage.put(key, record, { expirationTtl: ttlSeconds } as any);
 
     const result: UniquenessCheckResult = {
       isUnique: true,
@@ -248,8 +248,8 @@ export class UniquenessDOService {
    * 执行去重检查
    */
   async check(request: UniquenessCheckRequest): Promise<UniquenessCheckResult> {
-    const id = this.env.UNIQUENESS_DO.idFromName(`campaign-${request.campaignId}`);
-    const stub = this.env.UNIQUENESS_DO.get(id);
+    const id = this.env.UNIQUE_DO.idFromName(`campaign-${request.campaignId}`);
+    const stub = this.env.UNIQUE_DO.get(id);
 
     const response = await stub.fetch('http://localhost/check', {
       method: 'POST',

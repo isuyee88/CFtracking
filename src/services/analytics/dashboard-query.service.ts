@@ -71,10 +71,9 @@ export interface DashboardQueryResult {
 
 const AE_FREE_TIER_DAYS = 90;
 
-export function determineDataSource(startDate: string, endDate: string): DataSource {
+export function determineDataSource(startDate: string, _endDate: string): DataSource {
   const now = new Date();
   const start = new Date(startDate);
-  const end = new Date(endDate);
 
   const daysDiff = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -113,7 +112,7 @@ export class DashboardQueryService {
 
     if (dataSource === 'AE') {
       const aeResult = await this.analyticsQueryService.getDashboardStats(range);
-      metrics = aeResult.metrics;
+      metrics = aeResult.metrics as DashboardMetric[];
       chartData = await this.analyticsQueryService.getChartData(range);
       entityStats = await this.getEntityStatsFromAE(range);
     } else {
@@ -266,13 +265,13 @@ export class DashboardQueryService {
     }
 
     return [
-      { key: 'clicks', label: 'Clicks', value: metricsMap.clicks?.value || '0', isPositive: true, format: 'number' },
-      { key: 'unique_clicks_campaign', label: 'Unique clicks (campaign)', value: metricsMap.unique_clicks_campaign?.value || '0', isPositive: true, format: 'number' },
-      { key: 'conversions', label: 'Conversions', value: metricsMap.conversions?.value || '0', isPositive: true, format: 'number' },
-      { key: 'spend', label: 'Cost', value: metricsMap.spend?.value || '$0.00', isPositive: false, format: 'currency' },
-      { key: 'revenue_confirmed', label: 'Revenue (confirmed)', value: metricsMap.revenue_confirmed?.value || '$0.00', isPositive: true, format: 'currency' },
-      { key: 'profit_confirmed', label: 'Profit/Loss (confirmed)', value: metricsMap.profit_confirmed?.value || '$0.00', isPositive: true, format: 'currency' },
-      { key: 'roi_confirmed', label: 'ROI (confirmed)', value: metricsMap.roi_confirmed?.value || '0%', isPositive: true, format: 'percentage' },
+      { key: 'clicks', label: 'Clicks', value: metricsMap.clicks?.value || '0', isPositive: true, format: 'number' as const },
+      { key: 'unique_clicks_campaign', label: 'Unique clicks (campaign)', value: metricsMap.unique_clicks_campaign?.value || '0', isPositive: true, format: 'number' as const },
+      { key: 'conversions', label: 'Conversions', value: metricsMap.conversions?.value || '0', isPositive: true, format: 'number' as const },
+      { key: 'spend', label: 'Cost', value: metricsMap.spend?.value || '$0.00', isPositive: false, format: 'currency' as const },
+      { key: 'revenue_confirmed', label: 'Revenue (confirmed)', value: metricsMap.revenue_confirmed?.value || '$0.00', isPositive: true, format: 'currency' as const },
+      { key: 'profit_confirmed', label: 'Profit/Loss (confirmed)', value: metricsMap.profit_confirmed?.value || '$0.00', isPositive: true, format: 'currency' as const },
+      { key: 'roi_confirmed', label: 'ROI (confirmed)', value: metricsMap.roi_confirmed?.value || '0%', isPositive: true, format: 'percentage' as const },
     ];
   }
 
@@ -350,7 +349,7 @@ export class DashboardQueryService {
    */
   private async getTrafficReport(
     dataSource: DataSource,
-    query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
+    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
   ): Promise<any[]> {
     if (dataSource === 'AE') {
       const stats = await this.analyticsQueryService.getEntityStats('campaigns', 'last30days');
@@ -380,7 +379,7 @@ export class DashboardQueryService {
    */
   private async getConversionReport(
     dataSource: DataSource,
-    query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
+    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
   ): Promise<any[]> {
     if (dataSource === 'AE') {
       const stats = await this.analyticsQueryService.getEntityStats('campaigns', 'last30days');
@@ -410,7 +409,7 @@ export class DashboardQueryService {
    */
   private async getFinancialReport(
     dataSource: DataSource,
-    query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
+    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
   ): Promise<any[]> {
     if (dataSource === 'AE') {
       const stats = await this.analyticsQueryService.getEntityStats('campaigns', 'last30days');
@@ -438,7 +437,7 @@ export class DashboardQueryService {
    */
   private async getROIReport(
     dataSource: DataSource,
-    query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
+    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
   ): Promise<any[]> {
     if (dataSource === 'AE') {
       const stats = await this.analyticsQueryService.getEntityStats('campaigns', 'last30days');
@@ -475,31 +474,31 @@ export class DashboardQueryService {
    */
   private getDateRange(range: string): { startDate: string; endDate: string } {
     const now = new Date();
-    const endDate = now.toISOString().split('T')[0];
-    let startDate = endDate;
+    const endDate = now.toISOString().split('T')[0]!;
+    let startDate: string = endDate;
 
     switch (range) {
       case 'today':
-        startDate = endDate;
         break;
       case 'yesterday':
-        startDate = new Date(now.setDate(now.getDate() - 1)).toISOString().split('T')[0];
+        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
         break;
       case 'last7days':
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
         break;
       case 'last30days':
       case 'last3months':
-        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
         break;
       case 'thismonth':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]!;
         break;
       case 'lastmonth':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]!;
         break;
       default:
-        startDate = endDate;
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
+        break;
     }
 
     return { startDate, endDate };

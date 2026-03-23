@@ -166,7 +166,7 @@ export function createAnalyticsRouter() {
 
       const dashboardQuery = createDashboardQueryService(c.env);
 
-      let stats;
+      let stats: any[];
       try {
         stats = await dashboardQuery.getEntityStats(type, range);
       } catch (entityError) {
