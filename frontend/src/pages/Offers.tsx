@@ -637,6 +637,7 @@ export const Offers = () => {
       {/* Offers Table - 使用虚拟滚动 */}
       <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
         <VirtualTableEnhanced
+          tableId="offers"
           columns={[
             {
               key: 'select',
@@ -658,6 +659,16 @@ export const Offers = () => {
               key: 'name',
               label: 'Offer',
               width: '300px',
+              // 筛选和排序配置
+              filters: [
+                { text: 'Active', value: 'active' },
+                { text: 'Paused', value: 'paused' },
+                { text: 'Deleted', value: 'deleted' },
+              ],
+              onFilter: (value, record) => record.status?.includes(value),
+              sorter: (a, b) => a.name.localeCompare(b.name),
+              showSorter: true,
+              showFilter: true,
               render: (_, row) => (
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
@@ -682,6 +693,16 @@ export const Offers = () => {
               key: 'status',
               label: 'Status',
               width: '120px',
+              // 筛选和排序配置
+              filters: [
+                { text: 'Active', value: 'active' },
+                { text: 'Paused', value: 'paused' },
+                { text: 'Deleted', value: 'deleted' },
+              ],
+              onFilter: (value, record) => record.status === value,
+              sorter: (a, b) => a.status.localeCompare(b.status),
+              showSorter: true,
+              showFilter: true,
               render: (_, row) => (
                 <div className={cn(
                   "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
@@ -699,6 +720,9 @@ export const Offers = () => {
               key: 'payout',
               label: 'Payout',
               width: '120px',
+              // 排序配置
+              sorter: (a, b) => a.payout - b.payout,
+              showSorter: true,
               render: (_, row) => (
                 <div className="flex flex-col">
                   <span className="text-sm font-bold text-secondary">${row.payout.toFixed(2)}</span>
@@ -710,6 +734,15 @@ export const Offers = () => {
               key: 'network',
               label: 'Network',
               width: '200px',
+              // 筛选配置
+              filters: [
+                { text: 'Default', value: 'Default' },
+                { text: 'Custom', value: 'Custom' },
+              ],
+              onFilter: (value, record) => (record.network || 'Default').includes(value),
+              sorter: (a, b) => (a.network || 'Default').localeCompare(b.network || 'Default'),
+              showSorter: true,
+              showFilter: true,
               render: (_, row) => (
                 <div className="flex flex-col">
                   <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm w-fit">

@@ -522,6 +522,7 @@ export const Landings = () => {
       {/* Landing Pages Table - 使用虚拟滚动 */}
       <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
         <VirtualTableEnhanced
+          tableId="landings"
           columns={[
             {
               key: 'select',
@@ -543,6 +544,9 @@ export const Landings = () => {
               key: 'name',
               label: 'Landing Page',
               width: '300px',
+              // 筛选和排序配置
+              sorter: (a, b) => a.name.localeCompare(b.name),
+              showSorter: true,
               render: (_, row) => (
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
@@ -567,6 +571,15 @@ export const Landings = () => {
               key: 'status',
               label: 'Status',
               width: '120px',
+              // 筛选和排序配置
+              filters: [
+                { text: 'Active', value: 'active' },
+                { text: 'Paused', value: 'paused' },
+              ],
+              onFilter: (value, record) => record.status === value,
+              sorter: (a, b) => a.status.localeCompare(b.status),
+              showSorter: true,
+              showFilter: true,
               render: (_, row) => (
                 <div className={cn(
                   "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
@@ -584,6 +597,15 @@ export const Landings = () => {
               key: 'group',
               label: 'Group',
               width: '150px',
+              // 筛选和排序配置
+              filters: [
+                { text: 'Default', value: 'Default' },
+                { text: 'Custom', value: 'Custom' },
+              ],
+              onFilter: (value, record) => (record.group || 'Default').includes(value),
+              sorter: (a, b) => (a.group || 'Default').localeCompare(b.group || 'Default'),
+              showSorter: true,
+              showFilter: true,
               render: (_, row) => (
                 <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm">
                   {row.group || 'Default'}
@@ -606,6 +628,9 @@ export const Landings = () => {
               label: 'Clicks',
               width: '100px',
               align: 'right',
+              // 排序配置
+              sorter: (a, b) => (a.clicks || 0) - (b.clicks || 0),
+              showSorter: true,
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
               ),
@@ -615,6 +640,9 @@ export const Landings = () => {
               label: 'Conv.',
               width: '80px',
               align: 'right',
+              // 排序配置
+              sorter: (a, b) => (a.conversions || 0) - (b.conversions || 0),
+              showSorter: true,
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
               ),
