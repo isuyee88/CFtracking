@@ -2095,6 +2095,30 @@ textarea.form-input {
    移动端响应式优化
    ============================================ */
 
+/* Mobile Bottom Navigation - Show only on mobile (< 768px) */
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    display: flex !important; /* 强制显示底部导航 */
+  }
+  
+  /* Hide sidebar on mobile - completely remove from layout */
+  aside {
+    display: none !important;
+  }
+  
+  /* Adjust main content for bottom nav */
+  main {
+    padding-bottom: 72px !important;
+  }
+}
+
+/* Desktop - Hide bottom navigation */
+@media (min-width: 769px) {
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+}
+
 /* Mobile Bottom Navigation Bar - 支持横向滚动 */
 .mobile-bottom-nav {
   display: none;
@@ -2160,14 +2184,12 @@ textarea.form-input {
 }
 
 /* ============================================
-   Mobile Responsive Optimizations - Stitch Design
-   移动端响应式优化
+   Tablet adjustments (769px - 1024px)
+   平板适配
    ============================================ */
 
-
-/* Tablet adjustments */
+/* Tablet sidebar - narrower */
 @media (min-width: 769px) and (max-width: 1024px) {
-  /* Tablet sidebar - narrower */
   aside {
     width: 200px !important;
   }
@@ -2177,6 +2199,11 @@ textarea.form-input {
     padding: 16px !important;
   }
 }
+
+/* ============================================
+   Small mobile devices (< 375px)
+   小屏手机适配
+   ============================================ */
 
 /* Small mobile devices */
 @media (max-width: 375px) {

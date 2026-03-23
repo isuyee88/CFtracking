@@ -251,17 +251,7 @@ export const Layout = () => {
           role="banner"
         >
           <div className="flex items-center gap-4 flex-1 max-w-md">
-            <button 
-              onClick={() => setSidebarOpen(true)} 
-              className={cn(
-                "lg:hidden text-fg-muted hover:text-fg-default hover:bg-surface-container focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 rounded-md p-1 transition-colors",
-                isSidebarOpen && "hidden"
-              )}
-              aria-label="Open sidebar"
-              aria-expanded={isSidebarOpen}
-            >
-              <Menu size={20} aria-hidden="true" />
-            </button>
+            {/* 移除移动端菜单按钮，只保留桌面端 */}
             <Search size={18} className="text-fg-subtle" aria-hidden="true" />
             <input 
               type="text" 
