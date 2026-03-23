@@ -197,7 +197,16 @@ export const CampaignDetail = () => {
       try {
         setLoading(true);
 
-        const campaign = await fetchCampaign(id!);
+        // Load campaign and traffic sources in parallel
+        const [campaign, sourcesData] = await Promise.all([
+          fetchCampaign(id!),
+          fetchTrafficSources(false).catch(() => []),
+        ]);
+
+        if (Array.isArray(sourcesData)) {
+          setTrafficSources(sourcesData);
+        }
+
         console.log('[CampaignDetail] Fetched campaign:', {
           urlParamId: id,
           campaignId: campaign?.id,
@@ -346,12 +355,41 @@ export const CampaignDetail = () => {
 
   const handleCopyUrl = async () => {
     try {
-      await navigator.clipboard.writeText(campaign.url);
+      const url = generateTrackingUrl();
+      await navigator.clipboard.writeText(url);
       toast.success('URL Copied', 'Tracking URL has been copied to clipboard!');
     } catch (err) {
       console.error('Failed to copy URL:', err);
       toast.error('Copy Failed', 'Failed to copy URL to clipboard');
     }
+  };
+
+  // Generate tracking URL with traffic source parameters
+  const generateTrackingUrl = () => {
+    if (!campaign?.domain || !campaign?.alias) return campaign?.url || '';
+
+    let baseUrl = campaign.domain.startsWith('http') ? campaign.domain : `https://${campaign.domain}`;
+    baseUrl = baseUrl.replace(/\/$/, '');
+    let url = `${baseUrl}/${campaign.alias}`;
+
+    // Find the selected traffic source and append its parameters
+    const selectedSource = trafficSources.find(ts => ts.id === campaign.source);
+    const params = selectedSource?.parameters;
+
+    if (params && Array.isArray(params) && params.length > 0) {
+      const searchParams = new URLSearchParams();
+      params.forEach((p: any) => {
+        if (p.paramName && p.macro) {
+          searchParams.set(p.paramName, p.macro);
+        }
+      });
+      const queryString = searchParams.toString();
+      if (queryString) {
+        url = `${url}?${queryString}`;
+      }
+    }
+
+    return url;
   };
 
   const handleInputChange = (field: keyof Campaign, value: any) => {
@@ -659,9 +697,14 @@ eval(atob('${btoa(script)}'));
 
       {/* Tracking URL */}
       <div className="bg-surface-container-lowest p-4 whisper-shadow flex items-center justify-between gap-4">
-        <div className="flex-1 min-w-0">
+        <div 
+          className="flex-1 min-w-0 cursor-pointer group"
+          onClick={handleCopyUrl}
+          onDoubleClick={handleCopyUrl}
+          title="Click or double-click to copy"
+        >
           <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Tracking URL</span>
-          <p className="text-sm font-mono text-primary truncate">{campaign.url}</p>
+          <p className="text-sm font-mono text-primary truncate group-hover:underline">{generateTrackingUrl()}</p>
         </div>
         <button 
           onClick={handleCopyUrl}
