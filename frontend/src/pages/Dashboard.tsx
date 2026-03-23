@@ -467,6 +467,55 @@ const RECENT_CLICKS_COLUMNS = [
   { key: 'user_agent', label: 'User Agent', width: '300px', category: 'User Agent' },
 ];
 
+// 辅助函数：为 Recent Clicks 列生成 sorter 函数
+function getRecentClicksSorter(key: string) {
+  switch(key) {
+    case 'event_id': return (a: any, b: any) => a.event_id.localeCompare(b.event_id);
+    case 'datetime': return (a: any, b: any) => new Date(a.datetime || 0).getTime() - new Date(b.datetime || 0).getTime();
+    case 'visitor_code': return (a: any, b: any) => a.visitor_code.localeCompare(b.visitor_code);
+    case 'campaign': return (a: any, b: any) => a.campaign.localeCompare(b.campaign);
+    case 'stream': return (a: any, b: any) => a.stream.localeCompare(b.stream);
+    case 'landing': return (a: any, b: any) => a.landing.localeCompare(b.landing);
+    case 'offer': return (a: any, b: any) => a.offer.localeCompare(b.offer);
+    case 'source': return (a: any, b: any) => a.source.localeCompare(b.source);
+    case 'country': return (a: any, b: any) => a.country.localeCompare(b.country);
+    case 'region': return (a: any, b: any) => a.region.localeCompare(b.region);
+    case 'city': return (a: any, b: any) => a.city.localeCompare(b.city);
+    case 'language': return (a: any, b: any) => a.language.localeCompare(b.language);
+    case 'isp': return (a: any, b: any) => a.isp.localeCompare(b.isp);
+    case 'operator': return (a: any, b: any) => a.operator.localeCompare(b.operator);
+    case 'device_type': return (a: any, b: any) => a.device_type.localeCompare(b.device_type);
+    case 'device_model': return (a: any, b: any) => a.device_model.localeCompare(b.device_model);
+    case 'os': return (a: any, b: any) => a.os.localeCompare(b.os);
+    case 'os_version': return (a: any, b: any) => a.os_version.localeCompare(b.os_version);
+    case 'browser': return (a: any, b: any) => a.browser.localeCompare(b.browser);
+    case 'browser_version': return (a: any, b: any) => a.browser_version.localeCompare(b.browser_version);
+    case 'ip': return (a: any, b: any) => a.ip.localeCompare(b.ip);
+    case 'connection_type': return (a: any, b: any) => a.connection_type.localeCompare(b.connection_type);
+    case 'proxy': return (a: any, b: any) => a.proxy.localeCompare(b.proxy);
+    case 'creative_id': return (a: any, b: any) => a.creative_id.localeCompare(b.creative_id);
+    case 'external_id': return (a: any, b: any) => a.external_id.localeCompare(b.external_id);
+    case 'ad_campaign_id': return (a: any, b: any) => a.ad_campaign_id.localeCompare(b.ad_campaign_id);
+    case 'sub_id': return (a: any, b: any) => a.sub_id.localeCompare(b.sub_id);
+    case 'sub1': return (a: any, b: any) => (a.sub1 || '').localeCompare(b.sub1 || '');
+    case 'sub2': return (a: any, b: any) => (a.sub2 || '').localeCompare(b.sub2 || '');
+    case 'sub3': return (a: any, b: any) => (a.sub3 || '').localeCompare(b.sub3 || '');
+    case 'sub4': return (a: any, b: any) => (a.sub4 || '').localeCompare(b.sub4 || '');
+    case 'sub5': return (a: any, b: any) => (a.sub5 || '').localeCompare(b.sub5 || '');
+    case 'referrer': return (a: any, b: any) => (a.referrer || '').localeCompare(b.referrer || '');
+    case 'referrer_domain': return (a: any, b: any) => (a.referrer_domain || '').localeCompare(b.referrer_domain || '');
+    case 'search_engine': return (a: any, b: any) => (a.search_engine || '').localeCompare(b.search_engine || '');
+    case 'keyword': return (a: any, b: any) => (a.keyword || '').localeCompare(b.keyword || '');
+    case 'destination': return (a: any, b: any) => (a.destination || '').localeCompare(b.destination || '');
+    case 'cost': return (a: any, b: any) => parseFloat(a.cost || 0) - parseFloat(b.cost || 0);
+    case 'bot': return (a: any, b: any) => a.bot.localeCompare(b.bot);
+    case 'unique_stream': return (a: any, b: any) => a.unique_stream.localeCompare(b.unique_stream);
+    case 'unique_campaign': return (a: any, b: any) => a.unique_campaign.localeCompare(b.unique_campaign);
+    case 'user_agent': return (a: any, b: any) => (a.user_agent || '').localeCompare(b.user_agent || '');
+    default: return null;
+  }
+}
+
 // 时间范围选项 - 使用新的日期选择器组件
 const TIME_RANGES = [
   { value: 'today', label: 'Today' },
@@ -1264,13 +1313,18 @@ export const Dashboard = () => {
               </div>
             ) : (
               <VirtualTableEnhanced
+                tableId="dashboard-recent-clicks"
                 columns={config.recentClicksColumns.map(key => {
                   const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
+                  // 动态添加 sorter 函数
+                  const sorter = getRecentClicksSorter(key);
                   return {
                     key: key,
                     label: col?.label || key,
                     width: col?.width,
                     align: 'left',
+                    sorter: sorter,
+                    showSorter: !!sorter,
                     render: (value: any, row: any) => {
                       if (key === 'datetime') {
                         return <span className="text-medium-contrast">{value ? new Date(value).toLocaleString() : '-'}</span>;
