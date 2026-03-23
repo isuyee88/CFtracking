@@ -44,6 +44,7 @@ const PRESETS = [
   { label: 'Yesterday', value: 'yesterday' },
   { label: 'Last 7 Days', value: 'last7days' },
   { label: 'Last 30 Days', value: 'last30days' },
+  { label: 'Last 3 Months', value: 'last3months' },
   { label: 'This Month', value: 'thismonth' },
   { label: 'Last Month', value: 'lastmonth' },
   { label: 'This Year', value: 'thisyear' },
@@ -57,6 +58,7 @@ const getPresetRange = (preset: string): [Dayjs, Dayjs] => {
     case 'yesterday': return [now.subtract(1, 'day').startOf('day'), now.subtract(1, 'day').endOf('day')];
     case 'last7days': return [now.subtract(6, 'day').startOf('day'), now.endOf('day')];
     case 'last30days': return [now.subtract(29, 'day').startOf('day'), now.endOf('day')];
+    case 'last3months': return [now.subtract(3, 'month').startOf('day'), now.endOf('day')];
     case 'thismonth': return [now.startOf('month'), now.endOf('month')];
     case 'lastmonth': return [now.subtract(1, 'month').startOf('month'), now.subtract(1, 'month').endOf('month')];
     case 'thisyear': return [now.startOf('year'), now.endOf('year')];

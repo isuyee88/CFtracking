@@ -10,6 +10,7 @@ import type { Env } from '@/config/env';
 export { SessionDurableObject } from './session.do';
 export { CounterDurableObject } from './counter.do';
 export { QueueDurableObject } from './queue.do';
+export { UniquenessDurableObject, UniquenessDOService } from './uniqueness.do';
 
 export function getSessionStub(env: Env, visitorId: string): DurableObjectStub {
   const id = env.SESSION_DO.idFromName(`session:${visitorId}`);

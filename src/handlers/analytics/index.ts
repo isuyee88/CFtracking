@@ -2,6 +2,19 @@
  * @fileoverview Analytics Engine 连接管理
  * @description 统一管理 Analytics Engine 连接和事件写入
  * @module handlers/analytics/index
+ *
+ * 数据存储架构:
+ *   - DO (Durable Objects): 唯一性检查和计数器
+ *   - AE (Analytics Engine): 主存储，免费3个月，用于时序数据和趋势分析
+ *   - D1: 归档存储，3个月前历史数据，用于精确报表
+ *   - KV: 仅缓存用
+ *
+ * 数据流:
+ *   点击请求 → DO(唯一性检查) → AE(主存储) → 每天汇总 → D1(归档)
+ *
+ * Dashboard数据读取逻辑:
+ *   - < 3个月数据 ──► AE读取
+ *   - > 3个月数据 ──► D1读取
  */
 
 import type { Env } from '@/config/env';

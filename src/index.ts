@@ -10,7 +10,7 @@ import { logger } from 'hono/logger';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
-import { SessionDurableObject, CounterDurableObject, QueueDurableObject } from '@/handlers/do';
+import { SessionDurableObject, CounterDurableObject, QueueDurableObject, UniquenessDurableObject } from '@/handlers/do';
 import { createAggregationService } from '@/services/analytics/aggregation.service';
 import { handlePlatformCron } from '@/services/platform';
 
@@ -163,5 +163,6 @@ export default {
 export {
   SessionDurableObject,
   CounterDurableObject,
-  QueueDurableObject
+  QueueDurableObject,
+  UniquenessDurableObject
 };

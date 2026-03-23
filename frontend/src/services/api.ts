@@ -371,11 +371,70 @@ export async function fetchEntityStats(entityType: string, timeRange: string = '
   const cacheKey = createCacheKey('/api/analytics/entity-stats', { type: entityType, range: timeRange });
   const cached = getCached<any[]>(cacheKey);
   if (cached) return cached;
-  
+
   const response = await fetch(`${API_BASE_URL}/api/analytics/entity-stats?type=${entityType}&range=${timeRange}`);
   const result = await handleResponse(response);
   setCache(cacheKey, result.data);
   return result.data;
+}
+
+// ==================== Reports API ====================
+
+export type ReportType = 'traffic' | 'conversion' | 'financial' | 'roi';
+export type ExportFormat = 'csv' | 'excel';
+
+export interface ReportParams {
+  startDate: string;
+  endDate: string;
+  groupBy?: string[];
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface ReportExportParams extends ReportParams {
+  type: ReportType;
+  format: ExportFormat;
+  columns?: string[];
+}
+
+export async function fetchReport(type: ReportType, params: ReportParams) {
+  const queryParams = new URLSearchParams();
+  queryParams.set('startDate', params.startDate);
+  queryParams.set('endDate', params.endDate);
+  if (params.groupBy) queryParams.set('groupBy', params.groupBy.join(','));
+  if (params.limit) queryParams.set('limit', params.limit.toString());
+  if (params.sortBy) queryParams.set('sortBy', params.sortBy);
+  if (params.sortOrder) queryParams.set('sortOrder', params.sortOrder);
+
+  const response = await fetch(`${API_BASE_URL}/api/analytics/reports/${type}?${queryParams}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function exportReport(params: ReportExportParams): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/api/analytics/reports/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Export failed with status ${response.status}`);
+  }
+
+  return await response.blob();
+}
+
+export function downloadReport(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
 }
 
 // ==================== Clicks Log API ====================

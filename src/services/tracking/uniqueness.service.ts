@@ -2,24 +2,32 @@
  * @fileoverview Uniqueness 去重服务
  * @description 核心去重逻辑，支持多种去重方法
  * @module services/tracking/uniqueness.service
- * 
+ *
+ * 数据存储架构:
+ *   - DO: 唯一性检查和计数器，用于解决KV免费版写入限制
+ *   - AE: 主存储，免费3个月，用于时序数据
+ *   - D1: 归档存储，永久，用于Dashboard
+ *
+ * 数据流:
+ *   点击请求 → DO(唯一性检查) → AE(主存储) → 每天汇总 → D1(归档)
+ *
  * 输入: Campaign 配置、请求信息
  * 输出: 去重检查结果
  * 逻辑交互: 被 click.service.ts 调用
- * 前后端交互: 通过 tracking.routes.ts 处理 Cookie
+ * 前后端交互: 通过 DO RPC 调用
  */
 
-import { UniquenessKV, type UniquenessRecord } from '@/handlers/kv/uniqueness.kv';
+import { UniquenessDOService, type UniquenessCheckRequest as DOUniquenessCheckRequest, type UniquenessCheckResult as DOUniquenessCheckResult } from '@/handlers/do/uniqueness.do';
 import type { Env } from '@/config/env';
 
 /**
  * 去重方法枚举
  */
-export type UniquenessMethod = 
+export type UniquenessMethod =
   | 'ip'           // IP 地址去重
   | 'ip_ua'        // IP + User Agent 组合去重
   | 'cookie'       // Cookie 去重
-  | 'fingerprint'  // 浏览器指纹去重
+  | 'fingerprint'   // 浏览器指纹去重
   | 'parameter'    // URL 参数去重
   | 'none';        // 不去重
 
@@ -34,8 +42,8 @@ export interface UniquenessCheckRequest {
   ip: string;
   userAgent: string;
   visitorId: string;             // Cookie 中的 visitorId 或新生成的
-  urlParams: URLSearchParams;    // URL 参数
-  fingerprint?: string;          // 浏览器指纹（前端计算后传入）
+  urlParams: URLSearchParams;     // URL 参数
+  fingerprint?: string;           // 浏览器指纹（前端计算后传入）
 }
 
 /**
@@ -52,12 +60,13 @@ export interface UniquenessResult {
 
 /**
  * Uniqueness 去重服务类
+ * 使用 Durable Objects 进行唯一性检查，解决 KV 免费版写入限制
  */
 export class UniquenessService {
-  private kv: UniquenessKV;
+  private doService: UniquenessDOService;
 
   constructor(env: Env) {
-    this.kv = new UniquenessKV(env.UNIQUENESS_KV);
+    this.doService = new UniquenessDOService(env);
   }
 
   /**
@@ -70,7 +79,6 @@ export class UniquenessService {
     request: UniquenessCheckRequest,
     clickId: string
   ): Promise<UniquenessResult> {
-    // 不去重
     if (request.method === 'none') {
       return {
         isUnique: true,
@@ -82,107 +90,28 @@ export class UniquenessService {
       };
     }
 
-    // 生成去重键
-    const key = this.generateKey(request);
-    
-    // 检查 KV
-    const checkResult = await this.kv.check(key);
-
-    if (!checkResult.isUnique) {
-      // 已存在，返回重复结果
-      return {
-        isUnique: false,
-        method: request.method,
-        firstSeenAt: checkResult.firstSeenAt,
-        existingClickId: checkResult.clickId,
-        visitorId: request.visitorId,
-        shouldSetCookie: false,
-      };
-    }
-
-    // 首次访问，设置去重记录
-    const record: UniquenessRecord = {
-      visitorId: request.visitorId,
-      clickId,
-      firstSeenAt: new Date().toISOString(),
+    const doRequest: DOUniquenessCheckRequest = {
       campaignId: request.campaignId,
       method: request.method,
+      uniquenessParameter: request.uniquenessParameter,
+      ttl: request.ttl,
+      ip: request.ip,
+      userAgent: request.userAgent,
+      visitorId: request.visitorId,
+      urlParams: Object.fromEntries(request.urlParams),
+      fingerprint: request.fingerprint,
     };
 
-    await this.kv.set(key, record, request.ttl);
+    const doResult: DOUniquenessCheckResult = await this.doService.check(doRequest);
 
     return {
-      isUnique: true,
-      method: request.method,
-      firstSeenAt: null,
-      existingClickId: null,
-      visitorId: request.visitorId,
-      shouldSetCookie: request.method === 'cookie',
+      isUnique: doResult.isUnique,
+      method: doResult.method,
+      firstSeenAt: doResult.firstSeenAt,
+      existingClickId: doResult.existingClickId,
+      visitorId: doResult.visitorId,
+      shouldSetCookie: doResult.shouldSetCookie,
     };
-  }
-
-  /**
-   * 根据去重方法生成键
-   */
-  private generateKey(request: UniquenessCheckRequest): string {
-    switch (request.method) {
-      case 'ip':
-        return UniquenessKV.generateIPKey(request.campaignId, request.ip);
-
-      case 'ip_ua':
-        // IP + User Agent 组合去重
-        const ipUaFingerprint = this.generateSimpleFingerprint(request.ip, request.userAgent);
-        return UniquenessKV.generateFingerprintKey(request.campaignId, `ipua:${ipUaFingerprint}`);
-
-      case 'cookie':
-        return UniquenessKV.generateCookieKey(request.campaignId, request.visitorId);
-
-      case 'fingerprint':
-        // 如果没有指纹，使用 IP + UserAgent 生成简单指纹
-        const fp = request.fingerprint || this.generateSimpleFingerprint(request.ip, request.userAgent);
-        return UniquenessKV.generateFingerprintKey(request.campaignId, fp);
-
-      case 'parameter':
-        if (!request.uniquenessParameter) {
-          throw new Error('uniquenessParameter is required for parameter method');
-        }
-        const paramValue = request.urlParams.get(request.uniquenessParameter);
-        if (!paramValue) {
-          // 参数不存在时降级为 IP 去重
-          return UniquenessKV.generateIPKey(request.campaignId, request.ip);
-        }
-        return UniquenessKV.generateParamKey(
-          request.campaignId,
-          request.uniquenessParameter,
-          paramValue
-        );
-
-      default:
-        throw new Error(`Unknown uniqueness method: ${request.method}`);
-    }
-  }
-
-  /**
-   * 生成简单指纹（IP + UserAgent 哈希）
-   */
-  private generateSimpleFingerprint(ip: string, userAgent: string): string {
-    // 使用简单哈希算法
-    const str = `${ip}:${userAgent}`;
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    return Math.abs(hash).toString(36);
-  }
-
-  /**
-   * 清除去重记录（用于测试或特殊场景）
-   */
-  async clear(request: UniquenessCheckRequest): Promise<void> {
-    const key = this.generateKey(request);
-    await this.kv.delete(key);
   }
 }
 
@@ -201,11 +130,11 @@ export function generateCookieHeader(
 ): string {
   const expires = new Date(Date.now() + ttlSeconds * 1000).toUTCString();
   let cookie = `${UNIQUENESS_COOKIE_NAME}=${visitorId}; Path=/; Expires=${expires}; HttpOnly; SameSite=Lax`;
-  
+
   if (domain) {
     cookie += `; Domain=${domain}`;
   }
-  
+
   return cookie;
 }
 

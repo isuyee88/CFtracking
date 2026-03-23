@@ -1,14 +1,31 @@
 /**
  * @fileoverview Analytics Engine 数据查询服务
- * @description 直接查询 Analytics Engine 获取点击原始数据，支持近期数据实时查询
+ * @description 查询 Analytics Engine 获取点击原始数据和统计数据
  * @module services/analytics/analytics-query.service
  *
+ * 数据存储架构:
+ *   - DO (Durable Objects): 唯一性检查和计数器
+ *   - AE (Analytics Engine): 主存储，免费3个月，用于时序数据和趋势分析
+ *   - D1: 归档存储，3个月前历史数据，用于精确报表
+ *   - KV: 仅缓存用
+ *
+ * 数据流:
+ *   点击请求 → DO(唯一性检查) → AE(主存储) → 每天汇总 → D1(归档)
+ *
+ * Dashboard数据读取逻辑:
+ *   - < 3个月数据 ──► AE读取
+ *     优点: 写入即查、高吞吐
+ *     缺点: 数分钟延迟
+ *   - > 3个月数据 ──► D1读取
+ *     优点: 完整准确、永久存储
+ *     缺点: 需要等待每日汇总
+ *
  * 输入: 查询参数（limit, afterTimestamp, filters）
- * 输出: Analytics Engine 中的原始点击数据
+ * 输出: Analytics Engine 中的原始点击数据或聚合统计
  * 逻辑交互:
- *   - 被 analytics.routes.ts 调用获取 recent-clicks
- *   - 支持近期数据（< 3个月）实时查询
- *   - 历史数据（> 7天）建议使用 D1 trafficSummary
+ *   - 被 analytics.routes.ts 调用获取 recent-clicks, dashboard, trends
+ *   - 支持近期数据（< 3个月）从AE查询
+ *   - 历史数据（> 3个月）从D1查询
  * 前后端交互: 通过 CF Analytics Engine SQL API 查询
  */
 

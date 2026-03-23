@@ -25,13 +25,14 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import { 
+import {
   ChartWrapper,
   LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer
 } from '../components/ChartWrapper';
 import { useDashboardURLState } from '../hooks/useURLState';
 import { useTableScroll } from '../hooks/useTableScroll';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
+import { DataSourceBadge, DataSourceInfo, DataSourceWarning } from '../components/DataSourceBadge';
 const QuickDateRangePicker = lazy(() => import('@/components/DateRangePicker').then(m => ({ default: m.QuickDateRangePicker })));
 type DateRangeValue = { interval: string; from?: string; to?: string };
 import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
@@ -740,6 +741,8 @@ export const Dashboard = () => {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
+  const [dataSource, setDataSource] = useState<'AE' | 'D1' | 'MIXED'>('AE');
+  const [queryTime, setQueryTime] = useState<string | null>(null);
   const [loading, setLoading] = useState({
     stats: false,
     recentClicks: false,
@@ -809,6 +812,9 @@ export const Dashboard = () => {
           roi: parseFloat(item.roi) || 0,
         }));
         setChartData(processedChartData);
+        // 更新数据源信息
+        setDataSource(statsData.dataSource || 'AE');
+        setQueryTime(statsData.queryTime || new Date().toISOString());
       }
 
       const currentEntities = config.entities;
@@ -958,10 +964,14 @@ export const Dashboard = () => {
                 {isDarkMode ? <Moon size={12} /> : <Sun size={12} />}
                 {isDarkMode ? 'Night Mode' : 'Day Mode'}
               </div>
+              {/* 数据源指示器 */}
+              <DataSourceBadge dataSource={dataSource} size="sm" showLabel={false} />
             </div>
-            <p className="text-sm text-on-surface-variant mt-1">
-              Real-time tracking overview • Last updated: {formatTime(lastUpdated)}
-            </p>
+            <div className="flex items-center gap-3 text-sm text-on-surface-variant mt-1">
+              <span>Real-time tracking overview</span>
+              <DataSourceInfo dataSource={dataSource} queryTime={queryTime || undefined} />
+            </div>
+            <DataSourceWarning dataSource={dataSource} className="mt-1" />
           </div>
           
           <div className="flex items-center gap-2">

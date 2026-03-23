@@ -3,17 +3,32 @@
  * @description 提供仪表板和分析数据的 HTTP 接口
  * @module services/analytics/analytics.routes
  *
- * 数据源策略 (Option C 混合方案):
- * - 近期数据 (< 3个月): Analytics Engine 直接查询
- * - Dashboard 统计: Analytics Engine 实时聚合
- * - 历史聚合报表: D1 trafficSummary (待实现 aggregation service)
+ * 数据存储架构:
+ *   - DO (Durable Objects): 唯一性检查和计数器
+ *   - AE (Analytics Engine): 主存储，免费3个月，用于时序数据和趋势分析
+ *   - D1: 归档存储，3个月前历史数据，用于精确报表
+ *
+ * 数据流:
+ *   点击请求 → DO(唯一性检查) → AE(主存储) → 每天汇总 → D1(归档)
+ *
+ * Dashboard数据读取逻辑:
+ *   - < 3个月数据 ──► AE读取
+ *   - > 3个月数据 ──► D1读取
+ *
+ * 输入: HTTP 查询参数
+ * 输出: JSON 格式的分析数据
+ * 逻辑交互:
+ *   - 调用 DashboardQueryService 自动选择数据源
+ *   - AE: 近期数据，实时聚合
+ *   - D1: 历史数据，每日汇总
+ * 前后端交互: 前端通过 /api/analytics/* 调用
  */
 
 import { Hono } from 'hono';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
-import { createAnalyticsQueryService } from './analytics-query.service';
+import { createDashboardQueryService } from './dashboard-query.service';
 
 export function createAnalyticsRouter() {
   const router = new Hono<{ Bindings: Env }>();
@@ -22,21 +37,18 @@ export function createAnalyticsRouter() {
    * GET /api/analytics/dashboard
    * 获取仪表板统计数据
    *
-   * 数据源: Analytics Engine (实时聚合，保留 3 个月)
+   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
    * 用途: Dashboard 核心指标显示
    */
   router.get('/dashboard', async (c) => {
     try {
       const range = c.req.query('range') || 'today';
-      const analyticsQuery = createAnalyticsQueryService(c.env);
+      const dashboardQuery = createDashboardQueryService(c.env);
 
-      const stats = await analyticsQuery.getDashboardStats(range);
-      const chartData = await analyticsQuery.getChartData(range);
+      const result = await dashboardQuery.getDashboardStats(range);
 
       return c.json(success({
-        ...stats,
-        chartData,
-        range,
+        ...result,
         timestamp: new Date().toISOString(),
       }));
     } catch (err) {
@@ -52,81 +64,77 @@ export function createAnalyticsRouter() {
    * GET /api/analytics/recent-clicks
    * 获取最近点击数据
    *
-   * 数据源: Analytics Engine (实时数据，保留 3 个月)
+   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
    * 用途: 查看最近点击详情，支持实时监控
    */
   router.get('/recent-clicks', async (c) => {
     try {
       const limit = parseInt(c.req.query('limit') || '50');
-      const afterTimestamp = c.req.query('after') || undefined;
+      const range = c.req.query('range') || 'today';
       const campaignId = c.req.query('campaignId') || undefined;
-      const country = c.req.query('country') || undefined;
-      const device = c.req.query('device') || undefined;
 
-      const analyticsQuery = createAnalyticsQueryService(c.env);
+      const dashboardQuery = createDashboardQueryService(c.env);
 
-      const result = await analyticsQuery.getRecentClicks({
+      const result = await dashboardQuery.getRecentClicks({
         limit,
-        afterTimestamp,
+        range,
         campaignId,
-        country,
-        device,
       });
 
-      const formattedList = result.list.map((item) => ({
-        event_id: item.clickId,
-        datetime: item.timestamp,
-        campaign: item.campaignId,
-        stream: item.flowId,
-        landing: item.landingPageId,
-        offer: item.offerId,
-        source: '',
+      const formattedList = result.list.map((item: any) => ({
+        event_id: item.event_id || item.clickId || '',
+        datetime: item.datetime || item.timestamp || '',
+        campaign: item.campaign || item.campaignId || '',
+        stream: item.stream || item.flowId || '',
+        landing: item.landing || item.landingPageId || '',
+        offer: item.offer || item.offerId || '',
+        source: item.source || '',
         ip: item.ip || '127.0.0.1',
         country: item.country || '',
-        region: '',
+        region: item.region || '',
         city: item.city || '',
         isp: item.isp || '',
-        operator: '',
-        device_type: item.device || '',
-        device_model: '',
+        operator: item.operator || '',
+        device_type: item.device_type || item.device || '',
+        device_model: item.device_model || '',
         os: item.os || '',
-        os_version: '',
+        os_version: item.os_version || '',
         browser: item.browser || '',
-        browser_version: '',
-        os_icon: '',
-        browser_icon: '',
-        connection_type: item.connectionType === 4 ? '4G' : item.connectionType === 5 ? '5G' : item.connectionType === 6 ? 'WiFi' : '',
-        proxy: item.proxy === 1 ? 'Yes' : 'No',
-        creative_id: '',
-        external_id: '',
-        ad_campaign_id: '',
-        sub_id: '',
-        sub1: item.subId1 || '',
-        sub2: item.subId2 || '',
-        sub3: item.subId3 || '',
-        sub4: item.subId4 || '',
-        sub5: item.subId5 || '',
-        referrer: item.referer || '',
-        referrer_domain: '',
-        search_engine: '',
-        keyword: '',
-        destination: '',
-        cost: item.cost ? `$${item.cost.toFixed(2)}` : '$0.00',
-        bot: item.isBot === 1 ? 'Yes' : 'No',
-        unique_stream: 'Yes',
-        unique_campaign: 'Yes',
-        user_agent: item.userAgent || '',
-        visitor_code: item.visitorId || '',
+        browser_version: item.browser_version || '',
+        os_icon: item.os_icon || '',
+        browser_icon: item.browser_icon || '',
+        connection_type: item.connection_type || '',
+        proxy: item.proxy || 'No',
+        creative_id: item.creative_id || '',
+        external_id: item.external_id || '',
+        ad_campaign_id: item.ad_campaign_id || '',
+        sub_id: item.sub_id || '',
+        sub1: item.sub1 || item.subId1 || '',
+        sub2: item.sub2 || item.subId2 || '',
+        sub3: item.sub3 || item.subId3 || '',
+        sub4: item.sub4 || '',
+        sub5: item.sub5 || '',
+        referrer: item.referrer || item.referer || '',
+        referrer_domain: item.referrer_domain || '',
+        search_engine: item.search_engine || '',
+        keyword: item.keyword || '',
+        destination: item.destination || '',
+        cost: item.cost || '$0.00',
+        bot: item.bot || 'No',
+        unique_stream: item.unique_stream || 'Yes',
+        unique_campaign: item.unique_campaign || 'Yes',
+        user_agent: item.user_agent || item.userAgent || '',
+        visitor_code: item.visitor_code || item.visitorId || '',
         fingerprint: item.fingerprint || '',
-        risk_score: item.riskScore || 0,
-        cf_bot_score: item.cfBotScore || 0,
+        risk_score: item.risk_score || item.riskScore || 0,
+        cf_bot_score: item.cf_bot_score || item.cfBotScore || 0,
       }));
 
       return c.json(success({
         list: formattedList,
         total: result.total,
         dataSource: result.dataSource,
-        queryTime: result.queryTime,
+        queryTime: new Date().toISOString(),
       }));
     } catch (err) {
       console.error('[Analytics API] Recent clicks error:', err);
@@ -140,6 +148,9 @@ export function createAnalyticsRouter() {
   /**
    * GET /api/analytics/entity-stats
    * 获取实体统计数据
+   *
+   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
+   * 用途: 按维度查看统计分布
    */
   router.get('/entity-stats', async (c) => {
     try {
@@ -153,11 +164,11 @@ export function createAnalyticsRouter() {
         );
       }
 
-      const analyticsQuery = createAnalyticsQueryService(c.env);
+      const dashboardQuery = createDashboardQueryService(c.env);
 
       let stats;
       try {
-        stats = await analyticsQuery.getEntityStats(type, range);
+        stats = await dashboardQuery.getEntityStats(type, range);
       } catch (entityError) {
         console.warn(`[Analytics API] Entity stats for ${type} failed, returning empty:`, entityError);
         stats = [];
@@ -173,5 +184,221 @@ export function createAnalyticsRouter() {
     }
   });
 
+  /**
+   * GET /api/analytics/trend-report
+   * 获取趋势报告数据
+   *
+   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
+   * 用途: 查看流量趋势变化
+   */
+  router.get('/trend-report', async (c) => {
+    try {
+      const startDate = c.req.query('startDate');
+      const endDate = c.req.query('endDate');
+      const interval = (c.req.query('interval') || 'day') as 'hour' | 'day' | 'week' | 'month';
+      const campaignId = c.req.query('campaignId') || undefined;
+
+      if (!startDate || !endDate) {
+        return c.json(
+          error('startDate and endDate are required'),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+
+      const dashboardQuery = createDashboardQueryService(c.env);
+      const trendData = await dashboardQuery.getTrendReport(startDate, endDate, interval, campaignId);
+
+      return c.json(success({
+        data: trendData,
+        startDate,
+        endDate,
+        interval,
+        queryTime: new Date().toISOString(),
+      }));
+    } catch (err) {
+      console.error('[Analytics API] Trend report error:', err);
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to fetch trend report'),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
+  /**
+   * GET /api/analytics/reports/:type
+   * 获取指定类型的统计报表
+   *
+   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
+   * 类型: traffic | conversion | financial | roi
+   * 用途: 生成详细的统计分析报表
+   */
+  router.get('/reports/:type', async (c) => {
+    try {
+      const reportType = c.req.param('type') as 'traffic' | 'conversion' | 'financial' | 'roi';
+      const startDate = c.req.query('startDate');
+      const endDate = c.req.query('endDate');
+      const groupBy = c.req.query('groupBy')?.split(',') || ['date'];
+      const limit = parseInt(c.req.query('limit') || '100');
+      const sortBy = c.req.query('sortBy') || 'clicks';
+      const sortOrder = (c.req.query('sortOrder') || 'desc') as 'asc' | 'desc';
+
+      if (!['traffic', 'conversion', 'financial', 'roi'].includes(reportType)) {
+        return c.json(
+          error('Invalid report type. Must be: traffic, conversion, financial, or roi'),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+
+      if (!startDate || !endDate) {
+        return c.json(
+          error('startDate and endDate are required'),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+
+      const dashboardQuery = createDashboardQueryService(c.env);
+      const reportData = await dashboardQuery.getReport(reportType, {
+        startDate,
+        endDate,
+        groupBy,
+        limit,
+        sortBy,
+        sortOrder,
+      });
+
+      return c.json(success({
+        type: reportType,
+        data: reportData,
+        params: { startDate, endDate, groupBy, limit, sortBy, sortOrder },
+        queryTime: new Date().toISOString(),
+      }));
+    } catch (err) {
+      console.error(`[Analytics API] Report ${c.req.param('type')} error:`, err);
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to fetch report'),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
+  /**
+   * POST /api/analytics/reports/export
+   * 导出报表为CSV或Excel格式
+   *
+   * Body: { type, format, startDate, endDate, groupBy, columns }
+   * 格式: csv | excel
+   * 用途: 导出报表进行进一步分析
+   */
+  router.post('/reports/export', async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        type = 'traffic',
+        format = 'csv',
+        startDate,
+        endDate,
+        groupBy = ['date'],
+        columns,
+      } = body;
+
+      if (!['traffic', 'conversion', 'financial', 'roi'].includes(type)) {
+        return c.json(
+          error('Invalid report type'),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+
+      if (!startDate || !endDate) {
+        return c.json(
+          error('startDate and endDate are required'),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+
+      const dashboardQuery = createDashboardQueryService(c.env);
+      const reportData = await dashboardQuery.getReport(type, {
+        startDate,
+        endDate,
+        groupBy,
+        limit: 10000,
+        sortBy: 'date',
+        sortOrder: 'desc',
+      });
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `${type}-report-${timestamp}`;
+
+      if (format === 'csv') {
+        const csv = generateCSV(reportData, columns);
+        c.header('Content-Type', 'text/csv; charset=utf-8');
+        c.header('Content-Disposition', `attachment; filename="${filename}.csv"`);
+        return c.body(csv);
+      }
+
+      if (format === 'excel') {
+        c.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        c.header('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
+        const excelBuffer = generateExcel(reportData, columns);
+        return c.body(excelBuffer);
+      }
+
+      return c.json(error('Unsupported format. Use: csv or excel'), HTTP_STATUS.BAD_REQUEST);
+    } catch (err) {
+      console.error('[Analytics API] Report export error:', err);
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to export report'),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
   return router;
+}
+
+/**
+ * 生成CSV格式数据
+ */
+function generateCSV(data: any[], columns?: string[]): string {
+  if (!data || data.length === 0) {
+    return '';
+  }
+
+  const headers = columns || Object.keys(data[0]);
+  const csvRows: string[] = [];
+
+  csvRows.push(headers.join(','));
+
+  for (const row of data) {
+    const values = headers.map(header => {
+      const value = row[header];
+      if (value === null || value === undefined) {
+        return '';
+      }
+      const stringValue = String(value);
+      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    });
+    csvRows.push(values.join(','));
+  }
+
+  return '\ufeff' + csvRows.join('\n');
+}
+
+/**
+ * 生成Excel格式数据
+ */
+function generateExcel(data: any[], columns?: string[]): ArrayBuffer {
+  const headers = columns || Object.keys(data[0] || {});
+  const rows = [headers];
+
+  for (const row of data) {
+    rows.push(headers.map(h => row[h] ?? ''));
+  }
+
+  const sheetContent = rows.map(r => r.join('\t')).join('\n');
+
+  const encoder = new TextEncoder();
+  return encoder.encode(sheetContent).buffer as ArrayBuffer;
 }

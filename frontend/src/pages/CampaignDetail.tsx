@@ -1,5 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useToast } from '../components/Toast';
 import { 
   ArrowLeft, 
   Edit3, 
@@ -177,6 +178,7 @@ const OPERATORS = [
 export const CampaignDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -285,12 +287,12 @@ export const CampaignDetail = () => {
         if (response.success) {
           setCampaign({ ...editedCampaign, updatedAt: new Date().toISOString().split('T')[0] });
           setIsEditModalOpen(false);
-          alert('Campaign updated successfully!');
+          toast.success('Campaign Updated', 'Campaign has been updated successfully.');
         } else {
-          alert('Failed to update campaign');
+          toast.error('Update Failed', 'Failed to update campaign');
         }
       } catch (err) {
-        alert(err instanceof Error ? err.message : 'Failed to update campaign');
+        toast.error('Update Failed', err instanceof Error ? err.message : 'Failed to update campaign');
       }
     }
   };
@@ -305,20 +307,20 @@ export const CampaignDetail = () => {
     try {
       const trackingUrl = campaign.url;
       await navigator.clipboard.writeText(trackingUrl);
-      alert('Tracking URL copied to clipboard!');
+      toast.success('URL Copied', 'Tracking URL has been copied to clipboard!');
     } catch (err) {
       console.error('Failed to copy URL:', err);
-      alert('Failed to copy URL to clipboard');
+      toast.error('Copy Failed', 'Failed to copy URL to clipboard');
     }
   };
 
   const handleCopyUrl = async () => {
     try {
       await navigator.clipboard.writeText(campaign.url);
-      alert('Tracking URL copied to clipboard!');
+      toast.success('URL Copied', 'Tracking URL has been copied to clipboard!');
     } catch (err) {
       console.error('Failed to copy URL:', err);
-      alert('Failed to copy URL to clipboard');
+      toast.error('Copy Failed', 'Failed to copy URL to clipboard');
     }
   };
 
@@ -883,12 +885,12 @@ eval(atob('${btoa(script)}'));
                   console.log('[FlowDesigner] Deleting flow:', flowToDelete.id, flowToDelete.name);
                   await deleteFlow(flowToDelete.id);
                 }
-                
-                alert('Flow saved successfully!');
+
+                toast.success('Flow Saved', 'Flow has been saved successfully.');
                 setActiveTab('overview');
               } catch (err) {
                 console.error('Failed to save flow:', err);
-                alert(`Failed to save flow configuration: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                toast.error('Save Failed', `Failed to save flow configuration: ${err instanceof Error ? err.message : 'Unknown error'}`);
               }
             }}
             onCancel={() => setActiveTab('overview')}
@@ -989,7 +991,7 @@ eval(atob('${btoa(script)}'));
                 onClick={() => {
                   const code = generateTrackingScript(campaign.id);
                   navigator.clipboard.writeText(code);
-                  alert('Tracking Script copied to clipboard!');
+                  toast.success('Code Copied', 'Tracking Script has been copied to clipboard!');
                 }}
                 className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
               >
@@ -1027,7 +1029,7 @@ eval(atob('${btoa(script)}'));
                   onClick={() => {
                     const code = generateKClientScript(campaign.id, true);
                     navigator.clipboard.writeText(code);
-                    alert('KClient JS (Base64) copied to clipboard!');
+                    toast.success('Code Copied', 'KClient JS (Base64) has been copied to clipboard!');
                   }}
                   className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
                 >
@@ -1038,7 +1040,7 @@ eval(atob('${btoa(script)}'));
                   onClick={() => {
                     const code = generateKClientScript(campaign.id, false);
                     navigator.clipboard.writeText(code);
-                    alert('KClient JS copied to clipboard!');
+                    toast.success('Code Copied', 'KClient JS has been copied to clipboard!');
                   }}
                   className="modal-btn-primary flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-sm"
                 >
