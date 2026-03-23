@@ -284,15 +284,29 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                   <select
                     value={formData.trafficSource}
                     onChange={(e) => handleChange('trafficSource', e.target.value)}
-                    className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                    className="w-full px-4 py-3 bg-surface-elevated border-2 border-outline-variant rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all cursor-pointer appearance-none"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                      backgroundPosition: 'right 0.75rem center',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundSize: '1.5em 1.5em',
+                      paddingRight: '2.5rem',
+                    }}
                   >
-                    <option value="">Select source...</option>
-                    {trafficSources.map(source => (
-                      <option key={source.id} value={source.id}>
-                        {source.name}
-                      </option>
-                    ))}
+                    <option value="">Select traffic source...</option>
+                    {trafficSources.length === 0 ? (
+                      <option disabled>No traffic sources available</option>
+                    ) : (
+                      trafficSources.map(source => (
+                        <option key={source.id} value={source.id}>
+                          {source.name} ({source.type})
+                        </option>
+                      ))
+                    )}
                   </select>
+                  {trafficSources.length > 0 && (
+                    <p className="mt-1 text-xs text-on-surface-variant">{trafficSources.length} sources available</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
