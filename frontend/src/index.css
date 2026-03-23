@@ -2095,6 +2095,118 @@ textarea.form-input {
    移动端响应式优化
    ============================================ */
 
+/* Mobile Font Size Optimization - 修复字体大小合规性 */
+@media (max-width: 768px) {
+  /* 强制移动端最小字体 14px - WCAG 无障碍标准 */
+  body,
+  p,
+  span,
+  div:not([class*="badge"]):not([class*="tag"]),
+  td:not([class*="badge"]),
+  th:not([class*="badge"]),
+  label,
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: min(16px, max(14px, 1rem)) !important;
+  }
+  
+  /* Sidebar 标题字体优化 - 从 10px 提升到 12px */
+  .sidebar-section-title,
+  .sidebar-item span,
+  [class*="sidebar"] .text-fg-subtle {
+    font-size: 12px !important;
+  }
+  
+  /* 标签文字优化 - 从 10-12px 提升到 12px */
+  .metric-label,
+  .chart-label,
+  .badge,
+  .badge span,
+  [class*="label"] {
+    font-size: 12px !important;
+  }
+  
+  /* 图表数据标签优化 */
+  .recharts-text,
+  .recharts-label,
+  [class*="chart"] .text-fg-muted {
+    font-size: 12px !important;
+  }
+  
+  /* Current Path 提示优化 */
+  .breadcrumb,
+  .path-indicator,
+  [class*="path"] {
+    font-size: 12px !important;
+  }
+  
+  /* 用户等级标签优化 */
+  .user-level,
+  .partner-badge {
+    font-size: 12px !important;
+  }
+}
+
+/* Mobile Checkbox & Radio Optimization - 缩小多选框尺寸 */
+@media (max-width: 768px) {
+  /* 缩小多选框和单选框尺寸到 50% */
+  .form-checkbox,
+  .form-radio {
+    width: 0.5rem; /* 从 1rem 减小到 0.5rem */
+    height: 0.5rem; /* 从 1rem 减小到 0.5rem */
+    cursor: pointer;
+  }
+  
+  /* 保持标签的可点击区域符合 WCAG 44x44px 标准 */
+  .form-checkbox + label,
+  .form-radio + label,
+  label:has(.form-checkbox),
+  label:has(.form-radio),
+  .checkbox-label,
+  .radio-label {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding-left: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  
+  /* 表格中的多选框优化 */
+  .table-checkbox,
+  .table-radio {
+    width: 0.5rem;
+    height: 0.5rem;
+  }
+  
+  /* 表格单元格中的多选框容器 */
+  td:has(.form-checkbox),
+  td:has(.form-radio),
+  th:has(.form-checkbox),
+  th:has(.form-radio) {
+    padding: 12px 8px;
+    vertical-align: middle;
+  }
+  
+  /* 表单中的多选框组 */
+  .checkbox-group,
+  .radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  /* 内联多选框组 */
+  .checkbox-group-inline,
+  .radio-group-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+}
+
 /* Mobile Bottom Navigation Bar - 支持横向滚动 */
 .mobile-bottom-nav {
   display: none;

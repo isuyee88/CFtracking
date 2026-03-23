@@ -86,75 +86,151 @@ const StatCard = ({ title, value, trend, changePercent, prefix = '' }: {
   </div>
 );
 
-const PieChartCard = ({ title, data, dataKey, nameKey }: { 
+const PieChartCard = React.memo(({ title, data, dataKey, nameKey }: { 
   title: string; 
   data: Array<{ name: string; value: number; clicks?: number; conversions?: number; revenue?: number }>; 
   dataKey: string;
   nameKey: string;
-}) => (
-  <div className="bg-surface p-6 rounded-lg border border-border-default">
-    <h3 className="text-lg font-semibold text-fg-default mb-4">{title}</h3>
-    {data && data.length > 0 ? (
-      <ChartWrapper height={250}>
-        <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-          <LazyResponsiveContainer width="100%" height="100%">
-            <LazyPieChart>
-              <LazyPie
-                data={data}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey={dataKey}
-                nameKey={nameKey}
-              >
-                {data.map((entry, index) => (
-                  <LazyCell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </LazyPie>
-              <LazyTooltip />
-            </LazyPieChart>
-          </LazyResponsiveContainer>
-        </Suspense>
-      </ChartWrapper>
-    ) : (
-      <div className="h-[250px] flex items-center justify-center text-fg-muted">
-        No data available
-      </div>
-    )}
-  </div>
-);
+}) => {
+  // Memoize cell elements to prevent re-creation on every render
+  const cells = useMemo(() => 
+    data.map((entry, index) => (
+      <LazyCell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+    )),
+    [data]
+  );
 
-const BarChartCard = ({ title, data, dataKey }: { 
+  return (
+    <div className="bg-surface p-6 rounded-lg border border-border-default">
+      <h3 className="text-lg font-semibold text-fg-default mb-4">{title}</h3>
+      {data && data.length > 0 ? (
+        <ChartWrapper height={250}>
+          <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+            <LazyResponsiveContainer width="100%" height="100%">
+              <LazyPieChart>
+                <LazyPie
+                  data={data}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey={dataKey}
+                  nameKey={nameKey}
+                >
+                  {cells}
+                </LazyPie>
+                <LazyTooltip />
+              </LazyPieChart>
+            </LazyResponsiveContainer>
+          </Suspense>
+        </ChartWrapper>
+      ) : (
+        <div className="h-[250px] flex items-center justify-center text-fg-muted">
+          No data available
+        </div>
+      )}
+    </div>
+  );
+});
+
+PieChartCard.displayName = 'PieChartCard';
+
+const BarChartCard = React.memo(({ title, data, dataKey }: { 
   title: string; 
   data: Array<{ name: string; value: number; clicks?: number; conversions?: number; revenue?: number }>; 
   dataKey: string;
-}) => (
-  <div className="bg-surface p-6 rounded-lg border border-border-default">
-    <h3 className="text-lg font-semibold text-fg-default mb-4">{title}</h3>
-    {data && data.length > 0 ? (
-      <ChartWrapper height={250}>
-        <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-          <LazyResponsiveContainer width="100%" height="100%">
-            <LazyBarChart data={data} layout="vertical">
-              <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <LazyXAxis type="number" tick={{ fontSize: 12 }} />
-              <LazyYAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} />
-              <LazyTooltip />
-              <LazyBar dataKey={dataKey} fill="#6366f1" radius={[0, 4, 4, 0]} />
-            </LazyBarChart>
-          </LazyResponsiveContainer>
-        </Suspense>
-      </ChartWrapper>
-    ) : (
-      <div className="h-[250px] flex items-center justify-center text-fg-muted">
-        No data available
-      </div>
-    )}
-  </div>
-);
+}) => {
+  // Memoize chart configuration
+  const chartConfig = useMemo(() => ({
+    grid: { strokeDasharray: '3 3', stroke: '#e5e7eb' },
+    xAxis: { type: 'number' as const, tick: { fontSize: 12 } },
+    yAxis: { dataKey: 'name' as const, type: 'category' as const, width: 100, tick: { fontSize: 11 } },
+    bar: { dataKey, fill: '#6366f1', radius: [0, 4, 4, 0] as const }
+  }), [dataKey]);
+
+  return (
+    <div className="bg-surface p-6 rounded-lg border border-border-default">
+      <h3 className="text-lg font-semibold text-fg-default mb-4">{title}</h3>
+      {data && data.length > 0 ? (
+        <ChartWrapper height={250}>
+          <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+            <LazyResponsiveContainer width="100%" height="100%">
+              <LazyBarChart data={data} layout="vertical">
+                <LazyCartesianGrid {...chartConfig.grid} />
+                <LazyXAxis {...chartConfig.xAxis} />
+                <LazyYAxis {...chartConfig.yAxis} />
+                <LazyTooltip />
+                <LazyBar {...chartConfig.bar} />
+              </LazyBarChart>
+            </LazyResponsiveContainer>
+          </Suspense>
+        </ChartWrapper>
+      ) : (
+        <div className="h-[250px] flex items-center justify-center text-fg-muted">
+          No data available
+        </div>
+      )}
+    </div>
+  );
+});
+
+BarChartCard.displayName = 'BarChartCard';
+
+// Optimized chart components with React.memo to prevent unnecessary re-renders
+const MemoizedAreaChart = React.memo(({ data, dataKeys, colors, gradients, title }: {
+  data: any[];
+  dataKeys: string[];
+  colors: string[];
+  gradients: { id: string; color: string }[];
+  title: string;
+}) => {
+  return (
+    <div className="bg-surface p-6 rounded-lg border border-border-default">
+      <h3 className="text-lg font-semibold text-fg-default mb-4">{title}</h3>
+      {data && data.length > 0 ? (
+        <ChartWrapper height={300}>
+          <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
+            <LazyResponsiveContainer width="100%" height="100%">
+              <LazyAreaChart data={data}>
+                <defs>
+                  {gradients.map((grad, i) => (
+                    <linearGradient key={grad.id} id={grad.id} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={grad.color} stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor={grad.color} stopOpacity={0}/>
+                    </linearGradient>
+                  ))}
+                </defs>
+                <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <LazyYAxis tick={{ fontSize: 12 }} />
+                <LazyTooltip />
+                <LazyLegend />
+                {dataKeys.map((key, i) => (
+                  <LazyArea 
+                    key={key} 
+                    type="monotone" 
+                    dataKey={key} 
+                    stroke={colors[i]} 
+                    fillOpacity={1} 
+                    fill={`url(#${gradients[i].id})`} 
+                  />
+                ))}
+              </LazyAreaChart>
+            </LazyResponsiveContainer>
+          </Suspense>
+        </ChartWrapper>
+      ) : (
+        <div className="h-[300px] flex items-center justify-center text-fg-muted">
+          No trend data available
+        </div>
+      )}
+    </div>
+  );
+});
+
+MemoizedAreaChart.displayName = 'MemoizedAreaChart';
 
 export const Trends = () => {
   const [report, setReport] = useState<TrendsReport | null>(null);
@@ -173,6 +249,8 @@ export const Trends = () => {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [activeChart, setActiveChart] = useState<'clicks' | 'revenue' | 'roi' | 'epc'>('clicks');
   const [isMobile, setIsMobile] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [selectedDimensions, setSelectedDimensions] = useState<string[]>(['country', 'device', 'os', 'browser']);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Detect mobile viewport
@@ -228,6 +306,22 @@ export const Trends = () => {
     setSelectedPreset('Custom');
   }, [tempDateRange]);
 
+  const toggleFilterPanel = useCallback(() => {
+    setShowFilterPanel(prev => !prev);
+  }, []);
+
+  const toggleDimension = useCallback((dimension: string) => {
+    setSelectedDimensions(prev => {
+      if (prev.includes(dimension)) {
+        // Don't allow removing last dimension
+        if (prev.length === 1) return prev;
+        return prev.filter(d => d !== dimension);
+      } else {
+        return [...prev, dimension];
+      }
+    });
+  }, []);
+
   // Fetch data when dateRange or interval changes
   useEffect(() => {
     setLoading(true);
@@ -282,22 +376,28 @@ export const Trends = () => {
     );
   }
 
-  // Transform breakdowns for charts
-  const countryData = report.breakdowns?.country?.map(item => ({
-    name: item.value || 'Unknown',
-    value: item.clicks || 0,
-    clicks: item.clicks || 0,
-    conversions: item.conversions || 0,
-    revenue: item.revenue || 0,
-  })) || [];
+  // Memoize data transformations to prevent re-calculation on every render
+  const countryData = useMemo(() => 
+    report.breakdowns?.country?.map(item => ({
+      name: item.value || 'Unknown',
+      value: item.clicks || 0,
+      clicks: item.clicks || 0,
+      conversions: item.conversions || 0,
+      revenue: item.revenue || 0,
+    })) || [],
+    [report.breakdowns?.country]
+  );
 
-  const deviceData = report.breakdowns?.device?.map(item => ({
-    name: item.value || 'Unknown',
-    value: item.clicks || 0,
-    clicks: item.clicks || 0,
-    conversions: item.conversions || 0,
-    revenue: item.revenue || 0,
-  })) || [];
+  const deviceData = useMemo(() => 
+    report.breakdowns?.device?.map(item => ({
+      name: item.value || 'Unknown',
+      value: item.clicks || 0,
+      clicks: item.clicks || 0,
+      conversions: item.conversions || 0,
+      revenue: item.revenue || 0,
+    })) || [],
+    [report.breakdowns?.device]
+  );
 
   return (
     <div className="space-y-6">
@@ -308,7 +408,13 @@ export const Trends = () => {
           <p className="text-sm text-fg-subtle mt-1">Analyze traffic trends and performance over time</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-surface border border-border-default rounded-md text-sm text-fg-default hover:bg-surface-container transition-colors">
+          <button 
+            onClick={toggleFilterPanel}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 bg-surface border border-border-default rounded-md text-sm text-fg-default hover:bg-surface-container transition-colors",
+              showFilterPanel && "bg-accent-fg/10 border-accent-fg text-accent-fg"
+            )}
+          >
             <Filter size={16} />
             Filter
           </button>
@@ -318,6 +424,42 @@ export const Trends = () => {
           </button>
         </div>
       </div>
+
+      {/* Filter Panel */}
+      {showFilterPanel && (
+        <div className="mb-6 bg-surface p-6 rounded-lg border border-border-default animate-fade-in">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-fg-default">Filter Dimensions</h3>
+            <button
+              onClick={toggleFilterPanel}
+              className="text-fg-muted hover:text-fg-default transition-colors"
+            >
+              <ChevronDown size={20} />
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {['country', 'device', 'os', 'browser', 'affiliate_network', 'offer', 'campaign'].map(dimension => (
+              <button
+                key={dimension}
+                onClick={() => toggleDimension(dimension)}
+                className={cn(
+                  "px-4 py-2 rounded-md text-sm font-medium transition-colors border",
+                  selectedDimensions.includes(dimension)
+                    ? "bg-accent-fg/10 border-accent-fg text-accent-fg"
+                    : "bg-surface-container border-border-default text-fg-muted hover:border-accent-fg/50"
+                )}
+              >
+                {dimension.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 pt-4 border-t border-border-default">
+            <p className="text-xs text-fg-subtle">
+              Showing {selectedDimensions.length} dimension{selectedDimensions.length !== 1 ? 's' : ''}: {selectedDimensions.join(', ')}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Date Range & Interval Selector */}
       <div className="flex items-center gap-4 bg-surface p-4 rounded-lg border border-border-default">
