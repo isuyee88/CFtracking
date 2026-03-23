@@ -132,12 +132,32 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
     }
   }, [initialData]);
 
-  // 自动生成 Campaign URL
+  // 自动生成 Campaign URL（包含 Traffic Source 的宏参数）
   const campaignUrl = useMemo(() => {
     if (!formData.domain || !formData.alias) return '';
-    const protocol = formData.domain.startsWith('http') ? '' : 'https://';
-    return `${protocol}${formData.domain}/${formData.alias}`;
-  }, [formData.domain, formData.alias]);
+
+    const selectedSource = trafficSources.find(ts => ts.id === formData.trafficSource);
+    const params = selectedSource?.parameters;
+
+    let baseUrl = formData.domain.startsWith('http') ? formData.domain : `https://${formData.domain}`;
+    baseUrl = baseUrl.replace(/\/$/, '');
+    let url = `${baseUrl}/${formData.alias}`;
+
+    if (params && Array.isArray(params) && params.length > 0) {
+      const searchParams = new URLSearchParams();
+      params.forEach((p: any) => {
+        if (p.paramName && p.macro) {
+          searchParams.set(p.paramName, p.macro);
+        }
+      });
+      const queryString = searchParams.toString();
+      if (queryString) {
+        url = `${url}?${queryString}`;
+      }
+    }
+
+    return url;
+  }, [formData.domain, formData.alias, formData.trafficSource, trafficSources]);
 
   // 自动生成 alias（基于 name）
   const generateAlias = (name: string) => {
