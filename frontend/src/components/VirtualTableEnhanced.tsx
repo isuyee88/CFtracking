@@ -264,9 +264,11 @@ export function VirtualTableEnhanced<T = any>({
                   style={{
                     width: column.width,
                     minWidth: column.width,
+                    maxWidth: column.width,
                     flex: column.width ? undefined : 1,
                   }}
                   onClick={() => showSorter && handleSort(column.key, columnSortOrder === 'ascend' ? 'descend' : columnSortOrder === 'descend' ? null : 'ascend')}
+                  title={column.label}
                 >
                   <span className="flex-1 truncate">{column.label}</span>
                   
@@ -385,10 +387,13 @@ export function VirtualTableEnhanced<T = any>({
                         style={{
                           width: column.width,
                           minWidth: column.width,
+                          maxWidth: column.width,
                           flex: column.width ? undefined : 1,
                         }}
                       >
-                        {content}
+                        <span className="truncate w-full" title={typeof content === 'string' ? content : undefined}>
+                          {content}
+                        </span>
                       </div>
                     );
                   })}
