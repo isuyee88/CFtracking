@@ -561,6 +561,37 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                 </select>
               </div>
 
+              {/* Tracking Fields Preview */}
+              <div className="bg-surface-container/50 p-4 rounded-sm">
+                <h3 className="text-sm font-bold text-on-surface mb-3 flex items-center gap-2">
+                  <Link size={16} className="text-primary" />
+                  Tracking Fields
+                </h3>
+                <p className="text-xs text-on-surface-variant mb-3">
+                  These fields will be captured from traffic source and available in reports:
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {formData.parameters && formData.parameters.length > 0 ? (
+                    formData.parameters.map((param: ParameterTemplate, index: number) => (
+                      <div key={index} className="flex items-center gap-2 px-3 py-2 bg-surface rounded-sm border border-outline-variant/20">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-on-surface truncate">{param.alias}</p>
+                          <p className="text-[10px] text-on-surface-variant font-mono">{param.paramName}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-secondary font-mono">←</span>
+                          <span className="text-[10px] text-primary font-mono truncate max-w-[80px]">{param.macro}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="col-span-2 text-xs text-on-surface-variant/50 text-center py-4">
+                      No tracking fields configured. Select a template or add parameters manually.
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Notes */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
