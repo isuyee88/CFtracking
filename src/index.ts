@@ -82,9 +82,9 @@ export default {
     
     // 处理直接通过域名访问的追踪请求
     // 格式：http://custom-domain.com/:campaignAlias
-    // 注意：排除静态资源文件（.svg, .png, .ico, .css, .js, .woff2 等）
+    // 注意：排除静态资源文件（.html, .svg, .png, .ico, .css, .js, .woff2 等）
     if (url.pathname.length > 1 && !url.pathname.startsWith('/__')) {
-      const isStaticResource = /\.(svg|png|ico|jpg|jpeg|gif|css|js|woff2|ttf|eot|otf|webmanifest)$/i.test(url.pathname);
+      const isStaticResource = /\.(html?|svg|png|ico|jpg|jpeg|gif|css|js|woff2|ttf|eot|otf|webmanifest)$/i.test(url.pathname);
       
       if (!isStaticResource) {
         const pathParts = url.pathname.split('/').filter(Boolean);
