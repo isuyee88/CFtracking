@@ -1254,25 +1254,35 @@ export const Dashboard = () => {
               if (!entityConfig) return null;
               
               // 转换为 VirtualTable 列配置
-              const virtualColumns: VirtualTableColumn[] = entityConfig.columns.map(col => ({
-                key: col.key,
-                label: col.label,
-                width: col.width,
-                align: col.align || 'left',
-                render: (value: any, row: any) => {
-                  if (col.key === 'name') {
-                    return (
-                      <Link 
-                        to={`/${entityKey}/${row.id}`}
-                        className="font-semibold text-high-contrast hover:text-secondary transition-colors cursor-pointer link-primary"
-                      >
-                        {value}
-                      </Link>
-                    );
-                  }
-                  return <span className="text-medium-contrast">{value?.toLocaleString() || '-'}</span>;
-                },
-              }));
+              const virtualColumns: VirtualTableColumn[] = entityConfig.columns.map(col => {
+                // 为数值列添加排序功能
+                const isNumeric = ['clicks', 'unique_clicks', 'conversions', 'cost', 'revenue', 'profit', 'roi', 'cr', 'epc'].includes(col.key);
+                const sorter = isNumeric 
+                  ? (a: any, b: any) => (a[col.key] || 0) - (b[col.key] || 0)
+                  : (a: any, b: any) => (a[col.key] || '').localeCompare(b[col.key] || '');
+                
+                return {
+                  key: col.key,
+                  label: col.label,
+                  width: col.width,
+                  align: col.align || 'left',
+                  sorter: sorter,
+                  showSorter: true,
+                  render: (value: any, row: any) => {
+                    if (col.key === 'name') {
+                      return (
+                        <Link 
+                          to={`/${entityKey}/${row.id}`}
+                          className="font-semibold text-high-contrast hover:text-secondary transition-colors cursor-pointer link-primary"
+                        >
+                          {value}
+                        </Link>
+                      );
+                    }
+                    return <span className="text-medium-contrast">{value?.toLocaleString() || '-'}</span>;
+                  },
+                };
+              });
               
               return (
                 <div key={entityKey} className="section-card overflow-hidden">
@@ -1280,6 +1290,7 @@ export const Dashboard = () => {
                     <h3 className="font-display font-semibold text-on-surface">{entityConfig?.label || entityKey}</h3>
                   </div>
                   <VirtualTableEnhanced
+                    tableId={`dashboard-${entityKey}`}
                     columns={virtualColumns}
                     data={data}
                     rowHeight={48}
