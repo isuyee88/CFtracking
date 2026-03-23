@@ -5,7 +5,7 @@
  * Logic: 动态渲染表单字段，支持验证和提交
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -49,19 +49,23 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
+  const computedInitialData = useMemo(() => {
+    if (!isOpen) return null;
+    const initial: Record<string, any> = {};
+    fields.forEach(field => {
+      initial[field.name] = initialData?.[field.name] ??
+        (field.type === 'multiselect' ? [] : field.type === 'checkbox' ? false : '');
+    });
+    return initial;
+  }, [isOpen, initialData, fields]);
+
   useEffect(() => {
-    if (isOpen) {
-      // Initialize form data with initial values or empty strings
-      const initial: Record<string, any> = {};
-      fields.forEach(field => {
-        initial[field.name] = initialData?.[field.name] ?? 
-          (field.type === 'multiselect' ? [] : field.type === 'checkbox' ? false : '');
-      });
-      setFormData(initial);
+    if (isOpen && computedInitialData) {
+      setFormData(computedInitialData);
       setErrors({});
       setTouched({});
     }
-  }, [isOpen, initialData, fields]);
+  }, [isOpen, computedInitialData]);
 
   const handleChange = (name: string, value: any) => {
     setFormData(prev => ({ ...prev, [name]: value }));

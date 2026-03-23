@@ -376,6 +376,7 @@ export const AffiliateNetworks = () => {
     <div className="space-y-6">
       {/* Entity Form Modal */}
       <EntityForm
+        key={`${formMode}-${selectedNetwork?.id || 'new'}`}
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
         onSubmit={handleFormSubmit}
