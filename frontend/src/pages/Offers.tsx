@@ -484,18 +484,11 @@ export const Offers = () => {
     );
   }
 
-  const computedFields = useMemo(() => {
-    const fields = OFFER_FIELDS.map(field => {
-      if (field.name === 'network') {
-        return {
-          ...field,
-          options: affiliateNetworks.map(n => ({ value: n.id, label: n.name }))
-        };
-      }
-      return field;
-    });
-    return fields;
-  }, [affiliateNetworks]);
+  const computedFields = [...OFFER_FIELDS];
+  const networkField = computedFields.find(f => f.name === 'network');
+  if (networkField) {
+    networkField.options = affiliateNetworks.map(n => ({ value: n.id, label: n.name }));
+  }
 
   return (
     <div className="space-y-6">

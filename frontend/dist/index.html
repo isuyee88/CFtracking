@@ -94,13 +94,37 @@
         margin-top: 16px;
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-CTZ7t5HT.js"></script>
+    <script type="module" crossorigin src="/assets/index-Cz_ZNvkX.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/react-vendor-DYZ6ZYfv.js">
     <link rel="modulepreload" crossorigin href="/assets/router-BDzleZFx.js">
     <link rel="stylesheet" crossorigin href="/assets/index-DBZMFEuT.css">
   <link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
   <body>
-    <div id="root"></div>
+    <!-- 内联骨架屏 - 在JS加载前显示，匹配实际布局 -->
+    <div id="root">
+      <div class="skeleton-container">
+        <!-- 7 个指标卡片 -->
+        <div class="skeleton-grid">
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+        </div>
+        <!-- 图表区域 -->
+        <div class="skeleton-box">
+          <div class="skeleton-line" style="height:16px;width:180px"></div>
+          <div class="skeleton-chart"></div>
+        </div>
+        <!-- 表格区域 -->
+        <div class="skeleton-box">
+          <div class="skeleton-line" style="height:16px;width:120px;margin-bottom:16px"></div>
+          <div class="skeleton-table"></div>
+        </div>
+      </div>
+    </div>
     <!-- 异步加载字体 - 使用 media="print" 技巧 -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'" />
     <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
@@ -109,6 +133,6 @@
     <!-- 页面预取 - 用户可能访问的下一个页面 -->
     <link rel="prefetch" href="/assets/Dashboard-BBZym5jb.tsx" as="script" />
     
-    <!-- 主入口脚本 -->
+    <!-- 主入口脚本 -->
   </body>
 </html>

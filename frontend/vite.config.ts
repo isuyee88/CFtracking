@@ -11,6 +11,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -37,15 +38,11 @@ export default defineConfig({
         clientsClaim: true,
         // 导航预加载
         navigateFallback: '/index.html',
-        // 仅缓存白名单中的 URL - 排除所有非静态资源
+        // 仅缓存白名单中的 URL
         navigateFallbackDenylist: [
-          /^\/api\//,           // API 请求不缓存
-          /^\/auth\//,          // 认证请求不缓存
-          /\/$/,                // 目录请求不缓存
-          /\?/,                 // 带查询参数的请求不缓存
-          /\.html$/,            // HTML 文件不缓存（由 React Router 处理）
-          /\.php$/,             // PHP 文件不缓存
-          /\.asp$/,             // ASP 文件不缓存
+          /^\/api\//,
+          /^\/auth\//,
+          /stats\.html$/, // 排除 stats.html 文件
         ],
         // 增加缓存文件大小限制到 5MB
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
@@ -160,6 +157,14 @@ export default defineConfig({
         enabled: false, // 开发环境不启用 PWA
         type: 'module',
       },
+    }),
+    // Bundle 可视化分析 - 生成统计报告
+    visualizer({
+      filename: 'dist/stats.html',
+      open: false,
+      gzipSize: true,
+      brotliSize: true,
+      template: 'treemap',
     }),
   ],
   resolve: {
