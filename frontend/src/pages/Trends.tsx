@@ -6,7 +6,7 @@
  * 前后端交互: 调用 /api/trends/report 接口
  */
 
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { 
   ChartWrapper,
   LazyLineChart, LazyLine, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyLegend, LazyResponsiveContainer, 

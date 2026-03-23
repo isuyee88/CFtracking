@@ -340,9 +340,9 @@ export function VirtualTableEnhanced<T = any>({
               <div
                 key={rowId}
                 className={cn(
-                  'absolute w-full border-b border-gray-100 transition-colors cursor-pointer',
-                  isSelected && 'bg-blue-50',
-                  !isSelected && 'hover:bg-gray-50',
+                  'absolute w-full border-b border-outline-variant/10 transition-colors cursor-pointer',
+                  isSelected && 'bg-accent-muted/20',
+                  !isSelected && 'hover:bg-surface-container/30',
                   customRowClass
                 )}
                 style={{
