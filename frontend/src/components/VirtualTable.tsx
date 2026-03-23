@@ -17,10 +17,27 @@ function cn(...inputs: ClassValue[]) {
 export interface VirtualTableColumn<T = any> {
   key: string;
   label: string;
+  dataIndex?: keyof T;
   width?: string | number;
   align?: 'left' | 'center' | 'right';
   render?: (value: any, row: T, index: number) => React.ReactNode;
   className?: string;
+  
+  // === Ant Design 筛选配置 ===
+  filters?: { text: string; value: any }[];
+  onFilter?: (value: any, record: T) => boolean;
+  filterMultiple?: boolean; // 是否支持多选，默认 true
+  filteredValue?: any[] | null; // 受控模式下的筛选值
+  
+  // === Ant Design 排序配置 ===
+  sorter?: ((a: T, b: T) => number) | boolean; // true 表示使用默认比较
+  sortOrder?: 'ascend' | 'descend' | null; // 受控模式下的排序状态
+  sortDirections?: ('ascend' | 'descend')[]; // 可选的排序方向，默认 ['ascend', 'descend']
+  defaultSortOrder?: 'ascend' | 'descend' | null; // 默认排序顺序
+  
+  // === UI 控制 ===
+  showSorter?: boolean; // 是否显示排序图标，默认 true
+  showFilter?: boolean; // 是否显示筛选图标，默认根据 filters 或 onFilter 决定
 }
 
 export interface VirtualTableProps<T = any> {
