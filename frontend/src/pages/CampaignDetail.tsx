@@ -52,7 +52,7 @@ import {
   LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer,
   LazyBarChart, LazyBar
 } from '../components/ChartWrapper';
-import { fetchCampaign, updateCampaign, fetchCampaignStats, fetchFlows, createFlow, updateFlow, deleteFlow, addOfferToFlow, addLandingPageToFlow } from '../services/api';
+import { fetchCampaign, updateCampaign, fetchCampaignStats, fetchFlows, createFlow, updateFlow, deleteFlow, addOfferToFlow, addLandingPageToFlow, fetchTrafficSources } from '../services/api';
 import { FlowDesigner } from '../components/FlowDesigner';
 
 function cn(...inputs: ClassValue[]) {
@@ -189,6 +189,7 @@ export const CampaignDetail = () => {
   const [stats, setStats] = useState<any>(null);
   const [flows, setFlows] = useState<any[]>([]);
   const [connections, setConnections] = useState<any[]>([]);
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
 
   // Fetch campaign data
   useEffect(() => {
@@ -274,7 +275,16 @@ export const CampaignDetail = () => {
     );
   }
 
-  const handleEditClick = () => {
+  const handleEditClick = async () => {
+    // Load traffic sources when opening edit modal
+    try {
+      const data = await fetchTrafficSources(false);
+      if (Array.isArray(data)) {
+        setTrafficSources(data);
+      }
+    } catch (err) {
+      console.error('Failed to load traffic sources:', err);
+    }
     setEditedCampaign({ ...campaign });
     setIsEditModalOpen(true);
     setActiveEditSection('basic');
@@ -1168,12 +1178,22 @@ eval(atob('${btoa(script)}'));
                       <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                         Traffic Source
                       </label>
-                      <input
-                        type="text"
-                        value={editedCampaign.source}
+                      <select
+                        value={editedCampaign.source || ''}
                         onChange={(e) => handleInputChange('source', e.target.value)}
                         className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-                      />
+                      >
+                        <option value="">Select traffic source...</option>
+                        {trafficSources.length === 0 ? (
+                          <option disabled>Loading sources...</option>
+                        ) : (
+                          trafficSources.map(source => (
+                            <option key={source.id} value={source.id}>
+                              {source.name} ({source.type})
+                            </option>
+                          ))
+                        )}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
