@@ -30,6 +30,7 @@ dataset = "cf_tracking_events"
 binding = "UNIQUENESS_KV"
 id = "7cdc9c88e1964bff954835d91f98bd74"
 
+[durable_objects]
 [[durable_objects.bindings]]
 name = "SESSION_DO"
 class_name = "SessionDurableObject"
@@ -48,7 +49,7 @@ class_name = "UniquenessDurableObject"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject", "UniquenessDurableObject"]
+new_sqlite_classes = ["UniquenessDurableObject"]
 
 [assets]
 directory = "./frontend/dist"
