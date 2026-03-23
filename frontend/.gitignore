@@ -13,6 +13,8 @@ dist-ssr
 
 # Build output - tracked in Git for Workers deployment
 !dist
+# Exclude empty vendor files (0.00 kB)
+dist/assets/vendor-*-l0sNRNKZ.js
 
 # Editor directories and files
 .vscode/*
