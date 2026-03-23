@@ -471,6 +471,7 @@ export const Offers = () => {
     <div className="space-y-6">
       {/* Entity Form Modal */}
       <EntityForm
+        key={`${formMode}-${selectedOffer?.id || 'new'}`}
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
         onSubmit={handleFormSubmit}

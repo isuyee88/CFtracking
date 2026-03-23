@@ -379,6 +379,7 @@ export const Landings = () => {
     <div className="space-y-6">
       {/* Entity Form Modal */}
       <EntityForm
+        key={`${formMode}-${selectedLanding?.id || 'new'}`}
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
         onSubmit={handleFormSubmit}
