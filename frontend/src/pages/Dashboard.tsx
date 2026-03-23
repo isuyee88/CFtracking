@@ -931,19 +931,9 @@ export const Dashboard = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metricsKey, entitiesKey, timeRangeKey]);
 
-  // Recent Clicks 定时刷新 - 使用 ref 避免依赖变化导致的重复执行
-  const refreshRecentClicksRef = useRef(refreshRecentClicks);
+  // Recent Clicks 手动刷新功能 - 移除自动刷新，由用户手动控制
+  const refreshRecentClicksRef = useRef<() => Promise<void>>(refreshRecentClicks);
   refreshRecentClicksRef.current = refreshRecentClicks;
-  
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      refreshRecentClicksRef.current();
-    }, 30000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, []);
 
   // 处理配置变化
   const handleConfigChange = (newConfig: any) => {
@@ -1309,10 +1299,23 @@ export const Dashboard = () => {
           <div className="section-card overflow-hidden">
             <div className="section-header flex items-center justify-between">
               <h3 className="font-display font-semibold text-on-surface">Recent Clicks</h3>
-              <div className="flex items-center gap-1.5 text-xs text-secondary">
-                <div className="w-2 h-2 bg-secondary rounded-full animate-pulse" />
-                <span className="font-medium">Live</span>
-              </div>
+              <button
+                onClick={() => refreshRecentClicksRef.current()?.catch(console.error)}
+                disabled={loading.recentClicks}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-medium transition-all",
+                  loading.recentClicks
+                    ? "bg-surface-container text-fg-muted cursor-not-allowed"
+                    : "bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer"
+                )}
+                title="Refresh recent clicks data"
+              >
+                <RefreshCw 
+                  size={14} 
+                  className={cn(loading.recentClicks && "animate-spin")}
+                />
+                <span>Refresh</span>
+              </button>
             </div>
             {loading.recentClicks ? (
               <div className="p-8 flex items-center justify-center">
