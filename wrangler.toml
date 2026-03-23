@@ -46,9 +46,9 @@ class_name = "QueueDurableObject"
 name = "UNIQUE_DO"
 class_name = "UniquenessDurableObject"
 
-[migrations]
+[[migrations]]
 tag = "v1"
-new_sqlite_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject", "UniquenessDurableObject"]
+new_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject", "UniquenessDurableObject"]
 
 [assets]
 directory = "./frontend/dist"
