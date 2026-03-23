@@ -48,7 +48,7 @@ name = "UNIQUE_DO"
 class_name = "UniquenessDurableObject"
 
 [[migrations]]
-tag = "v1"
+tag = "v2"
 new_sqlite_classes = ["UniquenessDurableObject"]
 
 [assets]
