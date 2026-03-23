@@ -421,17 +421,11 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
           {steps.map((step, index) => (
             <React.Fragment key={step.key}>
               <button
-                onClick={() => {
-                  if (index <= steps.findIndex(s => s.key === currentStep)) {
-                    setCurrentStep(step.key);
-                  }
-                }}
+                onClick={() => setCurrentStep(step.key)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-sm transition-all ${
                   currentStep === step.key
                     ? 'bg-primary text-on-primary'
-                    : index < steps.findIndex(s => s.key === currentStep)
-                    ? 'text-secondary hover:bg-surface-container'
-                    : 'text-on-surface-variant/50 cursor-not-allowed'
+                    : 'text-on-surface-variant hover:bg-surface-container'
                 }`}
               >
                 {step.icon}
