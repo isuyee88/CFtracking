@@ -98,6 +98,40 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
     connections: initialData?.connections || [],
   });
 
+  // 当 initialData 变化时更新表单数据（Edit模式切换campaign时）
+  useEffect(() => {
+    if (initialData) {
+      setFormData({
+        name: initialData?.name || '',
+        alias: initialData?.alias || '',
+        domain: initialData?.domain || '',
+        group: initialData?.group || '',
+        trafficSource: initialData?.trafficSource || '',
+        flowRotation: initialData?.flowRotation || 'weight',
+        costModel: initialData?.costModel || 'cpc',
+        costValue: initialData?.costValue || 0,
+        currency: initialData?.currency || 'USD',
+        uniquenessMethod: initialData?.uniquenessMethod || 'none',
+        uniquenessParameter: initialData?.uniquenessParameter || '',
+        uniquenessTTL: initialData?.uniquenessTTL || 86400,
+        visitorBinding: initialData?.visitorBinding || 'none',
+        status: initialData?.status || 'active',
+        filterConfig: initialData?.filterConfig || {
+          groups: [{
+            id: 'default-group',
+            name: 'Default Group',
+            logic: 'AND',
+            conditions: []
+          }],
+          globalLogic: 'AND'
+        },
+        notes: initialData?.notes || '',
+        flows: initialData?.flows || [],
+        connections: initialData?.connections || [],
+      });
+    }
+  }, [initialData]);
+
   // 自动生成 Campaign URL
   const campaignUrl = useMemo(() => {
     if (!formData.domain || !formData.alias) return '';
