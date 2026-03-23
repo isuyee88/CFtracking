@@ -7,6 +7,12 @@
 export type AffiliateNetworkStatus = 'active' | 'paused' | 'deleted';
 export type AffiliateNetworkType = 'soap' | 'rest' | 'api' | 'other';
 
+export interface AffiliateNetworkOfferParameter {
+  name: string;
+  value: string;
+  description?: string;
+}
+
 export interface AffiliateNetwork {
   id: string;
   displayId?: string;
@@ -15,8 +21,11 @@ export interface AffiliateNetwork {
   status: AffiliateNetworkStatus;
   apiUrl?: string;
   apiKey?: string;
+  apiSecret?: string;
   postbackUrl?: string;
+  offerParameters?: AffiliateNetworkOfferParameter[];
   notes?: string;
+  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -26,8 +35,11 @@ export interface CreateAffiliateNetworkDTO {
   type?: AffiliateNetworkType;
   apiUrl?: string;
   apiKey?: string;
+  apiSecret?: string;
   postbackUrl?: string;
+  offerParameters?: AffiliateNetworkOfferParameter[];
   notes?: string;
+  templateId?: string;
 }
 
 export interface UpdateAffiliateNetworkDTO {
@@ -35,7 +47,10 @@ export interface UpdateAffiliateNetworkDTO {
   type?: AffiliateNetworkType;
   apiUrl?: string;
   apiKey?: string;
+  apiSecret?: string;
   postbackUrl?: string;
+  offerParameters?: AffiliateNetworkOfferParameter[];
   notes?: string;
   status?: AffiliateNetworkStatus;
+  templateId?: string;
 }

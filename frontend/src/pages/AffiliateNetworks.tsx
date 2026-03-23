@@ -5,12 +5,12 @@
  * Logic: 使用 EntityForm 组件实现表单，支持搜索、筛选、分页
  */
 
-import React, { useState, useEffect } from 'react';
-import { 
-  Network, 
-  Plus, 
-  Trash2, 
-  Edit3, 
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Network,
+  Plus,
+  Trash2,
+  Edit3,
   Search,
   Filter,
   ChevronLeft,
@@ -24,7 +24,8 @@ import {
   Loader2,
   Link,
   Key,
-  Shield
+  Shield,
+  CopyToClipboard
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -33,6 +34,7 @@ import { fetchAffiliateNetworks, createAffiliateNetwork, updateAffiliateNetwork,
 import { ExportButton } from '../components/ExportButton';
 import { formatAffiliateNetworkForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
+import { AFFILIATE_NETWORK_TEMPLATES, getAffiliateTemplateById, type AffiliateNetworkOfferParameter } from '../data/affiliateNetworkTemplates';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -46,14 +48,24 @@ interface AffiliateNetwork {
   status: 'active' | 'paused' | 'deleted';
   apiUrl?: string;
   apiKey?: string;
+  apiSecret?: string;
+  postbackUrl?: string;
+  offerParameters?: AffiliateNetworkOfferParameter[];
+  templateId?: string;
   offerCount?: number;
-  offers?: number; // Legacy field
+  offers?: number;
   clicks?: number;
   conversions?: number;
   epc: number | string;
   cr: number | string;
   revenue: number | string;
   updatedAt: string;
+}
+
+interface OfferParameter {
+  name: string;
+  value: string;
+  description?: string;
 }
 
 const NETWORK_FIELDS: FormField[] = [
@@ -63,6 +75,23 @@ const NETWORK_FIELDS: FormField[] = [
     type: 'text',
     required: true,
     placeholder: 'Enter network name'
+  },
+  {
+    name: 'templateId',
+    label: 'Template',
+    type: 'select',
+    description: 'Select a pre-configured template or Custom for manual setup',
+    options: [
+      { value: 'custom', label: 'Custom / Manual Setup' },
+      { value: 'adcombo', label: 'AdCombo' },
+      { value: 'drcash', label: 'Dr.Cash' },
+      { value: 'leadalb', label: 'Leadbit' },
+      { value: 'm4leads', label: 'M4Leads' },
+      { value: 'partners1xbet', label: 'Partners1xBet' },
+      { value: 'trafficlight', label: 'Traffic Light' },
+      { value: 'melbetaffiliates', label: 'Melbetaffiliates' },
+      { value: 'clickbank', label: 'ClickBank' }
+    ]
   },
   {
     name: 'type',
@@ -96,6 +125,26 @@ const NETWORK_FIELDS: FormField[] = [
     label: 'API Key',
     type: 'text',
     placeholder: 'Enter your API key'
+  },
+  {
+    name: 'apiSecret',
+    label: 'API Secret',
+    type: 'text',
+    placeholder: 'Enter your API secret (if required)'
+  },
+  {
+    name: 'postbackUrl',
+    label: 'Postback URL',
+    type: 'url',
+    description: 'The URL where the affiliate network sends conversion notifications. Copy this to your affiliate network settings.',
+    placeholder: 'https://your-tracking-domain.com/postback?subid={{subid}}&status={status}'
+  },
+  {
+    name: 'offerParameters',
+    label: 'Offer Parameters',
+    type: 'json',
+    description: 'Parameters added to each offer URL. Example: subid={{subid}}, sub2={{source}}',
+    placeholder: '[\n  {"name": "Click ID", "value": "subid={{subid}}", "description": "Keitaro Click ID"},\n  {"name": "Source", "value": "sub2={{source}}", "description": "Traffic source"}\n]'
   },
   {
     name: 'status',
@@ -141,6 +190,26 @@ export const AffiliateNetworks = () => {
     from: new Date().toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0]
   });
+
+  const getNetworkFieldsWithTemplate = (templateId?: string): FormField[] => {
+    const fields = [...NETWORK_FIELDS];
+    if (templateId && templateId !== 'custom') {
+      const template = getAffiliateTemplateById(templateId);
+      if (template) {
+        const paramField = fields.find(f => f.name === 'offerParameters');
+        if (paramField && template.parameters.length > 0) {
+          paramField.placeholder = template.parameters
+            .map(p => `${p.name}: ${p.value}`)
+            .join('\n');
+        }
+      }
+    }
+    return fields;
+  };
+
+  const computedFields = useMemo(() => {
+    return getNetworkFieldsWithTemplate(selectedNetwork?.templateId);
+  }, [selectedNetwork?.templateId]);
 
   // Fetch affiliate networks from API
   useEffect(() => {
@@ -223,14 +292,19 @@ export const AffiliateNetworks = () => {
   };
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
+    const submitData = {
+      ...formData,
+      offerParameters: formData.offerParameters || []
+    };
+
     try {
       if (formMode === 'create') {
-        const network = await createAffiliateNetwork(formData);
+        const network = await createAffiliateNetwork(submitData);
         if (network && network.id) {
           setNetworks(prev => [...prev, network]);
         }
       } else if (selectedNetwork?.id) {
-        const network = await updateAffiliateNetwork(selectedNetwork.id, formData);
+        const network = await updateAffiliateNetwork(selectedNetwork.id, submitData);
         if (network && network.id) {
           setNetworks(prev =>
             prev.map(n => n.id === selectedNetwork.id ? network : n)
@@ -240,7 +314,6 @@ export const AffiliateNetworks = () => {
       setIsFormOpen(false);
     } catch (err) {
       console.error('Failed to save affiliate network:', err);
-      // For demo, add to local state
       if (formMode === 'create') {
         const newNetwork: AffiliateNetwork = {
           id: `an${Date.now()}`,
@@ -249,6 +322,10 @@ export const AffiliateNetworks = () => {
           status: formData.status || 'active',
           apiUrl: formData.apiUrl || '',
           apiKey: formData.apiKey ? '••••••••••••' : '',
+          apiSecret: formData.apiSecret || '',
+          postbackUrl: formData.postbackUrl || '',
+          offerParameters: formData.offerParameters || [],
+          templateId: formData.templateId || '',
           offerCount: 0,
           clicks: 0,
           conversions: 0,
@@ -259,10 +336,10 @@ export const AffiliateNetworks = () => {
         };
         setNetworks(prev => [...prev, newNetwork]);
       } else {
-        setNetworks(prev => 
-          prev.map(n => 
-            n.id === selectedNetwork?.id 
-              ? { ...n, ...formData, updatedAt: new Date().toISOString() }
+        setNetworks(prev =>
+          prev.map(n =>
+            n.id === selectedNetwork?.id
+              ? { ...n, ...submitData, updatedAt: new Date().toISOString() }
               : n
           )
         );
@@ -381,7 +458,7 @@ export const AffiliateNetworks = () => {
         onClose={() => setIsFormOpen(false)}
         onSubmit={handleFormSubmit}
         title="Affiliate Network"
-        fields={NETWORK_FIELDS}
+        fields={computedFields}
         initialData={selectedNetwork}
         mode={formMode}
       />

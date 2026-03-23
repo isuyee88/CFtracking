@@ -18,10 +18,20 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
   }
 
   protected transform(row: Record<string, unknown>): AffiliateNetwork {
-    return {
+    const network = {
       ...row,
       id: row.displayId || row.id,
     } as AffiliateNetwork;
+
+    if (network.offerParameters && typeof network.offerParameters === 'string') {
+      try {
+        network.offerParameters = JSON.parse(network.offerParameters);
+      } catch {
+        network.offerParameters = [];
+      }
+    }
+
+    return network;
   }
 
   async findByDisplayId(displayId: string): Promise<AffiliateNetwork | null> {
@@ -39,11 +49,12 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
   async create(data: CreateAffiliateNetworkDTO): Promise<AffiliateNetwork> {
     const displayId = await this.idService.generateId('affiliateNetworks');
     const now = new Date().toISOString();
+    const offerParametersJson = data.offerParameters ? JSON.stringify(data.offerParameters) : null;
 
     await this.db
       .prepare(`
-        INSERT INTO affiliateNetworks (id, displayId, name, type, status, apiUrl, apiKey, postbackUrl, notes, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO affiliateNetworks (id, displayId, name, type, status, apiUrl, apiKey, apiSecret, postbackUrl, offerParameters, notes, templateId, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         displayId,
@@ -53,8 +64,11 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
         'active',
         data.apiUrl || null,
         data.apiKey || null,
+        data.apiSecret || null,
         data.postbackUrl || null,
+        offerParametersJson,
         data.notes || null,
+        data.templateId || null,
         now,
         now
       )
@@ -75,9 +89,12 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
     if (data.type !== undefined) { fields.push('type = ?'); values.push(data.type); }
     if (data.apiUrl !== undefined) { fields.push('apiUrl = ?'); values.push(data.apiUrl); }
     if (data.apiKey !== undefined) { fields.push('apiKey = ?'); values.push(data.apiKey); }
+    if (data.apiSecret !== undefined) { fields.push('apiSecret = ?'); values.push(data.apiSecret); }
     if (data.postbackUrl !== undefined) { fields.push('postbackUrl = ?'); values.push(data.postbackUrl); }
+    if (data.offerParameters !== undefined) { fields.push('offerParameters = ?'); values.push(JSON.stringify(data.offerParameters)); }
     if (data.notes !== undefined) { fields.push('notes = ?'); values.push(data.notes); }
     if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
+    if (data.templateId !== undefined) { fields.push('templateId = ?'); values.push(data.templateId); }
 
     if (fields.length === 0) {
       return this.findById(id);

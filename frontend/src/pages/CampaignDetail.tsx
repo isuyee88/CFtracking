@@ -96,6 +96,7 @@ interface Campaign {
   group: string;
   flow: string;
   source: string;
+  trafficSourceId: string;
   url: string;
   clicks: number;
   conversions: number;
@@ -122,15 +123,16 @@ const transformCampaign = (backend: BackendCampaign): Campaign => {
   const currentDomain = window.location.host;
   // Build real tracking URL using current domain
   const trackingUrl = `https://${currentDomain}/${backend.alias}`;
-  
+
   return {
-    id: backend.id,
+    id: backend.displayId || backend.id,
     name: backend.name,
     status: backend.status === 'active' ? 'Active' : backend.status === 'paused' ? 'Paused' : 'Deleted',
     type: 'Redirect',
     group: backend.group || 'Default',
     flow: backend.flowRotation || 'Default',
     source: backend.trafficSource || 'Direct',
+    trafficSourceId: backend.trafficSource || '',
     url: trackingUrl,
     clicks: 0,
     conversions: 0,
@@ -323,7 +325,11 @@ export const CampaignDetail = () => {
 
         const response = await updateCampaign(campaign.id, updateData);
         if (response) {
-          setCampaign({ ...editedCampaign, updatedAt: new Date().toISOString().split('T')[0] });
+          // 重新从后端获取最新数据
+          const updatedCampaign = await fetchCampaign(id!);
+          if (updatedCampaign) {
+            setCampaign(transformCampaign(updatedCampaign));
+          }
           setIsEditModalOpen(false);
           toast.success('Campaign Updated', 'Campaign has been updated successfully.');
         } else {
@@ -1242,8 +1248,8 @@ eval(atob('${btoa(script)}'));
                         Traffic Source
                       </label>
                       <select
-                        value={editedCampaign.source || ''}
-                        onChange={(e) => handleInputChange('source', e.target.value)}
+                        value={editedCampaign.trafficSourceId || ''}
+                        onChange={(e) => handleInputChange('trafficSourceId', e.target.value)}
                         className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
                       >
                         <option value="">Select traffic source...</option>
