@@ -262,9 +262,8 @@ export function VirtualTableEnhanced<T = any>({
                     headerClassName
                   )}
                   style={{
-                    width: column.width,
-                    minWidth: column.width,
-                    maxWidth: column.width,
+                    width: column.width || 'auto',
+                    minWidth: column.width || 'auto',
                     flex: column.width ? undefined : 1,
                   }}
                   onClick={() => showSorter && handleSort(column.key, columnSortOrder === 'ascend' ? 'descend' : columnSortOrder === 'descend' ? null : 'ascend')}
@@ -385,9 +384,8 @@ export function VirtualTableEnhanced<T = any>({
                           column.className
                         )}
                         style={{
-                          width: column.width,
-                          minWidth: column.width,
-                          maxWidth: column.width,
+                          width: column.width || 'auto',
+                          minWidth: column.width || 'auto',
                           flex: column.width ? undefined : 1,
                         }}
                       >
