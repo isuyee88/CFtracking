@@ -37,11 +37,15 @@ export default defineConfig({
         clientsClaim: true,
         // 导航预加载
         navigateFallback: '/index.html',
-        // 仅缓存白名单中的 URL
+        // 仅缓存白名单中的 URL - 排除所有非静态资源
         navigateFallbackDenylist: [
-          /^\/api\//,
-          /^\/auth\//,
-          /stats\.html$/, // 排除 stats.html 文件
+          /^\/api\//,           // API 请求不缓存
+          /^\/auth\//,          // 认证请求不缓存
+          /\/$/,                // 目录请求不缓存
+          /\?/,                 // 带查询参数的请求不缓存
+          /\.html$/,            // HTML 文件不缓存（由 React Router 处理）
+          /\.php$/,             // PHP 文件不缓存
+          /\.asp$/,             // ASP 文件不缓存
         ],
         // 增加缓存文件大小限制到 5MB
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
