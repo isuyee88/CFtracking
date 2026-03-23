@@ -5,7 +5,7 @@
  * Logic: 使用 EntityForm 组件实现表单，支持搜索、筛选、分页
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Gift, 
   Plus, 
@@ -30,7 +30,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
-import { fetchOffers, createOffer, updateOffer, deleteOffer } from '../services/api';
+import { fetchOffers, createOffer, updateOffer, deleteOffer, fetchAffiliateNetworks } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatOfferForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
@@ -122,8 +122,7 @@ const OFFER_FIELDS: FormField[] = [
   {
     name: 'network',
     label: 'Affiliate Network',
-    type: 'text',
-    placeholder: 'Select or enter network'
+    type: 'select'
   },
   {
     name: 'group',
@@ -180,6 +179,24 @@ export const Offers = () => {
     from: new Date().toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0]
   });
+
+  // Affiliate networks state
+  const [affiliateNetworks, setAffiliateNetworks] = useState<{id: string; name: string}[]>([]);
+
+  // Fetch affiliate networks for dropdown
+  useEffect(() => {
+    const loadAffiliateNetworks = async () => {
+      try {
+        const data = await fetchAffiliateNetworks();
+        if (Array.isArray(data)) {
+          setAffiliateNetworks(data.map(n => ({ id: n.id, name: n.name })));
+        }
+      } catch (err) {
+        console.error('Failed to load affiliate networks:', err);
+      }
+    };
+    loadAffiliateNetworks();
+  }, []);
 
   // Fetch offers from API
   useEffect(() => {
@@ -467,6 +484,15 @@ export const Offers = () => {
     );
   }
 
+  const computedFields = useMemo(() => {
+    const fields = [...OFFER_FIELDS];
+    const networkField = fields.find(f => f.name === 'network');
+    if (networkField) {
+      networkField.options = affiliateNetworks.map(n => ({ value: n.id, label: n.name }));
+    }
+    return fields;
+  }, [affiliateNetworks]);
+
   return (
     <div className="space-y-6">
       {/* Entity Form Modal */}
@@ -476,7 +502,7 @@ export const Offers = () => {
         onClose={() => setIsFormOpen(false)}
         onSubmit={handleFormSubmit}
         title="Offer"
-        fields={OFFER_FIELDS}
+        fields={computedFields}
         initialData={selectedOffer}
         mode={formMode}
       />
