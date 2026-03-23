@@ -27,6 +27,7 @@ import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { GroupByFilter, filterByGroupBy } from '../components/GroupByFilter';
 import type { GroupByState, GroupByOption } from '../types/filter';
 import { useToast } from '../components/Toast';
+import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -470,188 +471,207 @@ export const CampaignManagement = () => {
         </div>
       </div>
 
-      {/* Campaigns Table */}
+      {/* Campaigns Table - VirtualTableEnhanced */}
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="w-10">
-                  <input 
-                    type="checkbox" 
-                    className="rounded border-border-default"
-                    checked={selectedItems.size === filteredCampaigns.length && filteredCampaigns.length > 0}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast">Campaign</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast">Status</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast">Type</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast">Group</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast text-right">Clicks</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast text-right">Conv.</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast text-right">Revenue</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast text-right">Profit</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast text-right">ROI</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast text-right">EPC</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-high-contrast text-right">CR</th>
-                <th className="px-4 py-4 w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedCampaigns.map((campaign) => (
-                <tr 
-                  key={campaign.id} 
-                  className={cn(
-                    "border-t border-outline-variant/10 hover:bg-surface-container/50 transition-colors",
-                    selectedItems.has(campaign.id) && "bg-surface-container/30"
-                  )}
-                >
-                  <td className="px-4 py-4">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-outline-variant"
-                      checked={selectedItems.has(campaign.id)}
-                      onChange={() => handleSelectItem(campaign.id)}
-                    />
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
-                        <Zap size={20} className="text-primary" />
-                      </div>
-                      <div>
-                        <button 
-                          onClick={() => handleCampaignClick(campaign.id)}
-                          className="font-bold text-high-contrast hover:text-secondary cursor-pointer link-primary"
-                        >
-                          {campaign.name}
-                        </button>
-                        <p className="text-xs text-medium-contrast">ID: {campaign.displayId || campaign.id}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
-                      campaign.status === 'Active' ? "status-active" : campaign.status === 'Paused' ? "status-paused" : "status-deleted"
-                    )}>
-                      <div className={cn(
-                        "w-2 h-2 rounded-full",
-                        campaign.status === 'Active' ? "bg-green-500" : campaign.status === 'Paused' ? "bg-yellow-500" : "bg-red-500"
-                      )} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">{campaign.status}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="text-sm text-high-contrast">{campaign.type}</span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-medium-contrast rounded-sm">
-                      {campaign.group}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-semibold text-high-contrast">{campaign.clicks.toLocaleString()}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-semibold text-high-contrast">{campaign.conversions.toLocaleString()}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-semibold text-secondary">{campaign.revenue}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className={cn(
-                      "text-sm font-semibold",
-                      campaign.profit.startsWith('-') ? "text-error" : "text-secondary"
-                    )}>{campaign.profit}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className={cn(
-                      "text-sm font-semibold",
-                      campaign.roi.startsWith('-') ? "text-error" : "text-secondary"
-                    )}>{campaign.roi}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-semibold text-high-contrast">{campaign.epc}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-semibold text-high-contrast">{campaign.cr}</span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={() => handleEditCampaign(campaign)}
-                        className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                        title="Edit"
-                      >
-                        <Edit3 size={16} />
-                      </button>
-                      <button className="p-2 text-on-surface-variant hover:text-primary transition-colors">
-                        <MoreHorizontal size={18} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        
-        {filteredCampaigns.length === 0 && (
-          <div className="p-8 text-center text-on-surface-variant">
-            <p>No campaigns found</p>
-          </div>
-        )}
-        
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t border-outline-variant/10">
-            <span className="text-sm text-on-surface-variant">
-              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredCampaigns.length)} of {filteredCampaigns.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === 1 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronLeft size={20} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={cn(
-                    "w-8 h-8 text-sm font-medium rounded-sm transition-colors",
-                    currentPage === page
-                      ? "bg-primary text-on-primary"
-                      : "text-on-surface-variant hover:bg-surface-container"
-                  )}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === totalPages 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronRight size={20} />
-              </button>
-            </div>
-          </div>
-        )}
+        <VirtualTableEnhanced
+          tableId="campaigns"
+          columns={[
+            {
+              key: 'select',
+              label: '',
+              width: '40px',
+              align: 'center',
+              render: (_: any, row: any) => (
+                <input 
+                  type="checkbox" 
+                  className="rounded border-border-default"
+                  checked={selectedItems.has(row.id)}
+                  onChange={() => handleSelectItem(row.id)}
+                />
+              ),
+            },
+            {
+              key: 'name',
+              label: 'Campaign',
+              width: '300px',
+              sorter: (a: any, b: any) => a.name.localeCompare(b.name),
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
+                    <Zap size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <button 
+                      onClick={() => handleCampaignClick(row.id)}
+                      className="font-bold text-high-contrast hover:text-secondary cursor-pointer link-primary"
+                    >
+                      {row.name}
+                    </button>
+                    <p className="text-xs text-medium-contrast">ID: {row.displayId || row.id}</p>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              width: '120px',
+              filters: [
+                { text: 'Active', value: 'Active' },
+                { text: 'Paused', value: 'Paused' },
+                { text: 'Deleted', value: 'Deleted' },
+              ],
+              onFilter: (value: any, record: any) => record.status === value,
+              sorter: (a: any, b: any) => a.status.localeCompare(b.status),
+              showSorter: true,
+              showFilter: true,
+              render: (_: any, row: any) => (
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
+                  row.status === 'Active' ? "status-active" : row.status === 'Paused' ? "status-paused" : "status-deleted"
+                )}>
+                  <div className={cn(
+                    "w-2 h-2 rounded-full",
+                    row.status === 'Active' ? "bg-green-500" : row.status === 'Paused' ? "bg-yellow-500" : "bg-red-500"
+                  )} />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">{row.status}</span>
+                </div>
+              ),
+            },
+            {
+              key: 'type',
+              label: 'Type',
+              width: '100px',
+              sorter: (a: any, b: any) => a.type.localeCompare(b.type),
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <span className="text-sm text-high-contrast">{row.type}</span>
+              ),
+            },
+            {
+              key: 'group',
+              label: 'Group',
+              width: '120px',
+              sorter: (a: any, b: any) => a.group.localeCompare(b.group),
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-medium-contrast rounded-sm">
+                  {row.group}
+                </span>
+              ),
+            },
+            {
+              key: 'clicks',
+              label: 'Clicks',
+              width: '100px',
+              align: 'right',
+              sorter: (a: any, b: any) => a.clicks - b.clicks,
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <span className="text-sm font-semibold text-high-contrast">{row.clicks.toLocaleString()}</span>
+              ),
+            },
+            {
+              key: 'conversions',
+              label: 'Conv.',
+              width: '80px',
+              align: 'right',
+              sorter: (a: any, b: any) => a.conversions - b.conversions,
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <span className="text-sm font-semibold text-high-contrast">{row.conversions.toLocaleString()}</span>
+              ),
+            },
+            {
+              key: 'revenue',
+              label: 'Revenue',
+              width: '100px',
+              align: 'right',
+              sorter: (a: any, b: any) => parseFloat(a.revenue.replace('$', '')) - parseFloat(b.revenue.replace('$', '')),
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <span className="text-sm font-semibold text-secondary">{row.revenue}</span>
+              ),
+            },
+            {
+              key: 'profit',
+              label: 'Profit',
+              width: '100px',
+              align: 'right',
+              sorter: (a: any, b: any) => parseFloat(a.profit.replace('$', '')) - parseFloat(b.profit.replace('$', '')),
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <span className={cn(
+                  "text-sm font-semibold",
+                  row.profit.startsWith('-') ? "text-error" : "text-secondary"
+                )}>{row.profit}</span>
+              ),
+            },
+            {
+              key: 'roi',
+              label: 'ROI',
+              width: '100px',
+              align: 'right',
+              sorter: (a: any, b: any) => parseFloat(a.roi.replace('%', '')) - parseFloat(b.roi.replace('%', '')),
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <span className={cn(
+                  "text-sm font-semibold",
+                  row.roi.startsWith('-') ? "text-error" : "text-secondary"
+                )}>{row.roi}</span>
+              ),
+            },
+            {
+              key: 'epc',
+              label: 'EPC',
+              width: '100px',
+              align: 'right',
+              sorter: (a: any, b: any) => parseFloat(a.epc.replace('$', '')) - parseFloat(b.epc.replace('$', '')),
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <span className="text-sm font-semibold text-high-contrast">{row.epc}</span>
+              ),
+            },
+            {
+              key: 'cr',
+              label: 'CR',
+              width: '80px',
+              align: 'right',
+              sorter: (a: any, b: any) => parseFloat(a.cr.replace('%', '')) - parseFloat(b.cr.replace('%', '')),
+              showSorter: true,
+              render: (_: any, row: any) => (
+                <span className="text-sm font-semibold text-high-contrast">{row.cr}</span>
+              ),
+            },
+            {
+              key: 'actions',
+              label: '',
+              width: '80px',
+              align: 'center',
+              render: (_: any, row: any) => (
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={() => handleEditCampaign(row)}
+                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    title="Edit"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                  <button className="p-2 text-on-surface-variant hover:text-primary transition-colors">
+                    <MoreHorizontal size={18} />
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+          data={paginatedCampaigns}
+          rowHeight={72}
+          height={400}
+          overscan={5}
+          selectable={false}
+          emptyMessage="No campaigns found"
+        />
       </div>
     </div>
   );
