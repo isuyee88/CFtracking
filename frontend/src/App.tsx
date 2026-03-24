@@ -1,4 +1,4 @@
-﻿/**
+/**
  * File: App.tsx
  * Purpose: 搴旂敤涓诲叆鍙ｏ紝閰嶇疆璺敱
  * Input/Output: 娓叉煋鏁翠釜搴旂敤锛屽寘鍚墍鏈夐〉闈㈣矾鐢? * Logic: 浣跨敤 HashRouter 閫傞厤闈欐€侀儴缃茬幆澧冿紝浣跨敤 React.lazy 瀹炵幇浠ｇ爜鍒嗗壊
@@ -8,7 +8,8 @@ import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 
-// 璺敱绾т唬鐮佸垎鍓?- 鎳掑姞杞介〉闈㈢粍浠?const Dashboard = lazy(() => import('./pages/Dashboard'));
+// 路由级代码分割 - 懒加载页面组件
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CampaignManagement = lazy(() => import('./pages/CampaignManagement'));
 const CampaignDetail = lazy(() => import('./pages/CampaignDetail'));
 const RuleManagement = lazy(() => import('./pages/RuleManagement'));
