@@ -972,6 +972,7 @@ eval(atob('${btoa(script)}'));
                 
                 // 删除不存在的 flow - 使用 flow ID 匹配更准确
                 const flowIds = flows.map(f => f.id);
+                const flowNames = flows.map(f => f.name);
                 const flowsToDelete = existingFlows.filter((f: any) => !flowIds.includes(f.id) && !flowNames.includes(f.name));
                 console.log('[FlowDesigner] Flows to delete:', flowsToDelete.map(f => ({ id: f.id, name: f.name })));
                 for (const flowToDelete of flowsToDelete) {
