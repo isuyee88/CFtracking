@@ -345,6 +345,31 @@ export const Trends = () => {
       });
   }, [dateRange, interval, selectedCampaignId]);
 
+  // Memoize data transformations to prevent re-calculation on every render
+  // Must be called before any conditional returns
+  const countryData = useMemo(() => 
+    report?.breakdowns?.country?.map(item => ({
+      name: item.value || 'Unknown',
+      value: item.clicks || 0,
+      clicks: item.clicks || 0,
+      conversions: item.conversions || 0,
+      revenue: item.revenue || 0,
+    })) || [],
+    [report?.breakdowns?.country]
+  );
+
+  const deviceData = useMemo(() => 
+    report?.breakdowns?.device?.map(item => ({
+      name: item.value || 'Unknown',
+      value: item.clicks || 0,
+      clicks: item.clicks || 0,
+      conversions: item.conversions || 0,
+      revenue: item.revenue || 0,
+    })) || [],
+    [report?.breakdowns?.device]
+  );
+
+  // Conditional rendering after all hooks
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -375,29 +400,6 @@ export const Trends = () => {
       </div>
     );
   }
-
-  // Memoize data transformations to prevent re-calculation on every render
-  const countryData = useMemo(() => 
-    report.breakdowns?.country?.map(item => ({
-      name: item.value || 'Unknown',
-      value: item.clicks || 0,
-      clicks: item.clicks || 0,
-      conversions: item.conversions || 0,
-      revenue: item.revenue || 0,
-    })) || [],
-    [report.breakdowns?.country]
-  );
-
-  const deviceData = useMemo(() => 
-    report.breakdowns?.device?.map(item => ({
-      name: item.value || 'Unknown',
-      value: item.clicks || 0,
-      clicks: item.clicks || 0,
-      conversions: item.conversions || 0,
-      revenue: item.revenue || 0,
-    })) || [],
-    [report.breakdowns?.device]
-  );
 
   return (
     <div className="space-y-6">
