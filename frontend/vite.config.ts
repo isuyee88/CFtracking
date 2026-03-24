@@ -11,7 +11,6 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
-import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -157,14 +156,6 @@ export default defineConfig({
         enabled: false, // 开发环境不启用 PWA
         type: 'module',
       },
-    }),
-    // Bundle 可视化分析 - 生成统计报告
-    visualizer({
-      filename: 'dist/stats.html',
-      open: false,
-      gzipSize: true,
-      brotliSize: true,
-      template: 'treemap',
     }),
   ],
   resolve: {
