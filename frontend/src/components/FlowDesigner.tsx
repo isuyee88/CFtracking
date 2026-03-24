@@ -120,10 +120,14 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   // Add new flow node
   const handleAddNode = (type: FlowNode['type'], item?: { id: string; name: string }) => {
     const newNode: FlowNode = {
-      id: item?.id || `flow-${Date.now()}`,
+      // 使用唯一的 flow ID，而不是 item.id（item.id 是 offer/landing 的 ID）
+      id: `flow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type,
+      // 如果是从 item 添加，使用 item.name 作为初始名称，但用户可以编辑
       name: item?.name || (type === 'landing' ? 'New Landing Page' : type === 'offer' ? 'New Offer' : 'New Node'),
       weight: 50,
+      // 保存关联的 offer/landing ID，用于后续 API 调用
+      config: item ? { itemId: item.id } : {},
     };
     setFlows([...flows, newNode]);
   };

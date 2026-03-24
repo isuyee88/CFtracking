@@ -925,7 +925,12 @@ eval(atob('${btoa(script)}'));
                 console.log('[FlowDesigner] Existing flows from API:', existingFlows);
                 
                 for (const flow of flows) {
-                  const existingFlow = existingFlows.find((f: any) => f.name === flow.name);
+                  // 优先使用 flow.id 来匹配现有的 flow（更可靠）
+                  // flow.id 可能是 offer/landing 的 ID，也可能是 flow 的 UUID
+                  const existingFlow = flow.id && typeof flow.id === 'string' && flow.id.includes('-') 
+                    ? existingFlows.find((f: any) => f.id === flow.id)
+                    : existingFlows.find((f: any) => f.name === flow.name);
+                  
                   const flowData = {
                     campaignId: campaignUUID,
                     name: flow.name,
@@ -938,7 +943,14 @@ eval(atob('${btoa(script)}'));
                   let flowId: string;
                   if (existingFlow) {
                     console.log('[FlowDesigner] Updating flow:', existingFlow.id, flow.name);
-                    await updateFlow(existingFlow.id, flowData);
+                    // 只更新变化的字段，避免覆盖其他配置
+                    const updatePayload = {
+                      ...existingFlow,
+                      ...flowData,
+                      // 保留原有的 actionConfig 等配置
+                      actionConfig: existingFlow.actionConfig || {},
+                    };
+                    await updateFlow(existingFlow.id, updatePayload);
                     flowId = existingFlow.id;
                   } else {
                     console.log('[FlowDesigner] Creating flow:', flow.name);
@@ -947,18 +959,20 @@ eval(atob('${btoa(script)}'));
                   }
                   
                   // 关联 Offer 或 Landing Page
-                  // flow.id 是 Offer 或 Landing Page 的 ID
-                  if (flow.type === 'offer' && flow.id) {
-                    console.log('[FlowDesigner] Adding offer to flow:', flowId, flow.id);
-                    await addOfferToFlow(flowId, flow.id, flow.weight);
-                  } else if (flow.type === 'landing' && flow.id) {
-                    console.log('[FlowDesigner] Adding landing page to flow:', flowId, flow.id);
-                    await addLandingPageToFlow(flowId, flow.id, flow.weight);
+                  // 使用 flow.config.itemId 获取关联的 offer/landing ID
+                  const itemId = flow.config?.itemId || flow.id;
+                  if (flow.type === 'offer' && itemId) {
+                    console.log('[FlowDesigner] Adding offer to flow:', flowId, itemId);
+                    await addOfferToFlow(flowId, itemId, flow.weight);
+                  } else if (flow.type === 'landing' && itemId) {
+                    console.log('[FlowDesigner] Adding landing page to flow:', flowId, itemId);
+                    await addLandingPageToFlow(flowId, itemId, flow.weight);
                   }
                 }
                 
-                const flowNames = flows.map(f => f.name);
-                const flowsToDelete = existingFlows.filter((f: any) => !flowNames.includes(f.name));
+                // 删除不存在的 flow - 使用 flow ID 匹配更准确
+                const flowIds = flows.map(f => f.id);
+                const flowsToDelete = existingFlows.filter((f: any) => !flowIds.includes(f.id) && !flowNames.includes(f.name));
                 console.log('[FlowDesigner] Flows to delete:', flowsToDelete.map(f => ({ id: f.id, name: f.name })));
                 for (const flowToDelete of flowsToDelete) {
                   console.log('[FlowDesigner] Deleting flow:', flowToDelete.id, flowToDelete.name);
