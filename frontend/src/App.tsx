@@ -10,24 +10,24 @@ import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 
 // 路由级代码分割 - 懒加载页面组件
-const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
-const CampaignManagement = lazy(() => import('./pages/CampaignManagement').then(m => ({ default: m.CampaignManagement })));
-const CampaignDetail = lazy(() => import('./pages/CampaignDetail').then(m => ({ default: m.CampaignDetail })));
-const RuleManagement = lazy(() => import('./pages/RuleManagement').then(m => ({ default: m.RuleManagement })));
-const PlatformManagement = lazy(() => import('./pages/PlatformManagement').then(m => ({ default: m.PlatformManagement })));
-const Landings = lazy(() => import('./pages/Landings').then(m => ({ default: m.Landings })));
-const Offers = lazy(() => import('./pages/Offers').then(m => ({ default: m.Offers })));
-const TrafficSources = lazy(() => import('./pages/TrafficSources').then(m => ({ default: m.TrafficSources })));
-const AffiliateNetworks = lazy(() => import('./pages/AffiliateNetworks').then(m => ({ default: m.AffiliateNetworks })));
-const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
-const ClicksLog = lazy(() => import('./pages/ClicksLog').then(m => ({ default: m.ClicksLog })));
-const ConversionsLog = lazy(() => import('./pages/ConversionsLog').then(m => ({ default: m.ConversionsLog })));
-const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
-const Trends = lazy(() => import('./pages/Trends').then(m => ({ default: m.Trends })));
-const Blacklist = lazy(() => import('./pages/Blacklist').then(m => ({ default: m.Blacklist })));
-const Whitelist = lazy(() => import('./pages/Whitelist').then(m => ({ default: m.Whitelist })));
-const TargetPage = lazy(() => import('./pages/Target').then(m => ({ default: m.TargetPage })));
-const HelpCenter = lazy(() => import('./pages/HelpCenter').then(m => ({ default: m.HelpCenter })));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const CampaignManagement = lazy(() => import('./pages/CampaignManagement'));
+const CampaignDetail = lazy(() => import('./pages/CampaignDetail'));
+const RuleManagement = lazy(() => import('./pages/RuleManagement'));
+const PlatformManagement = lazy(() => import('./pages/PlatformManagement'));
+const Landings = lazy(() => import('./pages/Landings'));
+const Offers = lazy(() => import('./pages/Offers'));
+const TrafficSources = lazy(() => import('./pages/TrafficSources'));
+const AffiliateNetworks = lazy(() => import('./pages/AffiliateNetworks'));
+const Reports = lazy(() => import('./pages/Reports'));
+const ClicksLog = lazy(() => import('./pages/ClicksLog'));
+const ConversionsLog = lazy(() => import('./pages/ConversionsLog'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Trends = lazy(() => import('./pages/Trends'));
+const Blacklist = lazy(() => import('./pages/Blacklist'));
+const Whitelist = lazy(() => import('./pages/Whitelist'));
+const TargetPage = lazy(() => import('./pages/Target'));
+const HelpCenter = lazy(() => import('./pages/HelpCenter'));
 
 // 骨架屏组件 - 改善感知性能
 const PageSkeleton = () => (
