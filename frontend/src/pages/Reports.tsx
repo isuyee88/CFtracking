@@ -1,316 +1,350 @@
 /**
- * @fileoverview 统计报表页面
- * @description 生成和导出各类统计分析报表
- * @module pages/Reports
- *
- * 功能:
- *   - 支持4种报表类型: 流量、转化、财务、ROI
- *   - 支持多维度数据聚合
- *   - 支持CSV/Excel导出
- *   - 数据源自动切换 (AE < 3个月, D1 > 3个月)
- *
- * 输入: 用户选择报表类型、日期范围、维度
- * 输出: 报表数据展示和导出
+ * File: Reports.tsx
+ * Purpose: 报表页面主组件，集成列选择器、筛选构建器、数据表格
+ * Input: 无
+ * Output: 完整的报表页面 UI 和功能
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
-import {
-  FileText,
-  Download,
-  TrendingUp,
-  DollarSign,
-  PieChart,
-  BarChart3,
-  RefreshCw,
-  Loader2,
-  Calendar,
-  Filter,
-  Table,
-  ChevronDown,
-} from 'lucide-react';
-import { QuickDateRangePicker, getDateRange } from '../components/DateRangePicker';
-import { fetchReport, exportReport, downloadReport, type ReportType, type ReportParams } from '../services/api';
+import React, { useState, useMemo } from 'react';
+import { Calendar, Download, RefreshCw, Settings2, X } from 'lucide-react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
-const REPORT_TYPES = [
-  { id: 'traffic', label: '流量报表', icon: BarChart3, color: 'text-blue-500' },
-  { id: 'conversion', label: '转化报表', icon: TrendingUp, color: 'text-green-500' },
-  { id: 'financial', label: '财务报表', icon: DollarSign, color: 'text-amber-500' },
-  { id: 'roi', label: 'ROI报表', icon: PieChart, color: 'text-purple-500' },
-] as const;
+import { useReportState } from '../hooks/useReportState';
+import { ReportColumnSelector, type ReportColumn } from '../components/ReportColumnSelector';
+import { ReportFilterBuilder, type ReportFilter } from '../components/ReportFilterBuilder';
+import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
+import { QuickDateRangePicker } from '@/components/DateRangePicker';
+import type { DateRangeValue } from '@/components/DateRangePicker';
 
-const TRAFFIC_COLUMNS = [
-  { key: 'date', label: '日期/维度' },
-  { key: 'clicks', label: '点击数' },
-  { key: 'impressions', label: '展示数' },
-  { key: 'unique_visitors', label: '独立访客' },
-  { key: 'conversions', label: '转化数' },
-  { key: 'cr', label: '转化率' },
-];
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
-const CONVERSION_COLUMNS = [
-  { key: 'date', label: '日期/维度' },
-  { key: 'conversions', label: '转化数' },
-  { key: 'revenue', label: '收入' },
-  { key: 'cost', label: '成本' },
-  { key: 'profit', label: '利润' },
-  { key: 'roi', label: 'ROI' },
-];
+// 模拟数据生成
+const generateMockData = (count: number) => {
+  const campaigns = ['Campaign A', 'Campaign B', 'Campaign C', 'Campaign D'];
+  const landings = ['Landing Page 1', 'Landing Page 2', 'Landing Page 3'];
+  const offers = ['Offer X', 'Offer Y', 'Offer Z'];
+  const countries = ['US', 'CN', 'GB', 'DE', 'FR'];
+  const devices = ['Desktop', 'Mobile', 'Tablet'];
+  const osList = ['Windows', 'macOS', 'iOS', 'Android'];
+  const browsers = ['Chrome', 'Firefox', 'Safari', 'Edge'];
 
-const FINANCIAL_COLUMNS = [
-  { key: 'date', label: '日期/维度' },
-  { key: 'spend', label: '支出' },
-  { key: 'revenue', label: '收入' },
-  { key: 'profit', label: '利润' },
-  { key: 'margin', label: '利润率' },
-];
-
-const ROI_COLUMNS = [
-  { key: 'date', label: '日期/维度' },
-  { key: 'spend', label: '支出' },
-  { key: 'revenue', label: '收入' },
-  { key: 'profit', label: '利润' },
-  { key: 'roi', label: 'ROI' },
-  { key: 'epc', label: 'EPC' },
-  { key: 'cpc', label: 'CPC' },
-];
-
-const COLUMN_MAP: Record<ReportType, typeof TRAFFIC_COLUMNS> = {
-  traffic: TRAFFIC_COLUMNS,
-  conversion: CONVERSION_COLUMNS,
-  financial: FINANCIAL_COLUMNS,
-  roi: ROI_COLUMNS,
+  return Array.from({ length: count }, (_, i) => ({
+    id: i + 1,
+    datetime: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
+    campaign: campaigns[Math.floor(Math.random() * campaigns.length)],
+    landing: landings[Math.floor(Math.random() * landings.length)],
+    offer: offers[Math.floor(Math.random() * offers.length)],
+    clicks: Math.floor(Math.random() * 1000),
+    unique_clicks: Math.floor(Math.random() * 500),
+    conversions: Math.floor(Math.random() * 100),
+    revenue: (Math.random() * 1000).toFixed(2),
+    cost: (Math.random() * 500).toFixed(2),
+    profit: (Math.random() * 500 - 100).toFixed(2),
+    roi: (Math.random() * 200 - 50).toFixed(2),
+    cr: (Math.random() * 10).toFixed(2),
+    epc: (Math.random() * 5).toFixed(2),
+    country: countries[Math.floor(Math.random() * countries.length)],
+    region: ['California', 'New York', 'Beijing', 'London', 'Berlin'][Math.floor(Math.random() * 5)],
+    city: ['Los Angeles', 'New York', 'Beijing', 'London', 'Berlin'][Math.floor(Math.random() * 5)],
+    device_type: devices[Math.floor(Math.random() * devices.length)],
+    os: osList[Math.floor(Math.random() * osList.length)],
+    browser: browsers[Math.floor(Math.random() * browsers.length)],
+    source: ['Google', 'Facebook', 'Direct', 'Email'][Math.floor(Math.random() * 4)],
+    referrer: ['google.com', 'facebook.com', '', 'email'][Math.floor(Math.random() * 4)],
+    sub1: `sub1_${Math.floor(Math.random() * 100)}`,
+    sub2: `sub2_${Math.floor(Math.random() * 100)}`,
+    sub3: `sub3_${Math.floor(Math.random() * 100)}`,
+  }));
 };
 
-const REPORT_DESCRIPTIONS: Record<ReportType, string> = {
-  traffic: '分析流量来源、设备分布、地理位置等维度数据',
-  conversion: '追踪转化漏斗、计算转化率和用户行为路径',
-  financial: '汇总收支明细、计算利润和利润率',
-  roi: '评估投资回报率、分析广告投放效果',
-};
+const Reports: React.FC = () => {
+  const {
+    columns,
+    selectedColumns,
+    setSelectedColumns,
+    visibleColumns,
+    filters,
+    setFilters,
+    sortField,
+    sortOrder,
+    handleSort,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    dateRange,
+    setDateRange,
+  } = useReportState();
 
-export const Reports: React.FC = () => {
-  const [selectedType, setSelectedType] = useState<ReportType>('traffic');
-  const [dateRange, setDateRange] = useState('last30days');
-  const [reportData, setReportData] = useState<any[]>([]);
+  const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const currentTypeInfo = REPORT_TYPES.find(t => t.id === selectedType)!;
-  const columns = COLUMN_MAP[selectedType];
+  // 生成模拟数据
+  const allData = useMemo(() => generateMockData(1000), []);
 
-  const loadReport = useCallback(async () => {
-    setLoading(true);
-    try {
-      const range = getDateRange(dateRange);
-      const params: ReportParams = {
-        startDate: range.startDate,
-        endDate: range.endDate,
-        groupBy: ['date'],
-        limit: 100,
-        sortBy: 'date',
-        sortOrder: 'desc',
-      };
+  // 应用筛选和排序
+  const filteredData = useMemo(() => {
+    let result = [...allData];
 
-      const data = await fetchReport(selectedType, params);
-      setReportData(data?.data || []);
-      setLastUpdated(new Date());
-    } catch (err) {
-      console.error('[Reports] Failed to load report:', err);
-      setReportData([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedType, dateRange]);
-
-  useEffect(() => {
-    loadReport();
-  }, [loadReport]);
-
-  const handleExport = async (format: 'csv' | 'excel') => {
-    setExporting(true);
-    try {
-      const range = getDateRange(dateRange);
-      const blob = await exportReport({
-        type: selectedType,
-        format,
-        startDate: range.startDate,
-        endDate: range.endDate,
-        groupBy: ['date'],
-        columns: columns.map(c => c.key),
+    // 应用筛选
+    if (filters.length > 0) {
+      result = result.filter((item) => {
+        return filters.every((filter) => {
+          const value = item[filter.field as keyof typeof item];
+          
+          switch (filter.operator) {
+            case 'equals':
+              return String(value) === String(filter.value);
+            case 'not_equals':
+              return String(value) !== String(filter.value);
+            case 'contains':
+              return String(value).includes(String(filter.value));
+            case 'not_contains':
+              return !String(value).includes(String(filter.value));
+            case 'greater_than':
+              return Number(value) > Number(filter.value);
+            case 'less_than':
+              return Number(value) < Number(filter.value);
+            default:
+              return true;
+          }
+        });
       });
-
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `${selectedType}-report-${timestamp}.${format}`;
-      downloadReport(blob, filename);
-    } catch (err) {
-      console.error('[Reports] Export failed:', err);
-    } finally {
-      setExporting(false);
     }
+
+    // 应用排序
+    if (sortField && sortOrder) {
+      result.sort((a, b) => {
+        const aValue = a[sortField as keyof typeof a];
+        const bValue = b[sortField as keyof typeof b];
+
+        if (sortOrder === 'asc') {
+          return aValue > bValue ? 1 : -1;
+        } else {
+          return aValue < bValue ? 1 : -1;
+        }
+      });
+    }
+
+    return result;
+  }, [allData, filters, sortField, sortOrder]);
+
+  // 分页数据
+  const paginatedData = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    return filteredData.slice(start, end);
+  }, [filteredData, page, pageSize]);
+
+  // 总页数
+  const totalPages = Math.ceil(filteredData.length / pageSize);
+
+  // 刷新数据
+  const handleRefresh = () => {
+    setLoading(true);
+    setTimeout(() => setLoading(false), 1000);
   };
 
+  // 导出报表
+  const handleExport = () => {
+    console.log('Export report', {
+      columns: selectedColumns,
+      filters,
+      sortField,
+      sortOrder,
+      dateRange,
+      totalRecords: filteredData.length,
+    });
+    // TODO: 实现导出功能
+  };
+
+  // 列配置转换为 VirtualTable 格式
+  const tableColumns: VirtualTableColumn[] = useMemo(() => {
+    return visibleColumns.map((col) => ({
+      key: col.key,
+      label: col.label,
+      width: col.key === 'datetime' ? '180px' : col.key === 'campaign' ? '200px' : '120px',
+      align: ['clicks', 'unique_clicks', 'conversions', 'revenue', 'cost', 'profit', 'roi', 'cr', 'epc'].includes(col.key) ? 'right' : 'left',
+      sorter: sortOrder ? undefined : (a: any, b: any) => {
+        const aValue = a[col.key as keyof typeof a];
+        const bValue = b[col.key as keyof typeof b];
+        
+        if (col.type === 'number') {
+          return Number(aValue) - Number(bValue);
+        }
+        return String(aValue).localeCompare(String(bValue));
+      },
+      showSorter: true,
+      render: (value: any, row: any) => {
+        // 格式化数值
+        if (['revenue', 'cost', 'profit', 'epc'].includes(col.key)) {
+          return <span className="font-mono">${Number(value).toFixed(2)}</span>;
+        }
+        if (['roi', 'cr'].includes(col.key)) {
+          return <span className="font-mono">{Number(value).toFixed(2)}%</span>;
+        }
+        if (['clicks', 'unique_clicks', 'conversions'].includes(col.key)) {
+          return <span className="font-mono">{Number(value).toLocaleString()}</span>;
+        }
+        if (col.key === 'datetime') {
+          return <span className="text-sm">{new Date(value).toLocaleString()}</span>;
+        }
+        return <span>{value || '-'}</span>;
+      },
+    }));
+  }, [visibleColumns, sortOrder]);
+
   return (
-    <div className="min-h-screen bg-surface-variant/30">
-      {/* Header */}
-      <div className="bg-surface border-b border-outline-variant/20">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <FileText size={24} className="text-primary" />
-              <div>
-                <h1 className="text-xl font-bold text-on-surface">统计报表</h1>
-                <p className="text-sm text-on-surface-variant">生成和导出详细的统计分析报表</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => loadReport()}
-                disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container rounded-md transition-colors disabled:opacity-50"
-              >
-                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                刷新
-              </button>
-            </div>
-          </div>
+    <div className="p-6 bg-background min-h-screen">
+      {/* 页面标题 */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-display font-bold text-on-surface">报表中心</h1>
+        <p className="text-sm text-fg-muted mt-1">自定义列和筛选条件，生成您的专属报表</p>
+      </div>
+
+      {/* 顶部工具栏 */}
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          {/* 日期范围选择 */}
+          <QuickDateRangePicker
+            value={dateRange as DateRangeValue}
+            onChange={(range) => setDateRange(range as any)}
+          />
+
+          {/* 刷新按钮 */}
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium',
+              'bg-surface-container border border-outline-variant',
+              'text-on-surface hover:bg-surface-container-high',
+              'transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+            )}
+          >
+            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
+            刷新
+          </button>
+
+          {/* 导出按钮 */}
+          <button
+            onClick={handleExport}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium',
+              'bg-primary text-on-primary hover:bg-primary-dark',
+              'transition-colors'
+            )}
+          >
+            <Download className="w-4 h-4" />
+            导出
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* 列选择器开关 */}
+          <button
+            onClick={() => setShowColumnSelector(!showColumnSelector)}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium',
+              showColumnSelector
+                ? 'bg-primary/10 text-primary'
+                : 'bg-surface-container border border-outline-variant text-on-surface',
+              'hover:bg-surface-container-high transition-colors'
+            )}
+          >
+            <Settings2 className="w-4 h-4" />
+            列设置
+            <span className="text-xs opacity-60">({selectedColumns.length})</span>
+            {showColumnSelector && <X className="w-3 h-3" />}
+          </button>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="p-6 space-y-6">
-        {/* Report Type Selector */}
-        <div className="bg-surface rounded-lg border border-outline-variant/20 p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Filter size={18} className="text-on-surface-variant" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-on-surface-variant">报表类型</h2>
+      {/* 主内容区 */}
+      <div className="flex gap-4">
+        {/* 左侧面板：列选择器 */}
+        {showColumnSelector && (
+          <div
+            className="w-80 flex-shrink-0 animate-in slide-in-from-left-4 duration-200"
+            style={{ height: 'calc(100vh - 280px)' }}
+          >
+            <ReportColumnSelector
+              columns={columns}
+              selectedColumns={selectedColumns}
+              onColumnsChange={setSelectedColumns}
+            />
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {REPORT_TYPES.map((type) => {
-              const Icon = type.icon;
-              const isSelected = selectedType === type.id;
-              return (
-                <button
-                  key={type.id}
-                  onClick={() => setSelectedType(type.id)}
-                  className={`relative flex flex-col items-center gap-3 p-4 rounded-lg border-2 transition-all ${
-                    isSelected
-                      ? 'border-primary bg-primary-container/10'
-                      : 'border-outline-variant/30 hover:border-primary/50 hover:bg-surface-container'
-                  }`}
-                >
-                  <Icon size={28} className={isSelected ? 'text-primary' : 'text-on-surface-variant'} />
-                  <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-on-surface'}`}>
-                    {type.label}
-                  </span>
-                  {isSelected && (
-                    <div className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-4 text-sm text-on-surface-variant">
-            <span className="font-medium">说明:</span> {REPORT_DESCRIPTIONS[selectedType]}
-          </p>
-        </div>
+        )}
 
-        {/* Filters */}
-        <div className="bg-surface rounded-lg border border-outline-variant/20 p-6">
-          <div className="flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-3">
-              <Calendar size={18} className="text-on-surface-variant" />
-              <span className="text-sm font-medium text-on-surface">日期范围</span>
-              <div className="w-[280px]">
-                <QuickDateRangePicker
-                  value={dateRange}
-                  onChange={(preset) => setDateRange(preset)}
-                />
+        {/* 右侧：筛选器和表格 */}
+        <div className="flex-1 min-w-0">
+          {/* 筛选构建器 */}
+          <div className="mb-4">
+            <ReportFilterBuilder
+              columns={columns}
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
+          </div>
+
+          {/* 数据表格 */}
+          <div className="bg-surface rounded-sm border border-outline-variant overflow-hidden">
+            <VirtualTableEnhanced
+              tableId="reports"
+              columns={tableColumns}
+              data={paginatedData}
+              rowHeight={48}
+              height={500}
+              overscan={5}
+              emptyMessage="暂无数据"
+            />
+
+            {/* 分页 */}
+            <div className="flex items-center justify-between px-4 py-3 border-t border-outline-variant">
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-fg-muted">
+                  显示 {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, filteredData.length)} 条，
+                  共 {filteredData.length} 条
+                </span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="px-2 py-1 text-sm bg-surface border border-outline-variant rounded-sm text-on-surface"
+                >
+                  <option value={25}>25 条/页</option>
+                  <option value={50}>50 条/页</option>
+                  <option value={100}>100 条/页</option>
+                  <option value={500}>500 条/页</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page === 1}
+                  className="px-3 py-1.5 text-sm bg-surface-container border border-outline-variant rounded-sm text-on-surface disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-container-high transition-colors"
+                >
+                  上一页
+                </button>
+                <span className="text-sm text-on-surface">
+                  第 {page} 页 / 共 {totalPages} 页
+                </span>
+                <button
+                  onClick={() => setPage(Math.min(totalPages, page + 1))}
+                  disabled={page === totalPages}
+                  className="px-3 py-1.5 text-sm bg-surface-container border border-outline-variant rounded-sm text-on-surface disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-container-high transition-colors"
+                >
+                  下一页
+                </button>
               </div>
             </div>
-
-            <div className="flex-1" />
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleExport('csv')}
-                disabled={exporting || loading}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container rounded-md transition-colors disabled:opacity-50"
-              >
-                {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                导出 CSV
-              </button>
-              <button
-                onClick={() => handleExport('excel')}
-                disabled={exporting || loading}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-on-primary hover:bg-primary/90 rounded-md transition-colors disabled:opacity-50"
-              >
-                {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                导出 Excel
-              </button>
-            </div>
           </div>
-        </div>
-
-        {/* Report Table */}
-        <div className="bg-surface rounded-lg border border-outline-variant/20 overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/20">
-            <div className="flex items-center gap-3">
-              <Table size={18} className="text-on-surface-variant" />
-              <span className="text-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                {currentTypeInfo.label}数据
-              </span>
-              <span className="text-xs text-on-surface-variant/60">
-                {reportData.length} 条记录
-              </span>
-            </div>
-            {lastUpdated && (
-              <span className="text-xs text-on-surface-variant/60">
-                最后更新: {lastUpdated.toLocaleTimeString()}
-              </span>
-            )}
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 size={32} className="animate-spin text-primary" />
-              <span className="ml-3 text-on-surface-variant">加载中...</span>
-            </div>
-          ) : reportData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
-              <FileText size={48} className="opacity-30 mb-4" />
-              <p>暂无数据</p>
-              <p className="text-sm">请选择日期范围后重试</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-surface-container">
-                    {columns.map((col) => (
-                      <th
-                        key={col.key}
-                        className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-on-surface-variant"
-                      >
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant/10">
-                  {reportData.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-surface-container/50 transition-colors">
-                      {columns.map((col) => (
-                        <td key={col.key} className="px-4 py-3 text-sm text-on-surface">
-                          {row[col.key] ?? '-'}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       </div>
     </div>

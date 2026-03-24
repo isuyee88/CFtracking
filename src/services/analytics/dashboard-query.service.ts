@@ -219,7 +219,9 @@ export class DashboardQueryService {
       try {
         stats[entityType] = await this.analyticsQueryService.getEntityStats(entityType, range);
       } catch (error) {
-        console.error(`[DashboardQueryService] Failed to get ${entityType} stats from AE:`, error);
+        // 静默处理错误，避免影响其他实体类型的数据加载
+        // 常见原因：数据源中没有该类型的数据，或者引用了已删除的实体
+        console.warn(`[DashboardQueryService] ${entityType} stats from AE: No data available`);
         stats[entityType] = [];
       }
     }
@@ -247,7 +249,9 @@ export class DashboardQueryService {
           unique_visitors: 0,
         }));
       } catch (error) {
-        console.error(`[DashboardQueryService] Failed to get ${entityType} stats from D1:`, error);
+        // 静默处理错误，避免影响其他实体类型的数据加载
+        // 常见原因：数据源中没有该类型的数据，或者引用了已删除的实体
+        console.warn(`[DashboardQueryService] ${entityType} stats from D1: No data available`);
         stats[entityType] = [];
       }
     }

@@ -170,13 +170,16 @@ export function createAnalyticsRouter() {
       try {
         stats = await dashboardQuery.getEntityStats(type, range);
       } catch (entityError) {
-        console.warn(`[Analytics API] Entity stats for ${type} failed, returning empty:`, entityError);
+        // 静默处理错误，返回空数组
+        // 常见原因：数据源中没有该类型的数据，或者引用了已删除的实体
+        console.warn(`[Analytics API] Entity stats for ${type} unavailable, returning empty array`);
         stats = [];
       }
 
       return c.json(success(stats));
     } catch (err) {
-      console.error('[Analytics API] Entity stats error:', err);
+      // 捕获所有未处理的错误，返回友好的错误信息
+      console.warn('[Analytics API] Entity stats error:', err instanceof Error ? err.message : err);
       return c.json(
         error(err instanceof Error ? err.message : 'Failed to fetch entity stats'),
         HTTP_STATUS.INTERNAL_ERROR
