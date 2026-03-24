@@ -223,106 +223,113 @@ export function VirtualTableEnhanced<T = any>({
         minHeight: typeof height === 'string' ? height : undefined,
       }}
     >
-      {/* 表格内容 */}
-      <div className="relative" style={{ height: totalHeight }}>
-        {/* 固定表头 */}
-        <div 
-          className="sticky top-0 z-10 bg-surface-container-low dark:bg-surface-container border-b border-outline-variant/20 overflow-hidden"
-          style={{ height: rowHeight }}
-        >
-          <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
-            {selectable && (
-              <div 
-                className="px-4 flex items-center"
-                style={{ width: '50px', minWidth: '50px', flex: 'none' }}
+      {/* 固定表头 */}
+      <div 
+        className="sticky top-0 z-10 bg-surface-container dark:bg-surface-container-high border-b border-outline-variant/20"
+        style={{ height: rowHeight, minWidth: 'max-content' }}
+      >
+        <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
+          {selectable && (
+            <div 
+              className="px-4 flex items-center"
+              style={{ width: '50px', minWidth: '50px', flex: 'none' }}
+            >
+              <input
+                type="checkbox"
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                checked={selectedRows && selectedRows.size === processedData.length && processedData.length > 0}
+                onChange={handleSelectAll}
+              />
+            </div>
+          )}
+          {columns.map((column) => {
+            const columnSortOrder = sorter?.columnKey === column.key ? sorter.order : column.sortOrder;
+            const columnFilters = column.filteredValue || (filters[column.key] ? filters[column.key] : null);
+            const hasFilter = columnFilters && (Array.isArray(columnFilters) ? columnFilters.length > 0 : true);
+            const showSorter = column.showSorter !== false && (column.sorter || column.defaultSortOrder);
+            const showFilter = column.showFilter !== false && (column.filters || column.onFilter);
+
+            return (
+              <div
+                key={column.key}
+                className={cn(
+                  'px-4 flex items-center text-sm font-medium text-fg-default cursor-pointer hover:bg-surface-container-high/50 transition-colors',
+                  column.align === 'center' && 'justify-center',
+                  column.align === 'right' && 'justify-end',
+                  column.align === 'left' && 'justify-start',
+                  headerClassName
+                )}
+                style={{
+                  width: column.width || 'auto',
+                  minWidth: column.width || 'auto',
+                  flex: column.width ? undefined : 1,
+                }}
+                onClick={() => showSorter && handleSort(column.key, columnSortOrder === 'ascend' ? 'descend' : columnSortOrder === 'descend' ? null : 'ascend')}
+                title={column.label}
               >
-                <input
-                  type="checkbox"
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  checked={selectedRows && selectedRows.size === processedData.length && processedData.length > 0}
-                  onChange={handleSelectAll}
-                />
-              </div>
-            )}
-            {columns.map((column) => {
-              const columnSortOrder = sorter?.columnKey === column.key ? sorter.order : column.sortOrder;
-              const columnFilters = column.filteredValue || (filters[column.key] ? filters[column.key] : null);
-              const hasFilter = columnFilters && (Array.isArray(columnFilters) ? columnFilters.length > 0 : true);
-              const showSorter = column.showSorter !== false && (column.sorter || column.defaultSortOrder);
-              const showFilter = column.showFilter !== false && (column.filters || column.onFilter);
-
-              return (
-                <div
-                  key={column.key}
-                  className={cn(
-                    'px-4 flex items-center text-sm font-medium text-fg-default cursor-pointer hover:bg-surface-container/50 transition-colors',
-                    column.align === 'center' && 'justify-center',
-                    column.align === 'right' && 'justify-end',
-                    column.align === 'left' && 'justify-start',
-                    headerClassName
-                  )}
-                  style={{
-                    width: column.width || 'auto',
-                    minWidth: column.width || 'auto',
-                    flex: column.width ? undefined : 1,
-                  }}
-                  onClick={() => showSorter && handleSort(column.key, columnSortOrder === 'ascend' ? 'descend' : columnSortOrder === 'descend' ? null : 'ascend')}
-                  title={column.label}
-                >
-                  <span className="flex-1 truncate">{column.label}</span>
-                  
-                  {/* 排序图标 */}
-                  {showSorter && (
-                    <TableSortIcon
-                      sortOrder={columnSortOrder || null}
-                      onSort={(order) => handleSort(column.key, order)}
-                      sortDirections={column.sortDirections}
+                <span className="flex-1 truncate">{column.label}</span>
+                
+                {/* 排序图标 */}
+                {showSorter && (
+                  <TableSortIcon
+                    sortOrder={columnSortOrder || null}
+                    onSort={(order) => handleSort(column.key, order)}
+                    sortDirections={column.sortDirections}
+                  />
+                )}
+                
+                {/* 筛选图标 */}
+                {showFilter && (
+                  <div className="relative">
+                    <TableFilterIcon
+                      filtered={!!hasFilter}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenFilterDropdown(openFilterDropdown === column.key ? null : column.key);
+                      }}
                     />
-                  )}
-                  
-                  {/* 筛选图标 */}
-                  {showFilter && (
-                    <div className="relative">
-                      <TableFilterIcon
-                        filtered={!!hasFilter}
-                        onClick={() => setOpenFilterDropdown(openFilterDropdown === column.key ? null : column.key)}
-                      />
-                      
-                      {/* 筛选下拉菜单 */}
-                      {openFilterDropdown === column.key && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-10" 
-                            onClick={() => setOpenFilterDropdown(null)}
+                    
+                    {/* 筛选下拉菜单 */}
+                    {openFilterDropdown === column.key && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-10" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenFilterDropdown(null);
+                          }}
+                        />
+                        <div 
+                          className="absolute right-0 top-full mt-1 z-20"
+                          style={{ minWidth: '220px' }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <TableFilterDropdown
+                            column={column}
+                            selectedKeys={columnFilters || []}
+                            setSelectedKeys={(keys) => {
+                              // 临时更新，等待 confirm 才真正应用
+                            }}
+                            confirm={() => {
+                              const keys = columnFilters || [];
+                              handleFilterConfirm(column.key, keys);
+                            }}
+                            clearFilters={() => handleFilterClear(column.key)}
+                            filterMultiple={column.filterMultiple}
                           />
-                          <div 
-                            className="absolute right-0 top-full mt-1 z-20"
-                            style={{ minWidth: '220px' }}
-                          >
-                            <TableFilterDropdown
-                              column={column}
-                              selectedKeys={columnFilters || []}
-                              setSelectedKeys={(keys) => {
-                                // 临时更新，等待 confirm 才真正应用
-                              }}
-                              confirm={() => {
-                                const keys = columnFilters || [];
-                                handleFilterConfirm(column.key, keys);
-                              }}
-                              clearFilters={() => handleFilterClear(column.key)}
-                              filterMultiple={column.filterMultiple}
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+      </div>
 
+      {/* 表格内容 */}
+      <div className="relative" style={{ height: totalHeight, minWidth: 'max-content' }}>
         {/* 可见行 */}
         <div
           className="absolute left-0 right-0"

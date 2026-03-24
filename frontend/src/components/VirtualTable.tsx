@@ -157,7 +157,7 @@ export function VirtualTable<T = any>({
       {/* 占位元素，保持总高度 */}
       <div 
         className="relative"
-        style={{ height: totalHeight }}
+        style={{ height: totalHeight, minWidth: 'max-content' }}
       >
         {/* 可见行 */}
         <div
@@ -178,7 +178,7 @@ export function VirtualTable<T = any>({
                   top: index * rowHeight,
                 }}
               >
-                <div className="flex h-full items-center">
+                <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
                   {columns.map((column) => {
                     const value = (row as any)[column.key];
                     const content = column.render 

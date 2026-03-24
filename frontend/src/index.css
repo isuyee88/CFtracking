@@ -92,6 +92,10 @@
 }
 
 @layer base {
+  html, body {
+    overflow-x: hidden;
+  }
+  
   body {
     background-color: var(--color-canvas-inset);
     color: var(--color-fg-default);
@@ -146,6 +150,12 @@ html.theme-transitioning *::after {
 /* ============================================
    Dark Mode - Linear Style
    ============================================ */
+
+/* 修复：确保 body 在 dark-mode 下背景色正确 */
+.dark-mode, .dark-mode body {
+  background-color: var(--color-bg-primary) !important;
+  color: var(--color-text-primary) !important;
+}
 
 .dark-mode {
   /* ============================================
@@ -621,6 +631,21 @@ html.theme-transitioning *::after {
   outline: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  min-height: 36px; /* 统一最小高度 */
+}
+
+/* 移动端触摸目标优化 */
+@media (max-width: 768px) {
+  .btn, 
+  button[class*="btn-"],
+  .modal-btn-primary,
+  .modal-btn-secondary,
+  .data-table button,
+  button.flex.items-center.gap-2.px-4.py-2 {
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
+  }
 }
 
 /* 优化：按钮点击反馈动画 - scale + opacity */
