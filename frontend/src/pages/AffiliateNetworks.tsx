@@ -18,14 +18,12 @@ import {
   ExternalLink,
   Play,
   Pause,
-  Copy,
   Check,
   X,
   Loader2,
   Link,
   Key,
   Shield,
-  CopyToClipboard
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
