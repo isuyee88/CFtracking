@@ -1,16 +1,14 @@
-/**
+﻿/**
  * File: App.tsx
- * Purpose: 应用主入口，配置路由
- * Input/Output: 渲染整个应用，包含所有页面路由
- * Logic: 使用 HashRouter 适配静态部署环境，使用 React.lazy 实现代码分割
+ * Purpose: 搴旂敤涓诲叆鍙ｏ紝閰嶇疆璺敱
+ * Input/Output: 娓叉煋鏁翠釜搴旂敤锛屽寘鍚墍鏈夐〉闈㈣矾鐢? * Logic: 浣跨敤 HashRouter 閫傞厤闈欐€侀儴缃茬幆澧冿紝浣跨敤 React.lazy 瀹炵幇浠ｇ爜鍒嗗壊
  */
 
 import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 
-// 路由级代码分割 - 懒加载页面组件
-const Dashboard = lazy(() => import('./pages/Dashboard'));
+// 璺敱绾т唬鐮佸垎鍓?- 鎳掑姞杞介〉闈㈢粍浠?const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CampaignManagement = lazy(() => import('./pages/CampaignManagement'));
 const CampaignDetail = lazy(() => import('./pages/CampaignDetail'));
 const RuleManagement = lazy(() => import('./pages/RuleManagement'));
@@ -29,14 +27,14 @@ const Whitelist = lazy(() => import('./pages/Whitelist'));
 const TargetPage = lazy(() => import('./pages/Target'));
 const HelpCenter = lazy(() => import('./pages/HelpCenter'));
 
-// 骨架屏组件 - 改善感知性能
+// 楠ㄦ灦灞忕粍浠?- 鏀瑰杽鎰熺煡鎬ц兘
 const PageSkeleton = () => (
   <div style={{
     padding: '20px',
     background: '#fafafa',
     minHeight: '100vh'
   }}>
-    {/* 顶部指标卡片骨架 */}
+    {/* 椤堕儴鎸囨爣鍗＄墖楠ㄦ灦 */}
     <div style={{
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
@@ -71,7 +69,7 @@ const PageSkeleton = () => (
       ))}
     </div>
     
-    {/* 图表区域骨架 */}
+    {/* 鍥捐〃鍖哄煙楠ㄦ灦 */}
     <div style={{
       background: '#fff',
       borderRadius: '8px',
@@ -97,7 +95,7 @@ const PageSkeleton = () => (
       }} />
     </div>
     
-    {/* 表格区域骨架 */}
+    {/* 琛ㄦ牸鍖哄煙楠ㄦ灦 */}
     <div style={{
       background: '#fff',
       borderRadius: '8px',
@@ -156,7 +154,7 @@ const PageSkeleton = () => (
       ))}
     </div>
     
-    {/* 骨架屏动画样式 */}
+    {/* 楠ㄦ灦灞忓姩鐢绘牱寮?*/}
     <style>{`
       @keyframes shimmer {
         0% { background-position: -200% 0; }
@@ -198,3 +196,4 @@ export default function App() {
     </Router>
   );
 }
+
