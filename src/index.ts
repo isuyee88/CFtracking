@@ -10,9 +10,18 @@ import { logger } from 'hono/logger';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
-import { SessionDurableObject, CounterDurableObject, QueueDurableObject, UniquenessDurableObject } from '@/handlers/do';
+import { SessionDurableObject, CounterDurableObject, QueueDurableObject, UniquenessDurableObject, UserPreferenceDurableObject } from '@/handlers/do';
 import { createAggregationService } from '@/services/analytics/aggregation.service';
 import { handlePlatformCron } from '@/services/platform';
+
+// 导出 Durable Objects（Cloudflare Workers 要求）
+export {
+  SessionDurableObject,
+  CounterDurableObject,
+  QueueDurableObject,
+  UniquenessDurableObject,
+  UserPreferenceDurableObject,
+};
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -47,6 +56,7 @@ import { createExportRouter } from '@/services/export/export.routes';
 import { createTrendsRouter } from '@/services/trends/trends.routes';
 import { createBlacklistRouter } from '@/routes/blacklist.routes';
 import { createWhitelistRouter } from '@/routes/whitelist.routes';
+import { userPreferenceRoutes } from '@/services/user-preferences/user-preferences.routes';
 
 app.route('/api/campaigns', createCampaignRouter());
 app.route('/api/flows', createFlowRouter());
@@ -65,6 +75,7 @@ app.route('/api/export', createExportRouter());
 app.route('/api/trends', createTrendsRouter());
 app.route('/api/blacklist', createBlacklistRouter());
 app.route('/api/whitelist', createWhitelistRouter());
+app.route('/api/user-preferences', userPreferenceRoutes);
 
 app.onError((err, c) => {
   console.error('Error:', err);
@@ -158,11 +169,4 @@ export default {
       );
     }
   },
-};
-
-export {
-  SessionDurableObject,
-  CounterDurableObject,
-  QueueDurableObject,
-  UniquenessDurableObject
 };

@@ -11,6 +11,7 @@ export { SessionDurableObject } from './session.do';
 export { CounterDurableObject } from './counter.do';
 export { QueueDurableObject } from './queue.do';
 export { UniquenessDurableObject, UniquenessDOService } from './uniqueness.do';
+export { UserPreferenceDurableObject } from './user-preference.do';
 
 export function getSessionStub(env: Env, visitorId: string): DurableObjectStub {
   const id = env.SESSION_DO.idFromName(`session:${visitorId}`);
@@ -25,6 +26,11 @@ export function getCounterStub(env: Env, key: string): DurableObjectStub {
 export function getQueueStub(env: Env, name: string = 'default'): DurableObjectStub {
   const id = env.QUEUE_DO.idFromName(`queue:${name}`);
   return env.QUEUE_DO.get(id);
+}
+
+export function getUserPreferenceStub(env: Env, userId: string): DurableObjectStub {
+  const id = env.USER_PREFERENCE_DO.idFromName(`user-pref:${userId}`);
+  return env.USER_PREFERENCE_DO.get(id);
 }
 
 export class DOService {

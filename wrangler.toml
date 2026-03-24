@@ -47,9 +47,17 @@ class_name = "QueueDurableObject"
 name = "UNIQUE_DO"
 class_name = "UniquenessDurableObject"
 
+[[durable_objects.bindings]]
+name = "USER_PREFERENCE_DO"
+class_name = "UserPreferenceDurableObject"
+
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["UniquenessDurableObject"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["UserPreferenceDurableObject"]
 
 [assets]
 directory = "./frontend/dist"

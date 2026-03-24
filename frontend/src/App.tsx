@@ -8,7 +8,7 @@ import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 
-// 路由级代码分割 - 懒加载页面组件
+// 璺敱绾т唬鐮佸垎鍓?- 鎳掑姞杞介〉闈㈢粍浠?
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CampaignManagement = lazy(() => import('./pages/CampaignManagement'));
 const CampaignDetail = lazy(() => import('./pages/CampaignDetail'));
