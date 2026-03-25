@@ -72,14 +72,35 @@ export class DashboardQueryService {
 
   /**
    * 获取 Dashboard 统计数据
-   * 从 D1 获取数据
+   * 根据时间范围从不同数据源获取数据
+   * - < 90天数据 ──► DO读取
+   * - > 90天数据 ──► D1读取
    */
-  async getDashboardStats(range: string): Promise<DashboardQueryResult> {
+  async getDashboardStats(range: string, env: Env): Promise<DashboardQueryResult> {
     const { startDate, endDate } = this.getDateRange(range);
-    const dataSource: DataSource = 'D1';
+    
+    // 判断是否在90天以内
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const startDateObj = new Date(startDate);
+    const useDO = startDateObj >= ninetyDaysAgo;
+    const dataSource: DataSource = useDO ? 'DO' : 'D1';
 
     console.log(`[DashboardQueryService] Range: ${range}, DataSource: ${dataSource}, Start: ${startDate}, End: ${endDate}`);
 
+    if (useDO) {
+      // 从 DO 获取数据
+      return this.getDashboardStatsFromDO(range, env);
+    } else {
+      // 从 D1 获取数据
+      return this.getDashboardStatsFromD1(range);
+    }
+  }
+
+  /**
+   * 从 D1 获取 Dashboard 统计数据
+   */
+  private async getDashboardStatsFromD1(range: string): Promise<DashboardQueryResult> {
     const d1Result = await this.trafficRepo.getDashboardStats(range);
     const d1ChartData = await this.trafficRepo.getChartData(range);
     const metrics = this.formatD1Metrics(d1Result);
@@ -90,10 +111,67 @@ export class DashboardQueryService {
       metrics,
       chartData,
       entityStats,
-      dataSource,
+      dataSource: 'D1',
       queryTime: new Date().toISOString(),
       range,
     };
+  }
+
+  /**
+   * 从 DO 获取 Dashboard 统计数据
+   */
+  private async getDashboardStatsFromDO(range: string, env: Env): Promise<DashboardQueryResult> {
+    try {
+      const trackingDO = getTrackingStatsStub(env, 'global-stats');
+      
+      // 并行获取统计数据、图表数据和实体统计
+      const [statsResponse, chartResponse, entityStatsResponse] = await Promise.all([
+        trackingDO.fetch('http://do/stats'),
+        trackingDO.fetch(`http://do/chart-data?range=${range}`),
+        trackingDO.fetch(`http://do/entity-stats?range=${range}`),
+      ]);
+      
+      const stats = await statsResponse.json();
+      const chartData = await chartResponse.json();
+      const entityStatsData = await entityStatsResponse.json();
+      
+      // 格式化指标数据
+      const metrics = this.formatDOMetrics(stats);
+      
+      // 格式化图表数据
+      const formattedChartData = chartData.chartData || [];
+      
+      // 格式化实体统计数据
+      const entityStats = entityStatsData.stats || {};
+      
+      return {
+        metrics,
+        chartData: formattedChartData,
+        entityStats,
+        dataSource: 'DO',
+        queryTime: new Date().toISOString(),
+        range,
+      };
+    } catch (error) {
+      console.error('[DashboardQueryService] Error fetching from DO:', error);
+      // 降级到 D1
+      return this.getDashboardStatsFromD1(range);
+    }
+  }
+
+  /**
+   * 格式化 DO 指标数据
+   */
+  private formatDOMetrics(data: any): DashboardMetric[] {
+    return [
+      { key: 'clicks', label: 'Clicks', value: data.todayClicks?.toString() || '0', isPositive: true, format: 'number' as const },
+      { key: 'unique_clicks_campaign', label: 'Unique clicks (campaign)', value: data.uniqueClicks?.toString() || '0', isPositive: true, format: 'number' as const },
+      { key: 'conversions', label: 'Conversions', value: data.todayConversions?.toString() || '0', isPositive: true, format: 'number' as const },
+      { key: 'spend', label: 'Cost', value: `$${data.todayCost?.toFixed(2) || '0.00'}`, isPositive: false, format: 'currency' as const },
+      { key: 'revenue_confirmed', label: 'Revenue (confirmed)', value: `$${data.todayRevenue?.toFixed(2) || '0.00'}`, isPositive: true, format: 'currency' as const },
+      { key: 'profit_confirmed', label: 'Profit/Loss (confirmed)', value: `$${data.todayProfit?.toFixed(2) || '0.00'}`, isPositive: true, format: 'currency' as const },
+      { key: 'roi_confirmed', label: 'ROI (confirmed)', value: `${data.todayROI?.toFixed(2) || '0'}%`, isPositive: true, format: 'percentage' as const },
+    ];
   }
 
   /**

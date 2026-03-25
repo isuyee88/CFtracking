@@ -41,7 +41,7 @@ export function createAnalyticsRouter() {
       const range = c.req.query('range') || 'today';
       const dashboardQuery = createDashboardQueryService(c.env);
 
-      const result = await dashboardQuery.getDashboardStats(range);
+      const result = await dashboardQuery.getDashboardStats(range, c.env);
 
       return c.json(success({
         ...result,
