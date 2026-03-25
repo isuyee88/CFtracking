@@ -2,6 +2,11 @@
  * @fileoverview Workers 入口文件
  * @description Cloudflare Workers 主入口，处理所有 HTTP 请求和定时任务
  * @module index
+ * 
+ * SSR 动态渲染：
+ * - 页面请求时从 Durable Objects 获取初始数据
+ * - 注入数据到 HTML，实现首屏即时渲染
+ * - 客户端 Hydration 恢复交互
  */
 
 import { Hono } from 'hono';
@@ -10,10 +15,12 @@ import { logger } from 'hono/logger';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
-import { SessionDurableObject, CounterDurableObject, QueueDurableObject, UniquenessDurableObject, UserPreferenceDurableObject } from '@/handlers/do';
+import { SessionDurableObject, CounterDurableObject, QueueDurableObject, UniquenessDurableObject, UserPreferenceDurableObject, TrackingStatsDO } from '@/handlers/do';
 import { CacheDurableObject } from '@/ssr/cache-do';
 import { createAggregationService } from '@/services/analytics/aggregation.service';
 import { handlePlatformCron } from '@/services/platform';
+import fs from 'fs';
+import path from 'path';
 
 // 导出 Durable Objects（Cloudflare Workers 要求）
 export {
@@ -22,6 +29,7 @@ export {
   QueueDurableObject,
   UniquenessDurableObject,
   UserPreferenceDurableObject,
+  TrackingStatsDO,
   CacheDurableObject,
 };
 
@@ -37,8 +45,98 @@ app.use(
   })
 );
 
+// 添加版本和部署信息到响应头
+app.use('*', async (c, next) => {
+  await next();
+  
+  const env = c.env;
+  
+  // 添加版本元数据响应头
+  if (env.CF_VERSION_METADATA) {
+    c.header('X-Cloudflare-Worker-Version', env.CF_VERSION_METADATA.id);
+    c.header('X-Cloudflare-Worker-Tag', env.CF_VERSION_METADATA.tag || 'latest');
+    c.header('X-Cloudflare-Worker-Timestamp', env.CF_VERSION_METADATA.timestamp);
+  }
+  
+  // 动态读取部署信息文件
+  let deployInfo = {
+    timestamp: new Date().toISOString(),
+    hash: "unknown",
+    shortHash: "unknown",
+    branch: "unknown",
+    message: "Unknown deployment",
+    author: "unknown",
+    authorEmail: "unknown",
+    commitDate: new Date().toISOString(),
+    environment: "production",
+    deployer: "unknown"
+  };
+  
+  try {
+    // 尝试不同的路径
+    const paths = [
+      './dist/deploy-info.json',
+      '../dist/deploy-info.json',
+      '../../dist/deploy-info.json'
+    ];
+    
+    for (const deployInfoPath of paths) {
+      try {
+        if (fs.existsSync(deployInfoPath)) {
+          const deployInfoContent = fs.readFileSync(deployInfoPath, 'utf8');
+          deployInfo = JSON.parse(deployInfoContent);
+          break;
+        }
+      } catch (error) {
+        // 继续尝试下一个路径
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to read deploy info file:', error);
+  }
+  
+  c.header('X-Deployment-Hash', deployInfo.shortHash);
+  c.header('X-Deployment-Branch', deployInfo.branch);
+  c.header('X-Deployment-Message', deployInfo.message);
+  c.header('X-Deployment-Environment', deployInfo.environment);
+  c.header('X-Deployment-Timestamp', deployInfo.timestamp);
+});
+
 app.get('/health', (c) => {
   return c.json(success({ status: 'healthy', timestamp: new Date().toISOString() }));
+});
+
+app.get('/api/deployment/info', (c) => {
+  const env = c.env;
+  
+  // 静态部署信息（在实际部署时会被真实数据替换）
+  const deployInfo = {
+    timestamp: "2026-03-25T09:03:46.068Z",
+    hash: "44df7f8455a81b21406807f0e7948fd69c41b4bd",
+    shortHash: "44df7f8",
+    branch: "master",
+    message: "Deployed version 44df7f8 - fix: export CacheDurableObject in src/index.ts",
+    author: "ming huang",
+    authorEmail: "isuyee88@outlook.com",
+    commitDate: "2026-03-25 13:36:17 +0800",
+    environment: "production",
+    deployer: "unknown"
+  };
+  
+  const deploymentInfo = {
+    version: env.CF_VERSION_METADATA ? {
+      id: env.CF_VERSION_METADATA.id,
+      tag: env.CF_VERSION_METADATA.tag,
+      timestamp: env.CF_VERSION_METADATA.timestamp,
+    } : null,
+    deployment: deployInfo,
+    environment: env.ENVIRONMENT,
+    ssrEnabled: env.SSR_ENABLED,
+    realtimeEnabled: env.REALTIME_ENABLED,
+    sseEnabled: env.SSE_ENABLED,
+    timestamp: new Date().toISOString(),
+  };
+  return c.json(success(deploymentInfo));
 });
 
 import { createCampaignRouter } from '@/services/campaign/campaign.routes';
@@ -59,6 +157,7 @@ import { createTrendsRouter } from '@/services/trends/trends.routes';
 import { createBlacklistRouter } from '@/routes/blacklist.routes';
 import { createWhitelistRouter } from '@/routes/whitelist.routes';
 import { userPreferenceRoutes } from '@/services/user-preferences/user-preferences.routes';
+import { createMigrationRouter } from '@/services/migration/migration.routes';
 
 app.route('/api/campaigns', createCampaignRouter());
 app.route('/api/flows', createFlowRouter());
@@ -78,6 +177,7 @@ app.route('/api/trends', createTrendsRouter());
 app.route('/api/blacklist', createBlacklistRouter());
 app.route('/api/whitelist', createWhitelistRouter());
 app.route('/api/user-preferences', userPreferenceRoutes);
+app.route('/api/migration', createMigrationRouter());
 
 app.onError((err, c) => {
   console.error('Error:', err);
@@ -90,6 +190,15 @@ export { app }
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    
+    // 记录部署版本信息
+    if (env.CF_VERSION_METADATA) {
+      console.log('[Deployment] Version info:', {
+        versionId: env.CF_VERSION_METADATA.id,
+        versionTag: env.CF_VERSION_METADATA.tag,
+        versionTimestamp: env.CF_VERSION_METADATA.timestamp,
+      });
+    }
     
     // 处理 API 请求（包括 /api/* 和 /health）
     if (url.pathname.startsWith('/api/') || url.pathname === '/health') {
@@ -120,8 +229,43 @@ export default {
       }
     }
     
-    // 所有其他请求（包括静态资源和前端路由）直接交给 ASSETS 处理
-    // ASSETS binding 会自动处理静态文件和 404 回退到 index.html
+    // SSR 动态渲染：对于页面请求，注入初始数据
+    const isPageRequest = !url.pathname.includes('.') || url.pathname.endsWith('.html');
+    
+    if (isPageRequest && env.SSR_ENABLED) {
+      try {
+        // 获取静态 HTML
+        const assetResponse = await env.ASSETS.fetch(request);
+        
+        if (assetResponse.status === 200) {
+          let html = await assetResponse.text();
+          
+          // 获取初始数据（Dashboard 统计数据）
+          const initialData = await fetchInitialDashboardData(env);
+          
+          // 注入初始数据到 HTML
+          const dataScript = `<script>window.__INITIAL_DATA__=${JSON.stringify(initialData)};</script>`;
+          html = html.replace('</head>', `${dataScript}</head>`);
+          
+          console.log('[SSR] Injected initial data:', JSON.stringify(initialData).substring(0, 200));
+          
+          return new Response(html, {
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Cache-Control': 'public, max-age=60',
+            },
+          });
+        }
+        
+        return assetResponse;
+      } catch (error) {
+        console.error('[SSR] Error:', error);
+        // 降级：返回静态资源
+        return env.ASSETS.fetch(request);
+      }
+    }
+    
+    // 所有其他请求（静态资源）直接交给 ASSETS 处理
     return env.ASSETS.fetch(request);
   },
 
@@ -175,3 +319,63 @@ export default {
     }
   },
 };
+
+/**
+ * 获取 Dashboard 初始数据
+ * 用于 SSR 注入，实现首屏即时渲染
+ * 
+ * 数据获取策略：
+ * 1. 从 TrackingStatsDO 读取实时数据（< 10ms）
+ * 2. 直接返回内存中的统计数据
+ */
+async function fetchInitialDashboardData(env: Env): Promise<any> {
+  try {
+    const startTime = Date.now();
+    
+    // 从 TrackingStatsDO 读取实时数据
+    const trackingDO = env.TRACKING_STATS_DO.get(
+      env.TRACKING_STATS_DO.idFromName('global-stats')
+    );
+    
+    // 并行获取统计数据和最近点击
+    const [statsResponse, recentClicksResponse] = await Promise.all([
+      trackingDO.fetch('http://do/stats'),
+      trackingDO.fetch('http://do/recent-clicks?limit=10'),
+    ]);
+    
+    const stats = await statsResponse.json();
+    const recentClicksData = await recentClicksResponse.json();
+    
+    const data = {
+      metrics: [
+        { label: '今日点击', value: stats.todayClicks, icon: '📊' },
+        { label: '今日转化', value: stats.todayConversions, icon: '✅' },
+        { label: '今日收入', value: `$${stats.todayRevenue.toFixed(2)}`, icon: '💰' },
+        { label: '今日支出', value: `$${stats.todayCost.toFixed(2)}`, icon: '📈' },
+        { label: '今日利润', value: `$${stats.todayProfit.toFixed(2)}`, icon: '💵' },
+        { label: '今日ROI', value: `${stats.todayROI.toFixed(2)}%`, icon: '📈' },
+        { label: '转化率', value: `${stats.conversionRate.toFixed(2)}%`, icon: '📊' },
+      ],
+      chartData: [], // 暂时为空，后续可以从小时统计生成
+      recentClicks: recentClicksData.clicks || [],
+      entityData: {},
+      dataSource: stats.dataSource || 'DO_MEMORY',
+      queryTime: new Date().toISOString(),
+      ssrTime: Date.now() - startTime,
+    };
+    
+    console.log('[SSR] Data fetched from TrackingStatsDO, ssrTime:', data.ssrTime, 'ms');
+    return data;
+  } catch (error) {
+    console.error('[SSR] fetchInitialDashboardData error:', error);
+    return {
+      metrics: [],
+      chartData: [],
+      recentClicks: [],
+      entityData: {},
+      dataSource: 'ERROR',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      queryTime: new Date().toISOString(),
+    };
+  }
+}

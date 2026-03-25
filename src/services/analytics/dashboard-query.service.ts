@@ -1,37 +1,31 @@
 /**
- * @fileoverview Dashboard 数据源自动切换服务
- * @description 根据时间范围自动从 AE 或 D1 获取数据
+ * @fileoverview Dashboard 数据查询服务
+ * @description 从 D1 获取数据
  * @module services/analytics/dashboard-query.service
  *
  * 数据存储架构:
  *   - DO (Durable Objects): 唯一性检查和计数器
- *   - AE (Analytics Engine): 主存储，免费3个月，用于时序数据和趋势分析
- *   - D1: 归档存储，3个月前历史数据，用于精确报表
+ *   - D1: 主存储，用于所有数据查询
  *
  * 数据流:
- *   点击请求 → DO(唯一性检查) → AE(主存储) → 每天汇总 → D1(归档)
+ *   点击请求 → DO(唯一性检查) → D1(主存储)
  *
  * Dashboard数据读取逻辑:
- *   - < 3个月数据 ──► AE读取
- *     优点: 写入即查、高吞吐
- *     缺点: 数分钟延迟
- *   - > 3个月数据 ──► D1读取
+ *   - 所有数据 ──► D1读取
  *     优点: 完整准确、永久存储
- *     缺点: 需要等待每日汇总
  *
  * 输入: 查询参数（range, campaignId, filters）
  * 输出: Dashboard 统计数据
  * 逻辑交互:
  *   - 被 analytics.routes.ts 调用
- *   - 内部调用 AnalyticsQueryService (AE) 或 TrafficRepository (D1)
+ *   - 内部调用 TrafficRepository (D1)
  * 前后端交互: 通过 API 返回统一格式的数据
  */
 
 import type { Env } from '@/config/env';
 import { getD1Connection, TrafficRepository } from '@/handlers/d1';
-import { AnalyticsQueryService, createAnalyticsQueryService } from './analytics-query.service';
 
-export type DataSource = 'AE' | 'D1';
+export type DataSource = 'D1';
 
 export interface DashboardMetric {
   key: string;
@@ -69,59 +63,28 @@ export interface DashboardQueryResult {
   range: string;
 }
 
-const AE_FREE_TIER_DAYS = 90;
-
-export function determineDataSource(startDate: string, _endDate: string): DataSource {
-  const now = new Date();
-  const start = new Date(startDate);
-
-  const daysDiff = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-
-  if (daysDiff > AE_FREE_TIER_DAYS) {
-    return 'D1';
-  }
-  return 'AE';
-}
-
-export function isWithinAEFreeTier(startDate: string, endDate: string): boolean {
-  return determineDataSource(startDate, endDate) === 'AE';
-}
-
 export class DashboardQueryService {
-  private analyticsQueryService: AnalyticsQueryService;
   private trafficRepo: TrafficRepository;
 
   constructor(env: Env) {
-    this.analyticsQueryService = createAnalyticsQueryService(env);
     this.trafficRepo = new TrafficRepository(getD1Connection(env));
   }
 
   /**
    * 获取 Dashboard 统计数据
-   * 根据时间范围自动选择数据源
+   * 从 D1 获取数据
    */
   async getDashboardStats(range: string): Promise<DashboardQueryResult> {
     const { startDate, endDate } = this.getDateRange(range);
-    const dataSource = determineDataSource(startDate, endDate);
+    const dataSource: DataSource = 'D1';
 
     console.log(`[DashboardQueryService] Range: ${range}, DataSource: ${dataSource}, Start: ${startDate}, End: ${endDate}`);
 
-    let metrics: DashboardMetric[];
-    let chartData: ChartDataPoint[];
-    let entityStats: Record<string, EntityStatItem[]>;
-
-    if (dataSource === 'AE') {
-      const aeResult = await this.analyticsQueryService.getDashboardStats(range);
-      metrics = aeResult.metrics as DashboardMetric[];
-      chartData = await this.analyticsQueryService.getChartData(range);
-      entityStats = await this.getEntityStatsFromAE(range);
-    } else {
-      const d1Result = await this.trafficRepo.getDashboardStats(range);
-      const d1ChartData = await this.trafficRepo.getChartData(range);
-      metrics = this.formatD1Metrics(d1Result);
-      chartData = this.formatD1ChartData(d1ChartData);
-      entityStats = await this.getEntityStatsFromD1(range);
-    }
+    const d1Result = await this.trafficRepo.getDashboardStats(range);
+    const d1ChartData = await this.trafficRepo.getChartData(range);
+    const metrics = this.formatD1Metrics(d1Result);
+    const chartData = this.formatD1ChartData(d1ChartData);
+    const entityStats = await this.getEntityStatsFromD1(range);
 
     return {
       metrics,
@@ -135,48 +98,28 @@ export class DashboardQueryService {
 
   /**
    * 获取趋势报告数据
-   * 支持跨时间段查询，自动合并 AE 和 D1 数据
+   * 从 D1 获取数据
    */
   async getTrendReport(
     startDate: string,
     endDate: string,
-    interval: 'hour' | 'day' | 'week' | 'month' = 'day',
+    _interval: 'hour' | 'day' | 'week' | 'month' = 'day',
     campaignId?: string
   ): Promise<ChartDataPoint[]> {
-    const dataSource = determineDataSource(startDate, endDate);
-
-    if (dataSource === 'AE') {
-      return this.analyticsQueryService.getTrendReport(startDate, endDate, interval, campaignId);
-    }
-
     const trendData = await this.trafficRepo.getTrend(campaignId || '', startDate, endDate);
     return this.formatD1TrendData(trendData);
   }
 
   /**
    * 获取近期点击数据
-   * 根据时间范围选择数据源
+   * 从 D1 获取数据
    */
   async getRecentClicks(params: {
     limit?: number;
     range?: string;
     campaignId?: string;
   }): Promise<{ list: any[]; total: number; dataSource: DataSource }> {
-    const { startDate, endDate } = this.getDateRange(params.range || 'today');
-    const dataSource = determineDataSource(startDate, endDate);
-
-    if (dataSource === 'AE') {
-      const result = await this.analyticsQueryService.getRecentClicks({
-        limit: params.limit || 50,
-        campaignId: params.campaignId,
-      });
-      return {
-        list: result.list,
-        total: result.total,
-        dataSource: 'AE',
-      };
-    }
-
+    const dataSource: DataSource = 'D1';
     const clicks = await this.trafficRepo.getRecentClicks(params.limit || 50);
     return {
       list: clicks,
@@ -187,15 +130,9 @@ export class DashboardQueryService {
 
   /**
    * 获取实体统计数据
+   * 从 D1 获取数据
    */
   async getEntityStats(entityType: string, range: string): Promise<EntityStatItem[]> {
-    const { startDate, endDate } = this.getDateRange(range);
-    const dataSource = determineDataSource(startDate, endDate);
-
-    if (dataSource === 'AE') {
-      return this.analyticsQueryService.getEntityStats(entityType, range);
-    }
-
     const stats = await this.trafficRepo.getEntityStats(entityType, range);
     return stats.map((item: any) => ({
       name: item.name || 'Unknown',
@@ -208,26 +145,7 @@ export class DashboardQueryService {
     }));
   }
 
-  /**
-   * 从 AE 获取实体统计数据
-   */
-  private async getEntityStatsFromAE(range: string): Promise<Record<string, EntityStatItem[]>> {
-    const entityTypes = ['campaigns', 'countries', 'device_types', 'browsers'];
-    const stats: Record<string, EntityStatItem[]> = {};
 
-    for (const entityType of entityTypes) {
-      try {
-        stats[entityType] = await this.analyticsQueryService.getEntityStats(entityType, range);
-      } catch (error) {
-        // 静默处理错误，避免影响其他实体类型的数据加载
-        // 常见原因：数据源中没有该类型的数据，或者引用了已删除的实体
-        console.warn(`[DashboardQueryService] ${entityType} stats from AE: No data available`);
-        stats[entityType] = [];
-      }
-    }
-
-    return stats;
-  }
 
   /**
    * 从 D1 获取实体统计数据
@@ -310,6 +228,7 @@ export class DashboardQueryService {
   /**
    * 获取指定类型的报表数据
    * 支持 traffic | conversion | financial | roi
+   * 从 D1 获取数据
    */
   async getReport(
     reportType: 'traffic' | 'conversion' | 'financial' | 'roi',
@@ -323,7 +242,7 @@ export class DashboardQueryService {
     }
   ): Promise<any[]> {
     const { startDate, endDate, groupBy, limit, sortBy, sortOrder } = options;
-    const dataSource = determineDataSource(startDate, endDate);
+    const dataSource: DataSource = 'D1';
 
     const baseQuery = {
       startDate,
@@ -350,23 +269,12 @@ export class DashboardQueryService {
 
   /**
    * 获取流量报表
+   * 从 D1 获取数据
    */
   private async getTrafficReport(
-    dataSource: DataSource,
+    _dataSource: DataSource,
     _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
   ): Promise<any[]> {
-    if (dataSource === 'AE') {
-      const stats = await this.analyticsQueryService.getEntityStats('campaigns', 'last30days');
-      return stats.map((s: any) => ({
-        date: s.name || 'N/A',
-        clicks: s.clicks,
-        impressions: s.impressions,
-        unique_visitors: s.unique_visitors,
-        conversions: s.conversions,
-        cr: s.clicks > 0 ? ((s.conversions / s.clicks) * 100).toFixed(2) + '%' : '0%',
-      }));
-    }
-
     const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
     return stats.map((item: any) => ({
       date: item.name || 'N/A',
@@ -380,23 +288,12 @@ export class DashboardQueryService {
 
   /**
    * 获取转化报表
+   * 从 D1 获取数据
    */
   private async getConversionReport(
-    dataSource: DataSource,
+    _dataSource: DataSource,
     _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
   ): Promise<any[]> {
-    if (dataSource === 'AE') {
-      const stats = await this.analyticsQueryService.getEntityStats('campaigns', 'last30days');
-      return stats.map((s: any) => ({
-        date: s.name || 'N/A',
-        conversions: s.conversions,
-        revenue: s.revenue,
-        cost: s.spend,
-        profit: s.revenue - s.spend,
-        roi: s.spend > 0 ? (((s.revenue - s.spend) / s.spend) * 100).toFixed(2) + '%' : '0%',
-      }));
-    }
-
     const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
     return stats.map((item: any) => ({
       date: item.name || 'N/A',
@@ -410,22 +307,12 @@ export class DashboardQueryService {
 
   /**
    * 获取财务报表
+   * 从 D1 获取数据
    */
   private async getFinancialReport(
-    dataSource: DataSource,
+    _dataSource: DataSource,
     _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
   ): Promise<any[]> {
-    if (dataSource === 'AE') {
-      const stats = await this.analyticsQueryService.getEntityStats('campaigns', 'last30days');
-      return stats.map((s: any) => ({
-        date: s.name || 'N/A',
-        spend: s.spend,
-        revenue: s.revenue,
-        profit: s.revenue - s.spend,
-        margin: s.revenue > 0 ? (((s.revenue - s.spend) / s.revenue) * 100).toFixed(2) + '%' : '0%',
-      }));
-    }
-
     const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
     return stats.map((item: any) => ({
       date: item.name || 'N/A',
@@ -438,24 +325,12 @@ export class DashboardQueryService {
 
   /**
    * 获取ROI报表
+   * 从 D1 获取数据
    */
   private async getROIReport(
-    dataSource: DataSource,
+    _dataSource: DataSource,
     _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
   ): Promise<any[]> {
-    if (dataSource === 'AE') {
-      const stats = await this.analyticsQueryService.getEntityStats('campaigns', 'last30days');
-      return stats.map((s: any) => ({
-        date: s.name || 'N/A',
-        spend: s.spend,
-        revenue: s.revenue,
-        profit: s.revenue - s.spend,
-        roi: s.spend > 0 ? (((s.revenue - s.spend) / s.spend) * 100).toFixed(2) + '%' : '0%',
-        epc: s.clicks > 0 ? (s.revenue / s.clicks).toFixed(2) : '0',
-        cpc: s.clicks > 0 ? (s.spend / s.clicks).toFixed(2) : '0',
-      }));
-    }
-
     const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
     return stats.map((item: any) => {
       const clicks = Number(item.clicks) || 0;

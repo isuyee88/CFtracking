@@ -61,5 +61,3 @@ export { ConversionRepository } from './conversion.repo';
 export { BlacklistRepository } from './blacklist.repo';
 export { WhitelistRepository } from './whitelist.repo';
 
-export * from '../analytics';
-

@@ -10,7 +10,6 @@ export interface Env {
   JWT_EXPIRES_IN: string;
   
   DB: D1Database;
-  ANALYTICS: AnalyticsEngineDataset;
   
   /** 去重专用 KV 存储 */
   UNIQUENESS_KV: KVNamespace;
@@ -20,12 +19,22 @@ export interface Env {
   QUEUE_DO: DurableObjectNamespace;
   UNIQUE_DO: DurableObjectNamespace;
   USER_PREFERENCE_DO: DurableObjectNamespace;
+  CACHE_DO: DurableObjectNamespace;
+  TRACKING_STATS_DO: DurableObjectNamespace;
   
   ASSETS: Fetcher;
   
-  /** Cloudflare API 配置（用于 Analytics Engine 查询） */
+  /** SSR 动态渲染开关 */
+  SSE_ENABLED: boolean;
+  /** Cloudflare API 配置 */
   CF_ACCOUNT_ID: string;
   CF_API_TOKEN: string;
+  /** 版本元数据绑定 */
+  CF_VERSION_METADATA: {
+    id: string;
+    tag: string | null;
+    timestamp: string;
+  };
 }
 
 export function getEnv(env: Env): Env {

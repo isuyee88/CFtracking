@@ -7,12 +7,9 @@
  * 输出: 点击记录数据、查询结果列表
  * 逻辑交互:
  *   - 继承 BaseRepository 获取基础 CRUD 能力
- *   - ClickService 不再调用本文件保存点击（使用 Analytics Engine）
- *   - Analytics routes 使用 AnalyticsQueryService 查询点击数据
- * 前后端交互: 通过 D1 数据库进行数据查询（已废弃写入）
- *
- * @deprecated 按照 Option C 混合方案，点击原始数据存储在 Analytics Engine，
- *   D1 clicks 表不再写入（保留读取接口用于历史兼容性）
+ *   - ClickService 调用本文件保存点击
+ *   - Analytics routes 使用本文件查询点击数据
+ * 前后端交互: 通过 D1 数据库进行数据读写
  */
 
 import { BaseRepository } from './base.repo';
@@ -51,13 +48,52 @@ export class ClickRepository extends BaseRepository<ClickData> {
 
   /**
    * 保存点击记录到数据库
-   * @deprecated Option C: 点击数据已迁移至 Analytics Engine，不再写入 D1
-   *             保留方法签名用于历史兼容性，但不再被调用
    */
-  async saveClick(_data: ClickData): Promise<void> {
-    console.warn('[ClickRepository] saveClick() is deprecated. Click data is stored in Analytics Engine.');
-    // 点击数据已迁移至 Analytics Engine
-    // D1 clicks 表不再写入原始点击数据
+  async saveClick(data: ClickData): Promise<void> {
+    const now = new Date().toISOString();
+
+    try {
+      await this.db
+        .prepare(`
+          INSERT INTO clicks (
+            id, clickId, campaignId, flowId, landingPageId, offerId,
+            timestamp, ip, userAgent, referer, country, city,
+            device, browser, os, isp, connectionType, visitorId,
+            subId1, subId2, subId3, cost, isUnique, redirectUrl, createdAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .bind(
+          data.clickId,
+          data.clickId,
+          data.campaignId,
+          data.flowId,
+          data.landingPageId,
+          data.offerId,
+          data.timestamp,
+          data.ip,
+          data.userAgent,
+          data.referer,
+          data.country,
+          data.city,
+          data.device,
+          data.browser,
+          data.os,
+          data.isp,
+          data.connectionType,
+          data.visitorId,
+          data.subId1,
+          data.subId2,
+          data.subId3,
+          data.cost,
+          1,
+          data.redirectUrl,
+          now
+        )
+        .run();
+    } catch (error) {
+      console.error('[ClickRepository] saveClick error:', error);
+      throw error;
+    }
   }
 
   // /**

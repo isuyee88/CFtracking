@@ -1,15 +1,34 @@
 /**
  * File: App.tsx
- * Purpose: 搴旂敤涓诲叆鍙ｏ紝閰嶇疆璺敱
- * Input/Output: 娓叉煋鏁翠釜搴旂敤锛屽寘鍚墍鏈夐〉闈㈣矾鐢? * Logic: 浣跨敤 HashRouter 閫傞厤闈欐€侀儴缃茬幆澧冿紝浣跨敤 React.lazy 瀹炵幇浠ｇ爜鍒嗗壊
+ * Purpose: 应用主入口，配置路由
+ * Input/Output: 渲染整个应用，包含所有页面路由
+ * Logic: 使用 HashRouter 适配静态部署环境，使用 React.lazy 实现代码分割
+ * SSR: 接收 initialData 并传递给需要的页面组件
  */
 
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, createContext, useContext } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { CloudSyncProvider } from './contexts/CloudSyncContext';
 
-// 璺敱绾т唬鐮佸垎鍓?- 鎳掑姞杞介〉闈㈢粍浠?
+// SSR 初始数据 Context
+interface InitialDataContextValue {
+  data: any;
+  isSSR: boolean;
+}
+
+const InitialDataContext = createContext<InitialDataContextValue>({
+  data: null,
+  isSSR: false,
+});
+
+export const useInitialData = () => useContext(InitialDataContext);
+
+interface AppProps {
+  initialData?: any;
+}
+
+// 路由级代码分割 - 懒加载页面组件
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CampaignManagement = lazy(() => import('./pages/CampaignManagement'));
 const CampaignDetail = lazy(() => import('./pages/CampaignDetail'));
@@ -166,38 +185,42 @@ const PageSkeleton = () => (
   </div>
 );
 
-export default function App() {
+export default function App({ initialData }: AppProps) {
+  const isSSR = initialData && initialData.dataSource !== 'DEFAULT';
+  
   return (
-    <Router>
-      <CloudSyncProvider>
-        <Suspense fallback={<PageSkeleton />}>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="campaigns" element={<CampaignManagement />} />
-              <Route path="campaigns/:id" element={<CampaignDetail />} />
-              <Route path="rules" element={<RuleManagement />} />
-              <Route path="platforms" element={<PlatformManagement />} />
-              <Route path="landings" element={<Landings />} />
-              <Route path="l" element={<Landings />} />
-              <Route path="offers" element={<Offers />} />
-              <Route path="traffic-sources" element={<TrafficSources />} />
-              <Route path="affiliate-networks" element={<AffiliateNetworks />} />
-              <Route path="trends" element={<Trends />} />
-              <Route path="reports" element={<Reports />} />
-              <Route path="audit" element={<ClicksLog />} />
-              <Route path="conversions" element={<ConversionsLog />} />
-              <Route path="blacklist" element={<Blacklist />} />
-              <Route path="whitelist" element={<Whitelist />} />
-              <Route path="target" element={<TargetPage />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="help" element={<HelpCenter />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </CloudSyncProvider>
-    </Router>
+    <InitialDataContext.Provider value={{ data: initialData, isSSR }}>
+      <Router>
+        <CloudSyncProvider>
+          <Suspense fallback={<PageSkeleton />}>
+            <Routes>
+              <Route path="/" element={<Layout />}>
+                <Route index element={<Dashboard />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="campaigns" element={<CampaignManagement />} />
+                <Route path="campaigns/:id" element={<CampaignDetail />} />
+                <Route path="rules" element={<RuleManagement />} />
+                <Route path="platforms" element={<PlatformManagement />} />
+                <Route path="landings" element={<Landings />} />
+                <Route path="l" element={<Landings />} />
+                <Route path="offers" element={<Offers />} />
+                <Route path="traffic-sources" element={<TrafficSources />} />
+                <Route path="affiliate-networks" element={<AffiliateNetworks />} />
+                <Route path="trends" element={<Trends />} />
+                <Route path="reports" element={<Reports />} />
+                <Route path="audit" element={<ClicksLog />} />
+                <Route path="conversions" element={<ConversionsLog />} />
+                <Route path="blacklist" element={<Blacklist />} />
+                <Route path="whitelist" element={<Whitelist />} />
+                <Route path="target" element={<TargetPage />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="help" element={<HelpCenter />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </CloudSyncProvider>
+      </Router>
+    </InitialDataContext.Provider>
   );
 }
 

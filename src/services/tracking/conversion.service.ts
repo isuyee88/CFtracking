@@ -4,8 +4,6 @@
  * @module services/tracking/conversion.service
  */
 
-import { AnalyticsService } from '@/handlers/analytics';
-import { getAnalyticsClient } from '@/handlers/d1';
 import { DOService } from '@/handlers/do';
 import type { Env } from '@/config/env';
 import type { ConversionData } from '@/types/tracking';
@@ -29,11 +27,9 @@ export interface ConversionResult {
 }
 
 export class ConversionService {
-  private analytics: AnalyticsService;
   private doService: DOService;
 
   constructor(env: Env) {
-    this.analytics = new AnalyticsService(getAnalyticsClient(env));
     this.doService = new DOService(env);
   }
 
@@ -56,7 +52,10 @@ export class ConversionService {
       offerName: request.offerName || null,
     };
 
-    this.analytics.trackConversion(conversionData);
+    await this.doService.trackConversion({
+      clickId: request.clickId,
+      revenue: request.revenue
+    });
 
     await this.doService.incrementCounter(`campaign:${request.campaignId}:today`, {
       conversions: 1,

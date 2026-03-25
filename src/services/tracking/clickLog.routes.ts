@@ -1,11 +1,11 @@
 /**
  * @fileoverview Click Log API 路由
- * @description 处理点击日志相关的 HTTP 请求，支持双数据源查询
+ * @description 处理点击日志相关的 HTTP 请求，使用 DO 和 D1 数据源
  * @module services/tracking/clickLog.routes
  * 
  * 数据源策略:
- * - 3个月以内: 从 Analytics Engine 实时查询
- * - 3个月以上: 从 D1 数据库查询历史汇总数据
+ * - 实时数据: 从 TrackingStatsDO 查询
+ * - 历史数据: 从 D1 数据库查询
  * 
  * 输入: HTTP 请求（查询参数、路径参数）
  * 输出: HTTP 响应（JSON 数据）
@@ -14,16 +14,10 @@
 import { Hono } from 'hono';
 import { ClickRepository } from '@/handlers/d1/click.repo';
 import { getD1Connection } from '@/handlers/d1';
-import { createAnalyticsQueryService } from '@/services/analytics/analytics-query.service';
+import { getTrackingStatsStub } from '@/handlers/do';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
-
-function isWithinThreeMonths(startDate: string): boolean {
-  const threeMonthsAgo = new Date();
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-  return new Date(startDate) >= threeMonthsAgo;
-}
 
 export function createClickLogRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();

@@ -5,11 +5,11 @@
  *
  * Input: TrendFilter with date range and optional filters
  * Output: TrendsReport with data points and breakdowns
- * Logic Interaction: Uses AnalyticsQueryService (Analytics Engine)
+ * Logic Interaction: Uses TrafficRepository (D1)
  * Frontend-Backend: Provides data for Trends charts and reports
  */
 
-import { AnalyticsQueryService, createAnalyticsQueryService } from '@/services/analytics/analytics-query.service';
+import { getD1Connection, TrafficRepository } from '@/handlers/d1';
 import type { Env } from '@/config/env';
 import type {
   TrendFilter,
@@ -17,11 +17,14 @@ import type {
   TrendSummary,
   TrendsReport
 } from '@/types/trends';
+import { createAnalyticsQueryService } from '@/services/analytics/analytics-query.service';
 
-export class TrendsService {
-  private analyticsQueryService: AnalyticsQueryService;
+export class TrendService {
+  private trafficRepo: TrafficRepository;
+  private analyticsQueryService: ReturnType<typeof createAnalyticsQueryService>;
 
   constructor(env: Env) {
+    this.trafficRepo = new TrafficRepository(getD1Connection(env));
     this.analyticsQueryService = createAnalyticsQueryService(env);
   }
 
@@ -33,13 +36,8 @@ export class TrendsService {
     const campaignId = filter.campaignId;
     const interval = filter.interval || 'day';
 
-    // Get trend data from Analytics Engine
-    const trendData = await this.analyticsQueryService.getTrendReport(
-      startDate,
-      endDate,
-      interval,
-      campaignId
-    );
+    // Get trend data from D1
+    const trendData = await this.trafficRepo.getTrend(campaignId || '', startDate, endDate);
 
     // Calculate summary
     const summary = this.calculateSummary(trendData);

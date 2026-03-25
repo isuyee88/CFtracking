@@ -33,6 +33,7 @@ import { useDashboardURLState } from '../hooks/useURLState';
 import { useTableScroll } from '../hooks/useTableScroll';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
 import { DataSourceBadge, DataSourceInfo, DataSourceWarning } from '../components/DataSourceBadge';
+import { useInitialData } from '../App';
 const QuickDateRangePicker = lazy(() => import('@/components/DateRangePicker').then(m => ({ default: m.QuickDateRangePicker })));
 type DateRangeValue = { interval: string; from?: string; to?: string };
 import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
@@ -779,29 +780,35 @@ export const Dashboard = () => {
   const { state, setState } = useDashboardURLState();
   const navigate = useNavigate();
   
+  // 获取 SSR 初始数据
+  const { data: initialData, isSSR } = useInitialData();
+  
   // 自动昼夜模式
   const { isDarkMode, currentTime } = useAutoDarkMode();
   
-  // 本地状态
-  const [stats, setStats] = useState<any[]>([]);
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [recentClicks, setRecentClicks] = useState<any[]>([]);
-  const [entityData, setEntityData] = useState<Record<string, any[]>>({});
+  // 本地状态 - 优先使用 SSR 初始数据
+  const [stats, setStats] = useState<any[]>(initialData?.metrics || []);
+  const [chartData, setChartData] = useState<any[]>(initialData?.chartData || []);
+  const [recentClicks, setRecentClicks] = useState<any[]>(initialData?.recentClicks || []);
+  const [entityData, setEntityData] = useState<Record<string, any[]>>(initialData?.entityData || {});
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
-  const [dataSource, setDataSource] = useState<'AE' | 'D1' | 'MIXED'>('AE');
-  const [queryTime, setQueryTime] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<'AE' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT'>(initialData?.dataSource || 'AE');
+  const [queryTime, setQueryTime] = useState<string | null>(initialData?.queryTime || null);
   const [loading, setLoading] = useState({
-    stats: false,
-    recentClicks: false,
-    entities: false
+    stats: !isSSR,
+    recentClicks: !isSSR,
+    entities: !isSSR
   });
   const [errors, setErrors] = useState({
     stats: '',
     recentClicks: '',
     entities: ''
   });
+  
+  // SSR 数据已加载标记
+  const ssrDataLoaded = useRef(isSSR && initialData?.metrics?.length > 0);
   
   // 应用暗色模式类
   useEffect(() => {
@@ -920,6 +927,14 @@ export const Dashboard = () => {
     // 首次加载时执行
     if (isInitialMount.current) {
       isInitialMount.current = false;
+      
+      // 如果 SSR 数据已加载，跳过首次加载
+      if (ssrDataLoaded.current) {
+        console.log('[Dashboard] SSR data already loaded, skipping initial fetch');
+        setLoading({ stats: false, recentClicks: false, entities: false });
+        return;
+      }
+      
       refreshStatsAndEntities();
       refreshRecentClicks();
       return;

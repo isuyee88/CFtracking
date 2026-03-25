@@ -15,12 +15,11 @@
  * 前后端交互: 通过 tracking.routes.ts 处理 HTTP 请求
  */
 
-import { AnalyticsService } from '@/handlers/analytics';
 import { FlowRepository } from '@/handlers/d1/flow.repo';
 import { CampaignRepository } from '@/handlers/d1/campaign.repo';
 import { OfferRepository } from '@/handlers/d1/offer.repo';
 import { LandingPageRepository } from '@/handlers/d1/landingPage.repo';
-import { getD1Connection, getAnalyticsClient } from '@/handlers/d1';
+import { getD1Connection } from '@/handlers/d1';
 import { DOService } from '@/handlers/do';
 import { UniquenessService, type UniquenessMethod } from './uniqueness.service';
 import { FilterService } from './filter.service';
@@ -112,7 +111,6 @@ export interface ActionConfig {
 }
 
 export class ClickService {
-  private analytics: AnalyticsService;
   private flowRepo: FlowRepository;
   private campaignRepo: CampaignRepository;
   private offerRepo: OfferRepository;
@@ -124,7 +122,6 @@ export class ClickService {
 
   constructor(env: Env) {
     const db = getD1Connection(env);
-    this.analytics = new AnalyticsService(getAnalyticsClient(env));
     this.flowRepo = new FlowRepository(db);
     this.campaignRepo = new CampaignRepository(db);
     this.offerRepo = new OfferRepository(db);
@@ -344,18 +341,27 @@ export class ClickService {
         riskReasons: request.riskAssessment?.reasons ?? [],
       };
 
-      // 异步记录分析数据到 Analytics Engine
-      console.log('[ClickService] About to track click to Analytics Engine:', {
+      // 异步记录分析数据到 Durable Objects
+      console.log('[ClickService] About to track click to Durable Objects:', {
         clickId,
         campaignId: campaign.id,
         flowId: selectedFlow?.id,
         timestamp: new Date().toISOString()
       });
       try {
-        this.analytics.trackClick(clickData);
+        await this.doService.trackClick({
+          id: clickId,
+          campaignId: campaign.id,
+          ip: request.ip,
+          country: request.country,
+          city: request.city,
+          region: request.region,
+          timestamp: Date.now(),
+          cost: request.cost
+        });
         console.log('[ClickService] trackClick called successfully');
       } catch (err) {
-        console.error('[ClickService] Failed to track click to Analytics Engine:', err);
+        console.error('[ClickService] Failed to track click to Durable Objects:', err);
       }
 
       // 更新计数器

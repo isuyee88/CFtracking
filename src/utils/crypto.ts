@@ -10,7 +10,7 @@
  * 
  * 优点:
  * - 无需数据库查询，Worker 本地生成
- * - 数字部分可直接存入 Analytics Engine double 字段
+
  * - 时间戳前缀保证大致有序
  * - 唯一性: 同一毫秒内 1000 种可能，碰撞概率极低
  * - 16位数字在 JavaScript MAX_SAFE_INTEGER (2^53-1) 范围内，精度安全
@@ -71,7 +71,7 @@ export function generateVisitorId(): string {
 
 /**
  * 从 ID 中提取数字部分
- * 用于 Analytics Engine double 字段存储
+
  * 
  * @param id 带前缀的 ID
  * @returns 数字部分

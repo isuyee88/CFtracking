@@ -12,6 +12,7 @@ export { CounterDurableObject } from './counter.do';
 export { QueueDurableObject } from './queue.do';
 export { UniquenessDurableObject, UniquenessDOService } from './uniqueness.do';
 export { UserPreferenceDurableObject } from './user-preference.do';
+export { TrackingStatsDO } from './tracking-stats.do';
 
 export function getSessionStub(env: Env, visitorId: string): DurableObjectStub {
   const id = env.SESSION_DO.idFromName(`session:${visitorId}`);
@@ -26,6 +27,11 @@ export function getCounterStub(env: Env, key: string): DurableObjectStub {
 export function getQueueStub(env: Env, name: string = 'default'): DurableObjectStub {
   const id = env.QUEUE_DO.idFromName(`queue:${name}`);
   return env.QUEUE_DO.get(id);
+}
+
+export function getTrackingStatsStub(env: Env, name: string = 'global-stats'): DurableObjectStub {
+  const id = env.TRACKING_STATS_DO.idFromName(name);
+  return env.TRACKING_STATS_DO.get(id);
 }
 
 export class DOService {
@@ -110,6 +116,51 @@ export class DOService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count }),
+      })
+    );
+    return response.json();
+  }
+
+  async getTrackingStats(): Promise<unknown> {
+    const stub = getTrackingStatsStub(this.env);
+    const response = await stub.fetch(
+      new Request('http://do/stats', { method: 'GET' })
+    );
+    if (!response.ok) return null;
+    return response.json();
+  }
+
+  async trackClick(data: {
+    id: string;
+    campaignId: string;
+    ip: string;
+    country?: string;
+    city?: string;
+    region?: string;
+    timestamp: number;
+    cost?: number;
+  }): Promise<unknown> {
+    const stub = getTrackingStatsStub(this.env);
+    const response = await stub.fetch(
+      new Request('http://do/track-click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+    );
+    return response.json();
+  }
+
+  async trackConversion(data: {
+    clickId: string;
+    revenue: number;
+  }): Promise<unknown> {
+    const stub = getTrackingStatsStub(this.env);
+    const response = await stub.fetch(
+      new Request('http://do/track-conversion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
       })
     );
     return response.json();

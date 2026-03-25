@@ -66,6 +66,14 @@ export class CacheDurableObject extends DurableObject {
           }
           break
 
+        case '/cache/dashboard-stats':
+          if (request.method === 'GET') {
+            return await this.getDashboardStats()
+          } else if (request.method === 'POST') {
+            return await this.setDashboardStats(request)
+          }
+          break
+
         case '/cache/purge':
           if (request.method === 'POST') {
             return await this.purgeExpired()
@@ -345,6 +353,45 @@ export class CacheDurableObject extends DurableObject {
     return Response.json({
       success: true,
       deleted: result.changes,
+    })
+  }
+
+  /**
+   * 获取 Dashboard 统计缓存
+   * 用于 SSR 首屏渲染
+   */
+  async getDashboardStats(): Promise<Response> {
+    const db = this.getDatabase()
+    const result = (db as any)
+      .prepare('SELECT value FROM metadata WHERE key = ?')
+      .bind('dashboard-stats')
+      .one()
+
+    if (!result) {
+      return new Response('Not Found', { status: 404 })
+    }
+
+    const data = JSON.parse(result.value as string)
+    return Response.json(data)
+  }
+
+  /**
+   * 设置 Dashboard 统计缓存
+   * 由定时任务或 API 更新
+   */
+  async setDashboardStats(request: Request): Promise<Response> {
+    const db = this.getDatabase()
+    const data = await request.json()
+
+    ;(db as any).prepare(
+      'INSERT OR REPLACE INTO metadata (key, value, updated_at) VALUES (?, ?, unixepoch())'
+    ).run('dashboard-stats', JSON.stringify(data))
+
+    console.log('✅ Dashboard stats cached')
+
+    return Response.json({
+      success: true,
+      cachedAt: new Date().toISOString(),
     })
   }
 }
