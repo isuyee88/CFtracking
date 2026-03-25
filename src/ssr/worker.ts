@@ -42,29 +42,26 @@ export default {
         return await handleSSE(request, env)
       }
 
-      // 2. 处理 API 请求（转发到现有的 Hono API）
+      // 2. 处理 API 请求（直接返回错误，让前端处理）
       if (url.pathname.startsWith('/api/')) {
-        try {
-          // 导入现有的 Hono app
-          const { app } = await import('./index')
-          return await app.fetch(request, env, ctx)
-        } catch (error) {
-          console.error('❌ API forward error:', error)
-          return Response.json({ 
-            error: 'API forward failed',
-            message: error instanceof Error ? error.message : 'Unknown error'
-          }, { status: 500 })
-        }
+        // API 请求应该由 Cloudflare Workers 直接处理
+        // 这里不转发，因为可能会导致循环依赖
+        return Response.json({
+          error: 'API not available in SSR mode',
+          hint: 'Use the original SPA for full functionality'
+        }, { status: 404 })
       }
 
       // 3. 处理静态资源（由 Assets 配置自动处理）
+      // 访问 /dashboard 时，让 Assets 返回 SPA（原来的 Dashboard）
 
       // 4. 首页直接重定向到 Dashboard
       if (url.pathname === '/') {
-        return Response.redirect('https://' + url.host + '/dashboard', 302)
+        // SSR 渲染一个简单的加载页面
+        return await renderPage(request, env, url, ctx)
       }
 
-      // 5. SSR 渲染页面
+      // 5. 其他所有路径都返回 SPA（让原来的 Dashboard 工作）
       return await renderPage(request, env, url, ctx)
     } catch (error) {
       console.error('❌ SSR Worker error:', error)
