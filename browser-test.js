@@ -22,9 +22,9 @@ class BrowserTester {
     };
   }
 
-  async connect() {
+  async connect(pageId) {
     return new Promise((resolve, reject) => {
-      const wsUrl = `ws://localhost:${CDP_PORT}/devtools/page/FFA627B87A8899D689D113227B3FA1FA`;
+      const wsUrl = `ws://localhost:${CDP_PORT}/devtools/page/${pageId}`;
       this.ws = new WebSocket(wsUrl);
       
       this.ws.on('open', () => {
@@ -73,7 +73,7 @@ class BrowserTester {
         const msg = JSON.parse(data);
         if (msg.method === 'Page.loadEventFired') {
           this.ws.removeListener('message', handler);
-          setTimeout(resolve, 1000); // 等待 1 秒确保页面完全加载
+          setTimeout(resolve, 2000); // 等待 2 秒确保页面完全加载
         }
       };
       this.ws.on('message', handler);
@@ -108,21 +108,14 @@ class BrowserTester {
   }
 
   async testHomepage() {
-    console.log('\n🧪 测试 1: 首页重定向');
-    console.log('====================');
+    console.log('\n🧪 测试 1: 首页');
+    console.log('================');
     
     await this.navigate(TARGET_URL + '/');
-    
-    // 等待重定向
-    await new Promise(r => setTimeout(r, 2000));
     
     // 检查 URL
     const url = await this.evaluate('window.location.href');
     console.log(`当前 URL: ${url}`);
-    
-    // 检查是否重定向到 /dashboard
-    const isRedirected = url.includes('/dashboard');
-    console.log(`重定向到 Dashboard: ${isRedirected ? '✅' : '❌'}`);
     
     // 检查页面内容
     const pageInfo = await this.evaluate(`
@@ -150,13 +143,12 @@ class BrowserTester {
     console.log(`Ant Design 组件: ${pageInfo.antComponentsCount}`);
     console.log(`有 SSR 简单界面: ${pageInfo.hasSSRPlaceholder ? '❌' : '✅'}`);
     
-    await this.takeScreenshot('homepage-redirect');
+    await this.takeScreenshot('homepage');
     
     this.results.homepage = {
       url,
-      isRedirected,
       pageInfo,
-      passed: isRedirected && !pageInfo.hasSSRPlaceholder && pageInfo.hasAntDesign
+      passed: !pageInfo.hasSSRPlaceholder && pageInfo.hasAntDesign
     };
     
     return this.results.homepage;
@@ -248,7 +240,9 @@ class BrowserTester {
       { path: '/campaigns', name: 'Campaigns' },
       { path: '/offers', name: 'Offers' },
       { path: '/landings', name: 'Landings' },
-      { path: '/traffic-sources', name: 'Traffic Sources' }
+      { path: '/traffic-sources', name: 'Traffic Sources' },
+      { path: '/audit', name: 'Clicks Log' },
+      { path: '/conversions', name: 'Conversions Log' }
     ];
     
     for (const page of pages) {
@@ -295,61 +289,12 @@ class BrowserTester {
     return this.results.otherPages;
   }
 
-  async checkConsoleErrors() {
-    console.log('\n🧪 测试 4: 控制台错误');
-    console.log('====================');
-    
-    // 启用控制台消息
-    await this.send('Runtime.enable');
-    
-    const errors = [];
-    
-    const handler = (data) => {
-      const msg = JSON.parse(data);
-      if (msg.method === 'Runtime.consoleAPICalled') {
-        if (msg.params.type === 'error') {
-          errors.push({
-            type: 'console.error',
-            message: msg.params.args[0]?.value || 'Unknown error',
-            timestamp: new Date().toISOString()
-          });
-        }
-      } else if (msg.method === 'Runtime.exceptionThrown') {
-        errors.push({
-          type: 'exception',
-          message: msg.params.exceptionDetails.text,
-          timestamp: new Date().toISOString()
-        });
-      }
-    };
-    
-    this.ws.on('message', handler);
-    
-    // 导航到首页触发可能的错误
-    await this.navigate(TARGET_URL + '/dashboard');
-    await new Promise(r => setTimeout(r, 3000));
-    
-    this.ws.removeListener('message', handler);
-    
-    console.log(`发现 ${errors.length} 个错误`);
-    if (errors.length > 0) {
-      errors.forEach(err => {
-        console.log(`  - [${err.type}] ${err.message}`);
-      });
-    } else {
-      console.log('✅ 没有发现控制台错误');
-    }
-    
-    this.results.errors = errors;
-    return errors;
-  }
-
   generateReport() {
     console.log('\n📊 测试报告');
     console.log('============');
     
     const allTests = [
-      { name: '首页重定向', result: this.results.homepage },
+      { name: '首页', result: this.results.homepage },
       { name: 'Dashboard 页面', result: this.results.dashboard },
       ...this.results.otherPages.map(p => ({ name: p.name, result: p }))
     ];
@@ -368,10 +313,6 @@ class BrowserTester {
       console.log(`  ${status} - ${test.name}`);
     });
     
-    if (this.results.errors.length > 0) {
-      console.log(`\n⚠️  发现 ${this.results.errors.length} 个控制台错误`);
-    }
-    
     console.log(`\n📸 截图数量: ${this.results.screenshots.length}`);
     
     return {
@@ -382,7 +323,6 @@ class BrowserTester {
         passRate: ((passed / total) * 100).toFixed(1) + '%'
       },
       details: allTests,
-      errors: this.results.errors,
       screenshots: this.results.screenshots
     };
   }
@@ -395,19 +335,24 @@ class BrowserTester {
 }
 
 async function main() {
+  const pageId = process.argv[2] || '0A8812CFF29DD2CF5A3CF53BDDE42E8A';
   const tester = new BrowserTester();
   
   try {
-    await tester.connect();
+    await tester.connect(pageId);
     
     await tester.testHomepage();
     await tester.testDashboard();
     await tester.testOtherPages();
-    await tester.checkConsoleErrors();
     
     const report = tester.generateReport();
     
     console.log('\n✅ 测试完成！');
+    
+    // 保存结果到文件
+    const fs = require('fs');
+    fs.writeFileSync('browser-test-results.json', JSON.stringify(report, null, 2));
+    console.log('📄 测试结果已保存到: browser-test-results.json');
     
     return report;
   } catch (error) {

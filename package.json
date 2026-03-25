@@ -9,7 +9,7 @@
     "dev:worker": "wrangler dev",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build --outDir dist/client",
-    "build:server": "vite build --outDir dist/server --ssr src/ssr/entry-server.tsx",
+    "build:server": "cross-env BUILD_MODE=ssr vite build --outDir dist/server --ssr src/ssr/entry-server.tsx",
     "build:force": "vite build --outDir dist/client",
     "deploy": "npm run build && wrangler deploy",
     "preview": "wrangler dev",

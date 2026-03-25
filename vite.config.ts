@@ -14,6 +14,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// 检测是否为 SSR 构建
+const isSSR = process.env.BUILD_MODE === 'ssr'
+
 export default defineConfig({
   plugins: [
     react({
@@ -23,7 +26,9 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(__dirname, './frontend/src'),
+      '@backend': path.resolve(__dirname, './src'),
+      '@frontend': path.resolve(__dirname, './frontend/src'),
     },
   },
   build: {
@@ -31,7 +36,7 @@ export default defineConfig({
     target: 'esnext',
     cssTarget: 'chrome80',
     
-    // 代码分割优化
+    // 代码分割优化（仅客户端构建）
     rollupOptions: {
       input: {
         main: 'index.html',
@@ -42,8 +47,8 @@ export default defineConfig({
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
         
-        // 手动代码分割
-        manualChunks: (id) => {
+        // 手动代码分割（仅客户端构建时生效）
+        manualChunks: isSSR ? undefined : (id) => {
           // React 核心
           if (id.includes('node_modules/react/') || 
               id.includes('node_modules/react-dom/')) {
@@ -86,16 +91,16 @@ export default defineConfig({
           }
           
           // 应用代码按功能模块分割
-          if (id.includes('/src/pages/')) {
-            const page = id.split('/src/pages/')[1].split('/')[0]
+          if (id.includes('/frontend/src/pages/')) {
+            const page = id.split('/frontend/src/pages/')[1].split('/')[0]
             return `page-${page}`
           }
           
-          if (id.includes('/src/components/')) {
+          if (id.includes('/frontend/src/components/')) {
             return 'components'
           }
           
-          if (id.includes('/src/hooks/')) {
+          if (id.includes('/frontend/src/hooks/')) {
             return 'hooks'
           }
         },
@@ -116,6 +121,9 @@ export default defineConfig({
   ssr: {
     // Ant Design SSR 外部化
     noExternal: ['antd', '@ant-design', 'rc-*'],
+    // SSR 构建配置
+    target: 'webworker',
+    format: 'esm',
   },
   
   // 优化依赖预构建
