@@ -10,8 +10,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { useSSE } from './hooks/useSSE'
+import { useLocation, Navigate } from 'react-router-dom'
 
 interface AppProps {
   initialData?: any
@@ -19,7 +18,7 @@ interface AppProps {
 
 /**
  * 主应用组件
- * 默认进入 Dashboard 页面（原有的完整 Dashboard）
+ * 默认重定向到原有的完整 Dashboard（/dashboard）
  */
 const App: React.FC<AppProps> = ({ initialData }) => {
   const location = useLocation()
@@ -31,21 +30,11 @@ const App: React.FC<AppProps> = ({ initialData }) => {
 
   // SSR 期间不渲染（避免 hydration 不匹配）
   if (!hydrated) {
-    return (
-      <div style={{ padding: '20px' }}>
-        <h1>📊 CF Tracking</h1>
-        <p>加载中...</p>
-      </div>
-    )
+    return null
   }
 
-  // 简单占位，实际内容由原有的 Dashboard 页面提供
-  return (
-    <div style={{ padding: '20px' }}>
-      <h1>📊 CF Tracking</h1>
-      <p>Dashboard 加载中...</p>
-    </div>
-  )
+  // 直接重定向到原有的完整 Dashboard
+  return <Navigate to="/dashboard" replace />
 }
 
 export default App
