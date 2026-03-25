@@ -1,4 +1,4 @@
-name = "cf-tracking-ssr"
+name = "cf-tracking"
 main = "src/ssr/worker.tsx"
 compatibility_date = "2026-03-25"
 compatibility_flags = ["nodejs_compat"]

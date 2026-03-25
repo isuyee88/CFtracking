@@ -12,27 +12,27 @@
  
 import React, { Suspense, lazy } from 'react'
 import { StaticRouter, Routes, Route } from 'react-router-dom'
-import { Layout } from '@frontend/components/Layout'
+import { Layout } from '../../frontend/src/components/Layout'
  
 // 路由级代码分割 - 懒加载页面组件
-const Dashboard = lazy(() => import('@frontend/pages/Dashboard'))
-const CampaignManagement = lazy(() => import('@frontend/pages/CampaignManagement'))
-const CampaignDetail = lazy(() => import('@frontend/pages/CampaignDetail'))
-const RuleManagement = lazy(() => import('@frontend/pages/RuleManagement'))
-const PlatformManagement = lazy(() => import('@frontend/pages/PlatformManagement'))
-const Landings = lazy(() => import('@frontend/pages/Landings'))
-const Offers = lazy(() => import('@frontend/pages/Offers'))
-const TrafficSources = lazy(() => import('@frontend/pages/TrafficSources'))
-const AffiliateNetworks = lazy(() => import('@frontend/pages/AffiliateNetworks'))
-const Reports = lazy(() => import('@frontend/pages/Reports'))
-const ClicksLog = lazy(() => import('@frontend/pages/ClicksLog'))
-const ConversionsLog = lazy(() => import('@frontend/pages/ConversionsLog'))
-const Settings = lazy(() => import('@frontend/pages/Settings'))
-const Trends = lazy(() => import('@frontend/pages/Trends'))
-const Blacklist = lazy(() => import('@frontend/pages/Blacklist'))
-const Whitelist = lazy(() => import('@frontend/pages/Whitelist'))
-const TargetPage = lazy(() => import('@frontend/pages/Target'))
-const HelpCenter = lazy(() => import('@frontend/pages/HelpCenter'))
+const Dashboard = lazy(() => import('../../frontend/src/pages/Dashboard'))
+const CampaignManagement = lazy(() => import('../../frontend/src/pages/CampaignManagement'))
+const CampaignDetail = lazy(() => import('../../frontend/src/pages/CampaignDetail'))
+const RuleManagement = lazy(() => import('../../frontend/src/pages/RuleManagement'))
+const PlatformManagement = lazy(() => import('../../frontend/src/pages/PlatformManagement'))
+const Landings = lazy(() => import('../../frontend/src/pages/Landings'))
+const Offers = lazy(() => import('../../frontend/src/pages/Offers'))
+const TrafficSources = lazy(() => import('../../frontend/src/pages/TrafficSources'))
+const AffiliateNetworks = lazy(() => import('../../frontend/src/pages/AffiliateNetworks'))
+const Reports = lazy(() => import('../../frontend/src/pages/Reports'))
+const ClicksLog = lazy(() => import('../../frontend/src/pages/ClicksLog'))
+const ConversionsLog = lazy(() => import('../../frontend/src/pages/ConversionsLog'))
+const Settings = lazy(() => import('../../frontend/src/pages/Settings'))
+const Trends = lazy(() => import('../../frontend/src/pages/Trends'))
+const Blacklist = lazy(() => import('../../frontend/src/pages/Blacklist'))
+const Whitelist = lazy(() => import('../../frontend/src/pages/Whitelist'))
+const TargetPage = lazy(() => import('../../frontend/src/pages/Target'))
+const HelpCenter = lazy(() => import('../../frontend/src/pages/HelpCenter'))
  
 // 骨架屏组件 - 改善感知性能
 const PageSkeleton = () => (
