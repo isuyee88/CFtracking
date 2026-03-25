@@ -82,6 +82,9 @@ app.onError((err, c) => {
   return c.json(error(err.message, 'INTERNAL_ERROR'), HTTP_STATUS.INTERNAL_ERROR);
 });
 
+// 导出 app 供 SSR Worker 使用
+export { app }
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);

@@ -44,9 +44,17 @@ export default {
 
       // 2. 处理 API 请求（转发到现有的 Hono API）
       if (url.pathname.startsWith('/api/')) {
-        // 导入现有的 Hono app
-        const { app } = await import('./index')
-        return await app.fetch(request, env, ctx)
+        try {
+          // 导入现有的 Hono app
+          const { app } = await import('./index')
+          return await app.fetch(request, env, ctx)
+        } catch (error) {
+          console.error('❌ API forward error:', error)
+          return Response.json({ 
+            error: 'API forward failed',
+            message: error instanceof Error ? error.message : 'Unknown error'
+          }, { status: 500 })
+        }
       }
 
       // 3. 处理静态资源（由 Assets 配置自动处理）
