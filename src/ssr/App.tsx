@@ -135,8 +135,48 @@ const DashboardPage = () => {
   const { data: sseData, status } = useSSE({
     onMessage: (data) => {
       console.log('📡 Dashboard received update:', data)
+      // 收到更新时重新加载数据
+      if (data.type === 'new_click') {
+        fetchMetadata()
+      }
     },
   })
+
+  const [metadata, setMetadata] = useState<Metadata>({
+    totalClicks: 0,
+    totalConversions: 0,
+    totalRevenue: 0,
+  })
+  const [loading, setLoading] = useState(true)
+
+  const fetchMetadata = async () => {
+    try {
+      const response = await fetch('/api/analytics/dashboard')
+      const data = await response.json()
+      setMetadata({
+        totalClicks: data.totalClicks || 0,
+        totalConversions: data.totalConversions || 0,
+        totalRevenue: data.totalRevenue || 0,
+      })
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchMetadata()
+  }, [])
+
+  if (loading) {
+    return (
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <h1>📊 Dashboard</h1>
+        <p>加载中...</p>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: '20px' }}>
@@ -172,7 +212,7 @@ const DashboardPage = () => {
           textAlign: 'center'
         }}>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#667eea' }}>
-            0
+            {metadata.totalClicks}
           </div>
           <div style={{ color: '#666', fontSize: '0.9rem', textTransform: 'uppercase' }}>
             总点击数
@@ -187,7 +227,7 @@ const DashboardPage = () => {
           textAlign: 'center'
         }}>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#667eea' }}>
-            0
+            {metadata.totalConversions}
           </div>
           <div style={{ color: '#666', fontSize: '0.9rem', textTransform: 'uppercase' }}>
             转化数
@@ -202,7 +242,7 @@ const DashboardPage = () => {
           textAlign: 'center'
         }}>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#667eea' }}>
-            $0.00
+            ${metadata.totalRevenue.toFixed(2)}
           </div>
           <div style={{ color: '#666', fontSize: '0.9rem', textTransform: 'uppercase' }}>
             总收入

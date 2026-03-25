@@ -42,22 +42,21 @@ export default {
         return await handleSSE(request, env)
       }
 
-      // 2. 处理 API 请求（转发到 Hono）
+      // 2. 处理 API 请求（转发到现有的 Hono API）
       if (url.pathname.startsWith('/api/')) {
-        // TODO: 导入并转发到现有的 Hono app
-        // import app from './index'
-        // return app.fetch(request, env, ctx)
-        
-        // 临时返回
-        return Response.json({ 
-          message: 'API endpoint - will be forwarded to Hono',
-          pathname: url.pathname 
-        })
+        // 导入现有的 Hono app
+        const { app } = await import('./index')
+        return await app.fetch(request, env, ctx)
       }
 
       // 3. 处理静态资源（由 Assets 配置自动处理）
 
-      // 4. SSR 渲染页面
+      // 4. 首页直接重定向到 Dashboard
+      if (url.pathname === '/') {
+        return Response.redirect('https://' + url.host + '/dashboard', 302)
+      }
+
+      // 5. SSR 渲染页面
       return await renderPage(request, env, url, ctx)
     } catch (error) {
       console.error('❌ SSR Worker error:', error)
