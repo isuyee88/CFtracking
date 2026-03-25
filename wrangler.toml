@@ -101,5 +101,6 @@ enabled = true
 [dev]
 port = 12334
 
-[build]
-command = "npm run build"
+# 禁用 wrangler 的自动构建，使用预构建的文件
+# [build]
+# command = "npm run build"
