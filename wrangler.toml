@@ -86,10 +86,13 @@ tag = "v4"
 new_sqlite_classes = ["CacheDurableObject"]
 
 # Assets - SSR 静态资源
+# 配置说明：
+# - 默认行为：静态资源优先（如果匹配静态资源，直接提供，不调用 Worker）
+# - run_worker_first: 不设置，使用默认行为（静态资源优先）
+# - not_found_handling: SPA 模式，不匹配静态资源时返回 index.html
 [assets]
 directory = "./dist/client"
 binding = "ASSETS"
-run_worker_first = false
 not_found_handling = "single-page-application"
 
 [observability]
