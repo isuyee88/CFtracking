@@ -1,5 +1,5 @@
-name = "cf-tracking-ssr"
-main = "src/ssr/worker.ts"
+name = "cf-tracking"
+main = "src/index.ts"
 compatibility_date = "2024-12-30"
 compatibility_flags = ["nodejs_compat"]
 
@@ -85,11 +85,10 @@ new_sqlite_classes = ["UserPreferenceDurableObject"]
 tag = "v4"
 new_sqlite_classes = ["CacheDurableObject"]
 
-# Assets - SSR 静态资源
+# Assets - 前端静态资源
 [assets]
-directory = "./dist/client"
+directory = "./frontend/dist"
 binding = "ASSETS"
-run_worker_first = true
 not_found_handling = "single-page-application"
 
 [observability]
@@ -99,7 +98,7 @@ enabled = true
 port = 12334
 
 [build]
-command = "npm run build"
+command = "cd frontend && npm install && npm run build"
 
 # 禁用部署确认
 deploy = { confirm = false }
