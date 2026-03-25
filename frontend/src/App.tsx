@@ -7,6 +7,7 @@
 import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { CloudSyncProvider } from './contexts/CloudSyncContext';
 
 // 璺敱绾т唬鐮佸垎鍓?- 鎳掑姞杞介〉闈㈢粍浠?
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -168,32 +169,34 @@ const PageSkeleton = () => (
 export default function App() {
   return (
     <Router>
-      <Suspense fallback={<PageSkeleton />}>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="campaigns" element={<CampaignManagement />} />
-            <Route path="campaigns/:id" element={<CampaignDetail />} />
-            <Route path="rules" element={<RuleManagement />} />
-            <Route path="platforms" element={<PlatformManagement />} />
-            <Route path="landings" element={<Landings />} />
-            <Route path="l" element={<Landings />} />
-            <Route path="offers" element={<Offers />} />
-            <Route path="traffic-sources" element={<TrafficSources />} />
-            <Route path="affiliate-networks" element={<AffiliateNetworks />} />
-            <Route path="trends" element={<Trends />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="audit" element={<ClicksLog />} />
-            <Route path="conversions" element={<ConversionsLog />} />
-            <Route path="blacklist" element={<Blacklist />} />
-            <Route path="whitelist" element={<Whitelist />} />
-            <Route path="target" element={<TargetPage />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="help" element={<HelpCenter />} />
-          </Route>
-        </Routes>
-      </Suspense>
+      <CloudSyncProvider>
+        <Suspense fallback={<PageSkeleton />}>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="campaigns" element={<CampaignManagement />} />
+              <Route path="campaigns/:id" element={<CampaignDetail />} />
+              <Route path="rules" element={<RuleManagement />} />
+              <Route path="platforms" element={<PlatformManagement />} />
+              <Route path="landings" element={<Landings />} />
+              <Route path="l" element={<Landings />} />
+              <Route path="offers" element={<Offers />} />
+              <Route path="traffic-sources" element={<TrafficSources />} />
+              <Route path="affiliate-networks" element={<AffiliateNetworks />} />
+              <Route path="trends" element={<Trends />} />
+              <Route path="reports" element={<Reports />} />
+              <Route path="audit" element={<ClicksLog />} />
+              <Route path="conversions" element={<ConversionsLog />} />
+              <Route path="blacklist" element={<Blacklist />} />
+              <Route path="whitelist" element={<Whitelist />} />
+              <Route path="target" element={<TargetPage />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="help" element={<HelpCenter />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </CloudSyncProvider>
     </Router>
   );
 }

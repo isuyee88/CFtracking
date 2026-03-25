@@ -68,12 +68,10 @@ interface SSEEvent {
 }
 
 export class UserPreferenceDurableObject {
-  private state: DurableObjectState;
   private storage: DurableObjectStorage;
   private eventControllers: Map<string, ReadableStreamDefaultController<Uint8Array>> = new Map();
 
   constructor(state: DurableObjectState) {
-    this.state = state;
     this.storage = state.storage;
   }
 
@@ -141,7 +139,7 @@ export class UserPreferenceDurableObject {
    */
   private async updatePreferences(request: Request): Promise<Response> {
     try {
-      const update = await request.json();
+      const update = await request.json() as Record<string, any>;
       const deviceId = request.headers.get('X-Device-ID') || 'unknown';
 
       // 获取当前数据
@@ -149,7 +147,7 @@ export class UserPreferenceDurableObject {
       const currentData = current || this.getDefaultPreferences();
 
       // 检查版本冲突（可选）
-      if (update.lastKnownVersion && update.lastKnownVersion < currentData.lastUpdated) {
+      if (update.lastKnownVersion && (update.lastKnownVersion as number) < currentData.lastUpdated) {
         // 客户端版本过旧，返回冲突信息
         return Response.json({
           success: false,
@@ -167,7 +165,7 @@ export class UserPreferenceDurableObject {
         lastModifiedBy: deviceId,
         preferences: {
           ...currentData.preferences,
-          ...update.preferences,
+          ...(update.preferences as Record<string, any> || {}),
         },
       };
 

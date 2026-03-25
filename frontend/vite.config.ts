@@ -199,7 +199,7 @@ export default defineConfig({
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
         
-        // 手动代码分割配置
+        // 手动代码分割配置 - 优化策略
         manualChunks: (id) => {
           // React 核心 - 最小初始包
           if (id.includes('node_modules/react/') || 
@@ -219,7 +219,7 @@ export default defineConfig({
             return 'antd';
           }
           if (id.includes('node_modules/@ant-design/') ||
-              id.includes('node_modules/rc-')) {
+              id.includes('node_modules/rc-util/')) {
             return 'antd-icons';
           }
           
@@ -237,20 +237,48 @@ export default defineConfig({
             return 'motion';
           }
           
-          // Lucide 图标 - 按需加载
+          // Lucide 图标 - 按需加载（不单独分割，让 tree-shaking 处理）
           if (id.includes('node_modules/lucide-react/')) {
-            return null; // 让 tree-shaking 处理
+            return null;
           }
           
-          // 其他 node_modules 按包名分割
+          // Redux 相关
+          if (id.includes('node_modules/@reduxjs/') ||
+              id.includes('node_modules/redux/') ||
+              id.includes('node_modules/react-redux/') ||
+              id.includes('node_modules/redux-thunk/') ||
+              id.includes('node_modules/reselect/')) {
+            return 'redux';
+          }
+          
+          // 其他常用库
+          if (id.includes('node_modules/dayjs/')) {
+            return 'dayjs';
+          }
+          if (id.includes('node_modules/immer/')) {
+            return 'immer';
+          }
+          if (id.includes('node_modules/axios/')) {
+            return 'axios';
+          }
+          
+          // 其他 node_modules 按包名分割（避免过于细碎）
           if (id.includes('node_modules/')) {
             const vendor = id.split('node_modules/')[1].split('/')[0];
             if (vendor && vendor.startsWith('@')) {
               // 处理 scoped packages
               const scoped = id.split('node_modules/')[1].split('/').slice(0, 2).join('/');
-              return `vendor-${scoped.replace('/', '-')}`;
+              // 只分割重要的 scoped 包
+              if (scoped.includes('@emotion') || scoped.includes('@babel')) {
+                return `vendor-${scoped.replace('/', '-')}`;
+              }
+              return null; // 其他不分割
             }
-            return `vendor-${vendor}`;
+            // 只分割重要的第三方库
+            if (['es-toolkit', 'decimal.js-light', 'victory-vendor', 'resize-observer-polyfill'].includes(vendor)) {
+              return `vendor-${vendor}`;
+            }
+            return null; // 默认不分割，避免生成空 chunk
           }
           
           // 应用代码按功能模块分割

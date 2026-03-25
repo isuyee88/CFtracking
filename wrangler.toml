@@ -1,35 +1,42 @@
-name = "cf-tracking"
-main = "src/index.ts"
+name = "cf-tracking-ssr"
+main = "src/ssr/worker.ts"
 compatibility_date = "2024-12-30"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-ENVIRONMENT = "development"
+ENVIRONMENT = "production"
 JWT_EXPIRES_IN = "24h"
-# Cloudflare API 配置（用于 Analytics Engine 查询）
-# 注意: CF_API_TOKEN 应该使用 wrangler secret put 设置，不要硬编码
+SSR_ENABLED = true
+CDN_CACHE_TTL = "300"
+CACHE_TTL = "21600"
+ENABLED_REGIONS = "HK,CN"
+REALTIME_ENABLED = true
+SSE_ENABLED = true
+# Cloudflare API 配置
 CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
 
 # 定时任务配置
-# - 每天凌晨 2:00 执行数据聚合
 [triggers]
 crons = ["0 2 * * *"]
 
+# D1 数据库
 [[d1_databases]]
 binding = "DB"
 database_name = "cf-tracking-db"
 database_id = "c20392f5-c14c-42fa-a3e7-fa9bdb5b4b76"
 migrations_dir = "schema/migrations"
 
+# Analytics Engine
 [[analytics_engine_datasets]]
 binding = "ANALYTICS"
 dataset = "cf_tracking_events"
 
-# 去重专用 KV 命名空间
+# KV 命名空间
 [[kv_namespaces]]
 binding = "UNIQUENESS_KV"
 id = "7cdc9c88e1964bff954835d91f98bd74"
 
+# Durable Objects - 原有 DO
 [durable_objects]
 [[durable_objects.bindings]]
 name = "SESSION_DO"
@@ -51,6 +58,21 @@ class_name = "UniquenessDurableObject"
 name = "USER_PREFERENCE_DO"
 class_name = "UserPreferenceDurableObject"
 
+# Durable Objects - 新增 Cache DO（用于实时缓存）
+[[durable_objects.bindings]]
+name = "CACHE_DO"
+class_name = "CacheDurableObject"
+
+# Durable Objects SQLite 命名空间（免费版必须）
+[[durable_objects.sqlite_namespaces]]
+name = "CACHE_DO_SQLITE"
+class_name = "CacheDurableObject"
+
+# Durable Objects 迁移配置
+[[migrations]]
+tag = "v1"
+new_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject"]
+
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["UniquenessDurableObject"]
@@ -59,8 +81,13 @@ new_sqlite_classes = ["UniquenessDurableObject"]
 tag = "v3"
 new_sqlite_classes = ["UserPreferenceDurableObject"]
 
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["CacheDurableObject"]
+
+# Assets - SSR 静态资源
 [assets]
-directory = "./frontend/dist"
+directory = "./dist/client"
 binding = "ASSETS"
 run_worker_first = true
 not_found_handling = "single-page-application"
@@ -70,3 +97,9 @@ enabled = true
 
 [dev]
 port = 12334
+
+[build]
+command = "npm run build"
+
+# 禁用部署确认
+deploy = { confirm = false }

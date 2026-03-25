@@ -1,0 +1,47 @@
+# SSR + Durable Objects 整合配置
+name = "cftracking-ssr-do"
+main = "src/worker.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat_v2"]
+
+# 静态资源
+[assets]
+directory = "./dist"
+
+# Durable Objects 绑定
+[[durable_objects.bindings]]
+name = "CACHE_DO"
+class_name = "CacheDurableObject"
+
+# Durable Objects SQLite 命名空间（免费版必须）
+[[durable_objects.sqlite_namespaces]]
+name = "CACHE_DO_SQLITE"
+class_name = "CacheDurableObject"
+
+# Analytics Engine 绑定
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "click_tracking"
+
+# 环境变量
+[vars]
+# SSR 配置
+SSR_ENABLED = true
+CDN_CACHE_TTL = "300"  # 5 分钟（秒）
+
+# 缓存配置
+CACHE_TTL = "21600"  # 6 小时（秒）
+ENABLED_REGIONS = "HK,CN"  # 启用的地区
+
+# 实时推送配置
+REALTIME_ENABLED = true
+WEBSOCKET_ENABLED = true
+
+# 构建配置
+[build]
+command = "npm run build:force"
+
+# Durable Objects 迁移配置（免费版必须使用 new_sqlite_classes）
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CacheDurableObject"]

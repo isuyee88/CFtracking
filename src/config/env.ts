@@ -19,6 +19,7 @@ export interface Env {
   COUNTER_DO: DurableObjectNamespace;
   QUEUE_DO: DurableObjectNamespace;
   UNIQUE_DO: DurableObjectNamespace;
+  USER_PREFERENCE_DO: DurableObjectNamespace;
   
   ASSETS: Fetcher;
   

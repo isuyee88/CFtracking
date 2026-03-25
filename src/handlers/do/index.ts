@@ -28,11 +28,6 @@ export function getQueueStub(env: Env, name: string = 'default'): DurableObjectS
   return env.QUEUE_DO.get(id);
 }
 
-export function getUserPreferenceStub(env: Env, userId: string): DurableObjectStub {
-  const id = env.USER_PREFERENCE_DO.idFromName(`user-pref:${userId}`);
-  return env.USER_PREFERENCE_DO.get(id);
-}
-
 export class DOService {
   constructor(private env: Env) {}
 
