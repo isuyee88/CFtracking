@@ -1,6 +1,6 @@
 /**
  * @fileoverview SSR 应用主入口
- * @description SSR 版本的 App 组件，渲染前端所有页面
+ * @description SSR 版本的 App 组件，支持服务器端渲染和客户端 hydration
  * 输入：initialData - SSR 注入的初始数据
  * 输出：渲染的 React 组件
  * 逻辑交互：
@@ -9,208 +9,266 @@
  *   - 使用 SSE 接收实时更新
  */
 
- 
-import React, { Suspense, lazy } from 'react'
-import { StaticRouter, Routes, Route } from 'react-router-dom'
-import { Layout } from '../../frontend/src/components/Layout'
- 
-// 路由级代码分割 - 懒加载页面组件
-const Dashboard = lazy(() => import('../../frontend/src/pages/Dashboard'))
-const CampaignManagement = lazy(() => import('../../frontend/src/pages/CampaignManagement'))
-const CampaignDetail = lazy(() => import('../../frontend/src/pages/CampaignDetail'))
-const RuleManagement = lazy(() => import('../../frontend/src/pages/RuleManagement'))
-const PlatformManagement = lazy(() => import('../../frontend/src/pages/PlatformManagement'))
-const Landings = lazy(() => import('../../frontend/src/pages/Landings'))
-const Offers = lazy(() => import('../../frontend/src/pages/Offers'))
-const TrafficSources = lazy(() => import('../../frontend/src/pages/TrafficSources'))
-const AffiliateNetworks = lazy(() => import('../../frontend/src/pages/AffiliateNetworks'))
-const Reports = lazy(() => import('../../frontend/src/pages/Reports'))
-const ClicksLog = lazy(() => import('../../frontend/src/pages/ClicksLog'))
-const ConversionsLog = lazy(() => import('../../frontend/src/pages/ConversionsLog'))
-const Settings = lazy(() => import('../../frontend/src/pages/Settings'))
-const Trends = lazy(() => import('../../frontend/src/pages/Trends'))
-const Blacklist = lazy(() => import('../../frontend/src/pages/Blacklist'))
-const Whitelist = lazy(() => import('../../frontend/src/pages/Whitelist'))
-const TargetPage = lazy(() => import('../../frontend/src/pages/Target'))
-const HelpCenter = lazy(() => import('../../frontend/src/pages/HelpCenter'))
- 
-// 骨架屏组件 - 改善感知性能
-const PageSkeleton = () => (
-  <div style={{
-    padding: '20px',
-    background: '#fafafa',
-    minHeight: '100vh'
-  }}>
-    {/* 顶部指标卡片骨架 */}
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-      gap: '16px',
-      marginBottom: '24px'
-    }}>
-      {[1, 2, 3, 4, 5, 6, 7].map(i => (
-        <div key={i} style={{
-          background: '#fff',
-          borderRadius: '8px',
-          padding: '16px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-        }}>
-          <div style={{
-            height: '12px',
-            width: '60%',
-            background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-            backgroundSize: '200% 100%',
-            animation: 'shimmer 1.5s infinite',
-            borderRadius: '4px',
-            marginBottom: '12px'
-          }} />
-          <div style={{
-            height: '24px',
-            width: '40%',
-            background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-            backgroundSize: '200% 100%',
-            animation: 'shimmer 1.5s infinite',
-            borderRadius: '4px'
-          }} />
-        </div>
-      ))}
-    </div>
-    
-    {/* 图表区域骨架 */}
-    <div style={{
-      background: '#fff',
-      borderRadius: '8px',
-      padding: '20px',
-      marginBottom: '24px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-    }}>
-      <div style={{
-        height: '16px',
-        width: '150px',
-        background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.5s infinite',
-        borderRadius: '4px',
-        marginBottom: '20px'
-      }} />
-      <div style={{
-        height: '200px',
-        background: 'linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.5s infinite',
-        borderRadius: '8px'
-      }} />
-    </div>
-    
-    {/* 表格区域骨架 */}
-    <div style={{
-      background: '#fff',
-      borderRadius: '8px',
-      padding: '20px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-    }}>
-      <div style={{
-        height: '16px',
-        width: '150px',
-        background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.5s infinite',
-        borderRadius: '4px',
-        marginBottom: '16px'
-      }} />
-      {[1, 2, 3, 4, 5].map(i => (
-        <div key={i} style={{
-          display: 'flex',
-          gap: '12px',
-          padding: '12px 0',
-          borderBottom: '1px solid #f0f0f0'
-        }}>
-          <div style={{
-            height: '12px',
-            width: '15%',
-            background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-            backgroundSize: '200% 100%',
-            animation: 'shimmer 1.5s infinite',
-            borderRadius: '4px'
-          }} />
-          <div style={{
-            height: '12px',
-            width: '25%',
-            background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-            backgroundSize: '200% 100%',
-            animation: 'shimmer 1.5s infinite',
-            borderRadius: '4px'
-          }} />
-          <div style={{
-            height: '12px',
-            width: '20%',
-            background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-            backgroundSize: '200% 100%',
-            animation: 'shimmer 1.5s infinite',
-            borderRadius: '4px'
-          }} />
-          <div style={{
-            height: '12px',
-            width: '15%',
-            background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-            backgroundSize: '200% 100%',
-            animation: 'shimmer 1.5s infinite',
-            borderRadius: '4px'
-          }} />
-        </div>
-      ))}
-    </div>
-    
-    {/* 骨架屏动画样式 */}
-    <style>{`
-      @keyframes shimmer {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
-      }
-    `}</style>
-  </div>
-)
- 
+import { useEffect, useState } from 'react'
+import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { useSSE } from './hooks/useSSE'
+
 interface AppProps {
   initialData?: any
-    location?: string
 }
- 
+
+interface Metadata {
+  totalClicks: number
+  totalConversions: number
+  totalRevenue: number
+}
+
 /**
- * 主应用组件
- * 渲染前端所有页面，支持 SSR
+ * 首页组件
  */
-const App: React.FC<AppProps> = ({ initialData, location = '/' }) => {
+const HomePage = ({ initialData }: AppProps) => {
+  const metadata: Metadata = initialData?.metadata || {
+    totalClicks: 0,
+    totalConversions: 0,
+    totalRevenue: 0,
+  }
+
+  const { status } = useSSE({
+    onMessage: (data) => {
+      console.log('📡 Home received update:', data)
+    },
+  })
+
   return (
-    <StaticRouter location={location}>
-      <Suspense fallback={<PageSkeleton />}>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="campaigns" element={<CampaignManagement />} />
-            <Route path="campaigns/:id" element={<CampaignDetail />} />
-            <Route path="rules" element={<RuleManagement />} />
-            <Route path="platforms" element={<PlatformManagement />} />
-            <Route path="landings" element={<Landings />} />
-            <Route path="l" element={<Landings />} />
-            <Route path="offers" element={<Offers />} />
-            <Route path="traffic-sources" element={<TrafficSources />} />
-            <Route path="affiliate-networks" element={<AffiliateNetworks />} />
-            <Route path="trends" element={<Trends />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="audit" element={<ClicksLog />} />
-            <Route path="conversions" element={<ConversionsLog />} />
-            <Route path="blacklist" element={<Blacklist />} />
-            <Route path="whitelist" element={<Whitelist />} />
-            <Route path="target" element={<TargetPage />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="help" element={<HelpCenter />} />
-          </Route>
-        </Routes>
-      </Suspense>
-    </StaticRouter>
+    <div style={{ padding: '20px' }}>
+      <h1>🚀 CF Tracking SSR</h1>
+      <p>服务器端渲染 · Durable Objects 实时推送 · SSE</p>
+      
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+        gap: '20px', 
+        margin: '40px 0' 
+      }}>
+        <div style={{ 
+          background: 'white', 
+          padding: '30px', 
+          borderRadius: '8px', 
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#667eea' }}>
+            {metadata.totalClicks}
+          </div>
+          <div style={{ color: '#666', fontSize: '0.9rem', textTransform: 'uppercase' }}>
+            总点击数
+          </div>
+        </div>
+        
+        <div style={{ 
+          background: 'white', 
+          padding: '30px', 
+          borderRadius: '8px', 
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#667eea' }}>
+            {metadata.totalConversions}
+          </div>
+          <div style={{ color: '#666', fontSize: '0.9rem', textTransform: 'uppercase' }}>
+            转化数
+          </div>
+        </div>
+        
+        <div style={{ 
+          background: 'white', 
+          padding: '30px', 
+          borderRadius: '8px', 
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#667eea' }}>
+            ${metadata.totalRevenue.toFixed(2)}
+          </div>
+          <div style={{ color: '#666', fontSize: '0.9rem', textTransform: 'uppercase' }}>
+            总收入
+          </div>
+        </div>
+      </div>
+
+      <div style={{ textAlign: 'center', marginTop: '20px' }}>
+        <Link 
+          to="/dashboard"
+          style={{ 
+            display: 'inline-block', 
+            padding: '12px 30px', 
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+            color: 'white', 
+            textDecoration: 'none', 
+            borderRadius: '8px', 
+            fontWeight: 600 
+          }}
+        >
+          查看 Dashboard →
+        </Link>
+      </div>
+
+      <div style={{ marginTop: '20px', textAlign: 'center' }}>
+        <span style={{ 
+          display: 'inline-block', 
+          width: '8px', 
+          height: '8px', 
+          borderRadius: '50%', 
+          background: status.connected ? '#10b981' : '#ef4444',
+          marginRight: '8px'
+        }} />
+        SSE: {status.connected ? 'Connected' : status.connecting ? 'Connecting...' : 'Disconnected'}
+      </div>
+    </div>
   )
 }
- 
+
+/**
+ * Dashboard 组件
+ */
+const DashboardPage = () => {
+  const { data: sseData, status } = useSSE({
+    onMessage: (data) => {
+      console.log('📡 Dashboard received update:', data)
+    },
+  })
+
+  return (
+    <div style={{ padding: '20px' }}>
+      <h1>📊 Dashboard</h1>
+      <p>实时监控 · Durable Objects 缓存 · SSE 推送</p>
+      
+      {sseData && (
+        <div style={{ 
+          padding: '16px', 
+          background: '#e0f2fe', 
+          borderRadius: '8px', 
+          marginBottom: '20px',
+          border: '1px solid #0ea5e9'
+        }}>
+          <strong>📡 实时更新:</strong>
+          <pre style={{ margin: '8px 0 0 0', fontSize: '12px' }}>
+            {JSON.stringify(sseData, null, 2)}
+          </pre>
+        </div>
+      )}
+      
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+        gap: '20px', 
+        margin: '40px 0' 
+      }}>
+        <div style={{ 
+          background: 'white', 
+          padding: '30px', 
+          borderRadius: '8px', 
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#667eea' }}>
+            0
+          </div>
+          <div style={{ color: '#666', fontSize: '0.9rem', textTransform: 'uppercase' }}>
+            总点击数
+          </div>
+        </div>
+        
+        <div style={{ 
+          background: 'white', 
+          padding: '30px', 
+          borderRadius: '8px', 
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#667eea' }}>
+            0
+          </div>
+          <div style={{ color: '#666', fontSize: '0.9rem', textTransform: 'uppercase' }}>
+            转化数
+          </div>
+        </div>
+        
+        <div style={{ 
+          background: 'white', 
+          padding: '30px', 
+          borderRadius: '8px', 
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#667eea' }}>
+            $0.00
+          </div>
+          <div style={{ color: '#666', fontSize: '0.9rem', textTransform: 'uppercase' }}>
+            总收入
+          </div>
+        </div>
+      </div>
+
+      <div style={{ textAlign: 'center', marginTop: '40px' }}>
+        <Link 
+          to="/"
+          style={{ 
+            display: 'inline-block', 
+            padding: '12px 30px', 
+            background: 'linear-gradient(135deg, #9698a0 0%, #764ba2 100%)', 
+            color: 'white', 
+            textDecoration: 'none', 
+            borderRadius: '8px', 
+            fontWeight: 600 
+          }}
+        >
+          ← 返回首页
+        </Link>
+      </div>
+
+      <div style={{ marginTop: '20px', textAlign: 'center' }}>
+        <span style={{ 
+          display: 'inline-block', 
+          width: '8px', 
+          height: '8px', 
+          borderRadius: '50%', 
+          background: status.connected ? '#10b981' : '#ef4444',
+          marginRight: '8px'
+        }} />
+        SSE: {status.connected ? 'Connected' : status.connecting ? 'Connecting...' : 'Disconnected'}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 主应用组件
+ */
+const App: React.FC<AppProps> = ({ initialData }) => {
+  const location = useLocation()
+  const [hydrated, setHydrated] = useState(false)
+
+  useEffect(() => {
+    setHydrated(true)
+  }, [])
+
+  // SSR 期间不渲染（避免 hydration 不匹配）
+  if (!hydrated) {
+    return (
+      <div style={{ padding: '20px' }}>
+        <h1>🚀 CF Tracking SSR</h1>
+        <p>加载中...</p>
+      </div>
+    )
+  }
+
+  return (
+    <Routes location={location}>
+      <Route path="/" element={<HomePage initialData={initialData} />} />
+      <Route path="/dashboard" element={<DashboardPage />} />
+    </Routes>
+  )
+}
+
 export default App
