@@ -1,9 +1,9 @@
 /**
  * File: Trends.tsx
  * Purpose: Trends 趋势分析页面
- * Input/Output: 展示流量趋势数据、统计图表
- * Logic: 从 API 获取趋势数据，展示时间序列图表和多维度分析
- * 前后端交互: 调用 /api/trends/report 接口
+ * Input/Output: 展示流量趋势数据、统计图�?
+ * Logic: �?API 获取趋势数据，展示时间序列图表和多维度分�?
+ * 前后端交�? 调用 /api/trends/report 接口
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
@@ -106,7 +106,7 @@ const PieChartCard = React.memo(({ title, data, dataKey, nameKey }: {
       {data && data.length > 0 ? (
         <ChartWrapper height={250}>
           <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-            <LazyResponsiveContainer width="100%" height="100%">
+            <LazyResponsiveContainer width="100%" height={300}>
               <LazyPieChart>
                 <LazyPie
                   data={data}
@@ -156,7 +156,7 @@ const BarChartCard = React.memo(({ title, data, dataKey }: {
       {data && data.length > 0 ? (
         <ChartWrapper height={250}>
           <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-            <LazyResponsiveContainer width="100%" height="100%">
+            <LazyResponsiveContainer width="100%" height={300}>
               <LazyBarChart data={data} layout="vertical">
                 <LazyCartesianGrid {...chartConfig.grid} />
                 <LazyXAxis {...chartConfig.xAxis} />
@@ -192,7 +192,7 @@ const MemoizedAreaChart = React.memo(({ data, dataKeys, colors, gradients, title
       {data && data.length > 0 ? (
         <ChartWrapper height={300}>
           <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-            <LazyResponsiveContainer width="100%" height="100%">
+            <LazyResponsiveContainer width="100%" height={300}>
               <LazyAreaChart data={data}>
                 <defs>
                   {gradients.map((grad, i) => (
@@ -539,7 +539,7 @@ export const Trends = () => {
         {/* Display selected date range */}
         <div className="flex items-center gap-2 text-sm text-fg-subtle">
           <span>{dateRange.startDate}</span>
-          <span>→</span>
+          <span>-</span>
           <span>{dateRange.endDate}</span>
         </div>
         
@@ -627,7 +627,7 @@ export const Trends = () => {
             {report.data && report.data.length > 0 ? (
               <ChartWrapper height={300}>
                 <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                  <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyResponsiveContainer width="100%" height={300}>
                     <LazyAreaChart data={report.data}>
                       <defs>
                         <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
@@ -665,7 +665,7 @@ export const Trends = () => {
             {report.data && report.data.length > 0 ? (
               <ChartWrapper height={300}>
                 <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                  <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyResponsiveContainer width="100%" height={300}>
                     <LazyAreaChart data={report.data}>
                       <defs>
                         <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
@@ -703,7 +703,7 @@ export const Trends = () => {
             {report.data && report.data.length > 0 ? (
               <ChartWrapper height={300}>
                 <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                  <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyResponsiveContainer width="100%" height={300}>
                     <LazyLineChart data={report.data}>
                       <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
@@ -730,7 +730,7 @@ export const Trends = () => {
             {report.data && report.data.length > 0 ? (
               <ChartWrapper height={300}>
                 <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                  <LazyResponsiveContainer width="100%" height="100%">
+                  <LazyResponsiveContainer width="100%" height={300}>
                     <LazyLineChart data={report.data}>
                       <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
