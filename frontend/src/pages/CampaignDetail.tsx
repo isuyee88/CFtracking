@@ -325,7 +325,7 @@ export const CampaignDetail = () => {
 
         const response = await updateCampaign(campaign.id, updateData);
         if (response) {
-          // 重新从后端获取最新数据
+          // 重新从后端获取最新数�?
           const updatedCampaign = await fetchCampaign(id!);
           if (updatedCampaign) {
             setCampaign(transformCampaign(updatedCampaign));
@@ -665,7 +665,7 @@ eval(atob('${btoa(script)}'));
                 <span className="text-[10px] font-bold uppercase tracking-widest">{campaign.status}</span>
               </div>
             </div>
-            <p className="text-sm text-on-surface-variant">{campaign.source} • {campaign.type} • {campaign.group}</p>
+            <p className="text-sm text-on-surface-variant">{campaign.source} �?{campaign.type} �?{campaign.group}</p>
           </div>
         </div>
         <div className="flex gap-3">
@@ -795,7 +795,7 @@ eval(atob('${btoa(script)}'));
             <h3 className="text-sm font-bold text-primary uppercase tracking-widest mb-6">Performance Overview</h3>
             <ChartWrapper height={320}>
               <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                <LazyResponsiveContainer width="100%" height="100%">
+                <LazyResponsiveContainer width="100%" height={300}>
                   <LazyAreaChart data={chartData}>
                     <defs>
                       <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
@@ -897,9 +897,9 @@ eval(atob('${btoa(script)}'));
                   <strong>Current Issue:</strong> Without a Flow, all clicks will be redirected to the traffic-loss page instead of converting.
                 </p>
                 <ul className="text-xs text-on-surface-variant mt-2 space-y-1">
-                  <li>• Click "Edit Flow" below to configure your first Flow</li>
-                  <li>• Associate Offers or Landing Pages with the Flow</li>
-                  <li>• Set up Filters if needed (optional)</li>
+                  <li>�?Click "Edit Flow" below to configure your first Flow</li>
+                  <li>�?Associate Offers or Landing Pages with the Flow</li>
+                  <li>�?Set up Filters if needed (optional)</li>
                 </ul>
               </div>
             </div>
@@ -925,8 +925,8 @@ eval(atob('${btoa(script)}'));
                 console.log('[FlowDesigner] Existing flows from API:', existingFlows);
                 
                 for (const flow of flows) {
-                  // 优先使用 flow.id 来匹配现有的 flow（更可靠）
-                  // flow.id 可能是 offer/landing 的 ID，也可能是 flow 的 UUID
+                  // 优先使用 flow.id 来匹配现有的 flow（更可靠�?
+                  // flow.id 可能�?offer/landing �?ID，也可能�?flow �?UUID
                   const existingFlow = flow.id && typeof flow.id === 'string' && flow.id.includes('-') 
                     ? existingFlows.find((f: any) => f.id === flow.id)
                     : existingFlows.find((f: any) => f.name === flow.name);
@@ -943,11 +943,11 @@ eval(atob('${btoa(script)}'));
                   let flowId: string;
                   if (existingFlow) {
                     console.log('[FlowDesigner] Updating flow:', existingFlow.id, flow.name);
-                    // 只更新变化的字段，避免覆盖其他配置
+                    // 只更新变化的字段，避免覆盖其他配�?
                     const updatePayload = {
                       ...existingFlow,
                       ...flowData,
-                      // 保留原有的 actionConfig 等配置
+                      // 保留原有�?actionConfig 等配�?
                       actionConfig: existingFlow.actionConfig || {},
                     };
                     await updateFlow(existingFlow.id, updatePayload);
@@ -958,8 +958,8 @@ eval(atob('${btoa(script)}'));
                     flowId = newFlow.id;
                   }
                   
-                  // 关联 Offer 或 Landing Page
-                  // 使用 flow.config.itemId 获取关联的 offer/landing ID
+                  // 关联 Offer �?Landing Page
+                  // 使用 flow.config.itemId 获取关联�?offer/landing ID
                   const itemId = flow.config?.itemId || flow.id;
                   if (flow.type === 'offer' && itemId) {
                     console.log('[FlowDesigner] Adding offer to flow:', flowId, itemId);
@@ -970,7 +970,7 @@ eval(atob('${btoa(script)}'));
                   }
                 }
                 
-                // 删除不存在的 flow - 使用 flow ID 匹配更准确
+                // 删除不存在的 flow - 使用 flow ID 匹配更准�?
                 const flowIds = flows.map(f => f.id);
                 const flowNames = flows.map(f => f.name);
                 const flowsToDelete = existingFlows.filter((f: any) => !flowIds.includes(f.id) && !flowNames.includes(f.name));
