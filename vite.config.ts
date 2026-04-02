@@ -1,21 +1,17 @@
 /**
- * @fileoverview SSR + DO + SSE 项目配置文件
- * @description 配置 Vite 构建系统，支持 SSR 渲染、代码分割、Ant Design
+ * @fileoverview Vite 项目配置文件
+ * @description 配置 Vite 构建系统，支持前端 SPA 应用
  * Input: 项目源代码
- * Output: SSR 构建产物（客户端 + 服务端）
+ * Output: 前端构建产物
  * Logic: 
- *   - 客户端构建：生成浏览器可执行的 JS/CSS
- *   - 服务端构建：生成 Workers 可执行的 SSR 代码
+ *   - 前端构建：生成浏览器可执行的 JS/CSS
  *   - 代码分割：优化加载性能
- *   - Ant Design 配置：支持 SSR
+ *   - Ant Design 配置：支持按需加载
  */
 
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-
-// 检测是否为 SSR 构建
-const isSSR = process.env.BUILD_MODE === 'ssr'
 
 export default defineConfig({
   plugins: [
@@ -36,7 +32,7 @@ export default defineConfig({
     target: 'esnext',
     cssTarget: 'chrome80',
     
-    // 代码分割优化（仅客户端构建）
+    // 代码分割优化
     rollupOptions: {
       input: {
         main: 'index.html',
@@ -47,8 +43,8 @@ export default defineConfig({
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
         
-        // 手动代码分割（仅客户端构建时生效）
-        manualChunks: isSSR ? undefined : (id) => {
+        // 手动代码分割
+        manualChunks: (id) => {
           // React 核心
           if (id.includes('node_modules/react/') || 
               id.includes('node_modules/react-dom/')) {
@@ -115,15 +111,6 @@ export default defineConfig({
     
     // 块大小警告限制
     chunkSizeWarningLimit: 500,
-  },
-  
-  // SSR 配置
-  ssr: {
-    // Ant Design SSR 外部化
-    noExternal: ['antd', '@ant-design', 'rc-*'],
-    // SSR 构建配置
-    target: 'webworker',
-    format: 'esm',
   },
   
   // 优化依赖预构建
