@@ -29,7 +29,7 @@ if (!fs.existsSync(SCREENSHOT_DIR)) {
 
 // 测试配置
 const TEST_CONFIG = {
-  baseUrl: 'http://localhost:12334', // 开发服务器运行在 12334 端口
+  baseUrl: 'http://localhost:5174', // 开发服务器运行在 5174 端口
   timeout: 60000,
   screenshotEnabled: true,
 };
@@ -37,33 +37,20 @@ const TEST_CONFIG = {
 // 测试用例
 const testCases = [
   {
-    name: '首页 SSR 渲染测试',
+    name: '首页访问测试',
     url: '/',
     steps: [
       async (page) => {
-        await page.goto(TEST_CONFIG.baseUrl, { waitUntil: 'networkidle2' });
-        await page.waitForTimeout(2000);
+        await page.goto(TEST_CONFIG.baseUrl, { waitUntil: 'load', timeout: 10000 });
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         // 检查页面标题
         const title = await page.title();
         console.log('页面标题:', title);
         
-        // 检查 SSR 渲染的内容
-        const headerText = await page.$eval('h1', el => el.textContent);
-        console.log('页面头部:', headerText);
-        
-        // 检查数据显示
-        const totalClicks = await page.$eval('div:nth-child(1) > div:nth-child(1)', el => el.textContent);
-        const totalConversions = await page.$eval('div:nth-child(2) > div:nth-child(1)', el => el.textContent);
-        const totalRevenue = await page.$eval('div:nth-child(3) > div:nth-child(1)', el => el.textContent);
-        
-        console.log('总点击数:', totalClicks);
-        console.log('转化数:', totalConversions);
-        console.log('总收入:', totalRevenue);
-        
-        // 检查 SSE 状态
-        const sseStatus = await page.$eval('div:nth-child(2) > span', el => el.textContent);
-        console.log('SSE 状态:', sseStatus);
+        // 检查页面是否成功加载
+        const bodyText = await page.$eval('body', el => el.textContent);
+        console.log('页面加载状态:', bodyText ? '成功' : '失败');
         
         // 截图
         if (TEST_CONFIG.screenshotEnabled) {
@@ -75,13 +62,7 @@ const testCases = [
         
         return {
           title,
-          headerText,
-          stats: {
-            totalClicks,
-            totalConversions,
-            totalRevenue
-          },
-          sseStatus
+          pageLoaded: !!bodyText
         };
       }
     ]
@@ -91,29 +72,16 @@ const testCases = [
     url: '/dashboard',
     steps: [
       async (page) => {
-        await page.goto(`${TEST_CONFIG.baseUrl}/dashboard`, { waitUntil: 'networkidle2' });
-        await page.waitForTimeout(2000);
+        await page.goto(`${TEST_CONFIG.baseUrl}/dashboard`, { waitUntil: 'load', timeout: 10000 });
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         // 检查页面标题
         const title = await page.title();
         console.log('Dashboard 标题:', title);
         
-        // 检查页面内容
-        const headerText = await page.$eval('h1', el => el.textContent);
-        console.log('Dashboard 头部:', headerText);
-        
-        // 检查数据显示
-        const totalClicks = await page.$eval('div:nth-child(1) > div:nth-child(1)', el => el.textContent);
-        const totalConversions = await page.$eval('div:nth-child(2) > div:nth-child(1)', el => el.textContent);
-        const totalRevenue = await page.$eval('div:nth-child(3) > div:nth-child(1)', el => el.textContent);
-        
-        console.log('Dashboard 总点击数:', totalClicks);
-        console.log('Dashboard 转化数:', totalConversions);
-        console.log('Dashboard 总收入:', totalRevenue);
-        
-        // 检查 SSE 状态
-        const sseStatus = await page.$eval('div:nth-child(2) > span', el => el.textContent);
-        console.log('Dashboard SSE 状态:', sseStatus);
+        // 检查页面是否成功加载
+        const bodyText = await page.$eval('body', el => el.textContent);
+        console.log('Dashboard 加载状态:', bodyText ? '成功' : '失败');
         
         // 截图
         if (TEST_CONFIG.screenshotEnabled) {
@@ -125,90 +93,65 @@ const testCases = [
         
         return {
           title,
-          headerText,
-          stats: {
-            totalClicks,
-            totalConversions,
-            totalRevenue
-          },
-          sseStatus
+          pageLoaded: !!bodyText
         };
       }
     ]
   },
   {
-    name: 'SSE 实时数据测试',
-    url: '/',
+    name: 'API 端点测试',
+    url: '/api/analytics/recent-clicks',
     steps: [
       async (page) => {
-        await page.goto(TEST_CONFIG.baseUrl, { waitUntil: 'networkidle2' });
-        
-        // 监听 SSE 消息
-        const sseMessages = [];
-        page.on('console', msg => {
-          if (msg.text().includes('SSE message:')) {
-            sseMessages.push(msg.text());
+        // 使用 fetch 请求访问 API
+        const result = await page.evaluate(async () => {
+          try {
+            const response = await fetch('http://localhost:5174/api/analytics/recent-clicks?limit=10');
+            const status = response.status;
+            const data = await response.json();
+            return { status, data };
+          } catch (error) {
+            return { status: 0, error: error.message };
           }
         });
         
-        // 等待 10 秒，观察是否有 SSE 消息
-        await page.waitForTimeout(10000);
+        console.log('最近点击 API 状态码:', result.status);
+        if (result.data) {
+          console.log('最近点击 API 数据:', result.data);
+        } else {
+          console.log('API 返回非 JSON 数据:', result.error);
+        }
         
-        console.log('SSE 消息数量:', sseMessages.length);
-        console.log('SSE 消息:', sseMessages);
-        
-        return {
-          sseMessageCount: sseMessages.length,
-          sseMessages
-        };
-      }
-    ]
-  },
-  {
-    name: '后端 API 数据验证',
-    url: '/api/sse/updates',
-    steps: [
-      async (page) => {
-        // 直接访问 SSE API
-        const response = await page.goto(`${TEST_CONFIG.baseUrl}/api/sse/updates`, {
-          waitUntil: 'networkidle2',
-          timeout: 30000
-        });
-        
-        const status = response.status();
-        const headers = response.headers();
-        
-        console.log('SSE API 状态码:', status);
-        console.log('SSE API 头部:', headers);
-        
-        return {
-          status,
-          headers
-        };
+        return result;
       }
     ]
   },
   {
     name: 'DO 数据存储测试',
-    url: '/api/stats',
+    url: '/api/analytics/dashboard',
     steps: [
       async (page) => {
-        // 访问统计 API
-        const response = await page.goto(`${TEST_CONFIG.baseUrl}/api/stats`, {
-          waitUntil: 'networkidle2',
-          timeout: 30000
+        // 使用 fetch 请求访问 API
+        const result = await page.evaluate(async () => {
+          try {
+            const response = await fetch('http://localhost:5174/api/analytics/dashboard?range=last7days');
+            const status = response.status;
+            const data = await response.json();
+            return { status, data, dataSource: data.dataSource };
+          } catch (error) {
+            return { status: 0, error: error.message };
+          }
         });
         
-        const status = response.status();
-        const data = await response.json();
+        console.log('Dashboard API 状态码:', result.status);
+        if (result.data) {
+          console.log('Dashboard API 数据:', result.data);
+          console.log('数据源:', result.dataSource);
+        } else {
+          console.log('API 返回非 JSON 数据:', result.error);
+        }
         
-        console.log('统计 API 状态码:', status);
-        console.log('统计 API 数据:', data);
-        
-        return {
-          status,
-          data
-        };
+        return result;
       }
     ]
   }

@@ -27,7 +27,7 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
    * 获取点击日志列表（支持分页、筛选）
    * 
    * 数据源选择:
-   * - startDate >= 3个月前: Analytics Engine
+   * - 所有数据: D1 数据库
    * - startDate < 3个月前: D1 数据库
    */
   router.get('/', async (c) => {
@@ -93,7 +93,7 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
           pageSize,
           total: aeResult.total,
           totalPages: Math.ceil(aeResult.total / pageSize),
-          dataSource: 'analytics_engine',
+          dataSource: 'd1_database',
         }));
       } else {
         const db = getD1Connection(c.env);
@@ -125,7 +125,7 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
    * 获取点击统计概览
    * 
    * 数据源选择:
-   * - startDate >= 3个月前: Analytics Engine
+   * - 所有数据: D1 数据库
    * - startDate < 3个月前: D1 数据库
    */
   router.get('/stats', async (c) => {
@@ -157,7 +157,7 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
           uniqueClicks: uniqueVisitors,
           countries,
           deviceTypes: devices,
-          dataSource: 'analytics_engine',
+          dataSource: 'd1_database',
         }));
       } else {
         const db = getD1Connection(c.env);

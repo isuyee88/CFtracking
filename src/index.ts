@@ -17,10 +17,10 @@ import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
 import { SessionDurableObject, CounterDurableObject, QueueDurableObject, UniquenessDurableObject, UserPreferenceDurableObject, TrackingStatsDO } from '@/handlers/do';
 import { CacheDurableObject } from '@/ssr/cache-do';
+import { EventActor, StatsActor } from '@/handlers/do/deprecated-do';
 import { createAggregationService } from '@/services/analytics/aggregation.service';
 import { handlePlatformCron } from '@/services/platform';
 import fs from 'fs';
-import path from 'path';
 
 // 导出 Durable Objects（Cloudflare Workers 要求）
 export {
@@ -31,6 +31,8 @@ export {
   UserPreferenceDurableObject,
   TrackingStatsDO,
   CacheDurableObject,
+  EventActor,
+  StatsActor,
 };
 
 const app = new Hono<{ Bindings: Env }>();
@@ -131,7 +133,6 @@ app.get('/api/deployment/info', (c) => {
     } : null,
     deployment: deployInfo,
     environment: env.ENVIRONMENT,
-    ssrEnabled: env.SSR_ENABLED,
     realtimeEnabled: env.REALTIME_ENABLED,
     sseEnabled: env.SSE_ENABLED,
     timestamp: new Date().toISOString(),
@@ -229,42 +230,6 @@ export default {
       }
     }
     
-    // SSR 动态渲染：对于页面请求，注入初始数据
-    const isPageRequest = !url.pathname.includes('.') || url.pathname.endsWith('.html');
-    
-    if (isPageRequest && env.SSR_ENABLED) {
-      try {
-        // 获取静态 HTML
-        const assetResponse = await env.ASSETS.fetch(request);
-        
-        if (assetResponse.status === 200) {
-          let html = await assetResponse.text();
-          
-          // 获取初始数据（Dashboard 统计数据）
-          const initialData = await fetchInitialDashboardData(env);
-          
-          // 注入初始数据到 HTML
-          const dataScript = `<script>window.__INITIAL_DATA__=${JSON.stringify(initialData)};</script>`;
-          html = html.replace('</head>', `${dataScript}</head>`);
-          
-          console.log('[SSR] Injected initial data:', JSON.stringify(initialData).substring(0, 200));
-          
-          return new Response(html, {
-            headers: {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'public, max-age=60',
-            },
-          });
-        }
-        
-        return assetResponse;
-      } catch (error) {
-        console.error('[SSR] Error:', error);
-        // 降级：返回静态资源
-        return env.ASSETS.fetch(request);
-      }
-    }
-    
     // 所有其他请求（静态资源）直接交给 ASSETS 处理
     return env.ASSETS.fetch(request);
   },
@@ -320,62 +285,4 @@ export default {
   },
 };
 
-/**
- * 获取 Dashboard 初始数据
- * 用于 SSR 注入，实现首屏即时渲染
- * 
- * 数据获取策略：
- * 1. 从 TrackingStatsDO 读取实时数据（< 10ms）
- * 2. 直接返回内存中的统计数据
- */
-async function fetchInitialDashboardData(env: Env): Promise<any> {
-  try {
-    const startTime = Date.now();
-    
-    // 从 TrackingStatsDO 读取实时数据
-    const trackingDO = env.TRACKING_STATS_DO.get(
-      env.TRACKING_STATS_DO.idFromName('global-stats')
-    );
-    
-    // 并行获取统计数据和最近点击
-    const [statsResponse, recentClicksResponse] = await Promise.all([
-      trackingDO.fetch('http://do/stats'),
-      trackingDO.fetch('http://do/recent-clicks?limit=10'),
-    ]);
-    
-    const stats = await statsResponse.json();
-    const recentClicksData = await recentClicksResponse.json();
-    
-    const data = {
-      metrics: [
-        { label: '今日点击', value: stats.todayClicks, icon: '📊' },
-        { label: '今日转化', value: stats.todayConversions, icon: '✅' },
-        { label: '今日收入', value: `$${stats.todayRevenue.toFixed(2)}`, icon: '💰' },
-        { label: '今日支出', value: `$${stats.todayCost.toFixed(2)}`, icon: '📈' },
-        { label: '今日利润', value: `$${stats.todayProfit.toFixed(2)}`, icon: '💵' },
-        { label: '今日ROI', value: `${stats.todayROI.toFixed(2)}%`, icon: '📈' },
-        { label: '转化率', value: `${stats.conversionRate.toFixed(2)}%`, icon: '📊' },
-      ],
-      chartData: [], // 暂时为空，后续可以从小时统计生成
-      recentClicks: recentClicksData.clicks || [],
-      entityData: {},
-      dataSource: stats.dataSource || 'DO_MEMORY',
-      queryTime: new Date().toISOString(),
-      ssrTime: Date.now() - startTime,
-    };
-    
-    console.log('[SSR] Data fetched from TrackingStatsDO, ssrTime:', data.ssrTime, 'ms');
-    return data;
-  } catch (error) {
-    console.error('[SSR] fetchInitialDashboardData error:', error);
-    return {
-      metrics: [],
-      chartData: [],
-      recentClicks: [],
-      entityData: {},
-      dataSource: 'ERROR',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      queryTime: new Date().toISOString(),
-    };
-  }
-}
+

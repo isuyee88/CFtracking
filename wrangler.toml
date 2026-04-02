@@ -6,7 +6,6 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "production"
 JWT_EXPIRES_IN = "24h"
-SSR_ENABLED = true
 CDN_CACHE_TTL = "300"
 CACHE_TTL = "21600"
 ENABLED_REGIONS = "HK,CN"
@@ -55,10 +54,18 @@ class_name = "UniquenessDurableObject"
 name = "USER_PREFERENCE_DO"
 class_name = "UserPreferenceDurableObject"
 
-# Durable Objects - 新增 Cache DO（用于实时缓存）
+# 已废弃但线上仍有 binding 的 DO（保留兼容）
 [[durable_objects.bindings]]
 name = "CACHE_DO"
 class_name = "CacheDurableObject"
+
+[[durable_objects.bindings]]
+name = "EVENT_DO"
+class_name = "EventActor"
+
+[[durable_objects.bindings]]
+name = "STATS_DO"
+class_name = "StatsActor"
 
 # Durable Objects - 新增 Tracking Stats DO（用于实时统计）
 [[durable_objects.bindings]]
@@ -67,14 +74,11 @@ class_name = "TrackingStatsDO"
 
 # Durable Objects SQLite 命名空间（免费版必须）
 [[durable_objects.sqlite_namespaces]]
-name = "CACHE_DO_SQLITE"
-class_name = "CacheDurableObject"
-
-[[durable_objects.sqlite_namespaces]]
 name = "TRACKING_STATS_DO_SQLITE"
 class_name = "TrackingStatsDO"
 
 # Durable Objects 迁移配置
+# v1-v8 已在线上应用，v9 新增 TrackingStatsDO
 [[migrations]]
 tag = "v1"
 new_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject"]
@@ -93,6 +97,22 @@ new_sqlite_classes = ["CacheDurableObject"]
 
 [[migrations]]
 tag = "v5"
+new_sqlite_classes = ["EventActor"]
+
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["StatsActor"]
+
+[[migrations]]
+tag = "v7"
+new_sqlite_classes = []
+
+[[migrations]]
+tag = "v8"
+new_sqlite_classes = []
+
+[[migrations]]
+tag = "v9"
 new_sqlite_classes = ["TrackingStatsDO"]
 
 # Assets - 前端静态资源
@@ -100,8 +120,6 @@ new_sqlite_classes = ["TrackingStatsDO"]
 directory = "./frontend/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-# 启用 Worker 优先处理，支持 SSR 动态渲染
-run_worker_first = true
 
 [observability]
 enabled = true

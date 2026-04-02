@@ -20,6 +20,8 @@ export interface Env {
   UNIQUE_DO: DurableObjectNamespace;
   USER_PREFERENCE_DO: DurableObjectNamespace;
   CACHE_DO: DurableObjectNamespace;
+  EVENT_DO: DurableObjectNamespace;
+  STATS_DO: DurableObjectNamespace;
   TRACKING_STATS_DO: DurableObjectNamespace;
   
   ASSETS: Fetcher;

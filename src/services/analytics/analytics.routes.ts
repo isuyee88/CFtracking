@@ -33,7 +33,7 @@ export function createAnalyticsRouter() {
    * GET /api/analytics/dashboard
    * 获取仪表板统计数据
    *
-   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
+   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
    * 用途: Dashboard 核心指标显示
    */
   router.get('/dashboard', async (c) => {
@@ -60,7 +60,7 @@ export function createAnalyticsRouter() {
    * GET /api/analytics/recent-clicks
    * 获取最近点击数据
    *
-   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
+   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
    * 用途: 查看最近点击详情，支持实时监控
    */
   router.get('/recent-clicks', async (c) => {
@@ -145,7 +145,7 @@ export function createAnalyticsRouter() {
    * GET /api/analytics/entity-stats
    * 获取实体统计数据
    *
-   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
+   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
    * 用途: 按维度查看统计分布
    */
   router.get('/entity-stats', async (c) => {
@@ -187,7 +187,7 @@ export function createAnalyticsRouter() {
    * GET /api/analytics/trend-report
    * 获取趋势报告数据
    *
-   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
+   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
    * 用途: 查看流量趋势变化
    */
   router.get('/trend-report', async (c) => {
@@ -227,7 +227,7 @@ export function createAnalyticsRouter() {
    * GET /api/analytics/reports/:type
    * 获取指定类型的统计报表
    *
-   * 数据源: 自动选择 (AE < 3个月, D1 > 3个月)
+   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
    * 类型: traffic | conversion | financial | roi
    * 用途: 生成详细的统计分析报表
    */

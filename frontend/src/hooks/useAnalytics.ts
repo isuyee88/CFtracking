@@ -4,16 +4,15 @@
  * @module hooks/useAnalytics
  *
  * 数据存储架构:
- *   - DO (Durable Objects): 唯一性检查和计数器
- *   - AE (Analytics Engine): 主存储，免费3个月，用于时序数据和趋势分析
- *   - D1: 归档存储，3个月前历史数据，用于精确报表
+ *   - DO (Durable Objects): 实时数据存储，最近90天数据
+ *   - D1: 归档存储，90天前历史数据，用于精确报表
  *
  * 数据流:
- *   点击请求 → DO(唯一性检查) → AE(主存储) → 每天汇总 → D1(归档)
+ *   点击请求 → DO(实时存储) → 每天汇总 → D1(归档)
  *
  * Dashboard数据读取逻辑:
- *   - < 3个月数据 ──► AE读取
- *   - > 3个月数据 ──► D1读取
+ *   - < 90天数据 ──► DO读取
+ *   - > 90天数据 ──► D1读取
  *
  * 输入: timeRange, options
  * 输出: { data, loading, error, dataSource, refetch }
@@ -23,7 +22,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
 
-export type DataSource = 'AE' | 'D1' | 'MIXED';
+export type DataSource = 'DO' | 'D1' | 'MIXED';
 
 export interface DashboardData {
   metrics: Array<{
@@ -74,7 +73,7 @@ export interface UseAnalyticsReturn {
   refetchClicks: () => Promise<void>;
 }
 
-const AE_FREE_TIER_DAYS = 90;
+const DO_DATA_DAYS = 90;
 
 export function determineDataSource(timeRange: string): DataSource {
   const now = new Date();
@@ -82,23 +81,23 @@ export function determineDataSource(timeRange: string): DataSource {
   switch (timeRange) {
     case 'today':
     case 'yesterday':
-      return 'AE';
+      return 'DO';
     case 'last7days':
-      return 'AE';
+      return 'DO';
     case 'last30days':
-      return 'AE';
+      return 'DO';
     case 'last3months':
-      return 'AE';
+      return 'DO';
     case 'thismonth':
-      return 'AE';
+      return 'DO';
     case 'lastmonth':
-      return 'AE';
+      return 'DO';
     case 'thisyear':
-      return now.getFullYear() - new Date(now.getFullYear(), 0, 1).getTime() > AE_FREE_TIER_DAYS * 24 * 60 * 60 * 1000 ? 'D1' : 'AE';
+      return now.getFullYear() - new Date(now.getFullYear(), 0, 1).getTime() > DO_DATA_DAYS * 24 * 60 * 60 * 1000 ? 'D1' : 'DO';
     case 'lastyear':
       return 'D1';
     default:
-      return 'AE';
+      return 'DO';
   }
 }
 

@@ -135,6 +135,14 @@ export class TrackingStatsDO extends DurableObject {
           return await this.handleGetCampaignStats();
         case '/archive':
           return await this.handleArchive();
+        case '/aggregate-daily':
+          return await this.handleAggregateDaily(request);
+        case '/aggregate-historical':
+          return await this.handleAggregateHistorical(request);
+        case '/chart-data':
+          return await this.handleGetChartData(request);
+        case '/entity-stats':
+          return await this.handleGetEntityStats(request);
         default:
           return new Response('Not Found', { status: 404 });
       }
@@ -438,5 +446,325 @@ export class TrackingStatsDO extends DurableObject {
       clicks: this.stats.todayClicks,
       conversions: this.stats.todayConversions,
     });
+  }
+
+  /**
+   * 处理每日数据聚合
+   */
+  private async handleAggregateDaily(request: Request): Promise<Response> {
+    const data = await request.json();
+    const { date } = data;
+    
+    try {
+      const targetDate = date ? new Date(date) : new Date();
+      targetDate.setHours(0, 0, 0, 0);
+      const startTimestamp = targetDate.getTime();
+      const endTimestamp = startTimestamp + 24 * 60 * 60 * 1000;
+      
+      // 1. 从 SQLite 查询当日数据
+      const dailyData = this.db.exec(`
+        SELECT 
+          campaign_id, campaign_name, 
+          COUNT(*) as clicks, 
+          SUM(is_conversion) as conversions, 
+          SUM(revenue) as revenue, 
+          SUM(cost) as cost
+        FROM clicks 
+        WHERE timestamp >= ? AND timestamp < ?
+        GROUP BY campaign_id
+      `, startTimestamp, endTimestamp);
+      
+      // 2. 写入 D1 数据库
+      if (this.env.DB) {
+        for (const item of dailyData) {
+          try {
+            await this.env.DB.exec(`
+              INSERT OR REPLACE INTO daily_stats (
+                date, campaign_id, campaign_name, 
+                clicks, conversions, revenue, cost
+              ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            `, 
+            targetDate.toISOString().split('T')[0],
+            item.campaign_id,
+            item.campaign_name,
+            item.clicks,
+            item.conversions,
+            item.revenue,
+            item.cost
+            );
+          } catch (e) {
+            console.warn('[AggregateDaily] Failed to insert into D1:', e);
+          }
+        }
+      }
+      
+      return Response.json({
+        success: true,
+        message: 'Daily aggregation completed',
+        recordsProcessed: dailyData.length,
+        date: targetDate.toISOString().split('T')[0],
+      });
+    } catch (error) {
+      console.error('[AggregateDaily] Error:', error);
+      return Response.json({
+        success: false,
+        message: 'Daily aggregation failed',
+        errors: [error instanceof Error ? error.message : 'Unknown error'],
+      });
+    }
+  }
+
+  /**
+   * 获取图表数据
+   */
+  private async handleGetChartData(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const range = url.searchParams.get('range') || 'last7days';
+    
+    const now = new Date();
+    let startDate: Date;
+    
+    switch (range) {
+      case 'today':
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'yesterday':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 1);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'last7days':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'last30days':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 30);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'last3months':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 90);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'thismonth':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      case 'lastmonth':
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        break;
+      default:
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+    }
+    
+    const startTimestamp = startDate.getTime();
+    const endTimestamp = now.getTime();
+    
+    // 从 SQLite 查询数据
+    const chartData = this.db.exec(`
+      SELECT 
+        DATE(timestamp / 1000, 'unixepoch') as date, 
+        COUNT(*) as clicks, 
+        SUM(is_conversion) as conversions, 
+        SUM(revenue) as revenue, 
+        SUM(cost) as cost
+      FROM clicks 
+      WHERE timestamp >= ? AND timestamp <= ?
+      GROUP BY date
+      ORDER BY date
+    `, startTimestamp, endTimestamp);
+    
+    return Response.json({
+      chartData: chartData.map((item: any) => ({
+        date: item.date,
+        clicks: item.clicks || 0,
+        conversions: item.conversions || 0,
+        spend: item.cost || 0,
+        revenue: item.revenue || 0,
+        impressions: 0, // DO 中没有存储 impressions
+      })),
+      dataSource: 'DO_SQLITE',
+    });
+  }
+
+  /**
+   * 获取实体统计数据
+   */
+  private async handleGetEntityStats(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const range = url.searchParams.get('range') || 'last7days';
+    
+    const now = new Date();
+    let startDate: Date;
+    
+    switch (range) {
+      case 'today':
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'yesterday':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 1);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'last7days':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'last30days':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 30);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'last3months':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 90);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'thismonth':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      case 'lastmonth':
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        break;
+      default:
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+    }
+    
+    const startTimestamp = startDate.getTime();
+    
+    // 并行获取各种实体统计
+    const [campaigns, countries, deviceTypes, browsers] = await Promise.all([
+      this.getEntityStatsByType('campaign_id', 'campaign_name', startTimestamp),
+      this.getEntityStatsByType('country', 'country', startTimestamp),
+      this.getEntityStatsByType('device', 'device', startTimestamp),
+      this.getEntityStatsByType('browser', 'browser', startTimestamp),
+    ]);
+    
+    return Response.json({
+      stats: {
+        campaigns,
+        countries,
+        device_types: deviceTypes,
+        browsers,
+      },
+      dataSource: 'DO_SQLITE',
+    });
+  }
+
+  /**
+   * 根据实体类型获取统计数据
+   */
+  private getEntityStatsByType(
+    idField: string,
+    nameField: string,
+    startTimestamp: number
+  ): any[] {
+    const result = this.db.exec(`
+      SELECT 
+        ${idField} as id, 
+        ${nameField} as name, 
+        COUNT(*) as clicks, 
+        SUM(is_conversion) as conversions, 
+        SUM(revenue) as revenue, 
+        SUM(cost) as cost
+      FROM clicks 
+      WHERE timestamp >= ? AND ${idField} != ''
+      GROUP BY ${idField}
+      ORDER BY clicks DESC
+      LIMIT 10
+    `, startTimestamp);
+    
+    return result.map((item: any) => ({
+      name: item.name || 'Unknown',
+      clicks: item.clicks || 0,
+      impressions: 0, // DO 中没有存储 impressions
+      conversions: item.conversions || 0,
+      spend: item.cost || 0,
+      revenue: item.revenue || 0,
+      unique_visitors: 0, // DO 中没有存储 unique_visitors
+    }));
+  }
+
+  /**
+   * 处理历史数据聚合
+   */
+  private async handleAggregateHistorical(request: Request): Promise<Response> {
+    const data = await request.json();
+    const { startDate, endDate } = data;
+    
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const startTimestamp = start.getTime();
+      const endTimestamp = end.getTime();
+      
+      // 1. 从 SQLite 查询历史数据
+      const historicalData = this.db.exec(`
+        SELECT 
+          DATE(timestamp / 1000, 'unixepoch') as date, 
+          campaign_id, campaign_name, 
+          COUNT(*) as clicks, 
+          SUM(is_conversion) as conversions, 
+          SUM(revenue) as revenue, 
+          SUM(cost) as cost
+        FROM clicks 
+        WHERE timestamp >= ? AND timestamp <= ?
+        GROUP BY date, campaign_id
+      `, startTimestamp, endTimestamp);
+      
+      // 2. 批量写入 D1 数据库
+      if (this.env.DB) {
+        let processed = 0;
+        for (const item of historicalData) {
+          try {
+            await this.env.DB.exec(`
+              INSERT OR REPLACE INTO daily_stats (
+                date, campaign_id, campaign_name, 
+                clicks, conversions, revenue, cost
+              ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            `, 
+            item.date,
+            item.campaign_id,
+            item.campaign_name,
+            item.clicks,
+            item.conversions,
+            item.revenue,
+            item.cost
+            );
+            processed++;
+          } catch (e) {
+            console.warn('[AggregateHistorical] Failed to insert into D1:', e);
+          }
+        }
+        
+        return Response.json({
+          success: true,
+          message: 'Historical aggregation completed',
+          recordsProcessed: processed,
+          startDate: start.toISOString().split('T')[0],
+          endDate: end.toISOString().split('T')[0],
+        });
+      }
+      
+      return Response.json({
+        success: false,
+        message: 'D1 database not available',
+      });
+    } catch (error) {
+      console.error('[AggregateHistorical] Error:', error);
+      return Response.json({
+        success: false,
+        message: 'Historical aggregation failed',
+        errors: [error instanceof Error ? error.message : 'Unknown error'],
+      });
+    }
   }
 }

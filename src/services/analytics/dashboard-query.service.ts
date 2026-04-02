@@ -24,8 +24,9 @@
 
 import type { Env } from '@/config/env';
 import { getD1Connection, TrafficRepository } from '@/handlers/d1';
+import { getTrackingStatsStub } from '@/handlers/do';
 
-export type DataSource = 'D1';
+export type DataSource = 'D1' | 'DO';
 
 export interface DashboardMetric {
   key: string;
@@ -444,8 +445,10 @@ export class DashboardQueryService {
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
         break;
       case 'last30days':
-      case 'last3months':
         startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
+        break;
+      case 'last3months':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
         break;
       case 'thismonth':
         startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]!;

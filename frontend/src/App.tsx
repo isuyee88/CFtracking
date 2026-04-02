@@ -3,7 +3,6 @@
  * Purpose: 应用主入口，配置路由
  * Input/Output: 渲染整个应用，包含所有页面路由
  * Logic: 使用 HashRouter 适配静态部署环境，使用 React.lazy 实现代码分割
- * SSR: 接收 initialData 并传递给需要的页面组件
  */
 
 import React, { Suspense, lazy, createContext, useContext } from 'react';
@@ -11,15 +10,13 @@ import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { CloudSyncProvider } from './contexts/CloudSyncContext';
 
-// SSR 初始数据 Context
+// 初始数据 Context
 interface InitialDataContextValue {
   data: any;
-  isSSR: boolean;
 }
 
 const InitialDataContext = createContext<InitialDataContextValue>({
   data: null,
-  isSSR: false,
 });
 
 export const useInitialData = () => useContext(InitialDataContext);
@@ -186,10 +183,8 @@ const PageSkeleton = () => (
 );
 
 export default function App({ initialData }: AppProps) {
-  const isSSR = initialData && initialData.dataSource !== 'DEFAULT';
-  
   return (
-    <InitialDataContext.Provider value={{ data: initialData, isSSR }}>
+    <InitialDataContext.Provider value={{ data: initialData }}>
       <Router>
         <CloudSyncProvider>
           <Suspense fallback={<PageSkeleton />}>

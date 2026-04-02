@@ -780,8 +780,8 @@ export const Dashboard = () => {
   const { state, setState } = useDashboardURLState();
   const navigate = useNavigate();
   
-  // 获取 SSR 初始数据
-  const { data: initialData, isSSR } = useInitialData();
+  // 获取初始数据
+  const { data: initialData } = useInitialData();
   
   // 自动昼夜模式
   const { isDarkMode, currentTime } = useAutoDarkMode();
@@ -794,12 +794,12 @@ export const Dashboard = () => {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
-  const [dataSource, setDataSource] = useState<'AE' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT'>(initialData?.dataSource || 'AE');
+  const [dataSource, setDataSource] = useState<'DO' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT'>(initialData?.dataSource || 'DO');
   const [queryTime, setQueryTime] = useState<string | null>(initialData?.queryTime || null);
   const [loading, setLoading] = useState({
-    stats: !isSSR,
-    recentClicks: !isSSR,
-    entities: !isSSR
+    stats: true,
+    recentClicks: true,
+    entities: true
   });
   const [errors, setErrors] = useState({
     stats: '',
@@ -807,8 +807,8 @@ export const Dashboard = () => {
     entities: ''
   });
   
-  // SSR 数据已加载标记
-  const ssrDataLoaded = useRef(isSSR && initialData?.metrics?.length > 0);
+  // 初始数据已加载标记
+  const initialDataLoaded = useRef(initialData?.metrics?.length > 0);
   
   // 应用暗色模式类
   useEffect(() => {
@@ -869,7 +869,7 @@ export const Dashboard = () => {
         }));
         setChartData(processedChartData);
         // 更新数据源信息
-        setDataSource(statsData.dataSource || 'AE');
+        setDataSource(statsData.dataSource || 'DO');
         setQueryTime(statsData.queryTime || new Date().toISOString());
       }
 
@@ -928,9 +928,9 @@ export const Dashboard = () => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
       
-      // 如果 SSR 数据已加载，跳过首次加载
-      if (ssrDataLoaded.current) {
-        console.log('[Dashboard] SSR data already loaded, skipping initial fetch');
+      // 如果初始数据已加载，跳过首次加载
+      if (initialDataLoaded.current) {
+        console.log('[Dashboard] Initial data already loaded, skipping initial fetch');
         setLoading({ stats: false, recentClicks: false, entities: false });
         return;
       }

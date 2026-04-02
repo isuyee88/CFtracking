@@ -1,9 +1,9 @@
 /**
  * @fileoverview 数据源指示器组件
- * @description 显示当前数据来源（AE实时或D1归档）
+ * @description 显示当前数据来源（DO实时或D1归档）
  * @module components/DataSourceBadge
  *
- * 输入: dataSource ('AE' | 'D1' | 'MIXED')
+ * 输入: dataSource ('DO' | 'D1' | 'MIXED')
  * 输出: 带样式的数据源徽章
  * 逻辑交互: 被 Dashboard.tsx 等页面调用
  */
@@ -13,17 +13,17 @@ import { cn } from '@/utils/cn';
 import { Database, Zap, Clock, AlertCircle } from 'lucide-react';
 
 export interface DataSourceBadgeProps {
-  dataSource: 'AE' | 'D1' | 'MIXED';
+  dataSource: 'DO' | 'D1' | 'MIXED';
   className?: string;
   showLabel?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
 
 const dataSourceConfig = {
-  AE: {
-    label: 'Analytics Engine',
+  DO: {
+    label: 'Durable Objects',
     sublabel: '实时数据',
-    description: '数据来源: Analytics Engine (实时)',
+    description: '数据来源: Durable Objects (实时)',
     icon: Zap,
     bgColor: 'bg-blue-500/10',
     textColor: 'text-blue-500',
@@ -43,7 +43,7 @@ const dataSourceConfig = {
   MIXED: {
     label: 'Mixed',
     sublabel: '混合数据',
-    description: '数据来源: 混合 (AE + D1)',
+    description: '数据来源: 混合 (DO + D1)',
     icon: Clock,
     bgColor: 'bg-purple-500/10',
     textColor: 'text-purple-500',
@@ -58,7 +58,7 @@ export const DataSourceBadge: React.FC<DataSourceBadgeProps> = ({
   showLabel = true,
   size = 'md',
 }) => {
-  const config = dataSourceConfig[dataSource] || dataSourceConfig.AE;
+  const config = dataSourceConfig[dataSource] || dataSourceConfig.DO;
   const Icon = config.icon;
 
   const sizeClasses = {
@@ -104,7 +104,7 @@ export const DataSourceBadge: React.FC<DataSourceBadgeProps> = ({
 };
 
 export interface DataSourceInfoProps {
-  dataSource: 'AE' | 'D1' | 'MIXED';
+  dataSource: 'DO' | 'D1' | 'MIXED';
   queryTime?: string;
   className?: string;
 }
@@ -114,14 +114,14 @@ export const DataSourceInfo: React.FC<DataSourceInfoProps> = ({
   queryTime,
   className,
 }) => {
-  const config = dataSourceConfig[dataSource] || dataSourceConfig.AE;
+  const config = dataSourceConfig[dataSource] || dataSourceConfig.DO;
 
   return (
     <div className={cn('flex items-center gap-3', className)}>
       <DataSourceBadge dataSource={dataSource} size="sm" />
       <span className="text-xs text-on-surface-variant">
-        {dataSource === 'AE' && 'AE 免费存储 3 个月，高吞吐实时查询'}
-        {dataSource === 'D1' && '归档数据，每日汇总更新'}
+        {dataSource === 'DO' && 'Durable Objects 实时数据，最近90天'}
+        {dataSource === 'D1' && 'D1 归档数据，每日汇总更新'}
         {dataSource === 'MIXED' && '跨时间段混合查询'}
       </span>
       {queryTime && (
@@ -134,7 +134,7 @@ export const DataSourceInfo: React.FC<DataSourceInfoProps> = ({
 };
 
 export interface DataSourceWarningProps {
-  dataSource: 'AE' | 'D1' | 'MIXED';
+  dataSource: 'DO' | 'D1' | 'MIXED';
   className?: string;
 }
 
