@@ -25,6 +25,7 @@ import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
 import { createDashboardQueryService } from './dashboard-query.service';
+import { ETagCacheManager, CacheType } from '@/services/cache/etag-cache-manager';
 
 export function createAnalyticsRouter() {
   const router = new Hono<{ Bindings: Env }>();
@@ -32,21 +33,38 @@ export function createAnalyticsRouter() {
   /**
    * GET /api/analytics/dashboard
    * 获取仪表板统计数据
-   *
+   * 
+   * 缓存策略:
+   * - today: 实时数据, 5分钟TTL
+   * - last7days/last30days: 近期数据, 6小时TTL
+   * - 历史数据: 24小时TTL
+   * 
    * 数据源: 自动选择 (DO < 90天, D1 > 90天)
    * 用途: Dashboard 核心指标显示
    */
   router.get('/dashboard', async (c) => {
     try {
       const range = c.req.query('range') || 'today';
-      const dashboardQuery = createDashboardQueryService(c.env);
-
-      const result = await dashboardQuery.getDashboardStats(range, c.env);
-
-      return c.json(success({
-        ...result,
-        timestamp: new Date().toISOString(),
-      }));
+      const cacheManager = new ETagCacheManager(c.env);
+      
+      // 根据时间范围推断缓存类型
+      const cacheType = ETagCacheManager.inferCacheType('/dashboard', range);
+      
+      return await cacheManager.fetch(
+        c.req.raw,
+        async () => {
+          const dashboardQuery = createDashboardQueryService(c.env);
+          const result = await dashboardQuery.getDashboardStats(range, c.env);
+          return {
+            ...result,
+            timestamp: new Date().toISOString(),
+          };
+        },
+        {
+          cacheType,
+          cacheKey: `dashboard:${range}`,
+        }
+      );
     } catch (err) {
       console.error('[Analytics API] Dashboard error:', err);
       return c.json(

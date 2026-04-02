@@ -1163,7 +1163,7 @@ export const Dashboard = () => {
           </div>
           <ChartWrapper height={300}>
             <Suspense fallback={<div className="h-full flex items-center justify-center text-on-surface-variant">Loading chart...</div>}>
-              <LazyResponsiveContainer width="100%" height="100%">
+              <LazyResponsiveContainer width="100%" height={300} debounce={50}>
                 <LazyAreaChart data={chartData}>
                 <defs>
                   {config.metrics.slice(0, 7).map((metric, idx) => {

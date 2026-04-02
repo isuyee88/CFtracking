@@ -159,6 +159,8 @@ import { createBlacklistRouter } from '@/routes/blacklist.routes';
 import { createWhitelistRouter } from '@/routes/whitelist.routes';
 import { userPreferenceRoutes } from '@/services/user-preferences/user-preferences.routes';
 import { createMigrationRouter } from '@/services/migration/migration.routes';
+import { createCacheUpdateRoutes } from '@/services/cache/cache-update-service';
+import { SSECacheNotificationService } from '@/services/cache/sse-cache-notification';
 
 app.route('/api/campaigns', createCampaignRouter());
 app.route('/api/flows', createFlowRouter());
@@ -179,6 +181,19 @@ app.route('/api/blacklist', createBlacklistRouter());
 app.route('/api/whitelist', createWhitelistRouter());
 app.route('/api/user-preferences', userPreferenceRoutes);
 app.route('/api/migration', createMigrationRouter());
+
+// 缓存更新API (延迟初始化)
+app.get('/api/cache-update', async (c) => {
+  const cacheUpdateRoutes = createCacheUpdateRoutes(c.env);
+  return cacheUpdateRoutes.handle(c.req.raw);
+});
+
+// SSE缓存更新通知端点
+app.get('/api/cache/events', async (c) => {
+  const userId = c.req.query('userId') || 'anonymous';
+  const sseService = new SSECacheNotificationService(c.env);
+  return sseService.handleConnection(c.req.raw, userId);
+});
 
 app.onError((err, c) => {
   console.error('Error:', err);
@@ -236,48 +251,74 @@ export default {
 
   /**
    * 定时任务处理器 - Cron Trigger
-   * 每天凌晨 2:00 执行数据聚合
-   * 每 5 分钟执行平台规则评估和任务处理
+   * - 每5分钟: 刷新实时缓存数据 + 平台规则评估
+   * - 每小时: 刷新小时缓存数据
+   * - 每天0点: 刷新每日缓存数据
+   * - 每天凌晨2点: 执行数据聚合
    */
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     console.log(`[Cron] Starting scheduled task at ${new Date().toISOString()}`);
-    console.log(`[Cron] Event type: ${event.type}, scheduled time: ${event.scheduledTime}`);
+    console.log(`[Cron] Event type: ${event.type}, cron: ${event.cron}`);
 
-    // 根据 Cron 表达式判断执行哪个任务
     const cronExpression = event.cron;
+    const cacheUpdate = createCacheUpdateRoutes(env);
 
-    // 每日数据聚合任务 (每天凌晨 2:00)
-    if (cronExpression === '0 2 * * *') {
-      ctx.waitUntil(
-        (async () => {
-          try {
-            const aggregationService = createAggregationService(env);
-
-            // 执行每日数据聚合（聚合昨天的数据）
-            const result = await aggregationService.aggregateDailyData();
-
-            if (result.success) {
-              console.log(`[Cron] Aggregation completed successfully: ${result.message}`);
-            } else {
-              console.error(`[Cron] Aggregation failed: ${result.message}`);
-              console.error(`[Cron] Errors: ${JSON.stringify(result.errors)}`);
-            }
-          } catch (err) {
-            console.error(`[Cron] Unexpected error during aggregation: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        })()
-      );
-    }
-
-    // 平台规则评估和任务处理 (每 5 分钟)
+    // 每5分钟: 刷新实时数据 + 平台规则评估
     if (cronExpression === '*/5 * * * *') {
+      // 刷新实时缓存
+      ctx.waitUntil(
+        cacheUpdate.handleScheduled(event).catch(err => 
+          console.error(`[Cron] Cache refresh failed:`, err)
+        )
+      );
+      
+      // 平台规则评估
       ctx.waitUntil(
         (async () => {
           try {
             await handlePlatformCron(env);
             console.log(`[Cron] Platform cron completed successfully`);
           } catch (err) {
-            console.error(`[Cron] Platform cron failed: ${err instanceof Error ? err.message : String(err)}`);
+            console.error(`[Cron] Platform cron failed:`, err);
+          }
+        })()
+      );
+    }
+
+    // 每小时: 刷新小时缓存数据
+    if (cronExpression === '0 * * * *') {
+      ctx.waitUntil(
+        cacheUpdate.handleScheduled(event).catch(err => 
+          console.error(`[Cron] Hourly cache refresh failed:`, err)
+        )
+      );
+    }
+
+    // 每天0点: 刷新每日缓存数据
+    if (cronExpression === '0 0 * * *') {
+      ctx.waitUntil(
+        cacheUpdate.handleScheduled(event).catch(err => 
+          console.error(`[Cron] Daily cache refresh failed:`, err)
+        )
+      );
+    }
+
+    // 每天凌晨2点: 执行数据聚合
+    if (cronExpression === '0 2 * * *') {
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const aggregationService = createAggregationService(env);
+            const result = await aggregationService.aggregateDailyData();
+
+            if (result.success) {
+              console.log(`[Cron] Aggregation completed: ${result.message}`);
+            } else {
+              console.error(`[Cron] Aggregation failed: ${result.message}`);
+              console.error(`[Cron] Errors:`, result.errors);
+            }
+          } catch (err) {
+            console.error(`[Cron] Aggregation error:`, err);
           }
         })()
       );

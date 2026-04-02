@@ -13,10 +13,16 @@ REALTIME_ENABLED = true
 SSE_ENABLED = true
 # Cloudflare API 配置
 CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
+# 缓存更新令牌(用于手动触发缓存更新API)
+CACHE_UPDATE_TOKEN = "cftrack-cache-update-2026-secure-token"
 
-# 定时任务配置
+# Cloudflare Queues配置 (替代Cron,无数量限制)
+[[queues.producers]]
+queue = "cache-refresh-queue"
+binding = "CACHE_REFRESH_QUEUE"
+
 [triggers]
-crons = ["0 2 * * *"]
+# 不再使用Cron触发器，改用Queues实现更灵活的缓存刷新
 
 # D1 数据库
 [[d1_databases]]

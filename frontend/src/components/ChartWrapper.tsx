@@ -38,6 +38,7 @@ export const ChartWrapper: React.FC<ChartWrapperProps> = ({
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -67,6 +68,23 @@ export const ChartWrapper: React.FC<ChartWrapperProps> = ({
     }
   }, [isVisible, hasLoaded]);
 
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setContainerSize({ width, height });
+        }
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+
+    return () => resizeObserver.disconnect();
+  }, [hasLoaded]);
+
   const skeletonStyle = {
     height: typeof height === 'number' ? `${height}px` : height,
     background: 'linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%)',
@@ -81,14 +99,23 @@ export const ChartWrapper: React.FC<ChartWrapperProps> = ({
   };
 
   return (
-    <div ref={containerRef} className={className} style={{ height: typeof height === 'number' ? `${height}px` : height }}>
-      {hasLoaded ? (
+    <div 
+      ref={containerRef} 
+      className={className} 
+      style={{ 
+        height: typeof height === 'number' ? `${height}px` : height,
+        minHeight: typeof height === 'number' ? `${height}px` : '200px',
+        width: '100%',
+        position: 'relative'
+      }}
+    >
+      {hasLoaded && containerSize.width > 0 && containerSize.height > 0 ? (
         <Suspense fallback={<div style={skeletonStyle}>Loading chart...</div>}>
           {children}
         </Suspense>
       ) : (
         <div style={skeletonStyle}>
-          Chart will load when visible
+          {hasLoaded ? 'Calculating chart size...' : 'Chart will load when visible'}
         </div>
       )}
     </div>
