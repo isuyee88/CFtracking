@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "vite",
     "dev:worker": "wrangler dev",
-    "build": "cd frontend && npm run build",
-    "build:frontend": "cd frontend && npm run build",
+    "build": "cd frontend && npm install && npm run build",
+    "build:frontend": "cd frontend && npm install && npm run build",
     "build:worker": "wrangler deploy --dry-run --outdir dist",
     "deploy": "npm run build:frontend && node scripts/generate-deploy-message.js && wrangler deploy --message \"$(Get-Content -Raw dist/deploy-message.txt)\"",
     "deploy:bash": "npm run build:frontend && node scripts/generate-deploy-message.js && wrangler deploy --message $(cat dist/deploy-message.txt)",
