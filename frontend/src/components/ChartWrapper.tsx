@@ -106,17 +106,28 @@ export const ChartWrapper: React.FC<ChartWrapperProps> = ({
         height: typeof height === 'number' ? `${height}px` : height,
         minHeight: typeof height === 'number' ? `${height}px` : '200px',
         width: '100%',
-        position: 'relative'
+        position: 'relative',
+        contain: 'layout style paint'
       }}
     >
-      {hasLoaded && containerSize.width > 0 && containerSize.height > 0 ? (
-        <Suspense fallback={<div style={skeletonStyle}>Loading chart...</div>}>
+      {!hasLoaded && (
+        <div 
+          style={{
+            ...skeletonStyle,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0
+          }}
+        >
+          Chart will load when visible
+        </div>
+      )}
+      {hasLoaded && containerSize.width > 0 && containerSize.height > 0 && (
+        <Suspense fallback={<div style={{ ...skeletonStyle, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>Loading chart...</div>}>
           {children}
         </Suspense>
-      ) : (
-        <div style={skeletonStyle}>
-          {hasLoaded ? 'Calculating chart size...' : 'Chart will load when visible'}
-        </div>
       )}
     </div>
   );
