@@ -9,7 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     
     steps:
       - name: Checkout code
@@ -25,7 +25,13 @@ jobs:
         run: npm ci
         
       - name: Build frontend
-        run: npm run build:frontend
+        run: |
+          echo "=== Node version ==="
+          node --version
+          echo "=== npm version ==="
+          npm --version
+          echo "=== Building frontend ==="
+          npm run build:frontend
         env:
           NODE_ENV: production
           
