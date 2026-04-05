@@ -14,10 +14,21 @@
 import { Hono } from 'hono';
 import { ClickRepository } from '@/handlers/d1/click.repo';
 import { getD1Connection } from '@/handlers/d1';
-import { getTrackingStatsStub } from '@/handlers/do';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
+import { createDashboardQueryService } from '@/services/analytics/dashboard-query.service';
+
+function isWithinThreeMonths(dateString: string): boolean {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  return date >= threeMonthsAgo;
+}
 
 export function createClickLogRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -56,7 +67,7 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
       };
 
       if (startDate && isWithinThreeMonths(startDate)) {
-        const analyticsQuery = createAnalyticsQueryService(c.env);
+        const analyticsQuery = createDashboardQueryService(c.env);
         const aeResult = await analyticsQuery.getRecentClicks({
           limit: pageSize,
           campaignId: params.campaignId,
@@ -64,7 +75,7 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
           device: params.device,
         });
 
-        const formattedList = aeResult.list.map((item) => ({
+        const formattedList = aeResult.list.map((item: Record<string, unknown>) => ({
           clickId: item.clickId,
           campaignId: item.campaignId,
           flowId: item.flowId,
@@ -142,15 +153,15 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
       }
 
       if (isWithinThreeMonths(startDate)) {
-        const analyticsQuery = createAnalyticsQueryService(c.env);
+        const analyticsQuery = createDashboardQueryService(c.env);
         const aeResult = await analyticsQuery.getRecentClicks({
           limit: 1000,
           campaignId,
         });
 
-        const uniqueVisitors = new Set(aeResult.list.map(c => c.visitorId)).size;
-        const countries = new Set(aeResult.list.map(c => c.country)).size;
-        const devices = new Set(aeResult.list.map(c => c.device)).size;
+        const uniqueVisitors = new Set(aeResult.list.map((item: Record<string, unknown>) => item.visitorId)).size;
+        const countries = new Set(aeResult.list.map((item: Record<string, unknown>) => item.country)).size;
+        const devices = new Set(aeResult.list.map((item: Record<string, unknown>) => item.device)).size;
 
         return c.json(success({
           totalClicks: aeResult.total,

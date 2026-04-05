@@ -34,23 +34,28 @@ export class BlacklistService {
     this.trafficSourceRepo = new TrafficSourceRepository(db);
   }
 
+  private async resolveTrafficSourceOrThrow(trafficSourceId: string) {
+    const resolved = await this.trafficSourceRepo.findByIdentifierWithStorageId(trafficSourceId);
+    if (!resolved) {
+      throw new NotFoundError('Traffic Source not found');
+    }
+
+    return resolved;
+  }
+
   /**
    * 创建单个黑名单条目
    */
   async create(data: CreateBlacklistDTO): Promise<BlacklistEntry> {
     const { trafficSourceId, type, value } = data;
 
-    // 验证流量平台是否存在
-    const trafficSource = await this.trafficSourceRepo.findById(trafficSourceId);
-    if (!trafficSource) {
-      throw new NotFoundError('Traffic Source not found');
-    }
+    const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
     // 验证值格式
     this.validateEntryValue(type, value, data.ipMatchMode, data.uaMatchMode);
 
     // 检查是否已存在
-    const existing = await this.blacklistRepo.findByValue(trafficSourceId, type, value);
+    const existing = await this.blacklistRepo.findByValue(storageId, type, value);
     if (existing) {
       if (existing.status === 'active') {
         throw new ValidationError(`Entry already exists in blacklist: ${value}`);
@@ -69,7 +74,7 @@ export class BlacklistService {
 
     // 创建新条目
     const entry = await this.blacklistRepo.create({
-      trafficSourceId,
+      trafficSourceId: storageId,
       type,
       value,
       name: data.name,
@@ -108,18 +113,14 @@ export class BlacklistService {
   async batchAdd(data: BatchBlacklistDTO): Promise<BlacklistEntry[]> {
     const { trafficSourceId, type, items } = data;
 
-    // 验证流量平台是否存在
-    const trafficSource = await this.trafficSourceRepo.findById(trafficSourceId);
-    if (!trafficSource) {
-      throw new NotFoundError('Traffic Source not found');
-    }
+    const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
     if (!items || items.length === 0) {
       throw new ValidationError('No items to blacklist');
     }
 
     // 批量创建黑名单条目
-    const entries = await this.blacklistRepo.batchCreate(trafficSourceId, type, items);
+    const entries = await this.blacklistRepo.batchCreate(storageId, type, items);
 
     return entries;
   }
@@ -170,7 +171,16 @@ export class BlacklistService {
    * 查询黑名单
    */
   async query(params: BlacklistQueryParams): Promise<BlacklistEntry[]> {
-    return this.blacklistRepo.findByParams(params);
+    if (!params.trafficSourceId) {
+      return this.blacklistRepo.findByParams(params);
+    }
+
+    const { storageId } = await this.resolveTrafficSourceOrThrow(params.trafficSourceId);
+
+    return this.blacklistRepo.findByParams({
+      ...params,
+      trafficSourceId: storageId,
+    });
   }
 
   /**
@@ -205,10 +215,7 @@ export class BlacklistService {
    * 同步黑名单到流量平台
    */
   async syncToPlatform(trafficSourceId: string): Promise<BlacklistSyncResult> {
-    const trafficSource = await this.trafficSourceRepo.findById(trafficSourceId);
-    if (!trafficSource) {
-      throw new NotFoundError('Traffic Source not found');
-    }
+    const { trafficSource, storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
     if (!trafficSource.apiConfig) {
       return {
@@ -242,7 +249,7 @@ export class BlacklistService {
     }
 
     // 获取未同步的黑名单
-    const unsyncedEntries = await this.blacklistRepo.findUnsynced(trafficSourceId);
+    const unsyncedEntries = await this.blacklistRepo.findUnsynced(storageId);
 
     if (unsyncedEntries.length === 0) {
       return {
@@ -384,7 +391,9 @@ export class BlacklistService {
     synced: number;
     unsynced: number;
   }> {
-    return this.blacklistRepo.getStats(trafficSourceId);
+    const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
+
+    return this.blacklistRepo.getStats(storageId);
   }
 
   /**

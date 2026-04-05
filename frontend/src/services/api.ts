@@ -41,6 +41,57 @@ async function handleResponse(response: Response) {
   return data;
 }
 
+async function handleRawJsonResponse<T>(response: Response): Promise<T> {
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message =
+      (payload &&
+        typeof payload === 'object' &&
+        'message' in payload &&
+        typeof payload.message === 'string' &&
+        payload.message) ||
+      (payload &&
+        typeof payload === 'object' &&
+        'error' in payload &&
+        typeof payload.error === 'string' &&
+        payload.error) ||
+      `API request failed with status ${response.status}`;
+
+    throw new Error(message);
+  }
+
+  return payload as T;
+}
+
+function unwrapPayload<T>(payload: any): T {
+  if (payload && typeof payload === 'object' && 'data' in payload && payload.data !== undefined) {
+    return payload.data as T;
+  }
+
+  return payload as T;
+}
+
+function getDeviceId(): string {
+  if (typeof window === 'undefined') {
+    return 'server-device';
+  }
+
+  const storageKey = 'cf_device_id';
+  const existingId = window.localStorage.getItem(storageKey);
+  if (existingId) {
+    return existingId;
+  }
+
+  const newId =
+    typeof window.crypto?.randomUUID === 'function'
+      ? window.crypto.randomUUID()
+      : `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  window.localStorage.setItem(storageKey, newId);
+  return newId;
+}
+
 // 获取 Campaign 列表
 export async function fetchCampaigns() {
   const response = await fetch(`${API_BASE_URL}/api/campaigns`);
@@ -89,6 +140,14 @@ export async function deleteCampaign(id: string | number) {
 // 获取 Campaign 统计
 export async function fetchCampaignStats(id: string | number) {
   const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}/stats`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function regenerateCampaignToken(id: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}/regenerate-token`, {
+    method: 'POST',
+  });
   const result = await handleResponse(response);
   return result.data;
 }
@@ -241,6 +300,48 @@ export async function deleteAffiliateNetwork(id: string | number) {
   return result.data;
 }
 
+// ==================== Domains API ====================
+
+export async function fetchDomains(withStats = true) {
+  const response = await fetch(`${API_BASE_URL}/api/domains?withStats=${withStats}`);
+  const result = await handleResponse(response);
+  return result.data?.list || result.data || [];
+}
+
+export async function fetchDomain(id: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/domains/${id}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function createDomain(data: any) {
+  const response = await fetch(`${API_BASE_URL}/api/domains`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function updateDomain(id: string | number, data: any) {
+  const response = await fetch(`${API_BASE_URL}/api/domains/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function deleteDomain(id: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/domains/${id}`, {
+    method: 'DELETE',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
 // ==================== Flow API ====================
 
 export async function fetchFlows(campaignId: string) {
@@ -348,9 +449,9 @@ export async function fetchDashboardStats(timeRange: string = 'today') {
   if (cached) return cached;
   
   const response = await fetch(`${API_BASE_URL}/api/analytics/dashboard?range=${timeRange}`);
-  const result = await handleResponse(response);
-  setCache(cacheKey, result.data);
-  return result.data;
+  const result = unwrapPayload<any>(await handleResponse(response));
+  setCache(cacheKey, result);
+  return result;
 }
 
 // 获取最近点击数据
@@ -360,8 +461,8 @@ export async function fetchRecentClicks(limit: number = 10) {
   if (cached) return cached;
   
   const response = await fetch(`${API_BASE_URL}/api/analytics/recent-clicks?limit=${limit}`);
-  const result = await handleResponse(response);
-  const data = result.data?.list || [];
+  const result = unwrapPayload<any>(await handleResponse(response));
+  const data = result?.list || result || [];
   setCache(cacheKey, data);
   return data;
 }
@@ -373,9 +474,9 @@ export async function fetchEntityStats(entityType: string, timeRange: string = '
   if (cached) return cached;
 
   const response = await fetch(`${API_BASE_URL}/api/analytics/entity-stats?type=${entityType}&range=${timeRange}`);
-  const result = await handleResponse(response);
-  setCache(cacheKey, result.data);
-  return result.data;
+  const result = unwrapPayload<any[]>(await handleResponse(response));
+  setCache(cacheKey, result);
+  return result;
 }
 
 // ==================== Reports API ====================
@@ -523,6 +624,180 @@ export async function fetchClicksByVisitor(visitorId: string, limit: number = 10
   const response = await fetch(`${API_BASE_URL}/api/clicks/visitor/${visitorId}?limit=${limit}`);
   const result = await handleResponse(response);
   return result.data || [];
+}
+
+// ==================== Conversions API ====================
+
+export interface ConversionLogParams {
+  page?: number;
+  pageSize?: number;
+  campaignId?: string;
+  offerId?: string;
+  startDate?: string;
+  endDate?: string;
+  status?: 'approved' | 'pending' | 'rejected';
+  country?: string;
+  device?: string;
+  search?: string;
+}
+
+export interface ConversionLogItem {
+  conversionId: string;
+  clickId: string;
+  campaignId: string;
+  offerId: string;
+  timestamp: string;
+  revenue: number;
+  payout: number;
+  currency: string;
+  conversionType: string;
+  offerName: string;
+  status: 'approved' | 'pending' | 'rejected';
+  ip?: string | null;
+  country?: string | null;
+  device?: string | null;
+  browser?: string | null;
+  source?: string | null;
+  subId1?: string | null;
+  subId2?: string | null;
+  subId3?: string | null;
+}
+
+export interface ConversionLogListResult {
+  list: ConversionLogItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface ConversionStats {
+  totalConversions: number;
+  approvedConversions: number;
+  pendingConversions: number;
+  rejectedConversions: number;
+  totalRevenue: number;
+  totalPayout: number;
+}
+
+export async function fetchConversions(params: ConversionLogParams = {}): Promise<ConversionLogListResult> {
+  const queryParams = new URLSearchParams();
+
+  if (params.page) queryParams.set('page', params.page.toString());
+  if (params.pageSize) queryParams.set('pageSize', params.pageSize.toString());
+  if (params.campaignId) queryParams.set('campaignId', params.campaignId);
+  if (params.offerId) queryParams.set('offerId', params.offerId);
+  if (params.startDate) queryParams.set('startDate', params.startDate);
+  if (params.endDate) queryParams.set('endDate', params.endDate);
+  if (params.status) queryParams.set('status', params.status);
+  if (params.country) queryParams.set('country', params.country);
+  if (params.device) queryParams.set('device', params.device);
+  if (params.search) queryParams.set('search', params.search);
+
+  const response = await fetch(`${API_BASE_URL}/api/conversions?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+
+  return {
+    list: result.data || [],
+    total: result.meta?.total || 0,
+    page: result.meta?.page || 1,
+    pageSize: result.meta?.pageSize || 20,
+    totalPages: result.meta?.totalPages || 0,
+  };
+}
+
+export async function fetchConversionStats(
+  startDate: string,
+  endDate: string,
+  campaignId?: string
+): Promise<ConversionStats> {
+  const queryParams = new URLSearchParams();
+  queryParams.set('startDate', startDate);
+  queryParams.set('endDate', endDate);
+  if (campaignId) queryParams.set('campaignId', campaignId);
+
+  const response = await fetch(`${API_BASE_URL}/api/conversions/stats?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function fetchConversionById(conversionId: string): Promise<ConversionLogItem> {
+  const response = await fetch(`${API_BASE_URL}/api/conversions/${conversionId}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function updateConversionStatus(
+  conversionId: string,
+  status: 'approved' | 'pending' | 'rejected'
+): Promise<{ updated: boolean; conversionId: string; status: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/conversions/${conversionId}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+// ==================== User Preferences API ====================
+
+export interface UserPreferenceDocument {
+  version: string;
+  lastUpdated: number;
+  lastModifiedBy: string;
+  preferences: {
+    ui: {
+      theme: 'light' | 'dark' | 'auto';
+      density: 'compact' | 'standard' | 'comfortable';
+      fontSize: 'small' | 'medium' | 'large';
+      sidebarCollapsed: boolean;
+    };
+    tables: Record<string, unknown>;
+    views: Record<string, unknown>;
+    system: {
+      language: string;
+      timezone: string;
+      refreshInterval: number;
+    };
+  };
+}
+
+export interface SaveUserPreferencesPayload {
+  lastKnownVersion?: number;
+  preferences: Partial<UserPreferenceDocument['preferences']>;
+}
+
+export async function fetchUserPreferences(userId: string): Promise<UserPreferenceDocument> {
+  const response = await fetch(`${API_BASE_URL}/api/user-preferences/preferences/${userId}`, {
+    headers: {
+      'X-Device-ID': getDeviceId(),
+    },
+  });
+
+  return handleRawJsonResponse<UserPreferenceDocument>(response);
+}
+
+export async function saveUserPreferences(
+  userId: string,
+  payload: SaveUserPreferencesPayload
+): Promise<UserPreferenceDocument> {
+  const response = await fetch(`${API_BASE_URL}/api/user-preferences/preferences/${userId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Device-ID': getDeviceId(),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await handleRawJsonResponse<{
+    success: boolean;
+    data: UserPreferenceDocument;
+    version: number;
+  }>(response);
+
+  return result.data;
 }
 
 // ==================== Trends API ====================

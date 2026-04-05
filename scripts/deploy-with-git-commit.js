@@ -43,7 +43,9 @@ async function main() {
     // 6. 执行 Cloudflare 部署
     console.log('☁️  部署到 Cloudflare...');
     const deployMessage = fs.readFileSync(path.join('dist', 'deploy-message.txt'), 'utf8');
-    execSync(`wrangler deploy --message "${deployMessage.replace(/"/g, '\"')}"`, { stdio: 'inherit' });
+    execSync(`wrangler deploy --keep-vars --message "${deployMessage.replace(/"/g, '\"')}"`, {
+      stdio: 'inherit',
+    });
     
     console.log('🎉 部署完成！');
     

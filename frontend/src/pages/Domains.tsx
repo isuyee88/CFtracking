@@ -1,0 +1,483 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  Edit3,
+  Globe,
+  Loader2,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { EntityForm, type FormField } from '../components/EntityForm';
+import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
+import { createDomain, deleteDomain, fetchDomains, updateDomain } from '../services/api';
+import { useToast } from '../components/Toast';
+import type { Domain } from '../types/domain';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+const DOMAIN_FIELDS: FormField[] = [
+  {
+    name: 'hostname',
+    label: 'Hostname',
+    type: 'text',
+    required: true,
+    placeholder: 'trk.example.com',
+    validation: (value) => {
+      const hostname = String(value || '').trim();
+      return /^(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(hostname) ? null : 'Please enter a valid hostname';
+    },
+  },
+  {
+    name: 'usage',
+    label: 'Usage',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'tracking', label: 'Tracking Domain' },
+      { value: 'landing', label: 'Landing Hosting' },
+      { value: 'admin', label: 'Admin Access' },
+      { value: 'mixed', label: 'Mixed Use' },
+    ],
+  },
+  {
+    name: 'status',
+    label: 'Status',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'pending', label: 'Pending Verification' },
+      { value: 'active', label: 'Active' },
+      { value: 'paused', label: 'Paused' },
+      { value: 'error', label: 'Error' },
+    ],
+  },
+  {
+    name: 'sslStatus',
+    label: 'SSL Mode',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'pending', label: 'Pending' },
+      { value: 'auto', label: 'Auto Managed' },
+      { value: 'custom', label: 'Custom Certificate' },
+      { value: 'disabled', label: 'Disabled' },
+    ],
+  },
+  {
+    name: 'dnsProvider',
+    label: 'DNS Provider',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'cloudflare', label: 'Cloudflare' },
+      { value: 'route53', label: 'Route53' },
+      { value: 'godaddy', label: 'GoDaddy' },
+      { value: 'namecheap', label: 'Namecheap' },
+      { value: 'manual', label: 'Manual DNS' },
+      { value: 'other', label: 'Other' },
+    ],
+  },
+  {
+    name: 'registrar',
+    label: 'Registrar',
+    type: 'text',
+    placeholder: 'Cloudflare Registrar',
+  },
+  {
+    name: 'cloudflareZoneId',
+    label: 'Cloudflare Zone ID',
+    type: 'text',
+    placeholder: 'Optional zone id',
+  },
+  {
+    name: 'cloudflareProxyEnabled',
+    label: 'Cloudflare Proxy',
+    type: 'checkbox',
+    description: 'Traffic goes through Cloudflare proxy and SSL automation.',
+  },
+  {
+    name: 'defaultCampaignId',
+    label: 'Default Campaign ID',
+    type: 'text',
+    placeholder: 'c12',
+  },
+  {
+    name: 'defaultLandingPageId',
+    label: 'Default Landing ID',
+    type: 'text',
+    placeholder: 'lp4',
+  },
+  {
+    name: 'notes',
+    label: 'Notes',
+    type: 'textarea',
+    placeholder: 'DNS handover steps, SSL plan, access notes...',
+  },
+];
+
+function formatDate(value?: string) {
+  if (!value) return '-';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
+}
+
+function getStatusTone(status: Domain['status']) {
+  switch (status) {
+    case 'active':
+      return 'bg-secondary-container/50 text-secondary';
+    case 'error':
+      return 'bg-error/10 text-error';
+    case 'paused':
+      return 'bg-warning/10 text-warning';
+    default:
+      return 'bg-surface-container text-on-surface-variant';
+  }
+}
+
+function getStatusIcon(status: Domain['status']) {
+  switch (status) {
+    case 'active':
+      return CheckCircle2;
+    case 'error':
+      return XCircle;
+    case 'paused':
+      return AlertCircle;
+    default:
+      return ShieldCheck;
+  }
+}
+
+export default function Domains() {
+  const toast = useToast();
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'All' | Domain['status']>('All');
+  const [usageFilter, setUsageFilter] = useState<'All' | Domain['usage']>('All');
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
+  const [selectedDomain, setSelectedDomain] = useState<Partial<Domain> | undefined>(undefined);
+
+  const loadDomains = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await fetchDomains();
+      if (Array.isArray(data)) {
+        setDomains(data);
+      } else {
+        setDomains([]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load domains');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadDomains();
+  }, []);
+
+  const filteredDomains = useMemo(() => {
+    return domains.filter((domain) => {
+      const matchesSearch =
+        !searchTerm ||
+        [domain.hostname, domain.registrar, domain.dnsProvider, domain.defaultCampaignId]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(searchTerm.toLowerCase()));
+
+      const matchesStatus = statusFilter === 'All' || domain.status === statusFilter;
+      const matchesUsage = usageFilter === 'All' || domain.usage === usageFilter;
+      return matchesSearch && matchesStatus && matchesUsage;
+    });
+  }, [domains, searchTerm, statusFilter, usageFilter]);
+
+  const handleCreate = () => {
+    setFormMode('create');
+    setSelectedDomain(undefined);
+    setIsFormOpen(true);
+  };
+
+  const handleEdit = (domain: Domain) => {
+    setFormMode('edit');
+    setSelectedDomain(domain);
+    setIsFormOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this domain record?')) return;
+    try {
+      await deleteDomain(id);
+      setDomains((current) => current.filter((domain) => domain.id !== id));
+      toast.success('Domain deleted', 'Domain inventory has been updated.');
+    } catch (err) {
+      toast.error('Delete failed', err instanceof Error ? err.message : 'Unable to delete domain');
+    }
+  };
+
+  const handleSubmit = async (formData: Record<string, any>) => {
+    try {
+      if (formMode === 'create') {
+        const created = await createDomain(formData);
+        setDomains((current) => [created, ...current]);
+        toast.success('Domain added', `Domain ${created.hostname} is now tracked.`);
+      } else if (selectedDomain?.id) {
+        const updated = await updateDomain(selectedDomain.id, formData);
+        setDomains((current) => current.map((domain) => (domain.id === selectedDomain.id ? updated : domain)));
+        toast.success('Domain updated', `Domain ${updated.hostname} has been updated.`);
+      }
+      setIsFormOpen(false);
+    } catch (err) {
+      toast.error('Save failed', err instanceof Error ? err.message : 'Unable to save domain');
+    }
+  };
+
+  const columns = useMemo<VirtualTableColumn<Domain>[]>(
+    () => [
+      {
+        key: 'hostname',
+        title: 'Hostname',
+        width: 240,
+        render: (_, domain) => (
+          <div className="min-w-0">
+            <div className="font-medium text-fg-default truncate">{domain.hostname}</div>
+            <div className="text-xs text-fg-muted">{domain.displayId || domain.id}</div>
+          </div>
+        ),
+      },
+      {
+        key: 'usage',
+        title: 'Usage',
+        width: 140,
+        render: (_, domain) => <span className="uppercase text-xs tracking-widest text-fg-muted">{domain.usage}</span>,
+      },
+      {
+        key: 'status',
+        title: 'Status',
+        width: 150,
+        render: (_, domain) => {
+          const Icon = getStatusIcon(domain.status);
+          return (
+            <span className={cn('inline-flex items-center gap-2 px-3 py-1 rounded-sm text-xs font-semibold', getStatusTone(domain.status))}>
+              <Icon size={14} />
+              {domain.status}
+            </span>
+          );
+        },
+      },
+      {
+        key: 'sslStatus',
+        title: 'SSL',
+        width: 140,
+        render: (_, domain) => <span className="text-sm text-fg-default">{domain.sslStatus}</span>,
+      },
+      {
+        key: 'dnsProvider',
+        title: 'DNS / Registrar',
+        width: 220,
+        render: (_, domain) => (
+          <div className="min-w-0">
+            <div className="text-sm text-fg-default">{domain.dnsProvider}</div>
+            <div className="text-xs text-fg-muted truncate">{domain.registrar || 'Registrar not set'}</div>
+          </div>
+        ),
+      },
+      {
+        key: 'mapping',
+        title: 'Default Mapping',
+        width: 210,
+        render: (_, domain) => (
+          <div className="text-sm text-fg-default">
+            <div>{domain.defaultCampaignId || 'No default campaign'}</div>
+            <div className="text-xs text-fg-muted">{domain.defaultLandingPageId || 'No default landing'}</div>
+          </div>
+        ),
+      },
+      {
+        key: 'campaignCount',
+        title: 'Campaigns',
+        width: 110,
+        align: 'right',
+        render: (_, domain) => <span className="font-medium text-fg-default">{domain.campaignCount || 0}</span>,
+      },
+      {
+        key: 'updatedAt',
+        title: 'Updated',
+        width: 180,
+        render: (_, domain) => <span className="text-sm text-fg-muted">{formatDate(domain.updatedAt)}</span>,
+      },
+      {
+        key: 'actions',
+        title: 'Actions',
+        width: 160,
+        render: (_, domain) => (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                void navigator.clipboard.writeText(domain.hostname);
+                toast.success('Hostname copied', domain.hostname);
+              }}
+              className="p-2 rounded-sm text-fg-muted hover:text-fg-default hover:bg-surface-container"
+              aria-label={`Copy ${domain.hostname}`}
+            >
+              <Copy size={16} />
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                handleEdit(domain);
+              }}
+              className="p-2 rounded-sm text-fg-muted hover:text-fg-default hover:bg-surface-container"
+              aria-label={`Edit ${domain.hostname}`}
+            >
+              <Edit3 size={16} />
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleDelete(domain.id);
+              }}
+              className="p-2 rounded-sm text-error hover:bg-error/10"
+              aria-label={`Delete ${domain.hostname}`}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ),
+      },
+    ],
+    [toast]
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-secondary-container">
+              <Globe size={20} className="text-secondary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-display font-bold text-primary">Domains</h1>
+              <p className="text-sm text-on-surface-variant">
+                Inventory tracking, landing, and admin domains with SSL and DNS metadata.
+              </p>
+            </div>
+          </div>
+          <div className="rounded-sm border border-outline-variant/30 bg-surface-container-low p-4 text-sm text-on-surface-variant">
+            This module is the foundation for domain lifecycle management, campaign entry mapping, and Cloudflare proxy visibility.
+          </div>
+        </div>
+        <button
+          onClick={handleCreate}
+          className="btn-create inline-flex items-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-widest rounded-sm"
+        >
+          <Plus size={18} />
+          Add Domain
+        </button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <div className="rounded-sm bg-surface-container-lowest p-4 whisper-shadow">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Managed</div>
+          <div className="mt-2 text-3xl font-display font-bold text-primary">{domains.length}</div>
+        </div>
+        <div className="rounded-sm bg-surface-container-lowest p-4 whisper-shadow">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Active</div>
+          <div className="mt-2 text-3xl font-display font-bold text-secondary">
+            {domains.filter((domain) => domain.status === 'active').length}
+          </div>
+        </div>
+        <div className="rounded-sm bg-surface-container-lowest p-4 whisper-shadow">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Pending SSL</div>
+          <div className="mt-2 text-3xl font-display font-bold text-warning">
+            {domains.filter((domain) => domain.sslStatus === 'pending').length}
+          </div>
+        </div>
+        <div className="rounded-sm bg-surface-container-lowest p-4 whisper-shadow">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Cloudflare Proxied</div>
+          <div className="mt-2 text-3xl font-display font-bold text-primary">
+            {domains.filter((domain) => domain.cloudflareProxyEnabled).length}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-sm bg-surface-container-lowest p-5 whisper-shadow space-y-4">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),180px,180px]">
+          <input
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search hostname, registrar, DNS provider..."
+            className="w-full rounded-sm border border-outline-variant bg-surface px-4 py-3 text-sm outline-none transition-all focus:border-primary"
+          />
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+            className="rounded-sm border border-outline-variant bg-surface px-4 py-3 text-sm outline-none transition-all focus:border-primary"
+          >
+            <option value="All">All statuses</option>
+            <option value="active">Active</option>
+            <option value="pending">Pending</option>
+            <option value="paused">Paused</option>
+            <option value="error">Error</option>
+          </select>
+          <select
+            value={usageFilter}
+            onChange={(event) => setUsageFilter(event.target.value as typeof usageFilter)}
+            className="rounded-sm border border-outline-variant bg-surface px-4 py-3 text-sm outline-none transition-all focus:border-primary"
+          >
+            <option value="All">All usage</option>
+            <option value="tracking">Tracking</option>
+            <option value="landing">Landing</option>
+            <option value="admin">Admin</option>
+            <option value="mixed">Mixed</option>
+          </select>
+        </div>
+
+        {error ? (
+          <div className="rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>
+        ) : loading ? (
+          <div className="flex items-center justify-center py-12 text-on-surface-variant">
+            <Loader2 size={24} className="animate-spin mr-3" />
+            Loading domains...
+          </div>
+        ) : (
+          <VirtualTableEnhanced
+            tableId="domains-table"
+            columns={columns}
+            data={filteredDomains}
+            height={520}
+            selectable
+            selectedRows={selectedRows}
+            onSelectionChange={setSelectedRows}
+            getRowId={(row) => row.id}
+            onRowClick={(row) => handleEdit(row)}
+            emptyMessage="No domains found"
+          />
+        )}
+      </div>
+
+      <EntityForm
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        onSubmit={handleSubmit}
+        title="Domain"
+        fields={DOMAIN_FIELDS}
+        initialData={selectedDomain}
+        mode={formMode}
+      />
+    </div>
+  );
+}

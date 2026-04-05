@@ -10,7 +10,7 @@
  */
 
 import type { Env } from '@/config/env';
-import { createCacheUpdateRoutes } from './cache-update-service';
+import { createCacheUpdateRoutes, type ScheduledRefreshEvent } from './cache-update-service';
 
 /**
  * 队列消息类型
@@ -33,9 +33,9 @@ export class CacheRefreshConsumer {
    * 处理队列消息
    */
   static async handle(
-    batch: Message<CacheRefreshMessage>[],
+    batch: MessageBatch<CacheRefreshMessage>,
     env: Env,
-    ctx: ExecutionContext
+    _ctx: ExecutionContext
   ): Promise<void> {
     console.log(`[Queue Consumer] Processing ${batch.messages.length} messages`);
     
@@ -65,12 +65,12 @@ export class CacheRefreshConsumer {
           
           case 'warmup':
             // 缓存预热
-            await this.warmup(cacheUpdate, task);
+            await this.warmup(cacheUpdate, task, env);
             break;
           
           case 'custom':
             // 自定义刷新
-            await this.refreshCustom(cacheUpdate, task);
+            await this.refreshCustom(cacheUpdate, task, env);
             break;
           
           default:
@@ -94,14 +94,12 @@ export class CacheRefreshConsumer {
    */
   private static async refreshRealtime(
     cacheUpdate: ReturnType<typeof createCacheUpdateRoutes>,
-    task: CacheRefreshMessage
+    _task: CacheRefreshMessage
   ): Promise<void> {
     console.log('[Queue Consumer] Refreshing realtime data...');
     
     // 模拟ScheduledEvent
-    const event = {
-      type: 'scheduled' as const,
-      scheduledTime: new Date(task.timestamp).toISOString(),
+    const event: ScheduledRefreshEvent = {
       cron: '*/5 * * * *',
     };
     
@@ -113,13 +111,11 @@ export class CacheRefreshConsumer {
    */
   private static async refreshHourly(
     cacheUpdate: ReturnType<typeof createCacheUpdateRoutes>,
-    task: CacheRefreshMessage
+    _task: CacheRefreshMessage
   ): Promise<void> {
     console.log('[Queue Consumer] Refreshing hourly data...');
     
-    const event = {
-      type: 'scheduled' as const,
-      scheduledTime: new Date(task.timestamp).toISOString(),
+    const event: ScheduledRefreshEvent = {
       cron: '0 * * * *',
     };
     
@@ -131,13 +127,11 @@ export class CacheRefreshConsumer {
    */
   private static async refreshDaily(
     cacheUpdate: ReturnType<typeof createCacheUpdateRoutes>,
-    task: CacheRefreshMessage
+    _task: CacheRefreshMessage
   ): Promise<void> {
     console.log('[Queue Consumer] Refreshing daily data...');
     
-    const event = {
-      type: 'scheduled' as const,
-      scheduledTime: new Date(task.timestamp).toISOString(),
+    const event: ScheduledRefreshEvent = {
       cron: '0 0 * * *',
     };
     
@@ -149,7 +143,8 @@ export class CacheRefreshConsumer {
    */
   private static async warmup(
     cacheUpdate: ReturnType<typeof createCacheUpdateRoutes>,
-    task: CacheRefreshMessage
+    _task: CacheRefreshMessage,
+    env: Env
   ): Promise<void> {
     console.log('[Queue Consumer] Warming up cache...');
     
@@ -157,7 +152,7 @@ export class CacheRefreshConsumer {
     const request = new Request('http://internal/cache-update?action=warm-cache', {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${process.env.CACHE_UPDATE_TOKEN}`,
+        'Authorization': `Bearer ${env.CACHE_UPDATE_TOKEN}`,
       },
     });
     
@@ -169,7 +164,8 @@ export class CacheRefreshConsumer {
    */
   private static async refreshCustom(
     cacheUpdate: ReturnType<typeof createCacheUpdateRoutes>,
-    task: CacheRefreshMessage
+    task: CacheRefreshMessage,
+    env: Env
   ): Promise<void> {
     console.log('[Queue Consumer] Custom refresh:', task.payload);
     
@@ -178,7 +174,7 @@ export class CacheRefreshConsumer {
       const request = new Request(`http://internal/cache-update?action=purge-key&key=${task.payload.keys[0]}`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${process.env.CACHE_UPDATE_TOKEN}`,
+          'Authorization': `Bearer ${env.CACHE_UPDATE_TOKEN}`,
         },
       });
       

@@ -38,7 +38,6 @@ import {
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { LazyImage } from './LazyImage';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -155,6 +154,7 @@ export const Layout = () => {
       items: [
         { icon: Globe, label: "Traffic Sources", to: "/traffic-sources" },
         { icon: Network, label: "Affiliate Networks", to: "/affiliate-networks" },
+        { icon: Home, label: "Domains", to: "/domains" },
       ]
     },
     {
@@ -297,16 +297,14 @@ export const Layout = () => {
             >
               <div className="text-right">
                 <p className="text-sm font-semibold text-fg-default group-hover:text-accent-fg transition-colors">User Name</p>
-                <p className="text-xs text-fg-subtle">Elite Partner</p>
+                <p className="text-xs text-fg-muted">Elite Partner</p>
               </div>
-              <LazyImage 
-                src="https://picsum.photos/seed/avatar/100/100" 
-                alt="User profile" 
-                className="w-8 h-8 rounded-md border border-border-default"
-                placeholderColor="#e0e0e0"
-                effect="fade"
-                referrerPolicy="no-referrer"
-              />
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border-default bg-surface-container text-xs font-semibold text-fg-default"
+                aria-hidden="true"
+              >
+                UN
+              </div>
             </button>
           </div>
         </header>
@@ -317,8 +315,6 @@ export const Layout = () => {
           role="main"
           aria-label="Page content"
         >
-          {/* Debug: 显示当前路由路径 */}
-          <div className="text-xs text-fg-muted mb-2" aria-hidden="true">Current Path: {location.pathname}</div>
           <Outlet />
         </div>
       </main>

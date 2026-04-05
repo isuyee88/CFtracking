@@ -34,6 +34,10 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
     return result;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   async findByDisplayId(displayId: string): Promise<TrafficSource | null> {
     const result = await this.db
       .prepare(`SELECT * FROM trafficSources WHERE displayId = ?`)
@@ -41,6 +45,33 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
       .first();
     if (!result) return null;
     return this.transform(result as Record<string, unknown>);
+  }
+
+  async resolveStorageId(identifier: string): Promise<string | null> {
+    const result = await this.db
+      .prepare(`SELECT id FROM trafficSources WHERE id = ? OR displayId = ? LIMIT 1`)
+      .bind(identifier, identifier)
+      .first<{ id: string }>();
+
+    return result?.id || null;
+  }
+
+  async findByIdentifierWithStorageId(
+    identifier: string
+  ): Promise<{ trafficSource: TrafficSource; storageId: string } | null> {
+    const result = await this.db
+      .prepare(`SELECT * FROM trafficSources WHERE id = ? OR displayId = ? LIMIT 1`)
+      .bind(identifier, identifier)
+      .first<Record<string, unknown>>();
+
+    if (!result || typeof result.id !== 'string') {
+      return null;
+    }
+
+    return {
+      trafficSource: this.transform(result),
+      storageId: result.id,
+    };
   }
 
   /**

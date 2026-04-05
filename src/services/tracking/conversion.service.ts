@@ -39,19 +39,6 @@ export class ConversionService {
   async handleConversion(request: ConversionRequest): Promise<ConversionResult> {
     const conversionId = generateConversionId();
 
-    const conversionData: ConversionData = {
-      conversionId,
-      clickId: request.clickId,
-      campaignId: request.campaignId,
-      offerId: request.offerId,
-      timestamp: new Date().toISOString(),
-      revenue: request.revenue,
-      payout: request.payout || 0,
-      currency: request.currency || 'USD',
-      conversionType: request.conversionType || 'lead',
-      offerName: request.offerName || null,
-    };
-
     await this.doService.trackConversion({
       clickId: request.clickId,
       revenue: request.revenue

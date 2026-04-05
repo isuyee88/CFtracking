@@ -24,6 +24,10 @@ export class OfferRepository extends BaseRepository<Offer> {
     } as Offer;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   protected getExcludedStatusesCondition(): string {
     return "status != 'deleted'";
   }

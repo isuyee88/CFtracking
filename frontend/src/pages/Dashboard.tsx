@@ -6,7 +6,7 @@
  * 样式优化：统一主色调、玻璃拟态效果、自动昼夜模式
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   TrendingUp, 
@@ -29,19 +29,23 @@ import {
   ChartWrapper,
   LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer
 } from '../components/ChartWrapper';
+import { QuickDateRangePicker } from '../components/DateRangePicker';
 import { useDashboardURLState } from '../hooks/useURLState';
-import { useTableScroll } from '../hooks/useTableScroll';
-import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
+import type { VirtualTableColumn } from '../components/VirtualTableEnhanced';
 import { DataSourceBadge, DataSourceInfo, DataSourceWarning } from '../components/DataSourceBadge';
-import { useInitialData } from '../App';
-const QuickDateRangePicker = lazy(() => import('@/components/DateRangePicker').then(m => ({ default: m.QuickDateRangePicker })));
-type DateRangeValue = { interval: string; from?: string; to?: string };
-import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
+import { useInitialData } from '../contexts/InitialDataContext';
+import { fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
 import { BrowserIcon, OSIcon } from '../components/BrandIcon';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+const LazyVirtualTableEnhanced = lazy(() =>
+  import('../components/VirtualTableEnhanced').then(module => ({
+    default: module.VirtualTableEnhanced,
+  }))
+);
 
 // 自动检测昼夜模式的 Hook
 function useAutoDarkMode() {
@@ -533,14 +537,26 @@ const TIME_RANGES = [
 
 // 加载状态组件
 const LoadingSpinner = ({ size = 24 }: { size?: number }) => (
-  <div className="flex items-center justify-center">
-    <div className="animate-spin rounded-full h-{size} w-{size} border-t-2 border-b-2 border-primary"></div>
+  <div className="flex items-center justify-center" aria-hidden="true">
+    <div
+      className="animate-spin rounded-full border-t-2 border-b-2 border-primary"
+      style={{ width: size, height: size }}
+    />
   </div>
 );
 
 // 错误提示组件
 const ErrorMessage = ({ message }: { message: string }) => (
   <div className="text-red-500 text-sm p-4 bg-red-50 rounded-lg">
+    {message}
+  </div>
+);
+
+const TableSkeleton = ({ height, message = 'Loading table...' }: { height: number; message?: string }) => (
+  <div
+    className="flex items-center justify-center rounded-md border border-outline-variant/20 bg-surface-container-low text-sm text-on-surface-variant"
+    style={{ height }}
+  >
     {message}
   </div>
 );
@@ -638,6 +654,7 @@ const PreferencesModal = ({
             </div>
             <div className="mt-2 relative">
               <select
+                aria-label="Add dashboard metric"
                 className="w-full p-2 border border-border-default rounded-lg text-sm bg-canvas focus:border-accent-fg focus:outline-none transition-colors"
                 onChange={(e) => { if (e.target.value) { toggleMetric(e.target.value); e.target.value = ''; }}}
                 value=""
@@ -671,6 +688,7 @@ const PreferencesModal = ({
             </div>
             <div className="mt-2">
               <select
+                aria-label="Add dashboard entity block"
                 className="w-full p-2 border border-border-default rounded-lg text-sm bg-canvas focus:border-accent-fg focus:outline-none transition-colors"
                 onChange={(e) => { if (e.target.value) { toggleEntity(e.target.value); e.target.value = ''; }}}
                 value=""
@@ -718,6 +736,7 @@ const PreferencesModal = ({
             </div>
             <div className="mt-2">
               <select
+                aria-label="Add recent clicks column"
                 className="w-full p-2 border border-border-default rounded-lg text-sm bg-canvas focus:border-accent-fg focus:outline-none transition-colors"
                 onChange={(e) => { if (e.target.value) { toggleRecentClickColumn(e.target.value); e.target.value = ''; }}}
                 value=""
@@ -796,11 +815,11 @@ export const Dashboard = () => {
   const [showPreferences, setShowPreferences] = useState(false);
   const [dataSource, setDataSource] = useState<'DO' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT'>(initialData?.dataSource || 'DO');
   const [queryTime, setQueryTime] = useState<string | null>(initialData?.queryTime || null);
-  const [loading, setLoading] = useState({
-    stats: true,
-    recentClicks: true,
-    entities: true
-  });
+  const [loading, setLoading] = useState(() => ({
+    stats: !(initialData?.metrics?.length > 0),
+    recentClicks: !(initialData?.recentClicks?.length > 0),
+    entities: !(initialData?.entityData && Object.keys(initialData.entityData).length > 0)
+  }));
   const [errors, setErrors] = useState({
     stats: '',
     recentClicks: '',
@@ -993,7 +1012,7 @@ export const Dashboard = () => {
   };
   
   return (
-    <div className="min-h-screen bg-canvas-inset dark:bg-surface">
+    <div className="min-h-full bg-canvas-inset dark:bg-surface">
       {/* Preferences Modal */}
       <PreferencesModal 
         isOpen={showPreferences}
@@ -1006,7 +1025,7 @@ export const Dashboard = () => {
       <div className="bg-surface-container-lowest dark:bg-surface-container px-6 py-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-display font-bold text-on-surface">Dashboard</h1>
               {/* 昼夜模式指示器 */}
               <div className={cn(
@@ -1021,61 +1040,68 @@ export const Dashboard = () => {
               {/* 数据源指示器 */}
               <DataSourceBadge dataSource={dataSource} size="sm" showLabel={false} />
             </div>
-            <div className="flex items-center gap-3 text-sm text-on-surface-variant mt-1">
-              <span>Real-time tracking overview</span>
+            <div className="mt-1 flex min-h-[3.5rem] flex-col items-start gap-1 text-sm text-on-surface-variant sm:min-h-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <span className="leading-5">Real-time tracking overview</span>
               <DataSourceInfo dataSource={dataSource} queryTime={queryTime || undefined} />
             </div>
             <DataSourceWarning dataSource={dataSource} className="mt-1" />
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             {/* Campaign 选择 */}
-            <select className="px-3 py-2 border border-outline-variant/20 rounded-sm text-sm bg-surface-container-lowest focus:border-primary focus:outline-none transition-colors">
+            <select
+              aria-label="Select campaign scope"
+              className="w-full rounded-sm border border-outline-variant/20 bg-surface-container-lowest px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none sm:w-auto"
+            >
               <option>Campaigns</option>
               <option>All Campaigns</option>
             </select>
             
             {/* 时间范围 - 使用新的日期选择器组件 */}
-            <div className="w-[320px]">
-              <Suspense fallback={<div className="h-10 w-full bg-surface-container rounded animate-pulse" />}>
-                <QuickDateRangePicker
-                  value={state.range?.interval || 'today'}
-                  onChange={(preset, range) => {
-                    if (range) {
-                      setState(prev => ({
-                        range: {
-                          interval: preset as any,
-                          from: range.startDate.split('T')[0],
-                          to: range.endDate.split('T')[0]
-                        }
-                      }));
-                    }
-                  }}
-                  showTime={false}
-                  maxRangeDays={365}
-                />
-              </Suspense>
+            <div className="w-full sm:w-[320px]">
+              <QuickDateRangePicker
+                value={state.range?.interval || 'today'}
+                onChange={(preset, range) => {
+                  if (range) {
+                    setState(prev => ({
+                      range: {
+                        interval: preset as any,
+                        from: range.startDate.split('T')[0],
+                        to: range.endDate.split('T')[0]
+                      }
+                    }));
+                  }
+                }}
+                showTime={false}
+                maxRangeDays={365}
+              />
             </div>
             
             {/* 刷新按钮 */}
-            <button
-              onClick={() => { refreshStatsAndEntities(); refreshRecentClicks(); }}
-              disabled={isRefreshing}
-              className={cn(
-                "p-2 border border-outline-variant/20 rounded-sm hover:bg-surface-container transition-colors",
-                isRefreshing && "animate-spin"
-              )}
-            >
-              <RefreshCw size={18} className="text-on-surface-variant" />
-            </button>
-            
-            {/* 设置按钮 */}
-            <button 
-              onClick={() => setShowPreferences(true)}
-              className="p-2 border border-outline-variant/20 rounded-sm hover:bg-surface-container transition-colors"
-            >
-              <Settings size={18} className="text-on-surface-variant" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { refreshStatsAndEntities(); refreshRecentClicks(); }}
+                disabled={isRefreshing}
+                aria-label="Refresh dashboard data"
+                title="Refresh dashboard data"
+                className={cn(
+                  "rounded-sm border border-outline-variant/20 p-2 transition-colors hover:bg-surface-container",
+                  isRefreshing && "animate-spin"
+                )}
+              >
+                <RefreshCw size={18} className="text-on-surface-variant" />
+              </button>
+              
+              {/* 设置按钮 */}
+              <button 
+                onClick={() => setShowPreferences(true)}
+                aria-label="Open dashboard preferences"
+                title="Open dashboard preferences"
+                className="rounded-sm border border-outline-variant/20 p-2 transition-colors hover:bg-surface-container"
+              >
+                <Settings size={18} className="text-on-surface-variant" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1083,7 +1109,7 @@ export const Dashboard = () => {
       <div className="p-6 space-y-6">
         {/* Metrics Cards - 统一主色调样式 */}
         {config.metrics.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
             {loading.stats ? (
               Array(config.metrics.length).fill(0).map((_, index) => {
                 const style = getMetricStyle(index);
@@ -1094,9 +1120,9 @@ export const Dashboard = () => {
                   >
                     <div className={cn("metric-card-accent", style.accent)} />
                     <p className="metric-label">Loading...</p>
-                    <h3 className="metric-value">
+                    <p className="metric-value">
                       <LoadingSpinner size={20} />
-                    </h3>
+                    </p>
                     <p className="metric-trend">--</p>
                   </div>
                 );
@@ -1106,7 +1132,16 @@ export const Dashboard = () => {
                 <ErrorMessage message={errors.stats} />
               </div>
             ) : (
-              stats.filter(Boolean).map((stat: any, index: number) => {
+              (stats.filter(Boolean).length > 0 ? stats.filter(Boolean) : config.metrics.map(metricKey => {
+                const fallbackMetric = ALL_METRICS.find(metric => metric.key === metricKey);
+                return {
+                  key: metricKey,
+                  label: fallbackMetric?.label || 'Unknown',
+                  value: '-',
+                  isPositive: true,
+                  trend: '',
+                };
+              })).map((stat: any, index: number) => {
                 const style = getMetricStyle(index);
                 return (
                   <div 
@@ -1117,7 +1152,7 @@ export const Dashboard = () => {
                     <div className={cn("metric-card-accent", style.accent)} />
                     
                     <p className="metric-label">{stat?.label || 'Unknown'}</p>
-                    <h3 className="metric-value">{stat?.value || '-'}</h3>
+                    <p className="metric-value">{stat?.value || '-'}</p>
                     <p className={cn(
                       "metric-trend",
                       stat?.isPositive ? "metric-trend-up" : "metric-trend-down"
@@ -1133,9 +1168,9 @@ export const Dashboard = () => {
         
         {/* Chart - 玻璃拟态效果 */}
         <div className="chart-container">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="chart-title">Clicks & Conversions</h3>
-            <div className="flex gap-4 text-sm flex-wrap">
+          <div className="chart-header">
+            <h2 className="chart-title">Clicks & Conversions</h2>
+            <div className="chart-legend-wrap">
               {config.metrics.slice(0, 7).map((metric, idx) => {
                 const m = ALL_METRICS.find(am => am.key === metric);
                 if (!m) return null;
@@ -1150,12 +1185,18 @@ export const Dashboard = () => {
                 ];
                 const colors = isDarkMode ? darkColors : lightColors;
                 return (
-                  <div key={metric} className="flex items-center gap-1.5">
+                  <div
+                    key={metric}
+                    className={cn(
+                      "items-center gap-1.5",
+                      idx > 3 ? "hidden md:flex" : "flex"
+                    )}
+                  >
                     <span 
                       className="w-3 h-3 rounded-sm" 
                       style={{ backgroundColor: colors[idx % colors.length] }}
                     />
-                    <span className="text-on-surface-variant text-xs">{m.label}</span>
+                    <span className="text-on-surface text-xs">{m.label}</span>
                   </div>
                 );
               }).filter(Boolean)}
@@ -1250,7 +1291,10 @@ export const Dashboard = () => {
         
         {/* Entity Tables - 使用虚拟滚动 */}
         {config.entities.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div
+            className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+            style={{ contentVisibility: 'auto', containIntrinsicSize: '900px' }}
+          >
             {config.entities.map(entityKey => {
               const entityConfig = ENTITY_CONFIGS[entityKey as keyof typeof ENTITY_CONFIGS];
               const data = entityData[entityKey] || [];
@@ -1292,17 +1336,19 @@ export const Dashboard = () => {
               return (
                 <div key={entityKey} className="section-card overflow-hidden">
                   <div className="section-header">
-                    <h3 className="font-display font-semibold text-on-surface">{entityConfig?.label || entityKey}</h3>
+                    <h2 className="font-display font-semibold text-on-surface">{entityConfig?.label || entityKey}</h2>
                   </div>
-                  <VirtualTableEnhanced
-                    tableId={`dashboard-${entityKey}`}
-                    columns={virtualColumns}
-                    data={data}
-                    rowHeight={48}
-                    height={300}
-                    overscan={5}
-                    emptyMessage={`No ${entityConfig?.label || entityKey} found`}
-                  />
+                  <Suspense fallback={<TableSkeleton height={300} />}>
+                    <LazyVirtualTableEnhanced
+                      tableId={`dashboard-${entityKey}`}
+                      columns={virtualColumns}
+                      data={data}
+                      rowHeight={48}
+                      height={300}
+                      overscan={5}
+                      emptyMessage={`No ${entityConfig?.label || entityKey} found`}
+                    />
+                  </Suspense>
                 </div>
               );
             })}
@@ -1311,12 +1357,16 @@ export const Dashboard = () => {
         
         {/* Recent Clicks - 新样式 */}
         {config.recentClicksColumns.length > 0 && (
-          <div className="section-card overflow-hidden">
+          <div
+            className="section-card overflow-hidden"
+            style={{ contentVisibility: 'auto', containIntrinsicSize: '560px' }}
+          >
             <div className="section-header flex items-center justify-between">
-              <h3 className="font-display font-semibold text-on-surface">Recent Clicks</h3>
+              <h2 className="font-display font-semibold text-on-surface">Recent Clicks</h2>
               <button
                 onClick={() => refreshRecentClicksRef.current()?.catch(console.error)}
                 disabled={loading.recentClicks}
+                aria-label="Refresh recent clicks data"
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-medium transition-all",
                   loading.recentClicks
@@ -1341,7 +1391,8 @@ export const Dashboard = () => {
                 <ErrorMessage message={errors.recentClicks} />
               </div>
             ) : (
-              <VirtualTableEnhanced
+              <Suspense fallback={<TableSkeleton height={400} message="Loading recent clicks..." />}>
+                <LazyVirtualTableEnhanced
                 tableId="dashboard-recent-clicks"
                 columns={config.recentClicksColumns.map(key => {
                   const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
@@ -1404,7 +1455,8 @@ export const Dashboard = () => {
                 height={400}
                 overscan={5}
                 emptyMessage="No recent clicks found"
-              />
+                />
+              </Suspense>
             )}
           </div>
         )}

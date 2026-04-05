@@ -8,11 +8,15 @@ export interface Env {
   ENVIRONMENT: 'development' | 'staging' | 'production';
   JWT_SECRET: string;
   JWT_EXPIRES_IN: string;
+  REALTIME_ENABLED: boolean;
+  SSE_ENABLED: boolean;
+  CACHE_UPDATE_TOKEN: string;
   
   DB: D1Database;
   
   /** 去重专用 KV 存储 */
   UNIQUENESS_KV: KVNamespace;
+  CACHE_REFRESH_QUEUE: Queue;
   
   SESSION_DO: DurableObjectNamespace;
   COUNTER_DO: DurableObjectNamespace;
@@ -26,13 +30,11 @@ export interface Env {
   
   ASSETS: Fetcher;
   
-  /** SSR 动态渲染开关 */
-  SSE_ENABLED: boolean;
   /** Cloudflare API 配置 */
   CF_ACCOUNT_ID: string;
-  CF_API_TOKEN: string;
+  CF_API_TOKEN?: string;
   /** 版本元数据绑定 */
-  CF_VERSION_METADATA: {
+  CF_VERSION_METADATA?: {
     id: string;
     tag: string | null;
     timestamp: string;

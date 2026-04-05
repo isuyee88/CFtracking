@@ -27,6 +27,10 @@ export class RuleRepository extends BaseRepository<Rule> {
     } as Rule;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   async findByDisplayId(displayId: string): Promise<Rule | null> {
     const result = await this.db
       .prepare(`SELECT * FROM rules WHERE displayId = ?`)

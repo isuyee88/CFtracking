@@ -191,9 +191,6 @@ export function createCacheWarmupMiddleware() {
     // 检查是否是预热请求
     if (url.searchParams.get('warmup') === 'true') {
       console.log('[CacheWarmup] Warmup request detected');
-      
-      // 标记为预热请求
-      c.set('isWarmup', true);
     }
     
     await next();

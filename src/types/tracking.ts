@@ -29,6 +29,7 @@ export interface ClickData {
   subId4: string | null;
   subId5: string | null;
   cost: number;
+  redirectUrl?: string | null;
   // UTM 参数
   utmSource?: string | null;
   utmMedium?: string | null;

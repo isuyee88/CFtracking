@@ -26,6 +26,24 @@ interface CloudSyncProviderProps {
 }
 
 export function CloudSyncProvider({ children, userId }: CloudSyncProviderProps) {
+  const isLocalPreview =
+    typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+  if (isLocalPreview) {
+    const noopContextValue: CloudSyncContextValue = {
+      isConnected: false,
+      isSyncing: false,
+      lastSyncTime: null,
+      error: null,
+      retryCount: 0,
+      setWithSync: async () => undefined,
+      forceSync: async () => undefined,
+      reconnect: () => undefined,
+    };
+
+    return <CloudSyncContext.Provider value={noopContextValue}>{children}</CloudSyncContext.Provider>;
+  }
+
   const cloudSync = useCloudSync({
     userId: userId || 'default-user',
     maxRetries: 5,

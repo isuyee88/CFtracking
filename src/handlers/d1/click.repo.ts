@@ -86,7 +86,7 @@ export class ClickRepository extends BaseRepository<ClickData> {
           data.subId3,
           data.cost,
           1,
-          data.redirectUrl,
+          data.redirectUrl ?? null,
           now
         )
         .run();

@@ -8,13 +8,13 @@
 import { DurableObject } from 'cloudflare:workers';
 
 export class EventActor extends DurableObject {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(_request: Request): Promise<Response> {
     return new Response('EventActor is deprecated', { status: 410 });
   }
 }
 
 export class StatsActor extends DurableObject {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(_request: Request): Promise<Response> {
     return new Response('StatsActor is deprecated', { status: 410 });
   }
 }

@@ -592,6 +592,11 @@ html.theme-transitioning *::after {
   overflow: hidden;
 }
 
+.deferred-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 720px;
+}
+
 .dark-mode .section-card {
   background-color: var(--color-surface-container);
 }
@@ -913,6 +918,9 @@ textarea.form-input {
   border-radius: 8px;
   padding: 1.5rem;
   position: relative;
+  display: grid;
+  grid-template-rows: 4rem minmax(0, 1fr);
+  height: 27rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
@@ -925,8 +933,25 @@ textarea.form-input {
   font-size: 1rem;
   font-weight: 600;
   color: var(--color-fg-default);
-  margin-bottom: 1rem;
   font-family: var(--font-display);
+}
+
+.chart-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  height: 4rem;
+}
+
+.chart-legend-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-content: flex-start;
+  gap: 0.75rem 1rem;
+  overflow: hidden;
 }
 
 /* 图表网格线 - Stitch 规范：10% opacity */
@@ -1141,6 +1166,10 @@ textarea.form-input {
   background-color: #ffffff;
   border-radius: 8px;
   padding: 1.25rem;
+  min-height: 9.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   transition: box-shadow 0.2s ease, transform 0.2s ease;
   will-change: box-shadow, transform;
   position: relative;
@@ -1184,6 +1213,8 @@ textarea.form-input {
   color: var(--color-fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  min-height: 2rem;
+  line-height: 1.25;
 }
 
 .metric-value {
@@ -1192,12 +1223,32 @@ textarea.form-input {
   color: var(--color-fg-default);
   margin-top: 0.25rem;
   font-family: var(--font-display);
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
 }
 
 .metric-trend {
   font-size: 0.75rem;
   font-weight: 500;
   margin-top: 0.5rem;
+  min-height: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .chart-container {
+    grid-template-rows: 7.5rem minmax(0, 1fr);
+    height: 34rem;
+  }
+
+  .chart-header {
+    flex-direction: column;
+    height: 7.5rem;
+  }
+
+  .chart-legend-wrap {
+    justify-content: flex-start;
+  }
 }
 
 .metric-trend-up {

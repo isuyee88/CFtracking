@@ -17,6 +17,7 @@ import { ToastProvider } from './components/Toast'
 declare global {
   interface Window {
     __INITIAL_DATA__?: any
+    requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
   }
 }
 
@@ -25,6 +26,67 @@ const initialData = window.__INITIAL_DATA__
 
 // 清理全局变量，避免内存泄漏
 delete window.__INITIAL_DATA__
+
+function isLocalPreviewHost() {
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname)
+}
+
+function hideBootScreen() {
+  const bootScreen = document.getElementById('app-boot')
+  if (!bootScreen) {
+    return
+  }
+
+  bootScreen.classList.add('boot-hidden')
+  window.setTimeout(() => bootScreen.remove(), 240)
+}
+
+function registerServiceWorker() {
+  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) {
+    return
+  }
+
+  if (isLocalPreviewHost()) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      registrations.forEach((registration) => {
+        void registration.unregister()
+      })
+    })
+
+    if ('caches' in window) {
+      void caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+    }
+
+    return
+  }
+
+  const scheduleRegistration = () => {
+    const onIdle = window.requestIdleCallback
+      ? (callback: IdleRequestCallback) => window.requestIdleCallback!(callback, { timeout: 10000 })
+      : (callback: IdleRequestCallback) =>
+          window.setTimeout(
+            () => callback({ didTimeout: false, timeRemaining: () => 0 } as IdleDeadline),
+            0
+          )
+
+    onIdle(() => {
+      navigator.serviceWorker.register('/sw.js').catch((error) => {
+        console.warn('[PWA] Service worker registration failed', error)
+      })
+    })
+  }
+
+  const deferRegistration = () => {
+    window.setTimeout(scheduleRegistration, 5000)
+  }
+
+  if (document.readyState === 'complete') {
+    deferRegistration()
+    return
+  }
+
+  window.addEventListener('load', deferRegistration, { once: true })
+}
 
 console.log('[App] Initial data:', initialData)
 
@@ -36,5 +98,12 @@ createRoot(document.getElementById('root')!).render(
     </ToastProvider>
   </StrictMode>,
 )
+
+requestAnimationFrame(() => {
+  requestAnimationFrame(hideBootScreen)
+})
+
+registerServiceWorker()
+
 console.log('[App] CSR mode enabled')
 

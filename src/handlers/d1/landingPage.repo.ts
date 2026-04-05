@@ -24,6 +24,10 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
     } as LandingPage;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   async findByDisplayId(displayId: string): Promise<LandingPage | null> {
     const result = await this.db
       .prepare(`SELECT * FROM landingPages WHERE displayId = ?`)

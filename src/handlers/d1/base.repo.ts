@@ -17,10 +17,18 @@ export abstract class BaseRepository<T> {
     return row as unknown as T;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return false;
+  }
+
   async findById(id: string): Promise<T | null> {
+    const sql = this.hasDisplayIdColumn()
+      ? `SELECT * FROM ${this.tableName} WHERE id = ? OR displayId = ?`
+      : `SELECT * FROM ${this.tableName} WHERE id = ?`;
+
     const result = await this.db
-      .prepare(`SELECT * FROM ${this.tableName} WHERE id = ? OR displayId = ?`)
-      .bind(id, id)
+      .prepare(sql)
+      .bind(...(this.hasDisplayIdColumn() ? [id, id] : [id]))
       .first();
     if (!result) return null;
     return this.transform(result as Record<string, unknown>);
@@ -90,9 +98,13 @@ export abstract class BaseRepository<T> {
   async findByIds(ids: string[]): Promise<T[]> {
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
+    const sql = this.hasDisplayIdColumn()
+      ? `SELECT * FROM ${this.tableName} WHERE id IN (${placeholders}) OR displayId IN (${placeholders})`
+      : `SELECT * FROM ${this.tableName} WHERE id IN (${placeholders})`;
+
     const result = await this.db
-      .prepare(`SELECT * FROM ${this.tableName} WHERE id IN (${placeholders}) OR displayId IN (${placeholders})`)
-      .bind(...ids, ...ids)
+      .prepare(sql)
+      .bind(...(this.hasDisplayIdColumn() ? [...ids, ...ids] : ids))
       .all();
     return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [];
   }

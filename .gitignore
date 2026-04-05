@@ -2,10 +2,57 @@
 node_modules/
 .pnp
 .pnp.js
+jspm_packages/
 
 # Production builds
 dist/
 build/
+wrangler-out/
+
+# AI Agent directories (all 26+)
+.adal/
+.augment/
+.bob/
+.claude/
+.codebuddy/
+.commandcode/
+.continue/
+.cortex/
+.crush/
+.factory/
+.goose/
+.iflow/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.trae/
+.vibe/
+.windsurf/
+.zencoder/
+
+# Testing & analysis artifacts
+test-results/
+dist-test/
+analysis/
+output/
+.playwright-cli/
+*-im*
+kea*
+lighthouse-report.json
+keitaro-analysis-data.json
+keitaro-deep-analysis.json
+deployments.json
+version_20_script.json
 
 # Environment variables
 .env
@@ -13,6 +60,7 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+.dev.vars
 
 # Logs
 logs
@@ -28,73 +76,26 @@ pids
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
+# Coverage
 coverage/
 *.lcov
-
-# nyc test coverage
 .nyc_output
-
-# Dependency directories
-node_modules/
-jspm_packages/
-
-# TypeScript v1 declaration files
-typings/
 
 # TypeScript cache
 *.tsbuildinfo
 
-# Optional npm cache directory
+# npm cache
 .npm
 
-# Optional eslint cache
+# eslint cache
 .eslintcache
 
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
+# Output of npm pack
 *.tgz
 
-# Yarn Integrity file
-.yarn-integrity
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Next.js build output
-.next
-
-# Nuxt.js build / generate output
-.nuxt
-dist
-
-# Gatsby files
-.cache/
-public
-
-# Storybook build outputs
-.out
-.storybook-out
-
-# Temporary folders
-tmp/
-temp/
-
-# Editor directories and files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Wrangler
+.wrangler/
+wrangler.toml.bak
 
 # OS generated files
 .DS_Store
@@ -102,13 +103,11 @@ temp/
 ._*
 .Spotlight-V100
 .Trashes
-ehthumbs.db
 Thumbs.db
 
-# Wrangler
-.wrangler/
-wrangler.toml.bak
-
-# Cloudflare
-.dev.vars
-node_modules
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

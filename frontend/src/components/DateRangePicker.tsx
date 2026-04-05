@@ -1,21 +1,6 @@
-/**
- * File: DateRangePicker.tsx
- * Purpose: 统一日期时间范围选择器组件
- * Input/Output: 接收日期范围值和变更回调，输出选中的日期时间范围
- * Logic: 基于 Ant Design RangePicker 封装，支持预设快捷选项
- */
-
-import React, { useState, useCallback, useMemo } from 'react';
-import { DatePicker } from 'antd';
-import type { RangePickerProps } from 'antd/es/date-picker';
+import React, { useEffect, useMemo, useState } from 'react';
 import dayjs, { Dayjs } from 'dayjs';
 import { Calendar } from 'lucide-react';
-
-const { RangePicker } = DatePicker;
-
-// ============================================
-// 类型定义
-// ============================================
 
 export interface DateRangeValue {
   startDate: string;
@@ -35,9 +20,14 @@ export interface DateRangePickerComponentProps {
   maxRangeDays?: number;
 }
 
-// ============================================
-// 预设配置
-// ============================================
+type QuickRangeValue = string | DateRangeValue;
+
+export interface QuickDateRangePickerProps {
+  value?: QuickRangeValue;
+  onChange?: ((value: string, dateRange?: DateRangeValue) => void) | ((value: DateRangeValue | null) => void);
+  showTime?: boolean;
+  maxRangeDays?: number;
+}
 
 const PRESETS = [
   { label: 'Today', value: 'today' },
@@ -51,144 +41,267 @@ const PRESETS = [
   { label: 'Last Year', value: 'lastyear' },
 ];
 
-const getPresetRange = (preset: string): [Dayjs, Dayjs] => {
-  const now = dayjs();
-  switch (preset) {
-    case 'today': return [now.startOf('day'), now.endOf('day')];
-    case 'yesterday': return [now.subtract(1, 'day').startOf('day'), now.subtract(1, 'day').endOf('day')];
-    case 'last7days': return [now.subtract(6, 'day').startOf('day'), now.endOf('day')];
-    case 'last30days': return [now.subtract(29, 'day').startOf('day'), now.endOf('day')];
-    case 'last3months': return [now.subtract(3, 'month').startOf('day'), now.endOf('day')];
-    case 'thismonth': return [now.startOf('month'), now.endOf('month')];
-    case 'lastmonth': return [now.subtract(1, 'month').startOf('month'), now.subtract(1, 'month').endOf('month')];
-    case 'thisyear': return [now.startOf('year'), now.endOf('year')];
-    case 'lastyear': return [now.subtract(1, 'year').startOf('year'), now.subtract(1, 'year').endOf('year')];
-    default: return [now.subtract(6, 'day').startOf('day'), now.endOf('day')];
+function normalizePreset(type: string | number | undefined): string {
+  if (typeof type === 'number') {
+    if (type === 7) {
+      return 'last7days';
+    }
+
+    if (type === 30) {
+      return 'last30days';
+    }
   }
-};
 
-// ============================================
-// 主组件 - 完整的日期范围选择器
-// ============================================
+  return typeof type === 'string' && type.length > 0 ? type : 'last7days';
+}
 
-export const DateRangePickerComponent: React.FC<DateRangePickerComponentProps> = ({
+function getPresetRange(preset: string): [Dayjs, Dayjs] {
+  const now = dayjs();
+
+  switch (preset) {
+    case 'today':
+      return [now.startOf('day'), now.endOf('day')];
+    case 'yesterday':
+      return [now.subtract(1, 'day').startOf('day'), now.subtract(1, 'day').endOf('day')];
+    case 'last30days':
+      return [now.subtract(29, 'day').startOf('day'), now.endOf('day')];
+    case 'last3months':
+      return [now.subtract(3, 'month').startOf('day'), now.endOf('day')];
+    case 'thismonth':
+      return [now.startOf('month'), now.endOf('month')];
+    case 'lastmonth':
+      return [now.subtract(1, 'month').startOf('month'), now.subtract(1, 'month').endOf('month')];
+    case 'thisyear':
+      return [now.startOf('year'), now.endOf('year')];
+    case 'lastyear':
+      return [now.subtract(1, 'year').startOf('year'), now.subtract(1, 'year').endOf('year')];
+    case 'last7days':
+    default:
+      return [now.subtract(6, 'day').startOf('day'), now.endOf('day')];
+  }
+}
+
+function toIsoRange(start: Dayjs, end: Dayjs, showTime: boolean): DateRangeValue {
+  return {
+    startDate: (showTime ? start : start.startOf('day')).toISOString(),
+    endDate: (showTime ? end : end.endOf('day')).toISOString(),
+  };
+}
+
+function toInputValue(value: string | undefined, showTime: boolean): string {
+  if (!value) {
+    return '';
+  }
+
+  const parsed = dayjs(value);
+  if (!parsed.isValid()) {
+    return '';
+  }
+
+  return parsed.format(showTime ? 'YYYY-MM-DDTHH:mm' : 'YYYY-MM-DD');
+}
+
+function fromInputValue(value: string, showTime: boolean, edge: 'start' | 'end'): Dayjs {
+  const parsed = dayjs(value);
+  if (showTime) {
+    return parsed;
+  }
+
+  return edge === 'start' ? parsed.startOf('day') : parsed.endOf('day');
+}
+
+function getPresetForRange(range: DateRangeValue | null): string {
+  if (!range) {
+    return 'custom';
+  }
+
+  for (const preset of PRESETS) {
+    const [start, end] = getPresetRange(preset.value);
+    if (dayjs(range.startDate).isSame(start, 'minute') && dayjs(range.endDate).isSame(end, 'minute')) {
+      return preset.value;
+    }
+  }
+
+  return 'custom';
+}
+
+function getMaxInputValue(showTime: boolean): string {
+  return showTime ? dayjs().format('YYYY-MM-DDTHH:mm') : dayjs().format('YYYY-MM-DD');
+}
+
+export function DateRangePickerComponent({
   value,
   onChange,
   showTime = true,
   placeholder = ['Start Date', 'End Date'],
   className = '',
   disabled = false,
-  format,
   size = 'middle',
   disableFuture = true,
   maxRangeDays,
-}) => {
-  const finalFormat = format || (showTime ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD');
+}: DateRangePickerComponentProps) {
+  const [preset, setPreset] = useState<string>(getPresetForRange(value ?? null));
+  const [startInput, setStartInput] = useState(() => toInputValue(value?.startDate, showTime));
+  const [endInput, setEndInput] = useState(() => toInputValue(value?.endDate, showTime));
 
-  const rangeValue: [Dayjs | null, Dayjs | null] | null = useMemo(() => {
-    if (!value) return null;
-    return [dayjs(value.startDate), dayjs(value.endDate)];
-  }, [value]);
+  useEffect(() => {
+    setPreset(getPresetForRange(value ?? null));
+    setStartInput(toInputValue(value?.startDate, showTime));
+    setEndInput(toInputValue(value?.endDate, showTime));
+  }, [showTime, value?.endDate, value?.startDate]);
 
-  const disabledDate = useCallback((current: Dayjs, info?: { from?: Dayjs }) => {
-    if (!current) return false;
-    if (disableFuture && current > dayjs().endOf('day')) return true;
-    if (maxRangeDays && info?.from) {
-      const diff = Math.abs(current.diff(info.from, 'day'));
-      if (diff > maxRangeDays) return true;
-    }
-    return false;
-  }, [disableFuture, maxRangeDays]);
+  const sizeClass = size === 'small' ? 'py-1.5 text-xs' : size === 'large' ? 'py-3 text-base' : 'py-2 text-sm';
 
-  const handleChange = useCallback((dates: [Dayjs | null, Dayjs | null] | null) => {
-    if (!dates || !dates[0] || !dates[1]) {
+  const commitRange = (nextStart: string, nextEnd: string) => {
+    if (!nextStart || !nextEnd) {
       onChange?.(null);
       return;
     }
-    onChange?.({ startDate: dates[0].toISOString(), endDate: dates[1].toISOString() });
-  }, [onChange]);
 
-  const antdPresets: RangePickerProps['presets'] = useMemo(() => {
-    return PRESETS.map(p => ({
-      label: p.label,
-      value: getPresetRange(p.value),
-    }));
-  }, []);
+    const parsedStart = fromInputValue(nextStart, showTime, 'start');
+    const parsedEnd = fromInputValue(nextEnd, showTime, 'end');
+
+    if (!parsedStart.isValid() || !parsedEnd.isValid() || parsedEnd.isBefore(parsedStart)) {
+      return;
+    }
+
+    if (maxRangeDays && parsedEnd.diff(parsedStart, 'day') > maxRangeDays) {
+      return;
+    }
+
+    onChange?.(toIsoRange(parsedStart, parsedEnd, showTime));
+  };
 
   return (
-    <div className={`date-range-picker-wrapper ${className}`}>
-      <RangePicker
-        value={rangeValue}
-        onChange={handleChange}
-        showTime={showTime ? { format: 'HH:mm:ss', showNow: true } : false}
-        format={finalFormat}
-        presets={antdPresets}
-        disabledDate={disabledDate}
-        placeholder={placeholder}
-        disabled={disabled}
-        size={size}
-        allowClear
-        className="w-full"
-        suffixIcon={<Calendar size={14} className="text-on-surface-variant" />}
-      />
+    <div className={`grid gap-2 md:grid-cols-[minmax(140px,180px)_1fr_1fr] ${className}`.trim()}>
+      <label className="relative block">
+        <span className="sr-only">Preset</span>
+        <Calendar size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+        <select
+          value={preset}
+          disabled={disabled}
+          aria-label="Select preset date range"
+          onChange={(event) => {
+            const nextPreset = event.target.value;
+            setPreset(nextPreset);
+
+            if (nextPreset === 'custom') {
+              return;
+            }
+
+            const [start, end] = getPresetRange(nextPreset);
+            const nextRange = toIsoRange(start, end, showTime);
+            setStartInput(toInputValue(nextRange.startDate, showTime));
+            setEndInput(toInputValue(nextRange.endDate, showTime));
+            onChange?.(nextRange);
+          }}
+          className={`w-full rounded-sm border border-outline-variant bg-surface pl-9 pr-3 ${sizeClass}`}
+        >
+          {PRESETS.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+          <option value="custom">Custom Range</option>
+        </select>
+      </label>
+
+      <label className="block">
+        <span className="sr-only">{placeholder[0]}</span>
+        <input
+          type={showTime ? 'datetime-local' : 'date'}
+          value={startInput}
+          max={disableFuture ? getMaxInputValue(showTime) : undefined}
+          disabled={disabled}
+          placeholder={placeholder[0]}
+          aria-label={placeholder[0]}
+          className={`w-full rounded-sm border border-outline-variant bg-surface px-3 ${sizeClass}`}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setPreset('custom');
+            setStartInput(nextValue);
+            commitRange(nextValue, endInput);
+          }}
+        />
+      </label>
+
+      <label className="block">
+        <span className="sr-only">{placeholder[1]}</span>
+        <input
+          type={showTime ? 'datetime-local' : 'date'}
+          value={endInput}
+          max={disableFuture ? getMaxInputValue(showTime) : undefined}
+          disabled={disabled}
+          placeholder={placeholder[1]}
+          aria-label={placeholder[1]}
+          className={`w-full rounded-sm border border-outline-variant bg-surface px-3 ${sizeClass}`}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setPreset('custom');
+            setEndInput(nextValue);
+            commitRange(startInput, nextValue);
+          }}
+        />
+      </label>
     </div>
   );
-};
-
-// ============================================
-// 快捷选择器组件 - 使用 RangePicker 自带的预设功能
-// ============================================
-
-export interface QuickDateRangePickerProps {
-  value?: string;
-  onChange?: (value: string, dateRange?: DateRangeValue) => void;
-  showTime?: boolean;
-  maxRangeDays?: number;
 }
 
-export const QuickDateRangePicker: React.FC<QuickDateRangePickerProps> = ({
+export function QuickDateRangePicker({
   value = 'last7days',
   onChange,
   showTime = false,
   maxRangeDays,
-}) => {
-  const [dateRange, setDateRange] = useState<DateRangeValue | null>(getDateRange(value));
+}: QuickDateRangePickerProps) {
+  const controlledRange = typeof value === 'string' ? getDateRange(value) : value;
+  const [dateRange, setDateRange] = useState<DateRangeValue | null>(controlledRange ?? null);
+
+  useEffect(() => {
+    setDateRange(controlledRange ?? null);
+  }, [controlledRange?.endDate, controlledRange?.startDate]);
+
+  const pickerValue = useMemo(
+    () => dateRange ?? getDateRange(normalizePreset(value)),
+    [dateRange, value]
+  );
 
   const handleChange = (range: DateRangeValue | null) => {
     setDateRange(range);
-    if (range) {
-      // 尝试匹配预设
-      const matchedPreset = PRESETS.find(p => {
-        const [start, end] = getPresetRange(p.value);
-        return dayjs(range.startDate).isSame(start, 'second') && 
-               dayjs(range.endDate).isSame(end, 'second');
-      });
-      onChange?.(matchedPreset?.value || 'custom', range);
+
+    if (typeof value === 'string') {
+      const matchedPreset = getPresetForRange(range);
+      (onChange as ((value: string, dateRange?: DateRangeValue) => void) | undefined)?.(
+        matchedPreset,
+        range ?? undefined
+      );
+      return;
     }
+
+    (onChange as ((value: DateRangeValue | null) => void) | undefined)?.(range);
   };
 
   return (
     <DateRangePickerComponent
-      value={dateRange || undefined}
+      value={pickerValue}
       onChange={handleChange}
       showTime={showTime}
       maxRangeDays={maxRangeDays}
+      size="small"
     />
   );
-};
+}
 
-// ============================================
-// 工具函数
-// ============================================
-
-export const getDateRange = (type: string): DateRangeValue => {
-  const [start, end] = getPresetRange(type);
+export function getDateRange(type: string | number): DateRangeValue {
+  const [start, end] = getPresetRange(normalizePreset(type));
   return { startDate: start.toISOString(), endDate: end.toISOString() };
-};
+}
 
-export const formatDateRange = (range: DateRangeValue | null, format = 'YYYY-MM-DD HH:mm'): string => {
-  if (!range) return 'Not selected';
+export function formatDateRange(range: DateRangeValue | null, format = 'YYYY-MM-DD HH:mm'): string {
+  if (!range) {
+    return 'Not selected';
+  }
+
   return `${dayjs(range.startDate).format(format)} - ${dayjs(range.endDate).format(format)}`;
-};
+}
 
 export default DateRangePickerComponent;

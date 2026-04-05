@@ -19,6 +19,7 @@ import { FlowRepository } from '@/handlers/d1/flow.repo';
 import { CampaignRepository } from '@/handlers/d1/campaign.repo';
 import { OfferRepository } from '@/handlers/d1/offer.repo';
 import { LandingPageRepository } from '@/handlers/d1/landingPage.repo';
+import { ClickRepository } from '@/handlers/d1/click.repo';
 import { getD1Connection } from '@/handlers/d1';
 import { DOService } from '@/handlers/do';
 import { UniquenessService, type UniquenessMethod } from './uniqueness.service';
@@ -111,6 +112,7 @@ export interface ActionConfig {
 }
 
 export class ClickService {
+  private clickRepo: ClickRepository;
   private flowRepo: FlowRepository;
   private campaignRepo: CampaignRepository;
   private offerRepo: OfferRepository;
@@ -122,6 +124,7 @@ export class ClickService {
 
   constructor(env: Env) {
     const db = getD1Connection(env);
+    this.clickRepo = new ClickRepository(db);
     this.flowRepo = new FlowRepository(db);
     this.campaignRepo = new CampaignRepository(db);
     this.offerRepo = new OfferRepository(db);
@@ -293,6 +296,7 @@ export class ClickService {
         subId4: request.subId4 || null,
         subId5: request.subId5 || null,
         cost: request.cost || 0,
+        redirectUrl,
         // Cloudflare 特定信息
         cfRayId: cfInfo?.rayId,
         cfConnectingIP: cfInfo?.connectingIP,
@@ -340,6 +344,8 @@ export class ClickService {
         isSuspicious: request.riskAssessment?.isSuspicious ?? false,
         riskReasons: request.riskAssessment?.reasons ?? [],
       };
+
+      await this.clickRepo.saveClick(clickData);
 
       // 异步记录分析数据到 Durable Objects
       console.log('[ClickService] About to track click to Durable Objects:', {

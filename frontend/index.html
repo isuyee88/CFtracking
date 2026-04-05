@@ -4,135 +4,189 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="CF Tracking - Real-time tracking and analytics dashboard" />
+    <meta
+      name="description"
+      content="CF Tracking - real-time traffic tracking and analytics dashboard"
+    />
     <meta name="theme-color" content="#ffffff" />
     <title>CF Tracking</title>
-    
-    <!-- DNS Prefetch for external resources -->
-    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
-    
-    <!-- Preconnect to Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    
-    <!-- Preload critical fonts -->
-    <link rel="preload" href="https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSg.woff2" as="font" type="font/woff2" crossorigin />
-    
-    <!-- Inline critical CSS for instant skeleton - no external blocking -->
     <style>
-      /* 系统字体作为后备，确保立即显示 */
       :root {
-        --font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        --font-display: Manrope, var(--font-sans);
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-display: "Segoe UI", var(--font-sans);
       }
-      /* 骨架屏动画 */
-      @keyframes shimmer {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
+
+      @keyframes shell-shimmer {
+        0% {
+          background-position: -200% 0;
+        }
+
+        100% {
+          background-position: 200% 0;
+        }
       }
-      /* 初始骨架屏样式 - 匹配实际布局减少 CLS */
-      .skeleton-container {
-        padding: 24px;
-        background: #fafafa;
+
+      body {
+        margin: 0;
         min-height: 100vh;
         font-family: var(--font-sans);
-        box-sizing: border-box;
+        background: #f8fafc;
       }
-      /* 匹配 Dashboard 的 grid-cols-2 md:grid-cols-4 lg:grid-cols-7 */
-      .skeleton-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-        margin-bottom: 24px;
+
+      #root {
+        min-height: 100vh;
       }
-      @media (min-width: 768px) {
-        .skeleton-grid {
-          grid-template-columns: repeat(4, 1fr);
-        }
-      }
-      @media (min-width: 1024px) {
-        .skeleton-grid {
-          grid-template-columns: repeat(7, 1fr);
-        }
-      }
-      .skeleton-card {
-        background: #fff;
-        border-radius: 12px;
-        padding: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        min-height: 100px;
+
+      .app-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
         display: flex;
-        flex-direction: column;
-        justify-content: space-between;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background:
+          radial-gradient(circle at top, rgba(94, 106, 210, 0.12), transparent 38%),
+          linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+        transition: opacity 180ms ease, visibility 180ms ease;
       }
-      .skeleton-line {
-        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-        background-size: 200% 100%;
-        animation: shimmer 1.5s infinite;
-        border-radius: 4px;
+
+      .app-boot.boot-hidden {
+        opacity: 0;
+        visibility: hidden;
       }
-      .skeleton-box {
-        background: #fff;
+
+      .boot-panel {
+        width: min(420px, 100%);
+        padding: 28px;
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
+        backdrop-filter: blur(16px);
+      }
+
+      .boot-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .boot-logo {
+        width: 40px;
+        height: 40px;
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 24px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        background: linear-gradient(135deg, #5e6ad2 0%, #44ddc1 100%);
       }
-      /* 图表区域固定高度 */
-      .skeleton-chart {
-        height: 300px;
-        background: linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%);
-        background-size: 200% 100%;
-        animation: shimmer 1.5s infinite;
-        border-radius: 8px;
-        margin-top: 16px;
+
+      .boot-copy {
+        flex: 1;
       }
-      /* 表格区域固定高度 */
-      .skeleton-table {
-        height: 200px;
-        background: linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%);
+
+      .boot-title {
+        height: 16px;
+        width: 132px;
+        margin-bottom: 10px;
+      }
+
+      .boot-subtitle {
+        height: 10px;
+        width: 188px;
+      }
+
+      .boot-line {
+        background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
         background-size: 200% 100%;
-        animation: shimmer 1.5s infinite;
-        border-radius: 8px;
-        margin-top: 16px;
+        animation: shell-shimmer 1.2s linear infinite;
+        border-radius: 999px;
+      }
+
+      .boot-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .boot-card {
+        min-height: 88px;
+        padding: 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+      }
+
+      .boot-card .boot-line:first-child {
+        width: 58%;
+        height: 10px;
+        margin-bottom: 12px;
+      }
+
+      .boot-card .boot-line:last-child {
+        width: 44%;
+        height: 24px;
+      }
+
+      .boot-chart {
+        height: 180px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.88);
+        padding: 16px;
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+      }
+
+      .boot-chart .boot-line:first-child {
+        width: 42%;
+        height: 10px;
+        margin-bottom: 16px;
+      }
+
+      .boot-chart .boot-line:last-child {
+        height: 128px;
+        border-radius: 14px;
+      }
+
+      @media (max-width: 640px) {
+        .boot-panel {
+          padding: 22px;
+          border-radius: 22px;
+        }
+
+        .boot-metrics {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
-    <!-- 内联骨架屏 - 在JS加载前显示，匹配实际布局 -->
-    <div id="root">
-      <div class="skeleton-container">
-        <!-- 7 个指标卡片 -->
-        <div class="skeleton-grid">
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
+    <div id="app-boot" class="app-boot" aria-hidden="true">
+      <div class="boot-panel">
+        <div class="boot-brand">
+          <div class="boot-logo"></div>
+          <div class="boot-copy">
+            <div class="boot-line boot-title"></div>
+            <div class="boot-line boot-subtitle"></div>
+          </div>
         </div>
-        <!-- 图表区域 -->
-        <div class="skeleton-box">
-          <div class="skeleton-line" style="height:16px;width:180px"></div>
-          <div class="skeleton-chart"></div>
+        <div class="boot-metrics">
+          <div class="boot-card">
+            <div class="boot-line"></div>
+            <div class="boot-line"></div>
+          </div>
+          <div class="boot-card">
+            <div class="boot-line"></div>
+            <div class="boot-line"></div>
+          </div>
         </div>
-        <!-- 表格区域 -->
-        <div class="skeleton-box">
-          <div class="skeleton-line" style="height:16px;width:120px;margin-bottom:16px"></div>
-          <div class="skeleton-table"></div>
+        <div class="boot-chart">
+          <div class="boot-line"></div>
+          <div class="boot-line"></div>
         </div>
       </div>
     </div>
-    <!-- 异步加载字体 - 使用 media="print" 技巧 -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'" />
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-    
-    <!-- 关键资源预加载提示 - 由 Vite 自动注入 -->
-    
-    <!-- 主入口脚本 -->
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

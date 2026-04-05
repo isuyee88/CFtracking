@@ -10,7 +10,7 @@
  */
 
 import type { Env } from '@/config/env';
-import { UnifiedCacheManager, CacheKeyBuilder } from './unified-cache-manager';
+import { UnifiedCacheManager, CacheStrategy } from './unified-cache-manager';
 
 /**
  * 缓存类型枚举
@@ -63,7 +63,7 @@ export class ETagGenerator {
    */
   static generate(data: any, version?: string): string {
     const hash = this.hashData(this.excludeTimestamp(data));
-    const ver = version || Date.now().toString();
+    const ver = version || 'content';
     return `W/"${ver}-${hash}"`;
   }
   
@@ -73,7 +73,7 @@ export class ETagGenerator {
   private static excludeTimestamp(data: any): any {
     if (!data || typeof data !== 'object') return data;
     
-    const { timestamp, ...rest } = data;
+    const { timestamp, queryTime, generatedAt, ...rest } = data;
     return rest;
   }
   
@@ -111,7 +111,7 @@ export class ETagGenerator {
 export class ETagCacheManager {
   private cacheManager: UnifiedCacheManager;
   
-  constructor(private env: Env) {
+  constructor(env: Env) {
     this.cacheManager = new UnifiedCacheManager(env);
   }
   
@@ -141,7 +141,7 @@ export class ETagCacheManager {
       request,
       fetcher,
       {
-        strategy: 'cache-first',
+        strategy: CacheStrategy.CACHE_FIRST,
         cacheKey: key,
         edgeTTL: config.maxAge,
         workersTTL: Math.floor(config.maxAge / 2),

@@ -11,10 +11,9 @@
  */
 
 import { DurableObject } from 'cloudflare:workers';
+import type { Env as WorkerEnv } from '@/config/env';
 
-export interface Env {
-  DB: D1Database;
-}
+type TrackingStatsEnv = Pick<WorkerEnv, 'DB'>;
 
 interface ClickData {
   id: string;
@@ -44,7 +43,7 @@ interface HourlyStats {
   cost: number;
 }
 
-export class TrackingStatsDO extends DurableObject {
+export class TrackingStatsDO extends DurableObject<TrackingStatsEnv> {
   // 内存状态（实时）
   private stats = {
     todayClicks: 0,
@@ -56,17 +55,15 @@ export class TrackingStatsDO extends DurableObject {
     hourlyStats: new Map<string, HourlyStats>(),
   };
   
-  private initialized = false;
   private db: any = null;
 
-  constructor(ctx: DurableObjectState, env: Env) {
+  constructor(ctx: DurableObjectState, env: TrackingStatsEnv) {
     super(ctx, env);
     
     // 初始化时从 SQLite 加载今日统计
     this.ctx.blockConcurrencyWhile(async () => {
       await this.initializeDatabase();
       await this.loadTodayStats();
-      this.initialized = true;
     });
   }
 
@@ -114,6 +111,37 @@ export class TrackingStatsDO extends DurableObject {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_clicks_timestamp ON clicks(timestamp)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_clicks_campaign ON clicks(campaign_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_clicks_conversion ON clicks(is_conversion)`);
+  }
+
+  private normalizeSqlRows<T extends Record<string, unknown>>(result: unknown): T[] {
+    if (Array.isArray(result)) {
+      return result as T[];
+    }
+
+    if (!result || typeof result !== 'object') {
+      return [];
+    }
+
+    const rowCollection = result as {
+      rows?: unknown[];
+      results?: unknown[];
+      toArray?: () => unknown[];
+    };
+
+    if (Array.isArray(rowCollection.rows)) {
+      return rowCollection.rows as T[];
+    }
+
+    if (Array.isArray(rowCollection.results)) {
+      return rowCollection.results as T[];
+    }
+
+    if (typeof rowCollection.toArray === 'function') {
+      const rows = rowCollection.toArray();
+      return Array.isArray(rows) ? (rows as T[]) : [];
+    }
+
+    return [];
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -207,7 +235,7 @@ export class TrackingStatsDO extends DurableObject {
    * 处理转化追踪
    */
   private async handleTrackConversion(request: Request): Promise<Response> {
-    const data = await request.json();
+    const data = await request.json() as { clickId: string; revenue?: number };
     const { clickId, revenue = 0 } = data;
     
     // 1. 更新内存统计
@@ -452,7 +480,7 @@ export class TrackingStatsDO extends DurableObject {
    * 处理每日数据聚合
    */
   private async handleAggregateDaily(request: Request): Promise<Response> {
-    const data = await request.json();
+    const data = await request.json() as { date?: string };
     const { date } = data;
     
     try {
@@ -472,26 +500,28 @@ export class TrackingStatsDO extends DurableObject {
         FROM clicks 
         WHERE timestamp >= ? AND timestamp < ?
         GROUP BY campaign_id
-      `, startTimestamp, endTimestamp);
+      `, startTimestamp, endTimestamp) as Array<Record<string, unknown>>;
       
       // 2. 写入 D1 数据库
       if (this.env.DB) {
         for (const item of dailyData) {
           try {
-            await this.env.DB.exec(`
+            await this.env.DB.prepare(`
               INSERT OR REPLACE INTO daily_stats (
                 date, campaign_id, campaign_name, 
                 clicks, conversions, revenue, cost
               ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            `, 
-            targetDate.toISOString().split('T')[0],
-            item.campaign_id,
-            item.campaign_name,
-            item.clicks,
-            item.conversions,
-            item.revenue,
-            item.cost
-            );
+            `)
+              .bind(
+                targetDate.toISOString().split('T')[0],
+                item.campaign_id,
+                item.campaign_name,
+                item.clicks,
+                item.conversions,
+                item.revenue,
+                item.cost
+              )
+              .run();
           } catch (e) {
             console.warn('[AggregateDaily] Failed to insert into D1:', e);
           }
@@ -565,7 +595,7 @@ export class TrackingStatsDO extends DurableObject {
     const endTimestamp = now.getTime();
     
     // 从 SQLite 查询数据
-    const chartData = this.db.exec(`
+    const chartDataResult = this.db.exec(`
       SELECT 
         DATE(timestamp / 1000, 'unixepoch') as date, 
         COUNT(*) as clicks, 
@@ -577,6 +607,7 @@ export class TrackingStatsDO extends DurableObject {
       GROUP BY date
       ORDER BY date
     `, startTimestamp, endTimestamp);
+    const chartData = this.normalizeSqlRows<Record<string, unknown>>(chartDataResult);
     
     return Response.json({
       chartData: chartData.map((item: any) => ({
@@ -667,7 +698,7 @@ export class TrackingStatsDO extends DurableObject {
     nameField: string,
     startTimestamp: number
   ): any[] {
-    const result = this.db.exec(`
+    const resultSet = this.db.exec(`
       SELECT 
         ${idField} as id, 
         ${nameField} as name, 
@@ -681,6 +712,7 @@ export class TrackingStatsDO extends DurableObject {
       ORDER BY clicks DESC
       LIMIT 10
     `, startTimestamp);
+    const result = this.normalizeSqlRows<Record<string, unknown>>(resultSet);
     
     return result.map((item: any) => ({
       name: item.name || 'Unknown',
@@ -697,7 +729,7 @@ export class TrackingStatsDO extends DurableObject {
    * 处理历史数据聚合
    */
   private async handleAggregateHistorical(request: Request): Promise<Response> {
-    const data = await request.json();
+    const data = await request.json() as { startDate: string; endDate: string };
     const { startDate, endDate } = data;
     
     try {
@@ -718,27 +750,29 @@ export class TrackingStatsDO extends DurableObject {
         FROM clicks 
         WHERE timestamp >= ? AND timestamp <= ?
         GROUP BY date, campaign_id
-      `, startTimestamp, endTimestamp);
+      `, startTimestamp, endTimestamp) as Array<Record<string, unknown>>;
       
       // 2. 批量写入 D1 数据库
       if (this.env.DB) {
         let processed = 0;
         for (const item of historicalData) {
           try {
-            await this.env.DB.exec(`
+            await this.env.DB.prepare(`
               INSERT OR REPLACE INTO daily_stats (
                 date, campaign_id, campaign_name, 
                 clicks, conversions, revenue, cost
               ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            `, 
-            item.date,
-            item.campaign_id,
-            item.campaign_name,
-            item.clicks,
-            item.conversions,
-            item.revenue,
-            item.cost
-            );
+            `)
+              .bind(
+                item.date,
+                item.campaign_id,
+                item.campaign_name,
+                item.clicks,
+                item.conversions,
+                item.revenue,
+                item.cost
+              )
+              .run();
             processed++;
           } catch (e) {
             console.warn('[AggregateHistorical] Failed to insert into D1:', e);

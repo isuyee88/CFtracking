@@ -46,6 +46,10 @@ export class FlowRepository extends BaseRepository<Flow> {
     } as Flow;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   async findByDisplayId(displayId: string): Promise<Flow | null> {
     const result = await this.db
       .prepare(`SELECT * FROM flows WHERE displayId = ?`)

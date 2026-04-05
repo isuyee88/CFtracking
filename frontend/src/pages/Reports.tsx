@@ -1,354 +1,441 @@
-/**
- * File: Reports.tsx
- * Purpose: 报表页面主组件，集成列选择器、筛选构建器、数据表格
- * Input: 无
- * Output: 完整的报表页面 UI 和功能
- */
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { BarChart3, Download, RefreshCw, Search, Settings2 } from 'lucide-react';
+import { DateRangePickerComponent, getDateRange, type DateRangeValue } from '@/components/DateRangePicker';
+import {
+  downloadReport,
+  exportReport,
+  fetchReport,
+  type ExportFormat,
+  type ReportType,
+} from '../services/api';
 
-import React, { useState, useMemo } from 'react';
-import { Calendar, Download, RefreshCw, Settings2, X } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+type ReportColumnKey =
+  | 'dimension'
+  | 'clicks'
+  | 'impressions'
+  | 'unique_visitors'
+  | 'conversions'
+  | 'revenue'
+  | 'cost'
+  | 'spend'
+  | 'profit'
+  | 'roi'
+  | 'cr'
+  | 'margin'
+  | 'epc'
+  | 'cpc';
 
-import { useReportState } from '../hooks/useReportState';
-import { ReportColumnSelector, type ReportColumn } from '../components/ReportColumnSelector';
-import { ReportFilterBuilder, type ReportFilter } from '../components/ReportFilterBuilder';
-import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
-import { QuickDateRangePicker } from '@/components/DateRangePicker';
-import type { DateRangeValue } from '@/components/DateRangePicker';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+interface ReportColumn {
+  key: ReportColumnKey;
+  label: string;
+  align?: 'left' | 'right';
 }
 
-// 模拟数据生成
-const generateMockData = (count: number) => {
-  const campaigns = ['Campaign A', 'Campaign B', 'Campaign C', 'Campaign D'];
-  const landings = ['Landing Page 1', 'Landing Page 2', 'Landing Page 3'];
-  const offers = ['Offer X', 'Offer Y', 'Offer Z'];
-  const countries = ['US', 'CN', 'GB', 'DE', 'FR'];
-  const devices = ['Desktop', 'Mobile', 'Tablet'];
-  const osList = ['Windows', 'macOS', 'iOS', 'Android'];
-  const browsers = ['Chrome', 'Firefox', 'Safari', 'Edge'];
+interface ReportRow {
+  dimension: string;
+  clicks?: number;
+  impressions?: number;
+  unique_visitors?: number;
+  conversions?: number;
+  revenue?: number;
+  cost?: number;
+  spend?: number;
+  profit?: number;
+  roi?: string;
+  cr?: string;
+  margin?: string;
+  epc?: string;
+  cpc?: string;
+}
 
-  return Array.from({ length: count }, (_, i) => ({
-    id: i + 1,
-    datetime: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-    campaign: campaigns[Math.floor(Math.random() * campaigns.length)],
-    landing: landings[Math.floor(Math.random() * landings.length)],
-    offer: offers[Math.floor(Math.random() * offers.length)],
-    clicks: Math.floor(Math.random() * 1000),
-    unique_clicks: Math.floor(Math.random() * 500),
-    conversions: Math.floor(Math.random() * 100),
-    revenue: (Math.random() * 1000).toFixed(2),
-    cost: (Math.random() * 500).toFixed(2),
-    profit: (Math.random() * 500 - 100).toFixed(2),
-    roi: (Math.random() * 200 - 50).toFixed(2),
-    cr: (Math.random() * 10).toFixed(2),
-    epc: (Math.random() * 5).toFixed(2),
-    country: countries[Math.floor(Math.random() * countries.length)],
-    region: ['California', 'New York', 'Beijing', 'London', 'Berlin'][Math.floor(Math.random() * 5)],
-    city: ['Los Angeles', 'New York', 'Beijing', 'London', 'Berlin'][Math.floor(Math.random() * 5)],
-    device_type: devices[Math.floor(Math.random() * devices.length)],
-    os: osList[Math.floor(Math.random() * osList.length)],
-    browser: browsers[Math.floor(Math.random() * browsers.length)],
-    source: ['Google', 'Facebook', 'Direct', 'Email'][Math.floor(Math.random() * 4)],
-    referrer: ['google.com', 'facebook.com', '', 'email'][Math.floor(Math.random() * 4)],
-    sub1: `sub1_${Math.floor(Math.random() * 100)}`,
-    sub2: `sub2_${Math.floor(Math.random() * 100)}`,
-    sub3: `sub3_${Math.floor(Math.random() * 100)}`,
-  }));
+const REPORT_CONFIG: Record<
+  ReportType,
+  {
+    label: string;
+    groupBy: string[];
+    columns: ReportColumn[];
+    defaultColumns: ReportColumnKey[];
+  }
+> = {
+  traffic: {
+    label: 'Traffic Report',
+    groupBy: ['campaign'],
+    columns: [
+      { key: 'dimension', label: 'Campaign / Dimension' },
+      { key: 'clicks', label: 'Clicks', align: 'right' },
+      { key: 'impressions', label: 'Impressions', align: 'right' },
+      { key: 'unique_visitors', label: 'Unique Visitors', align: 'right' },
+      { key: 'conversions', label: 'Conversions', align: 'right' },
+      { key: 'cr', label: 'CR', align: 'right' },
+    ],
+    defaultColumns: ['dimension', 'clicks', 'impressions', 'conversions', 'cr'],
+  },
+  conversion: {
+    label: 'Conversion Report',
+    groupBy: ['campaign'],
+    columns: [
+      { key: 'dimension', label: 'Campaign / Dimension' },
+      { key: 'conversions', label: 'Conversions', align: 'right' },
+      { key: 'revenue', label: 'Revenue', align: 'right' },
+      { key: 'cost', label: 'Cost', align: 'right' },
+      { key: 'profit', label: 'Profit', align: 'right' },
+      { key: 'roi', label: 'ROI', align: 'right' },
+    ],
+    defaultColumns: ['dimension', 'conversions', 'revenue', 'cost', 'profit', 'roi'],
+  },
+  financial: {
+    label: 'Financial Report',
+    groupBy: ['campaign'],
+    columns: [
+      { key: 'dimension', label: 'Campaign / Dimension' },
+      { key: 'spend', label: 'Spend', align: 'right' },
+      { key: 'revenue', label: 'Revenue', align: 'right' },
+      { key: 'profit', label: 'Profit', align: 'right' },
+      { key: 'margin', label: 'Margin', align: 'right' },
+    ],
+    defaultColumns: ['dimension', 'spend', 'revenue', 'profit', 'margin'],
+  },
+  roi: {
+    label: 'ROI Report',
+    groupBy: ['campaign'],
+    columns: [
+      { key: 'dimension', label: 'Campaign / Dimension' },
+      { key: 'spend', label: 'Spend', align: 'right' },
+      { key: 'revenue', label: 'Revenue', align: 'right' },
+      { key: 'profit', label: 'Profit', align: 'right' },
+      { key: 'roi', label: 'ROI', align: 'right' },
+      { key: 'epc', label: 'EPC', align: 'right' },
+      { key: 'cpc', label: 'CPC', align: 'right' },
+    ],
+    defaultColumns: ['dimension', 'spend', 'revenue', 'profit', 'roi', 'epc', 'cpc'],
+  },
 };
 
-const Reports: React.FC = () => {
-  const {
-    columns,
-    selectedColumns,
-    setSelectedColumns,
-    visibleColumns,
-    filters,
-    setFilters,
-    sortField,
-    sortOrder,
-    handleSort,
-    page,
-    pageSize,
-    setPage,
-    setPageSize,
-    dateRange,
-    setDateRange,
-  } = useReportState();
+function cn(...inputs: Array<string | false | null | undefined>) {
+  return inputs.filter(Boolean).join(' ');
+}
 
-  const [showColumnSelector, setShowColumnSelector] = useState(false);
+function normalizeReportRow(row: Record<string, unknown>): ReportRow {
+  return {
+    dimension: String(row.date ?? row.dimension ?? row.name ?? 'N/A'),
+    clicks: Number(row.clicks ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    unique_visitors: Number(row.unique_visitors ?? 0),
+    conversions: Number(row.conversions ?? 0),
+    revenue: Number(row.revenue ?? 0),
+    cost: Number(row.cost ?? 0),
+    spend: Number(row.spend ?? 0),
+    profit: Number(row.profit ?? 0),
+    roi: typeof row.roi === 'string' ? row.roi : undefined,
+    cr: typeof row.cr === 'string' ? row.cr : undefined,
+    margin: typeof row.margin === 'string' ? row.margin : undefined,
+    epc: typeof row.epc === 'string' ? row.epc : undefined,
+    cpc: typeof row.cpc === 'string' ? row.cpc : undefined,
+  };
+}
+
+function formatValue(key: ReportColumnKey, value: ReportRow[ReportColumnKey]) {
+  if (key === 'dimension') {
+    return String(value ?? '-');
+  }
+
+  if (['roi', 'cr', 'margin', 'epc', 'cpc'].includes(key)) {
+    return String(value ?? '-');
+  }
+
+  const numberValue = Number(value ?? 0);
+  if (['revenue', 'cost', 'spend', 'profit'].includes(key)) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numberValue);
+  }
+
+  return numberValue.toLocaleString();
+}
+
+export default function Reports() {
+  const [reportType, setReportType] = useState<ReportType>('traffic');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(getDateRange('last7days'));
+  const [searchQuery, setSearchQuery] = useState('');
+  const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showColumns, setShowColumns] = useState(false);
+  const [sortKey, setSortKey] = useState<ReportColumnKey>('dimension');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [visibleColumns, setVisibleColumns] = useState<ReportColumnKey[]>(REPORT_CONFIG.traffic.defaultColumns);
 
-  // 生成模拟数据
-  const allData = useMemo(() => generateMockData(1000), []);
+  useEffect(() => {
+    setVisibleColumns(REPORT_CONFIG[reportType].defaultColumns);
+    setSortKey('dimension');
+    setSortOrder('asc');
+  }, [reportType]);
 
-  // 应用筛选和排序
-  const filteredData = useMemo(() => {
-    let result = [...allData];
-
-    // 应用筛选
-    if (filters.length > 0) {
-      result = result.filter((item) => {
-        return filters.every((filter) => {
-          const value = item[filter.field as keyof typeof item];
-          
-          switch (filter.operator) {
-            case 'equals':
-              return String(value) === String(filter.value);
-            case 'not_equals':
-              return String(value) !== String(filter.value);
-            case 'contains':
-              return String(value).includes(String(filter.value));
-            case 'not_contains':
-              return !String(value).includes(String(filter.value));
-            case 'greater_than':
-              return Number(value) > Number(filter.value);
-            case 'less_than':
-              return Number(value) < Number(filter.value);
-            default:
-              return true;
-          }
-        });
-      });
-    }
-
-    // 应用排序
-    if (sortField && sortOrder) {
-      result.sort((a, b) => {
-        const aValue = a[sortField as keyof typeof a];
-        const bValue = b[sortField as keyof typeof b];
-
-        if (sortOrder === 'asc') {
-          return aValue > bValue ? 1 : -1;
-        } else {
-          return aValue < bValue ? 1 : -1;
-        }
-      });
-    }
-
-    return result;
-  }, [allData, filters, sortField, sortOrder]);
-
-  // 分页数据
-  const paginatedData = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    const end = start + pageSize;
-    return filteredData.slice(start, end);
-  }, [filteredData, page, pageSize]);
-
-  // 总页数
-  const totalPages = Math.ceil(filteredData.length / pageSize);
-
-  // 刷新数据
-  const handleRefresh = () => {
+  const loadReport = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => setLoading(false), 1000);
-  };
+    setError(null);
 
-  // 导出报表
-  const handleExport = () => {
-    console.log('Export report', {
-      columns: selectedColumns,
-      filters,
-      sortField,
-      sortOrder,
-      dateRange,
-      totalRecords: filteredData.length,
+    try {
+      const report = await fetchReport(reportType, {
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        groupBy: REPORT_CONFIG[reportType].groupBy,
+        limit: 500,
+      });
+
+      const normalizedRows = Array.isArray(report?.data)
+        ? report.data.map((row: Record<string, unknown>) => normalizeReportRow(row))
+        : [];
+
+      setRows(normalizedRows);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load report');
+    } finally {
+      setLoading(false);
+    }
+  }, [dateRange.endDate, dateRange.startDate, reportType]);
+
+  useEffect(() => {
+    void loadReport();
+  }, [loadReport]);
+
+  const columns = REPORT_CONFIG[reportType].columns;
+
+  const filteredRows = useMemo(() => {
+    const loweredSearch = searchQuery.trim().toLowerCase();
+    const searchedRows = loweredSearch
+      ? rows.filter((row) =>
+          Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(loweredSearch))
+        )
+      : rows;
+
+    return [...searchedRows].sort((left, right) => {
+      const leftValue = left[sortKey] ?? '';
+      const rightValue = right[sortKey] ?? '';
+
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        return sortOrder === 'asc' ? leftValue - rightValue : rightValue - leftValue;
+      }
+
+      return sortOrder === 'asc'
+        ? String(leftValue).localeCompare(String(rightValue))
+        : String(rightValue).localeCompare(String(leftValue));
     });
-    // TODO: 实现导出功能
-  };
+  }, [rows, searchQuery, sortKey, sortOrder]);
 
-  // 列配置转换为 VirtualTable 格式
-  const tableColumns: VirtualTableColumn[] = useMemo(() => {
-    return visibleColumns.map((col) => ({
-      key: col.key,
-      label: col.label,
-      width: col.key === 'datetime' ? '180px' : col.key === 'campaign' ? '200px' : '120px',
-      align: ['clicks', 'unique_clicks', 'conversions', 'revenue', 'cost', 'profit', 'roi', 'cr', 'epc'].includes(col.key) ? 'right' : 'left',
-      sorter: sortOrder ? undefined : (a: any, b: any) => {
-        const aValue = a[col.key as keyof typeof a];
-        const bValue = b[col.key as keyof typeof b];
-        
-        if (col.type === 'number') {
-          return Number(aValue) - Number(bValue);
-        }
-        return String(aValue).localeCompare(String(bValue));
-      },
-      showSorter: true,
-      render: (value: any, row: any) => {
-        // 格式化数值
-        if (['revenue', 'cost', 'profit', 'epc'].includes(col.key)) {
-          return <span className="font-mono">${Number(value).toFixed(2)}</span>;
-        }
-        if (['roi', 'cr'].includes(col.key)) {
-          return <span className="font-mono">{Number(value).toFixed(2)}%</span>;
-        }
-        if (['clicks', 'unique_clicks', 'conversions'].includes(col.key)) {
-          return <span className="font-mono">{Number(value).toLocaleString()}</span>;
-        }
-        if (col.key === 'datetime') {
-          return <span className="text-sm">{new Date(value).toLocaleString()}</span>;
-        }
-        return <span>{value || '-'}</span>;
-      },
-    }));
-  }, [visibleColumns, sortOrder]);
+  const summary = useMemo(() => {
+    return filteredRows.reduce(
+      (accumulator, row) => ({
+        clicks: accumulator.clicks + Number(row.clicks || 0),
+        conversions: accumulator.conversions + Number(row.conversions || 0),
+        revenue: accumulator.revenue + Number(row.revenue || 0),
+        profit: accumulator.profit + Number(row.profit || 0),
+      }),
+      { clicks: 0, conversions: 0, revenue: 0, profit: 0 }
+    );
+  }, [filteredRows]);
+
+  const handleExport = useCallback(
+    async (format: ExportFormat) => {
+      setExporting(true);
+      setError(null);
+
+      try {
+        const blob = await exportReport({
+          type: reportType,
+          format,
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          groupBy: REPORT_CONFIG[reportType].groupBy,
+          columns: visibleColumns.map((key) => (key === 'dimension' ? 'date' : key)),
+        });
+
+        downloadReport(blob, `${reportType}-report.${format === 'excel' ? 'xlsx' : 'csv'}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to export report');
+      } finally {
+        setExporting(false);
+      }
+    },
+    [dateRange.endDate, dateRange.startDate, reportType, visibleColumns]
+  );
 
   return (
-    <div className="p-6 bg-background min-h-screen">
-      {/* 页面标题 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-display font-bold text-on-surface">报表中心</h1>
-        <p className="text-sm text-fg-muted mt-1">自定义列和筛选条件，生成您的专属报表</p>
-      </div>
-
-      {/* 顶部工具栏 */}
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          {/* 日期范围选择 */}
-          <QuickDateRangePicker
-            value={dateRange as DateRangeValue}
-            onChange={(range) => setDateRange(range as any)}
-          />
-
-          {/* 刷新按钮 */}
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium',
-              'bg-surface-container border border-outline-variant',
-              'text-on-surface hover:bg-surface-container-high',
-              'transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
-          >
-            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-            刷新
-          </button>
-
-          {/* 导出按钮 */}
-          <button
-            onClick={handleExport}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium',
-              'bg-primary text-on-primary hover:bg-primary-dark',
-              'transition-colors'
-            )}
-          >
-            <Download className="w-4 h-4" />
-            导出
-          </button>
+    <div className="min-h-full bg-background p-6">
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-display font-bold text-on-surface">Reports Center</h1>
+          <p className="mt-1 text-sm text-on-surface-variant">Live analytics reports backed by `/api/analytics/reports/*`.</p>
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* 列选择器开关 */}
-          <button
-            onClick={() => setShowColumnSelector(!showColumnSelector)}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium',
-              showColumnSelector
-                ? 'bg-primary/10 text-primary'
-                : 'bg-surface-container border border-outline-variant text-on-surface',
-              'hover:bg-surface-container-high transition-colors'
-            )}
+        <div className="grid gap-3 md:grid-cols-[180px_minmax(320px,1fr)_minmax(220px,320px)]">
+          <select
+            value={reportType}
+            onChange={(event) => setReportType(event.target.value as ReportType)}
+            aria-label="Select report type"
+            className="border border-outline-variant bg-surface px-3 py-2 text-sm"
           >
-            <Settings2 className="w-4 h-4" />
-            列设置
-            <span className="text-xs opacity-60">({selectedColumns.length})</span>
-            {showColumnSelector && <X className="w-3 h-3" />}
-          </button>
+            {Object.entries(REPORT_CONFIG).map(([key, config]) => (
+              <option key={key} value={key}>
+                {config.label}
+              </option>
+            ))}
+          </select>
+          <DateRangePickerComponent value={dateRange} onChange={(value) => value && setDateRange(value)} showTime={true} />
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search current report..."
+              aria-label="Search current report"
+              className="w-full border border-outline-variant bg-surface py-2 pl-10 pr-4 text-sm"
+            />
+          </div>
         </div>
       </div>
 
-      {/* 主内容区 */}
-      <div className="flex gap-4">
-        {/* 左侧面板：列选择器 */}
-        {showColumnSelector && (
-          <div
-            className="w-80 flex-shrink-0 animate-in slide-in-from-left-4 duration-200"
-            style={{ height: 'calc(100vh - 280px)' }}
-          >
-            <ReportColumnSelector
-              columns={columns}
-              selectedColumns={selectedColumns}
-              onColumnsChange={setSelectedColumns}
-            />
-          </div>
-        )}
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+        <SummaryCard label="Rows" value={filteredRows.length.toLocaleString()} />
+        <SummaryCard label="Clicks" value={summary.clicks.toLocaleString()} />
+        <SummaryCard label="Conversions" value={summary.conversions.toLocaleString()} />
+        <SummaryCard label="Revenue" value={formatValue('revenue', summary.revenue)} />
+      </div>
 
-        {/* 右侧：筛选器和表格 */}
-        <div className="flex-1 min-w-0">
-          {/* 筛选构建器 */}
-          <div className="mb-4">
-            <ReportFilterBuilder
-              columns={columns}
-              filters={filters}
-              onFiltersChange={setFilters}
-            />
-          </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button onClick={() => void loadReport()} disabled={loading} aria-label="Refresh report data" className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm">
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
+        <button onClick={() => void handleExport('csv')} disabled={exporting} aria-label="Export report as CSV" className="flex items-center gap-2 rounded-sm bg-primary px-4 py-2 text-sm text-on-primary">
+          <Download size={16} />
+          Export CSV
+        </button>
+        <button onClick={() => void handleExport('excel')} disabled={exporting} aria-label="Export report as Excel" className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm">
+          <Download size={16} />
+          Export Excel
+        </button>
+        <button onClick={() => setShowColumns((current) => !current)} aria-label="Toggle report columns panel" className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm">
+          <Settings2 size={16} />
+          Columns
+        </button>
+      </div>
 
-          {/* 数据表格 */}
-          <div className="bg-surface rounded-sm border border-outline-variant overflow-hidden">
-            <VirtualTableEnhanced
-              tableId="reports"
-              columns={tableColumns}
-              data={paginatedData}
-              rowHeight={48}
-              height={500}
-              overscan={5}
-              emptyMessage="暂无数据"
-            />
-
-            {/* 分页 */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-outline-variant">
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-fg-muted">
-                  显示 {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, filteredData.length)} 条，
-                  共 {filteredData.length} 条
-                </span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                  }}
-                  className="px-2 py-1 text-sm bg-surface border border-outline-variant rounded-sm text-on-surface"
-                >
-                  <option value={25}>25 条/页</option>
-                  <option value={50}>50 条/页</option>
-                  <option value={100}>100 条/页</option>
-                  <option value={500}>500 条/页</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page === 1}
-                  className="px-3 py-1.5 text-sm bg-surface-container border border-outline-variant rounded-sm text-on-surface disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-container-high transition-colors"
-                >
-                  上一页
-                </button>
-                <span className="text-sm text-on-surface">
-                  第 {page} 页 / 共 {totalPages} 页
-                </span>
-                <button
-                  onClick={() => setPage(Math.min(totalPages, page + 1))}
-                  disabled={page === totalPages}
-                  className="px-3 py-1.5 text-sm bg-surface-container border border-outline-variant rounded-sm text-on-surface disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-container-high transition-colors"
-                >
-                  下一页
-                </button>
-              </div>
-            </div>
-          </div>
+      {showColumns && (
+        <div className="mb-4 flex flex-wrap gap-2 rounded-sm border border-outline-variant/20 bg-surface-container p-4">
+          {columns.map((column) => {
+            const active = visibleColumns.includes(column.key);
+            return (
+              <button
+                key={column.key}
+                onClick={() =>
+                  setVisibleColumns((current) =>
+                    active ? current.filter((key) => key !== column.key) : [...current, column.key]
+                  )
+                }
+                className={cn(
+                  'rounded-sm border px-3 py-1.5 text-xs font-medium',
+                  active ? 'border-primary bg-primary/10 text-primary' : 'border-outline-variant bg-surface text-on-surface'
+                )}
+              >
+                {column.label}
+              </button>
+            );
+          })}
         </div>
+      )}
+
+      {error && <div className="mb-4 rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>}
+
+      <div
+        className="overflow-hidden rounded-sm border border-outline-variant bg-surface"
+        style={{ contentVisibility: 'auto', containIntrinsicSize: '960px' }}
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr className="border-b border-outline-variant bg-surface-container">
+                {columns
+                  .filter((column) => visibleColumns.includes(column.key))
+                  .map((column) => (
+                    <th
+                      key={column.key}
+                      className={cn(
+                        'cursor-pointer px-4 py-3 text-xs font-bold uppercase tracking-widest text-on-surface-variant',
+                        column.align === 'right' && 'text-right'
+                      )}
+                      onClick={() => {
+                        if (sortKey === column.key) {
+                          setSortOrder((current) => (current === 'asc' ? 'desc' : 'asc'));
+                        } else {
+                          setSortKey(column.key);
+                          setSortOrder(column.key === 'dimension' ? 'asc' : 'desc');
+                        }
+                      }}
+                    >
+                      {column.label}
+                    </th>
+                  ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-sm text-on-surface-variant">
+                    Loading report...
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-sm text-on-surface-variant">
+                    No rows returned for this report.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map((row, index) => (
+                  <tr key={`${row.dimension}-${index}`} className="border-b border-outline-variant/10 hover:bg-surface-container/40">
+                    {columns
+                      .filter((column) => visibleColumns.includes(column.key))
+                      .map((column) => (
+                        <td
+                          key={column.key}
+                          className={cn(
+                            'px-4 py-3 text-sm text-on-surface',
+                            column.align === 'right' && 'text-right font-mono'
+                          )}
+                        >
+                          {formatValue(column.key, row[column.key])}
+                        </td>
+                      ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div
+        className="mt-4 rounded-sm border border-outline-variant/20 bg-surface-container p-4 text-sm text-on-surface-variant"
+        style={{ contentVisibility: 'auto', containIntrinsicSize: '160px' }}
+      >
+        <div className="flex items-center gap-2 font-medium text-on-surface">
+          <BarChart3 size={16} />
+          Implementation note
+        </div>
+        <p className="mt-2">
+          The backend currently groups report rows into a generic `date` field that often represents campaign or
+          entity names. This page normalizes that into a shared dimension column so the reports are usable now.
+        </p>
       </div>
     </div>
   );
-};
+}
 
-export default Reports;
+function SummaryCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-sm border border-outline-variant/20 bg-surface-container-lowest p-4">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</div>
+      <div className="mt-2 text-2xl font-display font-bold text-on-surface">{value}</div>
+    </div>
+  );
+}

@@ -20,7 +20,7 @@ import { CacheDurableObject } from '@/ssr/cache-do';
 import { EventActor, StatsActor } from '@/handlers/do/deprecated-do';
 import { createAggregationService } from '@/services/analytics/aggregation.service';
 import { handlePlatformCron } from '@/services/platform';
-import fs from 'fs';
+import { CacheRefreshConsumer, type CacheRefreshMessage } from '@/services/cache/cache-refresh-consumer';
 
 // 导出 Durable Objects（Cloudflare Workers 要求）
 export {
@@ -52,56 +52,15 @@ app.use('*', async (c, next) => {
   await next();
   
   const env = c.env;
+  const exposeDebugInfo = env.ENVIRONMENT !== 'production';
   
-  // 添加版本元数据响应头
-  if (env.CF_VERSION_METADATA) {
+  if (exposeDebugInfo && env.CF_VERSION_METADATA) {
     c.header('X-Cloudflare-Worker-Version', env.CF_VERSION_METADATA.id);
     c.header('X-Cloudflare-Worker-Tag', env.CF_VERSION_METADATA.tag || 'latest');
     c.header('X-Cloudflare-Worker-Timestamp', env.CF_VERSION_METADATA.timestamp);
   }
-  
-  // 动态读取部署信息文件
-  let deployInfo = {
-    timestamp: new Date().toISOString(),
-    hash: "unknown",
-    shortHash: "unknown",
-    branch: "unknown",
-    message: "Unknown deployment",
-    author: "unknown",
-    authorEmail: "unknown",
-    commitDate: new Date().toISOString(),
-    environment: "production",
-    deployer: "unknown"
-  };
-  
-  try {
-    // 尝试不同的路径
-    const paths = [
-      './dist/deploy-info.json',
-      '../dist/deploy-info.json',
-      '../../dist/deploy-info.json'
-    ];
-    
-    for (const deployInfoPath of paths) {
-      try {
-        if (fs.existsSync(deployInfoPath)) {
-          const deployInfoContent = fs.readFileSync(deployInfoPath, 'utf8');
-          deployInfo = JSON.parse(deployInfoContent);
-          break;
-        }
-      } catch (error) {
-        // 继续尝试下一个路径
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to read deploy info file:', error);
-  }
-  
-  c.header('X-Deployment-Hash', deployInfo.shortHash);
-  c.header('X-Deployment-Branch', deployInfo.branch);
-  c.header('X-Deployment-Message', deployInfo.message);
-  c.header('X-Deployment-Environment', deployInfo.environment);
-  c.header('X-Deployment-Timestamp', deployInfo.timestamp);
+
+  c.header('X-Deployment-Environment', env.ENVIRONMENT);
 });
 
 app.get('/health', (c) => {
@@ -110,28 +69,13 @@ app.get('/health', (c) => {
 
 app.get('/api/deployment/info', (c) => {
   const env = c.env;
-  
-  // 静态部署信息（在实际部署时会被真实数据替换）
-  const deployInfo = {
-    timestamp: "2026-03-25T09:03:46.068Z",
-    hash: "44df7f8455a81b21406807f0e7948fd69c41b4bd",
-    shortHash: "44df7f8",
-    branch: "master",
-    message: "Deployed version 44df7f8 - fix: export CacheDurableObject in src/index.ts",
-    author: "ming huang",
-    authorEmail: "isuyee88@outlook.com",
-    commitDate: "2026-03-25 13:36:17 +0800",
-    environment: "production",
-    deployer: "unknown"
-  };
-  
+
   const deploymentInfo = {
     version: env.CF_VERSION_METADATA ? {
       id: env.CF_VERSION_METADATA.id,
       tag: env.CF_VERSION_METADATA.tag,
       timestamp: env.CF_VERSION_METADATA.timestamp,
     } : null,
-    deployment: deployInfo,
     environment: env.ENVIRONMENT,
     realtimeEnabled: env.REALTIME_ENABLED,
     sseEnabled: env.SSE_ENABLED,
@@ -157,10 +101,11 @@ import { createExportRouter } from '@/services/export/export.routes';
 import { createTrendsRouter } from '@/services/trends/trends.routes';
 import { createBlacklistRouter } from '@/routes/blacklist.routes';
 import { createWhitelistRouter } from '@/routes/whitelist.routes';
+import { createDomainRouter } from '@/services/domain/domain.routes';
 import { userPreferenceRoutes } from '@/services/user-preferences/user-preferences.routes';
 import { createMigrationRouter } from '@/services/migration/migration.routes';
 import { createCacheUpdateRoutes } from '@/services/cache/cache-update-service';
-import { SSECacheNotificationService } from '@/services/cache/sse-cache-notification';
+import { createSSECacheNotification } from '@/services/cache/sse-cache-notification';
 
 app.route('/api/campaigns', createCampaignRouter());
 app.route('/api/flows', createFlowRouter());
@@ -179,6 +124,7 @@ app.route('/api/export', createExportRouter());
 app.route('/api/trends', createTrendsRouter());
 app.route('/api/blacklist', createBlacklistRouter());
 app.route('/api/whitelist', createWhitelistRouter());
+app.route('/api/domains', createDomainRouter());
 app.route('/api/user-preferences', userPreferenceRoutes);
 app.route('/api/migration', createMigrationRouter());
 
@@ -191,7 +137,7 @@ app.get('/api/cache-update', async (c) => {
 // SSE缓存更新通知端点
 app.get('/api/cache/events', async (c) => {
   const userId = c.req.query('userId') || 'anonymous';
-  const sseService = new SSECacheNotificationService(c.env);
+  const sseService = createSSECacheNotification(c.env);
   return sseService.handleConnection(c.req.raw, userId);
 });
 
@@ -247,6 +193,9 @@ export default {
     
     // 所有其他请求（静态资源）直接交给 ASSETS 处理
     return env.ASSETS.fetch(request);
+  },
+  async queue(batch: MessageBatch<CacheRefreshMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
+    await CacheRefreshConsumer.handle(batch, env, ctx);
   },
 
   /**
