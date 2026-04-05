@@ -6,6 +6,7 @@ import {
   Edit3,
   Globe,
   Loader2,
+  Network,
   Plus,
   ShieldCheck,
   Trash2,
@@ -15,7 +16,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
-import { createDomain, deleteDomain, fetchDomains, updateDomain } from '../services/api';
+import { createDomain, deleteDomain, fetchCampaigns, fetchDomains, fetchLandings, updateDomain } from '../services/api';
 import { useToast } from '../components/Toast';
 import type { Domain } from '../types/domain';
 
@@ -23,7 +24,11 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const DOMAIN_FIELDS: FormField[] = [
+function buildDomainFields(
+  campaigns: Array<{ id: string; name: string }>,
+  landings: Array<{ id: string; name: string }>
+): FormField[] {
+  return [
   {
     name: 'hostname',
     label: 'Hostname',
@@ -105,15 +110,21 @@ const DOMAIN_FIELDS: FormField[] = [
   },
   {
     name: 'defaultCampaignId',
-    label: 'Default Campaign ID',
-    type: 'text',
-    placeholder: 'c12',
+    label: 'Default Campaign',
+    type: 'select',
+    options: campaigns.map((campaign) => ({
+      value: campaign.id,
+      label: `${campaign.name} (${campaign.id})`,
+    })),
   },
   {
     name: 'defaultLandingPageId',
-    label: 'Default Landing ID',
-    type: 'text',
-    placeholder: 'lp4',
+    label: 'Default Landing',
+    type: 'select',
+    options: landings.map((landing) => ({
+      value: landing.id,
+      label: `${landing.name} (${landing.id})`,
+    })),
   },
   {
     name: 'notes',
@@ -122,6 +133,7 @@ const DOMAIN_FIELDS: FormField[] = [
     placeholder: 'DNS handover steps, SSL plan, access notes...',
   },
 ];
+}
 
 function formatDate(value?: string) {
   if (!value) return '-';
@@ -158,6 +170,8 @@ function getStatusIcon(status: Domain['status']) {
 export default function Domains() {
   const toast = useToast();
   const [domains, setDomains] = useState<Domain[]>([]);
+  const [campaignOptions, setCampaignOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [landingOptions, setLandingOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -172,12 +186,29 @@ export default function Domains() {
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchDomains();
-      if (Array.isArray(data)) {
-        setDomains(data);
-      } else {
-        setDomains([]);
-      }
+      const [domainsData, campaignsData, landingsData] = await Promise.all([
+        fetchDomains(),
+        fetchCampaigns().catch(() => []),
+        fetchLandings(false).catch(() => []),
+      ]);
+
+      setDomains(Array.isArray(domainsData) ? domainsData : []);
+      setCampaignOptions(
+        Array.isArray(campaignsData)
+          ? campaignsData.map((campaign: any) => ({
+              id: String(campaign.displayId || campaign.id),
+              name: String(campaign.name || campaign.id),
+            }))
+          : []
+      );
+      setLandingOptions(
+        Array.isArray(landingsData)
+          ? landingsData.map((landing: any) => ({
+              id: String(landing.displayId || landing.id),
+              name: String(landing.name || landing.id),
+            }))
+          : []
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load domains');
     } finally {
@@ -202,6 +233,70 @@ export default function Domains() {
       return matchesSearch && matchesStatus && matchesUsage;
     });
   }, [domains, searchTerm, statusFilter, usageFilter]);
+
+  const domainFields = useMemo(() => buildDomainFields(campaignOptions, landingOptions), [campaignOptions, landingOptions]);
+
+  const governanceIssues = useMemo(() => {
+    return domains.flatMap((domain) => {
+      const issues: Array<{ id: string; tone: 'error' | 'warning'; title: string; detail: string }> = [];
+
+      if ((domain.usage === 'tracking' || domain.usage === 'mixed') && !domain.defaultCampaignId) {
+        issues.push({
+          id: `${domain.id}-campaign`,
+          tone: 'warning',
+          title: `${domain.hostname} has no default campaign`,
+          detail: 'Tracking and mixed domains should map a default campaign for fallback continuity.',
+        });
+      }
+
+      if ((domain.usage === 'landing' || domain.usage === 'mixed') && !domain.defaultLandingPageId) {
+        issues.push({
+          id: `${domain.id}-landing`,
+          tone: 'warning',
+          title: `${domain.hostname} has no default landing`,
+          detail: 'Landing and mixed domains should map a default landing page for index behavior.',
+        });
+      }
+
+      if (domain.dnsProvider === 'cloudflare' && domain.cloudflareProxyEnabled && !domain.cloudflareZoneId) {
+        issues.push({
+          id: `${domain.id}-zone`,
+          tone: 'error',
+          title: `${domain.hostname} is proxied without a zone id`,
+          detail: 'Cloudflare-managed domains should record the zone identifier for automation and governance.',
+        });
+      }
+
+      if (domain.status === 'active' && (domain.sslStatus === 'pending' || domain.sslStatus === 'disabled')) {
+        issues.push({
+          id: `${domain.id}-ssl`,
+          tone: 'error',
+          title: `${domain.hostname} is active without healthy SSL`,
+          detail: 'Active domains should not remain pending or disabled on SSL.',
+        });
+      }
+
+      if (domain.usage === 'admin' && !domain.cloudflareProxyEnabled) {
+        issues.push({
+          id: `${domain.id}-admin-proxy`,
+          tone: 'warning',
+          title: `${domain.hostname} is an admin domain without proxy`,
+          detail: 'Admin access domains should usually sit behind Cloudflare proxy / access controls before production.',
+        });
+      }
+
+      return issues;
+    });
+  }, [domains]);
+
+  const usageBreakdown = useMemo(() => {
+    return {
+      tracking: domains.filter((domain) => domain.usage === 'tracking').length,
+      landing: domains.filter((domain) => domain.usage === 'landing').length,
+      admin: domains.filter((domain) => domain.usage === 'admin').length,
+      mixed: domains.filter((domain) => domain.usage === 'mixed').length,
+    };
+  }, [domains]);
 
   const handleCreate = () => {
     setFormMode('create');
@@ -414,6 +509,83 @@ export default function Domains() {
         </div>
       </div>
 
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr),minmax(360px,1fr)]">
+        <div className="rounded-sm bg-surface-container-lowest p-5 whisper-shadow">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-primary/10">
+              <Network size={18} className="text-primary" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-widest text-primary">Domain Governance</h2>
+              <p className="mt-1 text-sm text-on-surface-variant">
+                Surface SSL, Cloudflare, and fallback mapping gaps before they impact routing continuity.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-4">
+            <GovernanceMetric label="Tracking" value={String(usageBreakdown.tracking)} />
+            <GovernanceMetric label="Landing" value={String(usageBreakdown.landing)} />
+            <GovernanceMetric label="Admin" value={String(usageBreakdown.admin)} />
+            <GovernanceMetric label="Mixed" value={String(usageBreakdown.mixed)} />
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {governanceIssues.length === 0 ? (
+              <div className="rounded-sm border border-secondary/20 bg-secondary-container/20 p-4 text-sm text-secondary">
+                No obvious domain governance gaps detected in the current inventory.
+              </div>
+            ) : (
+              governanceIssues.slice(0, 6).map((issue) => (
+                <div
+                  key={issue.id}
+                  className={cn(
+                    'rounded-sm border p-4',
+                    issue.tone === 'error'
+                      ? 'border-error/20 bg-error/10'
+                      : 'border-warning/20 bg-warning/10'
+                  )}
+                >
+                  <div className={cn('text-sm font-semibold', issue.tone === 'error' ? 'text-error' : 'text-warning')}>
+                    {issue.title}
+                  </div>
+                  <div className="mt-1 text-sm text-on-surface-variant">{issue.detail}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-sm bg-surface-container-lowest p-5 whisper-shadow">
+          <h2 className="text-sm font-bold uppercase tracking-widest text-primary">Readiness Snapshot</h2>
+          <div className="mt-4 space-y-3 text-sm">
+            <ReadinessRow
+              label="Cloudflare Zones"
+              value={`${domains.filter((domain) => Boolean(domain.cloudflareZoneId)).length}/${domains.length || 0}`}
+            />
+            <ReadinessRow
+              label="Default Campaigns"
+              value={`${domains.filter((domain) => Boolean(domain.defaultCampaignId)).length}/${domains.length || 0}`}
+            />
+            <ReadinessRow
+              label="Default Landings"
+              value={`${domains.filter((domain) => Boolean(domain.defaultLandingPageId)).length}/${domains.length || 0}`}
+            />
+            <ReadinessRow
+              label="Proxy Enabled"
+              value={`${domains.filter((domain) => domain.cloudflareProxyEnabled).length}/${domains.length || 0}`}
+            />
+            <ReadinessRow
+              label="Healthy SSL"
+              value={`${domains.filter((domain) => domain.sslStatus === 'auto' || domain.sslStatus === 'custom').length}/${domains.length || 0}`}
+            />
+          </div>
+          <div className="mt-5 rounded-sm bg-surface p-4 text-sm text-on-surface-variant">
+            Keitaro-style domain management is no longer just a CRUD list here. This view now tracks fallback mappings, SSL posture, and Cloudflare governance signals in one place.
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-sm bg-surface-container-lowest p-5 whisper-shadow space-y-4">
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),180px,180px]">
           <input
@@ -474,10 +646,28 @@ export default function Domains() {
         onClose={() => setIsFormOpen(false)}
         onSubmit={handleSubmit}
         title="Domain"
-        fields={DOMAIN_FIELDS}
+        fields={domainFields}
         initialData={selectedDomain}
         mode={formMode}
       />
+    </div>
+  );
+}
+
+function GovernanceMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-sm bg-surface p-4">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</div>
+      <div className="mt-2 text-2xl font-display font-bold text-primary">{value}</div>
+    </div>
+  );
+}
+
+function ReadinessRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</div>
+      <div className="text-right text-on-surface">{value}</div>
     </div>
   );
 }

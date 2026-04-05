@@ -758,3 +758,150 @@ Keitaro 在 Campaigns、Landings、Offers、Domains 等多页都有 groups 与 g
 
 4. 收口生产风险
 - 修复 `src/index.ts` 对外暴露部署元数据与作者邮箱
+
+## 18. 本轮迭代回顾（2026-04-05 第六轮补强）
+
+### 本轮目标
+- 收口明确的生产风险项
+- 把 `Domains` 从台账页继续推进到首版治理模块
+- 继续深化 `Routing` 的命中路径解释
+
+### 实际完成
+
+1. 已收口部署元数据公开暴露风险
+- 生产环境下不再通过响应头暴露部署调试信息
+- `/api/deployment/info` 在生产环境下改为仅返回最小化信息
+- 详细部署版本信息继续保留在非生产环境用于调试
+
+2. `Domains` 模块已从 CRUD 台账升级为治理面板首版
+- 新增 `Domain Governance` 区块
+- 新增 `Readiness Snapshot`
+- 已显式展示 Cloudflare zone、默认 campaign、默认 landing、proxy、SSL readiness 等治理信号
+- 已新增治理问题检测，包括：
+  - tracking / mixed 域名未绑定默认 campaign
+  - landing / mixed 域名未绑定默认 landing
+  - Cloudflare proxy 开启但 zone id 缺失
+  - active 域名 SSL 仍 pending / disabled
+  - admin 域名未启用 proxy
+
+3. `Domains` 表单能力已补强
+- 默认 campaign 不再只是手填 ID，而是接入真实 campaign 选项
+- 默认 landing 不再只是手填 ID，而是接入真实 landing 选项
+- 让主链路映射更接近实际运营配置，而不是纯台账字段
+
+4. `Routing` 命中路径解释已继续增强
+- test bench 现在新增 `Decision Path`
+- 会解释 forced flow、rotation、规则逐条命中/未命中、winning rule、fallback/default flow 与 traffic loss 提示
+- `Routing` 已基本形成“配置 + 测试 + 观测 + 解释 + 路径说明”
+
+### 本轮验证结果
+- `npm run typecheck`：通过
+- `npm --prefix frontend run build`：通过
+
+### 与 Keitaro 对标后差距变化
+- `Domains` 已不再只是存在菜单项，而是开始承担域名治理职责
+- `Routing` 的工作台深度继续提升，离 Keitaro 风格的可运营编排台又近了一步
+- 明确的生产风险项中，部署元数据暴露问题已进入已处理状态
+
+### 阶段计划完成度变化
+
+#### 第一阶段：从“管理台”升级为“可运行 tracker 控制台”
+- `Campaign Routing / Flow Editor`：高完成度，剩余主要是 nested groups 和更深的 rule tree
+- `Domains` 模块：由“未开始”提升为“首版已具备主链路治理能力”
+- `Landing / Offer hosted mode`：仍未开始
+- `Traffic Source / Affiliate Network` 深化配置：仍未开始
+
+### 新发现的问题 / 风险
+- `Domains` 当前仍缺真正的 Cloudflare zone 校验、SSL 实时检测和 DNS 自动化动作
+- `Routing` 仍未进入 nested groups / condition tree 可编辑阶段
+- 正式生产前仍需确认 Cloudflare One 接入切换路径
+
+## 19. 下一阶段工作任务
+
+1. 深化 `Routing` 的规则结构能力
+- nested groups / condition tree 编辑
+- 优先级拖拽排序
+- 规则复制 / 批量启停
+
+2. 深化 `Domains` 的真实治理能力
+- Cloudflare zone / proxy / SSL 实时校验
+- 域名验证状态刷新
+- 更明确的 campaign / landing / admin 使用拓扑
+
+3. 启动 `Landing / Offer hosted mode`
+- 这是当前与 Keitaro 资产托管能力的主要差距
+
+4. 交付前收口
+- Cloudflare One 认证切换
+
+## 20. 本轮迭代回顾（2026-04-05 第七轮补强）
+
+### 本轮目标
+- 完成 `Routing` 中最关键的剩余结构性缺口：`nested groups / condition tree`
+
+### 实际完成
+
+1. `Routing` 规则编辑器已升级为条件树模型
+- 不再局限于单层 filters
+- 规则表单状态已改为 root group + nested groups 结构
+- 已支持 group 内添加 filter
+- 已支持 group 内继续添加 nested group
+- 已支持 group 级别的 `name / logic / enabled`
+
+2. nested groups 已从只读变成可编辑
+- 之前只能查看 / 测试 nested groups
+- 现在已支持在前端可视化编辑 nested groups
+- 规则 payload 也已升级为递归 group DTO 提交
+
+3. rule create / update payload 进一步补齐
+- 已补齐 group/filter 的 `id`
+- 已补齐 group/filter 的 `enabled`
+- 让前端提交的数据结构更贴近后端验证器与 schema 预期
+
+4. `Routing Test Bench` 与 `Decision Path` 继续受益
+- 复杂规则树现在不只可展示、可测试，也可以直接在当前工作台内改动
+
+### 本轮验证结果
+- `npm run typecheck`：通过
+- `npm --prefix frontend run build`：通过
+
+### 与 Keitaro 对标后差距变化
+- `Routing` 的主要结构性缺口已被进一步填平
+- 当前 `Campaign Routing` 已具备：
+  - flow 管理
+  - rule builder
+  - condition tree
+  - test bench
+  - observability
+  - explainability
+- 剩余差距已更多落在“批量运维效率”和“外围主链路模块”上
+
+### 阶段计划完成度变化
+
+#### 第一阶段：从“管理台”升级为“可运行 tracker 控制台”
+- `Campaign Routing / Flow Editor`：由高完成度继续提升为接近完整
+- `Domains` 模块：保持首版治理能力已就位
+- `Landing / Offer hosted mode`：仍未开始
+- `Traffic Source / Affiliate Network` 深化配置：仍未开始
+
+### 新发现的问题 / 风险
+- `Routing` 现在的 condition tree 已可编辑，但仍未加入拖拽排序、规则复制、批量启停
+- `Domains` 仍缺真实的 Cloudflare 在线校验
+- 交付前仍需切换 Cloudflare One
+
+## 21. 下一阶段工作任务
+
+1. 提升 `Routing` 运维效率
+- 规则优先级拖拽排序
+- 规则复制
+- 批量启停
+
+2. 深化 `Domains` 实时治理
+- Cloudflare zone / proxy / SSL 实时校验
+- 更清晰的域名拓扑与状态刷新
+
+3. 启动 `Landing / Offer hosted mode`
+- 继续作为当前与 Keitaro 资产托管能力的最大差距
+
+4. 交付前收口
+- Cloudflare One 认证切换

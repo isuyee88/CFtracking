@@ -60,6 +60,15 @@ interface RuleFilterDraft {
   enabled: boolean;
 }
 
+interface RuleGroupDraft {
+  id: string;
+  name: string;
+  logic: 'AND' | 'OR';
+  enabled: boolean;
+  filters: RuleFilterDraft[];
+  groups: RuleGroupDraft[];
+}
+
 interface RuleFormState {
   ruleId?: string;
   flowId: string;
@@ -67,8 +76,7 @@ interface RuleFormState {
   description: string;
   priority: number;
   status: 'active' | 'paused' | 'deleted';
-  logic: 'AND' | 'OR';
-  filters: RuleFilterDraft[];
+  rootGroup: RuleGroupDraft;
   actionType: FlowRuleActionConfig['type'];
   actionTargetId: string;
   redirectUrl: string;
@@ -99,6 +107,17 @@ function createFilterDraft(): RuleFilterDraft {
   };
 }
 
+function createGroupDraft(name = ''): RuleGroupDraft {
+  return {
+    id: `group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name,
+    logic: 'AND',
+    enabled: true,
+    filters: [createFilterDraft()],
+    groups: [],
+  };
+}
+
 function createRuleForm(flowId: string): RuleFormState {
   return {
     flowId,
@@ -106,8 +125,7 @@ function createRuleForm(flowId: string): RuleFormState {
     description: '',
     priority: 0,
     status: 'active',
-    logic: 'AND',
-    filters: [createFilterDraft()],
+    rootGroup: createGroupDraft('Root Group'),
     actionType: 'allow',
     actionTargetId: '',
     redirectUrl: '',
@@ -226,21 +244,14 @@ function parseFilterValue(raw: string, targetType: FlowTargetOption['type'] | un
 }
 
 function toRuleForm(rule: FlowRuleDocument): RuleFormState {
-  if (Array.isArray(rule.condition.groups) && rule.condition.groups.length > 0) {
-    throw new Error('Nested filter groups are currently read-only in this editor.');
-  }
-
-  return {
-    ruleId: rule.id,
-    flowId: rule.flowId,
-    name: rule.name,
-    description: rule.description || '',
-    priority: Number(rule.priority || 0),
-    status: rule.status,
-    logic: rule.condition.logic,
+  const mapGroup = (group: FlowRuleDocument['condition']): RuleGroupDraft => ({
+    id: group.id,
+    name: group.name || '',
+    logic: group.logic,
+    enabled: group.enabled,
     filters:
-      rule.condition.filters.length > 0
-        ? rule.condition.filters.map((filter) => ({
+      group.filters.length > 0
+        ? group.filters.map((filter) => ({
             id: filter.id,
             name: filter.name || '',
             target: filter.target,
@@ -254,6 +265,17 @@ function toRuleForm(rule: FlowRuleDocument): RuleFormState {
             enabled: filter.enabled,
           }))
         : [createFilterDraft()],
+    groups: Array.isArray(group.groups) ? group.groups.map(mapGroup) : [],
+  });
+
+  return {
+    ruleId: rule.id,
+    flowId: rule.flowId,
+    name: rule.name,
+    description: rule.description || '',
+    priority: Number(rule.priority || 0),
+    status: rule.status,
+    rootGroup: mapGroup(rule.condition),
     actionType: rule.action.type,
     actionTargetId: rule.action.targetId || '',
     redirectUrl: rule.action.redirectUrl || '',
@@ -263,24 +285,34 @@ function toRuleForm(rule: FlowRuleDocument): RuleFormState {
 }
 
 function buildRulePayload(form: RuleFormState, targetsMap: Map<string, FlowTargetOption>): CreateFlowRuleDTO {
+  const mapGroup = (group: RuleGroupDraft): CreateFlowRuleDTO['condition'] => ({
+    id: group.id,
+    name: group.name.trim() || undefined,
+    logic: group.logic,
+    enabled: group.enabled,
+    filters: group.filters.map((filter) => {
+      const target = targetsMap.get(filter.target);
+      const value = parseFilterValue(filter.value, target?.type, filter.operator);
+
+      return {
+        id: filter.id,
+        name: filter.name.trim() || undefined,
+        target: filter.target,
+        operator: filter.operator,
+        value,
+        enabled: filter.enabled,
+      };
+    }),
+    groups: group.groups.map(mapGroup),
+  });
+
   return {
     name: form.name.trim(),
     description: form.description.trim() || undefined,
     priority: Number(form.priority || 0),
     condition: {
-      name: `${form.name.trim() || 'Rule'} conditions`,
-      logic: form.logic,
-      filters: form.filters.map((filter) => {
-        const target = targetsMap.get(filter.target);
-        const value = parseFilterValue(filter.value, target?.type, filter.operator);
-
-        return {
-          name: filter.name.trim() || undefined,
-          target: filter.target,
-          operator: filter.operator,
-          value,
-        };
-      }),
+      ...mapGroup(form.rootGroup),
+      name: form.rootGroup.name.trim() || `${form.name.trim() || 'Rule'} conditions`,
     },
     action: {
       type: form.actionType,
@@ -422,15 +454,46 @@ export function CampaignRoutingWorkbench({
 
   const openEditRule = useCallback(
     (rule: FlowRuleDocument) => {
-      try {
-        setRuleForm(toRuleForm(rule));
-        setEditorOpen(true);
-      } catch (err) {
-        toast.error('Rule cannot be edited yet', err instanceof Error ? err.message : 'Unsupported rule shape');
-      }
+      setRuleForm(toRuleForm(rule));
+      setEditorOpen(true);
     },
-    [toast]
+    []
   );
+
+  const patchGroupById = useCallback(
+    (groupId: string, updater: (group: RuleGroupDraft) => RuleGroupDraft) => {
+      const updateTree = (group: RuleGroupDraft): RuleGroupDraft => {
+        if (group.id === groupId) {
+          return updater(group);
+        }
+
+        return {
+          ...group,
+          groups: group.groups.map(updateTree),
+        };
+      };
+
+      setRuleForm((current) => ({
+        ...current,
+        rootGroup: updateTree(current.rootGroup),
+      }));
+    },
+    []
+  );
+
+  const removeGroupById = useCallback((groupId: string) => {
+    const removeFromTree = (group: RuleGroupDraft): RuleGroupDraft => ({
+      ...group,
+      groups: group.groups
+        .filter((child) => child.id !== groupId)
+        .map(removeFromTree),
+    });
+
+    setRuleForm((current) => ({
+      ...current,
+      rootGroup: removeFromTree(current.rootGroup),
+    }));
+  }, []);
 
   const saveRule = useCallback(async () => {
     if (!selectedFlowId) {
@@ -442,14 +505,19 @@ export function CampaignRoutingWorkbench({
       return;
     }
 
-    if (ruleForm.filters.some((filter) => !filter.target || !filter.operator)) {
+    const collectGroups = (group: RuleGroupDraft): RuleGroupDraft[] => [group, ...group.groups.flatMap(collectGroups)];
+    const allGroups = collectGroups(ruleForm.rootGroup);
+    const allFilters = allGroups.flatMap((group) => group.filters);
+
+    if (allFilters.some((filter) => !filter.target || !filter.operator)) {
       toast.error('Rule save failed', 'Every filter needs a target and operator.');
       return;
     }
 
     if (
-      ruleForm.filters.some(
+      allFilters.some(
         (filter) =>
+          filter.enabled &&
           filter.operator !== 'exists' &&
           filter.operator !== 'notExists' &&
           !filter.value.trim()
@@ -659,6 +727,293 @@ export function CampaignRoutingWorkbench({
           : 'No forced overrides configured; traffic enters regular weighted routing directly.',
     };
   }, [activeRules, flowRotation, flows, landings, offers, trafficLoss]);
+
+  const testDecisionPath = useMemo(() => {
+    if (!testResult) {
+      return [];
+    }
+
+    const steps: string[] = [];
+    steps.push(
+      routingExplainability.forcedCount > 0
+        ? `${routingExplainability.forcedCount} forced flow override(s) are configured before regular distribution.`
+        : 'No forced flow override is configured before regular distribution.'
+    );
+    steps.push(`Campaign rotation mode is ${routingExplainability.rotationLabel}.`);
+
+    const checkedRules = testResult.ruleResults.map((result, index) => {
+      const state = result.matched ? 'matched' : 'missed';
+      return `Rule ${index + 1}: ${result.ruleName || 'Unnamed rule'} ${state}.`;
+    });
+
+    if (checkedRules.length > 0) {
+      steps.push(...checkedRules);
+    } else {
+      steps.push('No active rules were evaluated for this flow.');
+    }
+
+    if (testResult.matchedRule?.ruleName) {
+      steps.push(`Winning rule: ${testResult.matchedRule.ruleName}.`);
+    } else {
+      steps.push(`No rule matched, so fallback action "${testResult.action.type}" was used.`);
+    }
+
+    if (routingExplainability.defaultCount > 0) {
+      steps.push(`Default fallback target is ${routingExplainability.fallbackTarget}.`);
+    } else {
+      steps.push('No default flow is configured at campaign level.');
+    }
+
+    if (trafficLoss > 0) {
+      steps.push(`Traffic loss is set to ${trafficLoss}%, so some traffic may be dropped before fallback continuity applies.`);
+    }
+
+    return steps;
+  }, [routingExplainability, testResult, trafficLoss]);
+
+  const renderGroupEditor = useCallback(
+    (group: RuleGroupDraft, depth = 0): React.ReactNode => {
+      const canRemoveGroup = depth > 0;
+
+      return (
+        <div key={group.id} className="rounded-sm border border-outline-variant/10 bg-surface p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+              {depth === 0 ? 'Root Group' : `Nested Group ${depth}`}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() =>
+                  patchGroupById(group.id, (current) => ({
+                    ...current,
+                    filters: [...current.filters, createFilterDraft()],
+                  }))
+                }
+                className="text-xs font-bold uppercase tracking-widest text-primary"
+              >
+                Add Filter
+              </button>
+              <button
+                onClick={() =>
+                  patchGroupById(group.id, (current) => ({
+                    ...current,
+                    groups: [...current.groups, createGroupDraft('Nested Group')],
+                  }))
+                }
+                className="text-xs font-bold uppercase tracking-widest text-primary"
+              >
+                Add Group
+              </button>
+              {canRemoveGroup && (
+                <button
+                  onClick={() => removeGroupById(group.id)}
+                  className="text-xs font-bold uppercase tracking-widest text-error"
+                >
+                  Remove Group
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Group Name">
+              <input
+                value={group.name}
+                onChange={(event) =>
+                  patchGroupById(group.id, (current) => ({ ...current, name: event.target.value }))
+                }
+                className="w-full border border-outline-variant bg-surface-container px-4 py-3 outline-none focus:border-primary"
+              />
+            </Field>
+            <Field label="Logic">
+              <select
+                value={group.logic}
+                onChange={(event) =>
+                  patchGroupById(group.id, (current) => ({
+                    ...current,
+                    logic: event.target.value as RuleGroupDraft['logic'],
+                  }))
+                }
+                className="w-full border border-outline-variant bg-surface-container px-4 py-3 outline-none focus:border-primary"
+              >
+                <option value="AND">AND</option>
+                <option value="OR">OR</option>
+              </select>
+            </Field>
+            <Field label="Enabled">
+              <select
+                value={group.enabled ? 'true' : 'false'}
+                onChange={(event) =>
+                  patchGroupById(group.id, (current) => ({
+                    ...current,
+                    enabled: event.target.value === 'true',
+                  }))
+                }
+                className="w-full border border-outline-variant bg-surface-container px-4 py-3 outline-none focus:border-primary"
+              >
+                <option value="true">Enabled</option>
+                <option value="false">Disabled</option>
+              </select>
+            </Field>
+            <div className="rounded-sm bg-surface-container px-4 py-3 text-sm text-on-surface-variant">
+              {(group.filters.length + group.groups.length).toString()} items
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {group.filters.map((filter, index) => {
+              const targetMeta = targetsMap.get(filter.target);
+              const needsValue = filter.operator !== 'exists' && filter.operator !== 'notExists';
+
+              return (
+                <div key={filter.id} className="rounded-sm border border-outline-variant/10 bg-surface-container p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                      Filter {index + 1}
+                    </div>
+                    {group.filters.length > 1 && (
+                      <button
+                        onClick={() =>
+                          patchGroupById(group.id, (current) => ({
+                            ...current,
+                            filters: current.filters.filter((item) => item.id !== filter.id),
+                          }))
+                        }
+                        className="text-xs font-bold uppercase tracking-widest text-error"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <Field label="Name">
+                      <input
+                        value={filter.name}
+                        onChange={(event) =>
+                          patchGroupById(group.id, (current) => ({
+                            ...current,
+                            filters: current.filters.map((item) =>
+                              item.id === filter.id ? { ...item, name: event.target.value } : item
+                            ),
+                          }))
+                        }
+                        className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                      />
+                    </Field>
+                    <Field label="Target">
+                      <select
+                        value={filter.target}
+                        onChange={(event) =>
+                          patchGroupById(group.id, (current) => ({
+                            ...current,
+                            filters: current.filters.map((item) =>
+                              item.id === filter.id ? { ...item, target: event.target.value } : item
+                            ),
+                          }))
+                        }
+                        className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                      >
+                        {targets.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.category} · {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Operator">
+                      <select
+                        value={filter.operator}
+                        onChange={(event) =>
+                          patchGroupById(group.id, (current) => ({
+                            ...current,
+                            filters: current.filters.map((item) =>
+                              item.id === filter.id
+                                ? { ...item, operator: event.target.value as FlowFilterOperator }
+                                : item
+                            ),
+                          }))
+                        }
+                        className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                      >
+                        {operators.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Enabled">
+                      <select
+                        value={filter.enabled ? 'true' : 'false'}
+                        onChange={(event) =>
+                          patchGroupById(group.id, (current) => ({
+                            ...current,
+                            filters: current.filters.map((item) =>
+                              item.id === filter.id ? { ...item, enabled: event.target.value === 'true' } : item
+                            ),
+                          }))
+                        }
+                        className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                      >
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                      </select>
+                    </Field>
+                    {needsValue && (
+                      <Field label={`Value${targetMeta ? ` (${targetMeta.type})` : ''}`} className="md:col-span-2 xl:col-span-4">
+                        {targetMeta?.type === 'boolean' ? (
+                          <select
+                            value={filter.value || 'true'}
+                            onChange={(event) =>
+                              patchGroupById(group.id, (current) => ({
+                                ...current,
+                                filters: current.filters.map((item) =>
+                                  item.id === filter.id ? { ...item, value: event.target.value } : item
+                                ),
+                              }))
+                            }
+                            className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                          >
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                          </select>
+                        ) : (
+                          <input
+                            value={filter.value}
+                            onChange={(event) =>
+                              patchGroupById(group.id, (current) => ({
+                                ...current,
+                                filters: current.filters.map((item) =>
+                                  item.id === filter.id ? { ...item, value: event.target.value } : item
+                                ),
+                              }))
+                            }
+                            placeholder={
+                              filter.operator === 'in' || filter.operator === 'notIn' || filter.operator === 'between'
+                                ? 'Use comma-separated values'
+                                : 'Value'
+                            }
+                            className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                          />
+                        )}
+                      </Field>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {group.groups.length > 0 && (
+            <div className="mt-4 space-y-4 border-l border-outline-variant/20 pl-4">
+              {group.groups.map((childGroup) => renderGroupEditor(childGroup, depth + 1))}
+            </div>
+          )}
+        </div>
+      );
+    },
+    [operators, patchGroupById, removeGroupById, targets, targetsMap]
+  );
 
   return (
     <div className="grid gap-6 xl:grid-cols-[320px,minmax(0,1fr)]">
@@ -925,18 +1280,6 @@ export function CampaignRoutingWorkbench({
                   className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
                 />
               </Field>
-              <Field label="Logic">
-                <select
-                  value={ruleForm.logic}
-                  onChange={(event) =>
-                    setRuleForm((current) => ({ ...current, logic: event.target.value as RuleFormState['logic'] }))
-                  }
-                  className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
-                >
-                  <option value="AND">AND</option>
-                  <option value="OR">OR</option>
-                </select>
-              </Field>
               <Field label="Status">
                 <select
                   value={ruleForm.status}
@@ -955,165 +1298,8 @@ export function CampaignRoutingWorkbench({
             </div>
 
             <div className="mt-6 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-on-surface">Filters</h4>
-                <button
-                  onClick={() =>
-                    setRuleForm((current) => ({
-                      ...current,
-                      filters: [...current.filters, createFilterDraft()],
-                    }))
-                  }
-                  className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-primary"
-                >
-                  <Plus size={14} />
-                  Add Filter
-                </button>
-              </div>
-
-              {ruleForm.filters.map((filter, index) => {
-                const targetMeta = targetsMap.get(filter.target);
-                const needsValue = filter.operator !== 'exists' && filter.operator !== 'notExists';
-
-                return (
-                  <div key={filter.id} className="rounded-sm border border-outline-variant/10 bg-surface p-4">
-                    <div className="mb-3 flex items-center justify-between">
-                      <div className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
-                        Filter {index + 1}
-                      </div>
-                      {ruleForm.filters.length > 1 && (
-                        <button
-                          onClick={() =>
-                            setRuleForm((current) => ({
-                              ...current,
-                              filters: current.filters.filter((item) => item.id !== filter.id),
-                            }))
-                          }
-                          className="text-xs font-bold uppercase tracking-widest text-error"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <Field label="Name">
-                        <input
-                          value={filter.name}
-                          onChange={(event) =>
-                            setRuleForm((current) => ({
-                              ...current,
-                              filters: current.filters.map((item) =>
-                                item.id === filter.id ? { ...item, name: event.target.value } : item
-                              ),
-                            }))
-                          }
-                          className="w-full border border-outline-variant bg-surface-container px-4 py-3 outline-none focus:border-primary"
-                        />
-                      </Field>
-                      <Field label="Target">
-                        <select
-                          value={filter.target}
-                          onChange={(event) =>
-                            setRuleForm((current) => ({
-                              ...current,
-                              filters: current.filters.map((item) =>
-                                item.id === filter.id ? { ...item, target: event.target.value } : item
-                              ),
-                            }))
-                          }
-                          className="w-full border border-outline-variant bg-surface-container px-4 py-3 outline-none focus:border-primary"
-                        >
-                          {targets.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.category} · {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Operator">
-                        <select
-                          value={filter.operator}
-                          onChange={(event) =>
-                            setRuleForm((current) => ({
-                              ...current,
-                              filters: current.filters.map((item) =>
-                                item.id === filter.id
-                                  ? { ...item, operator: event.target.value as FlowFilterOperator }
-                                  : item
-                              ),
-                            }))
-                          }
-                          className="w-full border border-outline-variant bg-surface-container px-4 py-3 outline-none focus:border-primary"
-                        >
-                          {operators.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Enabled">
-                        <select
-                          value={filter.enabled ? 'true' : 'false'}
-                          onChange={(event) =>
-                            setRuleForm((current) => ({
-                              ...current,
-                              filters: current.filters.map((item) =>
-                                item.id === filter.id
-                                  ? { ...item, enabled: event.target.value === 'true' }
-                                  : item
-                              ),
-                            }))
-                          }
-                          className="w-full border border-outline-variant bg-surface-container px-4 py-3 outline-none focus:border-primary"
-                        >
-                          <option value="true">Enabled</option>
-                          <option value="false">Disabled</option>
-                        </select>
-                      </Field>
-                      {needsValue && (
-                        <Field label={`Value${targetMeta ? ` (${targetMeta.type})` : ''}`} className="md:col-span-2 xl:col-span-4">
-                          {targetMeta?.type === 'boolean' ? (
-                            <select
-                              value={filter.value || 'true'}
-                              onChange={(event) =>
-                                setRuleForm((current) => ({
-                                  ...current,
-                                  filters: current.filters.map((item) =>
-                                    item.id === filter.id ? { ...item, value: event.target.value } : item
-                                  ),
-                                }))
-                              }
-                              className="w-full border border-outline-variant bg-surface-container px-4 py-3 outline-none focus:border-primary"
-                            >
-                              <option value="true">true</option>
-                              <option value="false">false</option>
-                            </select>
-                          ) : (
-                            <input
-                              value={filter.value}
-                              onChange={(event) =>
-                                setRuleForm((current) => ({
-                                  ...current,
-                                  filters: current.filters.map((item) =>
-                                    item.id === filter.id ? { ...item, value: event.target.value } : item
-                                  ),
-                                }))
-                              }
-                              placeholder={
-                                filter.operator === 'in' || filter.operator === 'notIn' || filter.operator === 'between'
-                                  ? 'Use comma-separated values'
-                                  : 'Value'
-                              }
-                              className="w-full border border-outline-variant bg-surface-container px-4 py-3 outline-none focus:border-primary"
-                            />
-                          )}
-                        </Field>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              <h4 className="text-sm font-semibold text-on-surface">Condition Tree</h4>
+              {renderGroupEditor(ruleForm.rootGroup)}
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -1332,6 +1518,17 @@ export function CampaignRoutingWorkbench({
                     </div>
                   </div>
                 ))}
+              </div>
+
+              <div className="rounded-sm border border-outline-variant/10 bg-surface p-4">
+                <h4 className="text-sm font-semibold text-on-surface">Decision Path</h4>
+                <div className="mt-3 space-y-2">
+                  {testDecisionPath.map((step, index) => (
+                    <div key={`${step}-${index}`} className="text-sm text-on-surface-variant">
+                      {index + 1}. {step}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

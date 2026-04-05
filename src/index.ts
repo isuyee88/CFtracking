@@ -67,9 +67,8 @@ app.use('*', async (c, next) => {
     c.header('X-Cloudflare-Worker-Version', env.CF_VERSION_METADATA.id);
     c.header('X-Cloudflare-Worker-Tag', env.CF_VERSION_METADATA.tag || 'latest');
     c.header('X-Cloudflare-Worker-Timestamp', env.CF_VERSION_METADATA.timestamp);
+    c.header('X-Deployment-Environment', env.ENVIRONMENT);
   }
-
-  c.header('X-Deployment-Environment', env.ENVIRONMENT);
 });
 
 app.get('/health', (c) => {
@@ -78,6 +77,16 @@ app.get('/health', (c) => {
 
 app.get('/api/deployment/info', (c) => {
   const env = c.env;
+  const exposeDebugInfo = env.ENVIRONMENT !== 'production';
+
+  if (!exposeDebugInfo) {
+    return c.json(
+      success({
+        environment: env.ENVIRONMENT,
+        debugInfoExposed: false,
+      })
+    );
+  }
 
   const deploymentInfo = {
     version: env.CF_VERSION_METADATA ? {
@@ -88,6 +97,7 @@ app.get('/api/deployment/info', (c) => {
     environment: env.ENVIRONMENT,
     realtimeEnabled: env.REALTIME_ENABLED,
     sseEnabled: env.SSE_ENABLED,
+    debugInfoExposed: true,
     timestamp: new Date().toISOString(),
   };
   return c.json(success(deploymentInfo));

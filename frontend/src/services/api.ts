@@ -499,26 +499,7 @@ export interface CreateFlowRuleDTO {
   name: string;
   description?: string;
   priority?: number;
-  condition: {
-    name?: string;
-    logic: FlowLogicalOperator;
-    filters: Array<{
-      target: FlowFilterTarget;
-      operator: FlowFilterOperator;
-      value?: string | string[] | number | number[] | boolean | null;
-      name?: string;
-    }>;
-    groups?: Array<{
-      name?: string;
-      logic: FlowLogicalOperator;
-      filters: Array<{
-        target: FlowFilterTarget;
-        operator: FlowFilterOperator;
-        value?: string | string[] | number | number[] | boolean | null;
-        name?: string;
-      }>;
-    }>;
-  };
+  condition: CreateFlowRuleGroupDTO;
   action: FlowRuleActionConfig;
 }
 
@@ -529,6 +510,24 @@ export interface UpdateFlowRuleDTO {
   condition?: CreateFlowRuleDTO['condition'];
   action?: FlowRuleActionConfig;
   status?: 'active' | 'paused' | 'deleted';
+}
+
+export interface CreateFlowRuleFilterDTO {
+  id: string;
+  target: FlowFilterTarget;
+  operator: FlowFilterOperator;
+  value?: string | string[] | number | number[] | boolean | null;
+  name?: string;
+  enabled: boolean;
+}
+
+export interface CreateFlowRuleGroupDTO {
+  id: string;
+  name?: string;
+  logic: FlowLogicalOperator;
+  filters: CreateFlowRuleFilterDTO[];
+  groups?: CreateFlowRuleGroupDTO[];
+  enabled: boolean;
 }
 
 export interface FlowValidationVisitData {
