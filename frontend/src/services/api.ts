@@ -406,6 +406,322 @@ export async function addOfferToFlow(flowId: string, offerId: string, weight?: n
   return result.data;
 }
 
+export type FlowFilterOperator =
+  | 'equals'
+  | 'notEquals'
+  | 'contains'
+  | 'notContains'
+  | 'startsWith'
+  | 'endsWith'
+  | 'regex'
+  | 'in'
+  | 'notIn'
+  | 'greaterThan'
+  | 'lessThan'
+  | 'greaterOrEquals'
+  | 'lessOrEquals'
+  | 'between'
+  | 'exists'
+  | 'notExists';
+
+export type FlowFilterTarget = string;
+export type FlowLogicalOperator = 'AND' | 'OR';
+export type FlowRuleActionType = 'allow' | 'block' | 'redirect' | 'showPage' | 'showOffer';
+
+export interface FlowFilterOption {
+  value: FlowFilterOperator;
+  label: string;
+  description: string;
+}
+
+export interface FlowTargetOption {
+  value: FlowFilterTarget;
+  label: string;
+  category: string;
+  type: 'string' | 'number' | 'boolean';
+}
+
+export interface FlowRuleFilter {
+  id: string;
+  name?: string;
+  target: FlowFilterTarget;
+  operator: FlowFilterOperator;
+  value?: string | string[] | number | number[] | boolean | null;
+  enabled: boolean;
+}
+
+export interface FlowRuleGroup {
+  id: string;
+  name?: string;
+  logic: FlowLogicalOperator;
+  filters: FlowRuleFilter[];
+  groups?: FlowRuleGroup[];
+  enabled: boolean;
+}
+
+export interface FlowRuleActionConfig {
+  type: FlowRuleActionType;
+  targetId?: string;
+  redirectUrl?: string;
+  blockReason?: string;
+  weight?: number;
+}
+
+export interface FlowRuleDocument {
+  id: string;
+  name: string;
+  description?: string;
+  flowId: string;
+  priority: number;
+  condition: FlowRuleGroup;
+  action: FlowRuleActionConfig;
+  status: 'active' | 'paused' | 'deleted';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FlowSchemaDocument {
+  flow: {
+    id: string;
+    campaignId: string;
+    name: string;
+    type: 'regular' | 'forced' | 'default';
+    weight: number;
+    status: 'active' | 'paused' | 'deleted';
+  };
+  rules: FlowRuleDocument[];
+  defaultAction: FlowRuleActionConfig;
+  version: string;
+  updatedAt: string;
+}
+
+export interface CreateFlowRuleDTO {
+  name: string;
+  description?: string;
+  priority?: number;
+  condition: {
+    name?: string;
+    logic: FlowLogicalOperator;
+    filters: Array<{
+      target: FlowFilterTarget;
+      operator: FlowFilterOperator;
+      value?: string | string[] | number | number[] | boolean | null;
+      name?: string;
+    }>;
+    groups?: Array<{
+      name?: string;
+      logic: FlowLogicalOperator;
+      filters: Array<{
+        target: FlowFilterTarget;
+        operator: FlowFilterOperator;
+        value?: string | string[] | number | number[] | boolean | null;
+        name?: string;
+      }>;
+    }>;
+  };
+  action: FlowRuleActionConfig;
+}
+
+export interface UpdateFlowRuleDTO {
+  name?: string;
+  description?: string;
+  priority?: number;
+  condition?: CreateFlowRuleDTO['condition'];
+  action?: FlowRuleActionConfig;
+  status?: 'active' | 'paused' | 'deleted';
+}
+
+export interface FlowValidationVisitData {
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  subId?: string;
+  clickId?: string;
+  referrer?: string;
+  visitsCount?: number;
+  firstVisit?: boolean;
+  returning?: boolean;
+}
+
+export interface FlowValidationFilterResult {
+  valid: boolean;
+  matchedFilterId?: string;
+  matchedValue?: unknown;
+  reason?: string;
+}
+
+export interface FlowRuleValidationResult {
+  matched: boolean;
+  ruleId?: string;
+  ruleName?: string;
+  action?: FlowRuleActionConfig;
+  matchedFilters?: FlowValidationFilterResult[];
+  priority?: number;
+}
+
+export interface FlowValidationResult {
+  passed: boolean;
+  matchedRule?: FlowRuleValidationResult;
+  action: FlowRuleActionConfig;
+  ruleResults: FlowRuleValidationResult[];
+  validatedAt: string;
+  durationMs: number;
+}
+
+export async function fetchFlowSchema(flowId: string): Promise<FlowSchemaDocument> {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/schema`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function fetchFlowRules(flowId: string): Promise<FlowRuleDocument[]> {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/rules`);
+  const result = await handleResponse(response);
+  return result.data || [];
+}
+
+export async function createFlowRule(flowId: string, data: CreateFlowRuleDTO): Promise<FlowRuleDocument> {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function updateFlowRule(ruleId: string, data: UpdateFlowRuleDTO): Promise<FlowRuleDocument> {
+  const response = await fetch(`${API_BASE_URL}/api/flows/rules/${ruleId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function deleteFlowRule(ruleId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/flows/rules/${ruleId}`, {
+    method: 'DELETE',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function testFlow(
+  flowId: string,
+  visitData: FlowValidationVisitData
+): Promise<FlowValidationResult> {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ visitData }),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function fetchFlowFilterOperators(): Promise<FlowFilterOption[]> {
+  const response = await fetch(`${API_BASE_URL}/api/flows/filters/operators`);
+  const result = await handleResponse(response);
+  return result.data || [];
+}
+
+export async function fetchFlowFilterTargets(): Promise<FlowTargetOption[]> {
+  const response = await fetch(`${API_BASE_URL}/api/flows/filters/targets`);
+  const result = await handleResponse(response);
+  return result.data || [];
+}
+
+export async function equalizeCampaignFlows(campaignId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/flows/equalize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ campaignId }),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function cloneFlow(flowId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/clone`, {
+    method: 'POST',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export interface FlowStats {
+  flowId: string;
+  flowName: string;
+  flowType: 'regular' | 'forced' | 'default';
+  clicks: number;
+  uniqueClicks: number;
+  bots: number;
+  conversions: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  conversionRate: number;
+  epc: number;
+  ctr: number;
+}
+
+export interface FlowTrafficLog {
+  id: string;
+  flowId: string;
+  campaignId: string;
+  visitorId: string;
+  clickId: string;
+  matchedRule?: string;
+  action: string;
+  actionTarget?: string;
+  executionTimeMs: number;
+  timestamp: string;
+  ip: string;
+  country?: string | null;
+  device?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  isBot: boolean;
+  isUnique: boolean;
+}
+
+export interface FlowLogListResult {
+  logs: FlowTrafficLog[];
+  total: number;
+  hasMore: boolean;
+}
+
+export async function fetchCampaignFlowStats(
+  campaignId: string,
+  params: { startDate?: string; endDate?: string } = {}
+): Promise<FlowStats[]> {
+  const queryParams = new URLSearchParams();
+  if (params.startDate) queryParams.set('startDate', params.startDate);
+  if (params.endDate) queryParams.set('endDate', params.endDate);
+  const query = queryParams.toString();
+
+  const response = await fetch(`${API_BASE_URL}/api/flows/campaign/${campaignId}/stats${query ? `?${query}` : ''}`);
+  const result = await handleResponse(response);
+  return result.data || [];
+}
+
+export async function fetchFlowLogs(
+  flowId: string,
+  params: { limit?: number; offset?: number; startDate?: string; endDate?: string } = {}
+): Promise<FlowLogListResult> {
+  const queryParams = new URLSearchParams();
+  if (params.limit) queryParams.set('limit', String(params.limit));
+  if (params.offset) queryParams.set('offset', String(params.offset));
+  if (params.startDate) queryParams.set('startDate', params.startDate);
+  if (params.endDate) queryParams.set('endDate', params.endDate);
+
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/logs?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return result.data || { logs: [], total: 0, hasMore: false };
+}
+
 // ==================== Landings API ====================
 
 export async function fetchLandings(withStats = true) {

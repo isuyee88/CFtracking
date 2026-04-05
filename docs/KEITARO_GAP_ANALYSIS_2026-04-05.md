@@ -553,3 +553,140 @@ Keitaro 在 Campaigns、Landings、Offers、Domains 等多页都有 groups 与 g
 - 下一轮主任务 2
 - 依赖项 / 风险项
 - 是否需要上线验证 / 浏览器回归 / 性能复测
+
+## 12. 本轮迭代回顾（2026-04-05 第三轮补强）
+
+### 本轮目标
+- 把 `CampaignDetail / Routing` 从“Flow 类型和状态编辑”继续升级为真正可编排、可测试、可解释的工作台
+- 接入既有 flow 后端能力：`schema / rules / test / equalize / clone`
+
+### 实际完成
+
+1. 新增 `Campaign Routing Workbench`
+- 已在 `CampaignDetail` 中接入独立的 Routing 工作台
+- 已支持 flow 选择、schema 刷新、规则列表查看、诊断摘要
+- 已支持 `equalize regular flows` 与 `clone selected flow`
+
+2. 已打通 flow rule builder
+- 已接入 `/api/flows/:id/schema`
+- 已接入 `/api/flows/:id/rules`
+- 已接入规则创建、更新、删除、启停
+- 已支持基于 target / operator / value 的平铺式 `AND / OR` 规则编辑
+- 已支持 `showPage / showOffer / redirect / block / allow` 动作配置
+
+3. 已打通 routing test bench
+- 已接入 `/api/flows/:id/test`
+- 已支持输入 `source / medium / campaign / subId / clickId / referrer / visitsCount / firstVisit / returning`
+- 已支持查看最终命中动作、命中规则、规则逐条命中结果
+
+4. 已修复后端 flow rule 创建的基础缺陷
+- 修复 `flowRules` 创建时错误复用 `flowId` 作为 `ruleId` 的问题
+- 现在规则会使用独立唯一 ID，避免多规则编排场景下的写入冲突
+
+### 本轮验证结果
+- `npm run typecheck`：通过
+- `npm --prefix frontend run build`：通过
+
+### 与 Keitaro 对标后差距变化
+- 原本 `Campaign Routing` 只是“标记 regular / forced / default”的配置层，现在已经进入“规则可编排 + 结果可验证”的可运营区间
+- 当前差距已从“没有编排器”收敛为“编排器仍需更强的规则深度、日志闭环和可视化解释”
+
+### 阶段计划完成度变化
+
+#### 第一阶段：从“管理台”升级为“可运行 tracker 控制台”
+- `Campaign Tracking / Parameters / Postback` 多页签：已完成
+- `Campaign Routing / Flow Editor`：由“部分完成”提升为“主体完成，仍需深化”
+- `Domains` 模块：未开始
+- `Landing / Offer hosted mode`：未开始
+- `Traffic Source / Affiliate Network` 深化配置：未开始
+
+#### 第二阶段：把分析能力补成产品壁垒
+- `Report Builder`：已完成首版
+- 其余未变
+
+### 新发现的问题 / 风险
+- 当前 routing editor 第一版对“嵌套 filter groups”仍按只读处理，可查看、可测试，但还不能可视化编辑
+- 评审项 `src/index.ts` 的部署元数据与作者邮箱暴露问题仍然开放，不能带入正式生产交付
+
+## 13. 下一阶段工作任务
+
+1. 深化 `Routing` 的规则表达能力
+- 支持 nested groups / condition tree
+- 支持更多 visitor / proxy / bot / schedule 规则模板
+- 支持规则复制、批量启停、优先级拖拽排序
+
+2. 补齐 `Routing` 的运维闭环
+- 接入 flow stats / flow logs
+- 在 `CampaignDetail` 增加 routing diagnostics、命中路径解释、异常流量去向和最近执行样本
+
+3. 启动 `Domains` 模块首版
+- 继续保持其为最优先的 Keitaro 主链路缺口
+
+4. 收口生产风险项
+- 处理 `src/index.ts` 对外暴露部署元数据与作者邮箱的问题
+- 交付前统一切换 Cloudflare One 认证
+
+## 14. 本轮迭代回顾（2026-04-05 第四轮补强）
+
+### 本轮目标
+- 在已有 `Routing Workbench` 基础上补足运行观测层
+- 让 `CampaignDetail / Routing` 同时具备“配置、测试、运行反馈”三层能力
+
+### 实际完成
+
+1. 补齐 flow 运行观测数据接入
+- 新增前端 `fetchCampaignFlowStats`
+- 新增前端 `fetchFlowLogs`
+- 已将 flow 统计与 recent execution logs 接入 `Campaign Routing Workbench`
+
+2. 补齐 Routing Observability 面板
+- 已新增 `Routing Observability` 区块
+- 已展示 `Total Hits / Dominant Action / Avg Exec / Rule Coverage`
+- 已展示选中 flow 的 recent logs，包括：
+  - action
+  - matchedRule
+  - unique / repeat
+  - bot 标记
+  - IP / 国家 / 设备 / 浏览器
+  - target / clickId / visitorId
+  - execution time
+
+3. Flow Diagnostics 已升级为更接近运营视角
+- 已补充 selected flow 的 `clicks / conversions / revenue / CR`
+- `Routing` 页面现在不再只有规则配置，而是开始具备运行诊断能力
+
+### 本轮验证结果
+- `npm run typecheck`：通过
+- `npm --prefix frontend run build`：通过
+
+### 与 Keitaro 对标后差距变化
+- `Campaign Routing` 已从“可配置 + 可测试”继续推进到“可观测”
+- 当前与 Keitaro 的差距进一步从“缺工作台”收敛为“缺更深的规则树、执行轨迹解释、批量运维动作与主链路模块补齐”
+
+### 阶段计划完成度变化
+
+#### 第一阶段：从“管理台”升级为“可运行 tracker 控制台”
+- `Campaign Routing / Flow Editor`：继续提升，现阶段可定义、可测试、可观测，已接近主体完成
+- `Domains` 模块：仍未开始，继续保持最优先主链路缺口
+
+### 新发现的问题 / 风险
+- 目前 logs 仍是 KV 驱动的轻量查询模型，更适合作为近期执行样本，不足以替代完整的日志产品
+- nested groups 仍处于只读状态，尚未进入可视化编辑
+- 生产风险项 `src/index.ts` 部署元数据暴露仍未处理
+
+## 15. 下一阶段工作任务
+
+1. 深化 `Routing` 的可解释性
+- 增加命中路径解释
+- 增加规则优先级冲突提示
+- 增加 fallback / traffic loss 去向解释
+
+2. 深化 `Routing` 的规则表达能力
+- nested groups / condition tree 可视化编辑
+- 规则复制、优先级排序、批量启停
+
+3. 启动 `Domains` 模块首版
+- 这是当前与 Keitaro 主链路最明显的结构性差距
+
+4. 安全收口
+- 修复 `src/index.ts` 对外暴露部署元数据和作者邮箱

@@ -227,6 +227,7 @@ export class FlowRepository extends BaseRepository<Flow> {
   async createFlowRule(data: CreateFlowRuleDTO): Promise<FlowRule> {
     const now = new Date().toISOString();
     const priority = data.priority ?? 0;
+    const ruleId = crypto.randomUUID();
 
     // 将条件对象序列化为 JSON
     const conditionJson = JSON.stringify(data.condition);
@@ -238,7 +239,7 @@ export class FlowRepository extends BaseRepository<Flow> {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
-        data.flowId,
+        ruleId,
         data.flowId,
         data.name,
         data.description || null,
@@ -251,7 +252,7 @@ export class FlowRepository extends BaseRepository<Flow> {
       )
       .run();
 
-    const rule = await this.getFlowRuleById(data.flowId);
+    const rule = await this.getFlowRuleById(ruleId);
     return rule!;
   }
 

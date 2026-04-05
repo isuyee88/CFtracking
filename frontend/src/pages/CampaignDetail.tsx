@@ -44,6 +44,7 @@ import {
 } from '../services/api';
 import { useToast } from '../components/Toast';
 import { FlowDesigner, type FlowConnection, type FlowNode } from '../components/FlowDesigner';
+import CampaignRoutingWorkbench from '../components/CampaignRoutingWorkbench';
 import {
   ChartWrapper,
   LazyArea,
@@ -775,6 +776,15 @@ export default function CampaignDetail() {
     }
   }, [campaign, toast]);
 
+  const refreshRoutingFlows = useCallback(async () => {
+    if (!campaignKey) {
+      return;
+    }
+
+    const refreshed = (await fetchFlows(campaignKey).catch(() => [])) as BackendFlow[];
+    setFlows(Array.isArray(refreshed) ? refreshed.map(toFlowNode) : []);
+  }, [campaignKey]);
+
   const saveFlows = useCallback(
     async (nextFlows: FlowNode[]) => {
       if (!campaignKey) {
@@ -837,8 +847,7 @@ export default function CampaignDetail() {
           await deleteFlow(String(flow.id));
         }
 
-        const refreshed = (await fetchFlows(campaignKey).catch(() => [])) as BackendFlow[];
-        setFlows(Array.isArray(refreshed) ? refreshed.map(toFlowNode) : []);
+        await refreshRoutingFlows();
         toast.success('Routing saved', 'Regular, forced, and default flow policies were updated.');
       } catch (err) {
         toast.error('Routing save failed', err instanceof Error ? err.message : 'Unable to save routing');
@@ -846,7 +855,7 @@ export default function CampaignDetail() {
         setRoutingSaving(false);
       }
     },
-    [campaignKey, toast]
+    [campaignKey, refreshRoutingFlows, toast]
   );
 
   if (loading) {
@@ -1229,6 +1238,14 @@ export default function CampaignDetail() {
               )}
             </div>
           </div>
+
+          <CampaignRoutingWorkbench
+            campaignId={campaignKey}
+            flows={flows}
+            landings={landings.map((item) => ({ id: item.id, name: item.name }))}
+            offers={offers.map((item) => ({ id: item.id, name: item.name }))}
+            onRefreshFlows={refreshRoutingFlows}
+          />
 
           <FlowDesigner
             campaignId={campaignKey}
