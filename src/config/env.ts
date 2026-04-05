@@ -23,6 +23,7 @@ export interface Env {
   QUEUE_DO: DurableObjectNamespace;
   UNIQUE_DO: DurableObjectNamespace;
   USER_PREFERENCE_DO: DurableObjectNamespace;
+  CACHE_EVENT_DO: DurableObjectNamespace;
   CACHE_DO: DurableObjectNamespace;
   EVENT_DO: DurableObjectNamespace;
   STATS_DO: DurableObjectNamespace;

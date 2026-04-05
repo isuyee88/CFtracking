@@ -15,7 +15,15 @@ import { logger } from 'hono/logger';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
-import { SessionDurableObject, CounterDurableObject, QueueDurableObject, UniquenessDurableObject, UserPreferenceDurableObject, TrackingStatsDO } from '@/handlers/do';
+import {
+  SessionDurableObject,
+  CounterDurableObject,
+  QueueDurableObject,
+  UniquenessDurableObject,
+  UserPreferenceDurableObject,
+  CacheEventBrokerDurableObject,
+  TrackingStatsDO,
+} from '@/handlers/do';
 import { CacheDurableObject } from '@/ssr/cache-do';
 import { EventActor, StatsActor } from '@/handlers/do/deprecated-do';
 import { createAggregationService } from '@/services/analytics/aggregation.service';
@@ -29,6 +37,7 @@ export {
   QueueDurableObject,
   UniquenessDurableObject,
   UserPreferenceDurableObject,
+  CacheEventBrokerDurableObject,
   TrackingStatsDO,
   CacheDurableObject,
   EventActor,

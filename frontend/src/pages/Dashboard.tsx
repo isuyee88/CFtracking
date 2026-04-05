@@ -928,7 +928,7 @@ export const Dashboard = () => {
     setErrors(prev => ({ ...prev, recentClicks: '' }));
 
     try {
-      const clicksData = await fetchRecentClicks(10);
+      const clicksData = await fetchRecentClicks(10, timeRangeKey);
       setRecentClicks(clicksData || []);
     } catch (error) {
       console.error('Error refreshing recent clicks:', error);
@@ -936,10 +936,11 @@ export const Dashboard = () => {
     } finally {
       setLoading(prev => ({ ...prev, recentClicks: false }));
     }
-  }, []);
+  }, [timeRangeKey]);
 
   // 初始加载标记 - 避免重复请求
   const isInitialMount = useRef(true);
+  const previousTimeRangeRef = useRef(timeRangeKey);
   
   // 数据加载 - 统一管理，避免重复请求
   useEffect(() => {
@@ -956,12 +957,18 @@ export const Dashboard = () => {
       
       refreshStatsAndEntities();
       refreshRecentClicks();
+      previousTimeRangeRef.current = timeRangeKey;
       return;
     }
     
     // 配置或时间范围变化时刷新 - 仅刷新统计数据
     // Recent Clicks 有独立的定时刷新机制
     refreshStatsAndEntities();
+
+    if (previousTimeRangeRef.current !== timeRangeKey) {
+      refreshRecentClicks();
+      previousTimeRangeRef.current = timeRangeKey;
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metricsKey, entitiesKey, timeRangeKey]);
 

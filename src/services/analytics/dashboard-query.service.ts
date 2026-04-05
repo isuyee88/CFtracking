@@ -1,30 +1,31 @@
 /**
- * @fileoverview Dashboard 数据查询服务
- * @description 从 D1 获取数据
+ * @fileoverview Dashboard 鏁版嵁鏌ヨ鏈嶅姟
+ * @description 浠?D1 鑾峰彇鏁版嵁
  * @module services/analytics/dashboard-query.service
  *
- * 数据存储架构:
- *   - DO (Durable Objects): 唯一性检查和计数器
- *   - D1: 主存储，用于所有数据查询
+ * 鏁版嵁瀛樺偍鏋舵瀯:
+ *   - DO (Durable Objects): 鍞竴鎬ф鏌ュ拰璁℃暟鍣?
+ *   - D1: 涓诲瓨鍌紝鐢ㄤ簬鎵€鏈夋暟鎹煡璇?
  *
- * 数据流:
- *   点击请求 → DO(唯一性检查) → D1(主存储)
+ * 鏁版嵁娴?
+ *   鐐瑰嚮璇锋眰 鈫?DO(鍞竴鎬ф鏌? 鈫?D1(涓诲瓨鍌?
  *
- * Dashboard数据读取逻辑:
- *   - 所有数据 ──► D1读取
- *     优点: 完整准确、永久存储
+ * Dashboard鏁版嵁璇诲彇閫昏緫:
+ *   - 鎵€鏈夋暟鎹?鈹€鈹€鈻?D1璇诲彇
+ *     浼樼偣: 瀹屾暣鍑嗙‘銆佹案涔呭瓨鍌?
  *
- * 输入: 查询参数（range, campaignId, filters）
- * 输出: Dashboard 统计数据
- * 逻辑交互:
- *   - 被 analytics.routes.ts 调用
- *   - 内部调用 TrafficRepository (D1)
- * 前后端交互: 通过 API 返回统一格式的数据
+ * 杈撳叆: 鏌ヨ鍙傛暟锛坮ange, campaignId, filters锛?
+ * 杈撳嚭: Dashboard 缁熻鏁版嵁
+ * 閫昏緫浜や簰:
+ *   - 琚?analytics.routes.ts 璋冪敤
+ *   - 鍐呴儴璋冪敤 TrafficRepository (D1)
+ * 鍓嶅悗绔氦浜? 閫氳繃 API 杩斿洖缁熶竴鏍煎紡鐨勬暟鎹?
  */
 
 import type { Env } from '@/config/env';
 import { getD1Connection, TrafficRepository } from '@/handlers/d1';
 import { getTrackingStatsStub } from '@/handlers/do';
+import type { ReportDimension, ReportFilter, ReportMetric, ReportQueryOptions } from '@/handlers/d1/traffic.repo';
 
 export type DataSource = 'D1' | 'DO';
 
@@ -90,10 +91,10 @@ export class DashboardQueryService {
   }
 
   /**
-   * 获取 Dashboard 统计数据
-   * 根据时间范围从不同数据源获取数据
-   * - < 90天数据 ──► DO读取
-   * - > 90天数据 ──► D1读取
+   * 鑾峰彇 Dashboard 缁熻鏁版嵁
+   * 鏍规嵁鏃堕棿鑼冨洿浠庝笉鍚屾暟鎹簮鑾峰彇鏁版嵁
+   * - < 90澶╂暟鎹?鈹€鈹€鈻?DO璇诲彇
+   * - > 90澶╂暟鎹?鈹€鈹€鈻?D1璇诲彇
    */
   async getDashboardStats(range: string, env: Env): Promise<DashboardQueryResult> {
     // Only keep DO on the hot "today" path until DO/D1 aggregates are fully aligned.
@@ -103,16 +104,16 @@ export class DashboardQueryService {
     console.log(`[DashboardQueryService] Range: ${range}, DataSource: ${dataSource}`);
 
     if (useDO) {
-      // 从 DO 获取数据
+      // 浠?DO 鑾峰彇鏁版嵁
       return this.getDashboardStatsFromDO(range, env);
     } else {
-      // 从 D1 获取数据
+      // 浠?D1 鑾峰彇鏁版嵁
       return this.getDashboardStatsFromD1(range);
     }
   }
 
   /**
-   * 从 D1 获取 Dashboard 统计数据
+   * 浠?D1 鑾峰彇 Dashboard 缁熻鏁版嵁
    */
   private async getDashboardStatsFromD1(range: string): Promise<DashboardQueryResult> {
     const d1Result = await this.trafficRepo.getDashboardStats(range);
@@ -132,32 +133,32 @@ export class DashboardQueryService {
   }
 
   /**
-   * 从 DO 获取 Dashboard 统计数据
+   * 浠?DO 鑾峰彇 Dashboard 缁熻鏁版嵁
    */
   private async getDashboardStatsFromDO(range: string, env: Env): Promise<DashboardQueryResult> {
     try {
       const trackingDO = getTrackingStatsStub(env, 'global-stats');
-      
-      // 并行获取统计数据、图表数据和实体统计
+
+      // 骞惰鑾峰彇缁熻鏁版嵁銆佸浘琛ㄦ暟鎹拰瀹炰綋缁熻
       const [statsResponse, chartResponse, entityStatsResponse] = await Promise.all([
         trackingDO.fetch('http://do/stats'),
         trackingDO.fetch(`http://do/chart-data?range=${range}`),
         trackingDO.fetch(`http://do/entity-stats?range=${range}`),
       ]);
-      
+
       const stats = await statsResponse.json() as DOStatsResponse;
       const chartData = await chartResponse.json() as DOChartResponse;
       const entityStatsData = await entityStatsResponse.json() as DOEntityStatsResponse;
-      
-      // 格式化指标数据
+
+      // 鏍煎紡鍖栨寚鏍囨暟鎹?
       const metrics = this.formatDOMetrics(stats);
-      
-      // 格式化图表数据
+
+      // 鏍煎紡鍖栧浘琛ㄦ暟鎹?
       const formattedChartData = chartData.chartData || [];
-      
-      // 格式化实体统计数据
+
+      // 鏍煎紡鍖栧疄浣撶粺璁℃暟鎹?
       const entityStats = entityStatsData.stats || {};
-      
+
       return {
         metrics,
         chartData: formattedChartData,
@@ -168,13 +169,13 @@ export class DashboardQueryService {
       };
     } catch (error) {
       console.error('[DashboardQueryService] Error fetching from DO:', error);
-      // 降级到 D1
+      // 闄嶇骇鍒?D1
       return this.getDashboardStatsFromD1(range);
     }
   }
 
   /**
-   * 格式化 DO 指标数据
+   * 鏍煎紡鍖?DO 鎸囨爣鏁版嵁
    */
   private formatDOMetrics(data: any): DashboardMetric[] {
     return [
@@ -189,8 +190,8 @@ export class DashboardQueryService {
   }
 
   /**
-   * 获取趋势报告数据
-   * 从 D1 获取数据
+   * 鑾峰彇瓒嬪娍鎶ュ憡鏁版嵁
+   * 浠?D1 鑾峰彇鏁版嵁
    */
   async getTrendReport(
     startDate: string,
@@ -203,8 +204,8 @@ export class DashboardQueryService {
   }
 
   /**
-   * 获取近期点击数据
-   * 从 D1 获取数据
+   * 鑾峰彇杩戞湡鐐瑰嚮鏁版嵁
+   * 浠?D1 鑾峰彇鏁版嵁
    */
   async getRecentClicks(params: {
     limit?: number;
@@ -222,8 +223,8 @@ export class DashboardQueryService {
   }
 
   /**
-   * 获取实体统计数据
-   * 从 D1 获取数据
+   * 鑾峰彇瀹炰綋缁熻鏁版嵁
+   * 浠?D1 鑾峰彇鏁版嵁
    */
   async getEntityStats(entityType: string, range: string): Promise<EntityStatItem[]> {
     const stats = await this.trafficRepo.getEntityStats(entityType, range);
@@ -238,10 +239,8 @@ export class DashboardQueryService {
     }));
   }
 
-
-
   /**
-   * 从 D1 获取实体统计数据
+   * 浠?D1 鑾峰彇瀹炰綋缁熻鏁版嵁
    */
   private async getEntityStatsFromD1(range: string): Promise<Record<string, EntityStatItem[]>> {
     const entityTypes = ['campaigns', 'countries', 'device_types', 'browsers'];
@@ -260,8 +259,8 @@ export class DashboardQueryService {
           unique_visitors: 0,
         }));
       } catch (error) {
-        // 静默处理错误，避免影响其他实体类型的数据加载
-        // 常见原因：数据源中没有该类型的数据，或者引用了已删除的实体
+        // 闈欓粯澶勭悊閿欒锛岄伩鍏嶅奖鍝嶅叾浠栧疄浣撶被鍨嬬殑鏁版嵁鍔犺浇
+        // 甯歌鍘熷洜锛氭暟鎹簮涓病鏈夎绫诲瀷鐨勬暟鎹紝鎴栬€呭紩鐢ㄤ簡宸插垹闄ょ殑瀹炰綋
         console.warn(`[DashboardQueryService] ${entityType} stats from D1: No data available`);
         stats[entityType] = [];
       }
@@ -271,7 +270,7 @@ export class DashboardQueryService {
   }
 
   /**
-   * 格式化 D1 指标数据
+   * 鏍煎紡鍖?D1 鎸囨爣鏁版嵁
    */
   private formatD1Metrics(data: any[]): DashboardMetric[] {
     const metricsMap: Record<string, any> = {};
@@ -291,7 +290,7 @@ export class DashboardQueryService {
   }
 
   /**
-   * 格式化 D1 图表数据
+   * 鏍煎紡鍖?D1 鍥捐〃鏁版嵁
    */
   private formatD1ChartData(data: any[]): ChartDataPoint[] {
     return data.map((item: any) => ({
@@ -305,7 +304,7 @@ export class DashboardQueryService {
   }
 
   /**
-   * 格式化 D1 趋势数据
+   * 鏍煎紡鍖?D1 瓒嬪娍鏁版嵁
    */
   private formatD1TrendData(data: any[]): ChartDataPoint[] {
     return data.map((item: any) => ({
@@ -319,128 +318,47 @@ export class DashboardQueryService {
   }
 
   /**
-   * 获取指定类型的报表数据
-   * 支持 traffic | conversion | financial | roi
-   * 从 D1 获取数据
+   * 鑾峰彇鎸囧畾绫诲瀷鐨勬姤琛ㄦ暟鎹?
+   * 鏀寔 traffic | conversion | financial | roi
+   * 浠?D1 鑾峰彇鏁版嵁
    */
   async getReport(
     reportType: 'traffic' | 'conversion' | 'financial' | 'roi',
     options: {
       startDate: string;
       endDate: string;
-      groupBy: string[];
+      groupBy: ReportDimension[];
+      metrics?: ReportMetric[];
+      filters?: ReportFilter[];
       limit: number;
-      sortBy: string;
+      sortBy: ReportDimension | ReportMetric;
       sortOrder: 'asc' | 'desc';
     }
   ): Promise<any[]> {
-    const { startDate, endDate, groupBy, limit, sortBy, sortOrder } = options;
-    const dataSource: DataSource = 'D1';
-
-    const baseQuery = {
-      startDate,
-      endDate,
-      groupBy,
-      limit,
-      sortBy,
-      sortOrder,
-    };
-
-    switch (reportType) {
-      case 'traffic':
-        return this.getTrafficReport(dataSource, baseQuery);
-      case 'conversion':
-        return this.getConversionReport(dataSource, baseQuery);
-      case 'financial':
-        return this.getFinancialReport(dataSource, baseQuery);
-      case 'roi':
-        return this.getROIReport(dataSource, baseQuery);
-      default:
-        return [];
-    }
-  }
-
-  /**
-   * 获取流量报表
-   * 从 D1 获取数据
-   */
-  private async getTrafficReport(
-    _dataSource: DataSource,
-    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
-  ): Promise<any[]> {
-    const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
-    return stats.map((item: any) => ({
-      date: item.name || 'N/A',
-      clicks: Number(item.clicks) || 0,
-      impressions: Number(item.impressions) || 0,
-      unique_visitors: 0,
-      conversions: Number(item.conversions) || 0,
-      cr: Number(item.clicks) > 0 ? ((Number(item.conversions) / Number(item.clicks)) * 100).toFixed(2) + '%' : '0%',
-    }));
-  }
-
-  /**
-   * 获取转化报表
-   * 从 D1 获取数据
-   */
-  private async getConversionReport(
-    _dataSource: DataSource,
-    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
-  ): Promise<any[]> {
-    const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
-    return stats.map((item: any) => ({
-      date: item.name || 'N/A',
-      conversions: Number(item.conversions) || 0,
-      revenue: Number(item.revenue) || 0,
-      cost: Number(item.spend) || 0,
-      profit: (Number(item.revenue) || 0) - (Number(item.spend) || 0),
-      roi: Number(item.spend) > 0 ? (((Number(item.revenue) - Number(item.spend)) / Number(item.spend)) * 100).toFixed(2) + '%' : '0%',
-    }));
-  }
-
-  /**
-   * 获取财务报表
-   * 从 D1 获取数据
-   */
-  private async getFinancialReport(
-    _dataSource: DataSource,
-    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
-  ): Promise<any[]> {
-    const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
-    return stats.map((item: any) => ({
-      date: item.name || 'N/A',
-      spend: Number(item.spend) || 0,
-      revenue: Number(item.revenue) || 0,
-      profit: (Number(item.revenue) || 0) - (Number(item.spend) || 0),
-      margin: Number(item.revenue) > 0 ? (((Number(item.revenue) - Number(item.spend)) / Number(item.revenue)) * 100).toFixed(2) + '%' : '0%',
-    }));
-  }
-
-  /**
-   * 获取ROI报表
-   * 从 D1 获取数据
-   */
-  private async getROIReport(
-    _dataSource: DataSource,
-    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
-  ): Promise<any[]> {
-    const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
-    return stats.map((item: any) => {
-      const clicks = Number(item.clicks) || 0;
-      const spend = Number(item.spend) || 0;
-      const revenue = Number(item.revenue) || 0;
-      return {
-        date: item.name || 'N/A',
-        spend,
-        revenue,
-        profit: revenue - spend,
-        roi: spend > 0 ? (((revenue - spend) / spend) * 100).toFixed(2) + '%' : '0%',
-        epc: clicks > 0 ? (revenue / clicks).toFixed(2) : '0',
-        cpc: clicks > 0 ? (spend / clicks).toFixed(2) : '0',
-      };
+    return this.getCustomReport({
+      ...options,
+      metrics: options.metrics?.length ? options.metrics : this.getDefaultMetricsForReportType(reportType),
     });
   }
 
+  async getCustomReport(options: ReportQueryOptions): Promise<any[]> {
+    return this.trafficRepo.getCustomReport(options);
+  }
+
+  private getDefaultMetricsForReportType(reportType: 'traffic' | 'conversion' | 'financial' | 'roi'): ReportMetric[] {
+    switch (reportType) {
+      case 'traffic':
+        return ['clicks', 'impressions', 'unique_visitors', 'conversions', 'cr'];
+      case 'conversion':
+        return ['conversions', 'revenue', 'cost', 'profit', 'roi'];
+      case 'financial':
+        return ['spend', 'revenue', 'profit', 'margin'];
+      case 'roi':
+        return ['spend', 'revenue', 'profit', 'roi', 'epc', 'cpc'];
+      default:
+        return ['clicks', 'conversions', 'revenue'];
+    }
+  }
 }
 
 export function createDashboardQueryService(env: Env): DashboardQueryService {

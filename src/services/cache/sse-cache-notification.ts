@@ -1,4 +1,5 @@
 import type { Env } from '@/config/env';
+import { getCacheEventBrokerStub } from '@/handlers/do';
 import { CacheKeyBuilder } from './unified-cache-manager';
 
 export enum SSEEventType {
@@ -18,200 +19,118 @@ export interface SSEEvent {
   message?: string;
 }
 
-export class SSEConnectionManager {
-  private connections = new Map<string, Set<ReadableStreamDefaultController>>();
-  private readonly maxConnectionsPerUser = 5;
-
-  addConnection(userId: string, controller: ReadableStreamDefaultController): void {
-    if (!this.connections.has(userId)) {
-      this.connections.set(userId, new Set());
-    }
-
-    const userConnections = this.connections.get(userId)!;
-
-    if (userConnections.size >= this.maxConnectionsPerUser) {
-      const oldest = userConnections.values().next().value;
-      oldest?.close();
-      if (oldest) {
-        userConnections.delete(oldest);
-      }
-    }
-
-    userConnections.add(controller);
-    console.log(`[SSE] Connection added for user ${userId}, total: ${userConnections.size}`);
-  }
-
-  removeConnection(userId: string, controller: ReadableStreamDefaultController): void {
-    const userConnections = this.connections.get(userId);
-    if (!userConnections) {
-      return;
-    }
-
-    userConnections.delete(controller);
-    if (userConnections.size === 0) {
-      this.connections.delete(userId);
-    }
-  }
-
-  sendToUser(userId: string, event: SSEEvent): void {
-    const userConnections = this.connections.get(userId);
-    if (!userConnections) {
-      return;
-    }
-
-    const message = this.formatSSEMessage(event);
-
-    for (const controller of userConnections) {
-      try {
-        controller.enqueue(new TextEncoder().encode(message));
-      } catch (error) {
-        console.error('[SSE] Failed to send message:', error);
-        this.removeConnection(userId, controller);
-      }
-    }
-  }
-
-  broadcast(event: SSEEvent): void {
-    const message = this.formatSSEMessage(event);
-
-    for (const [userId, connections] of this.connections) {
-      for (const controller of connections) {
-        try {
-          controller.enqueue(new TextEncoder().encode(message));
-        } catch (error) {
-          console.error('[SSE] Failed to broadcast:', error);
-          this.removeConnection(userId, controller);
-        }
-      }
-    }
-  }
-
-  getStats(): { totalUsers: number; totalConnections: number } {
-    let totalConnections = 0;
-    for (const connections of this.connections.values()) {
-      totalConnections += connections.size;
-    }
-
-    return {
-      totalUsers: this.connections.size,
-      totalConnections,
-    };
-  }
-
-  private formatSSEMessage(event: SSEEvent): string {
-    return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
-  }
+interface NotifyResponse {
+  totalUsers: number;
+  totalConnections: number;
 }
 
 export class SSECacheNotificationService {
-  private connectionManager: SSEConnectionManager;
+  constructor(private readonly env: Env) {}
 
-  constructor(_env: Env) {
-    this.connectionManager = new SSEConnectionManager();
+  async handleConnection(_request: Request, userId: string): Promise<Response> {
+    const stub = getCacheEventBrokerStub(this.env);
+
+    return stub.fetch(
+      new Request(`https://do/events?userId=${encodeURIComponent(userId)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream',
+        },
+      })
+    );
   }
 
-  async handleConnection(request: Request, userId: string): Promise<Response> {
-    const stream = new ReadableStream({
-      start: (controller) => {
-        this.connectionManager.addConnection(userId, controller);
-
-        const connectEvent: SSEEvent = {
-          type: SSEEventType.CACHE_UPDATED,
+  async notifyCacheInvalidated(cacheKey: string, userId?: string): Promise<void> {
+    await this.dispatchEvents(
+      [
+        {
+          type: SSEEventType.CACHE_INVALIDATED,
           timestamp: Date.now(),
-          cacheKey: 'connection',
-          message: 'SSE connection established',
-        };
-
-        controller.enqueue(new TextEncoder().encode(this.formatSSEMessage(connectEvent)));
-
-        const heartbeat = setInterval(() => {
-          try {
-            controller.enqueue(new TextEncoder().encode(': heartbeat\n\n'));
-          } catch {
-            clearInterval(heartbeat);
-            this.connectionManager.removeConnection(userId, controller);
-          }
-        }, 30000);
-
-        request.signal.addEventListener('abort', () => {
-          clearInterval(heartbeat);
-          this.connectionManager.removeConnection(userId, controller);
-        });
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'private, no-store, no-cache, must-revalidate',
-        'Connection': 'keep-alive',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'X-Accel-Buffering': 'no',
-      },
-    });
+          cacheKey,
+        },
+      ],
+      userId
+    );
   }
 
-  notifyCacheInvalidated(cacheKey: string, userId?: string): void {
-    const event: SSEEvent = {
-      type: SSEEventType.CACHE_INVALIDATED,
-      timestamp: Date.now(),
-      cacheKey,
-    };
-
-    if (userId) {
-      this.connectionManager.sendToUser(userId, event);
-    } else {
-      this.connectionManager.broadcast(event);
+  async notifyCacheInvalidatedMany(cacheKeys: string[], userId?: string): Promise<void> {
+    if (cacheKeys.length === 0) {
+      return;
     }
+
+    await this.dispatchEvents(
+      cacheKeys.map((cacheKey) => ({
+        type: SSEEventType.CACHE_INVALIDATED,
+        timestamp: Date.now(),
+        cacheKey,
+      })),
+      userId
+    );
   }
 
-  notifyDataChanged(
+  async notifyDataChanged(
     entity: string,
     entityId: string,
     action: 'create' | 'update' | 'delete',
     userId?: string
-  ): void {
-    const cacheKey = CacheKeyBuilder.entityDetail(entity, entityId);
-    const event: SSEEvent = {
-      type: SSEEventType.DATA_CHANGED,
-      timestamp: Date.now(),
-      cacheKey,
-      entity,
-      entityId,
-      action,
-    };
-
-    if (userId) {
-      this.connectionManager.sendToUser(userId, event);
-    } else {
-      this.connectionManager.broadcast(event);
-    }
+  ): Promise<void> {
+    await this.dispatchEvents(
+      [
+        {
+          type: SSEEventType.DATA_CHANGED,
+          timestamp: Date.now(),
+          cacheKey: CacheKeyBuilder.entityDetail(entity, entityId),
+          entity,
+          entityId,
+          action,
+        },
+      ],
+      userId
+    );
   }
 
-  forceRefresh(cacheKeys: string[], userId?: string): void {
-    for (const cacheKey of cacheKeys) {
-      const event: SSEEvent = {
+  async forceRefresh(cacheKeys: string[], userId?: string): Promise<void> {
+    if (cacheKeys.length === 0) {
+      return;
+    }
+
+    await this.dispatchEvents(
+      cacheKeys.map((cacheKey) => ({
         type: SSEEventType.FORCE_REFRESH,
         timestamp: Date.now(),
         cacheKey,
         message: 'Please refresh this data',
-      };
+      })),
+      userId
+    );
+  }
 
-      if (userId) {
-        this.connectionManager.sendToUser(userId, event);
-      } else {
-        this.connectionManager.broadcast(event);
-      }
+  async getStats(): Promise<{ totalUsers: number; totalConnections: number }> {
+    const stub = getCacheEventBrokerStub(this.env);
+    const response = await stub.fetch(new Request('https://do/stats'));
+
+    if (!response.ok) {
+      return { totalUsers: 0, totalConnections: 0 };
     }
+
+    return (await response.json()) as NotifyResponse;
   }
 
-  getStats(): { totalUsers: number; totalConnections: number } {
-    return this.connectionManager.getStats();
-  }
+  private async dispatchEvents(events: SSEEvent[], userId?: string): Promise<void> {
+    const stub = getCacheEventBrokerStub(this.env);
 
-  private formatSSEMessage(event: SSEEvent): string {
-    return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+    await stub.fetch(
+      new Request('https://do/notify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          events,
+        }),
+      })
+    );
   }
 }
 

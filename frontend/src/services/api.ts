@@ -138,8 +138,16 @@ export async function deleteCampaign(id: string | number) {
 }
 
 // 获取 Campaign 统计
-export async function fetchCampaignStats(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}/stats`);
+export async function fetchCampaignStats(
+  id: string | number,
+  params: { startDate?: string; endDate?: string } = {}
+) {
+  const queryParams = new URLSearchParams();
+  if (params.startDate) queryParams.set('startDate', params.startDate);
+  if (params.endDate) queryParams.set('endDate', params.endDate);
+  const query = queryParams.toString();
+
+  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}/stats${query ? `?${query}` : ''}`);
   const result = await handleResponse(response);
   return result.data;
 }
@@ -455,12 +463,12 @@ export async function fetchDashboardStats(timeRange: string = 'today') {
 }
 
 // 获取最近点击数据
-export async function fetchRecentClicks(limit: number = 10) {
-  const cacheKey = createCacheKey('/api/analytics/recent-clicks', { limit });
+export async function fetchRecentClicks(limit: number = 10, timeRange: string = 'today') {
+  const cacheKey = createCacheKey('/api/analytics/recent-clicks', { limit, range: timeRange });
   const cached = getCached<any[]>(cacheKey);
   if (cached) return cached;
   
-  const response = await fetch(`${API_BASE_URL}/api/analytics/recent-clicks?limit=${limit}`);
+  const response = await fetch(`${API_BASE_URL}/api/analytics/recent-clicks?limit=${limit}&range=${timeRange}`);
   const result = unwrapPayload<any>(await handleResponse(response));
   const data = result?.list || result || [];
   setCache(cacheKey, data);
@@ -483,13 +491,37 @@ export async function fetchEntityStats(entityType: string, timeRange: string = '
 
 export type ReportType = 'traffic' | 'conversion' | 'financial' | 'roi';
 export type ExportFormat = 'csv' | 'excel';
+export type ReportDimension = 'date' | 'campaign' | 'offer' | 'flow' | 'landing' | 'country' | 'device' | 'browser';
+export type ReportMetric =
+  | 'clicks'
+  | 'impressions'
+  | 'conversions'
+  | 'revenue'
+  | 'spend'
+  | 'cost'
+  | 'profit'
+  | 'roi'
+  | 'cr'
+  | 'margin'
+  | 'epc'
+  | 'cpc'
+  | 'unique_visitors';
+export type ReportFilterOperator = 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte';
+
+export interface ReportFilterCondition {
+  field: ReportDimension | ReportMetric;
+  operator: ReportFilterOperator;
+  value: string | number;
+}
 
 export interface ReportParams {
   startDate: string;
   endDate: string;
-  groupBy?: string[];
+  groupBy?: ReportDimension[];
+  metrics?: ReportMetric[];
+  filters?: ReportFilterCondition[];
   limit?: number;
-  sortBy?: string;
+  sortBy?: ReportDimension | ReportMetric;
   sortOrder?: 'asc' | 'desc';
 }
 
@@ -504,6 +536,8 @@ export async function fetchReport(type: ReportType, params: ReportParams) {
   queryParams.set('startDate', params.startDate);
   queryParams.set('endDate', params.endDate);
   if (params.groupBy) queryParams.set('groupBy', params.groupBy.join(','));
+  if (params.metrics) queryParams.set('metrics', params.metrics.join(','));
+  if (params.filters?.length) queryParams.set('filters', JSON.stringify(params.filters));
   if (params.limit) queryParams.set('limit', params.limit.toString());
   if (params.sortBy) queryParams.set('sortBy', params.sortBy);
   if (params.sortOrder) queryParams.set('sortOrder', params.sortOrder);
@@ -511,6 +545,17 @@ export async function fetchReport(type: ReportType, params: ReportParams) {
   const response = await fetch(`${API_BASE_URL}/api/analytics/reports/${type}?${queryParams}`);
   const result = await handleResponse(response);
   return result.data;
+}
+
+export async function queryReport(params: ReportParams) {
+  const response = await fetch(`${API_BASE_URL}/api/analytics/reports/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  const result = await handleResponse(response);
+  return result.data?.data || result.data || [];
 }
 
 export async function exportReport(params: ReportExportParams): Promise<Blob> {

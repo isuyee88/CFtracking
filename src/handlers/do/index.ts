@@ -12,6 +12,7 @@ export { CounterDurableObject } from './counter.do';
 export { QueueDurableObject } from './queue.do';
 export { UniquenessDurableObject, UniquenessDOService } from './uniqueness.do';
 export { UserPreferenceDurableObject } from './user-preference.do';
+export { CacheEventBrokerDurableObject } from './cache-event-broker.do';
 export { TrackingStatsDO } from './tracking-stats.do';
 
 export function getSessionStub(env: Env, visitorId: string): DurableObjectStub {
@@ -32,6 +33,11 @@ export function getQueueStub(env: Env, name: string = 'default'): DurableObjectS
 export function getTrackingStatsStub(env: Env, name: string = 'global-stats'): DurableObjectStub {
   const id = env.TRACKING_STATS_DO.idFromName(name);
   return env.TRACKING_STATS_DO.get(id);
+}
+
+export function getCacheEventBrokerStub(env: Env, name: string = 'global-cache-events'): DurableObjectStub {
+  const id = env.CACHE_EVENT_DO.idFromName(name);
+  return env.CACHE_EVENT_DO.get(id);
 }
 
 export class DOService {

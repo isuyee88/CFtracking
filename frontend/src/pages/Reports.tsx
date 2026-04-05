@@ -1,431 +1,862 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Download, RefreshCw, Search, Settings2 } from 'lucide-react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  BarChart3,
+  Bookmark,
+  Download,
+  Filter,
+  Play,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { DateRangePickerComponent, getDateRange, type DateRangeValue } from '@/components/DateRangePicker';
 import {
   downloadReport,
   exportReport,
-  fetchReport,
+  queryReport,
   type ExportFormat,
+  type ReportDimension,
+  type ReportFilterCondition,
+  type ReportFilterOperator,
+  type ReportMetric,
   type ReportType,
 } from '../services/api';
 
-type ReportColumnKey =
-  | 'dimension'
-  | 'clicks'
-  | 'impressions'
-  | 'unique_visitors'
-  | 'conversions'
-  | 'revenue'
-  | 'cost'
-  | 'spend'
-  | 'profit'
-  | 'roi'
-  | 'cr'
-  | 'margin'
-  | 'epc'
-  | 'cpc';
-
-interface ReportColumn {
-  key: ReportColumnKey;
-  label: string;
-  align?: 'left' | 'right';
+interface BuilderConfig {
+  reportType: ReportType;
+  startDate: string;
+  endDate: string;
+  groupBy: ReportDimension[];
+  metrics: ReportMetric[];
+  filters: ReportFilterCondition[];
+  limit: number;
+  sortBy: ReportDimension | ReportMetric;
+  sortOrder: 'asc' | 'desc';
 }
 
-interface ReportRow {
-  dimension: string;
-  clicks?: number;
-  impressions?: number;
-  unique_visitors?: number;
-  conversions?: number;
-  revenue?: number;
-  cost?: number;
-  spend?: number;
-  profit?: number;
-  roi?: string;
-  cr?: string;
-  margin?: string;
-  epc?: string;
-  cpc?: string;
+interface SavedView {
+  id: string;
+  name: string;
+  createdAt: string;
+  config: BuilderConfig;
 }
 
-const REPORT_CONFIG: Record<
-  ReportType,
+type ReportRow = Record<string, string | number | null | undefined>;
+
+const SAVED_VIEWS_STORAGE_KEY = 'cftracking.report-builder.saved-views.v1';
+
+const DIMENSION_OPTIONS: Array<{ value: ReportDimension; label: string; hint: string }> = [
+  { value: 'campaign', label: 'Campaign', hint: 'Campaign performance leaderboard' },
+  { value: 'offer', label: 'Offer', hint: 'Offer payout and conversion split' },
+  { value: 'landing', label: 'Landing', hint: 'Landing page funnel breakdown' },
+  { value: 'flow', label: 'Flow', hint: 'Routing path performance' },
+  { value: 'country', label: 'Country', hint: 'Geo segmentation' },
+  { value: 'device', label: 'Device', hint: 'Desktop / mobile split' },
+  { value: 'browser', label: 'Browser', hint: 'Browser quality and compatibility' },
+  { value: 'date', label: 'Date', hint: 'Day-by-day trend table' },
+];
+
+const METRIC_OPTIONS: Array<{ value: ReportMetric; label: string; format: 'number' | 'currency' | 'percent' }> = [
+  { value: 'clicks', label: 'Clicks', format: 'number' },
+  { value: 'impressions', label: 'Impressions', format: 'number' },
+  { value: 'conversions', label: 'Conversions', format: 'number' },
+  { value: 'revenue', label: 'Revenue', format: 'currency' },
+  { value: 'spend', label: 'Spend', format: 'currency' },
+  { value: 'cost', label: 'Cost', format: 'currency' },
+  { value: 'profit', label: 'Profit', format: 'currency' },
+  { value: 'roi', label: 'ROI', format: 'percent' },
+  { value: 'cr', label: 'CR', format: 'percent' },
+  { value: 'margin', label: 'Margin', format: 'percent' },
+  { value: 'epc', label: 'EPC', format: 'currency' },
+  { value: 'cpc', label: 'CPC', format: 'currency' },
+  { value: 'unique_visitors', label: 'Unique Visitors', format: 'number' },
+];
+
+const FILTER_FIELD_OPTIONS = [
+  ...DIMENSION_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+  ...METRIC_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+] as Array<{ value: ReportDimension | ReportMetric; label: string }>;
+
+const FILTER_OPERATORS: Array<{ value: ReportFilterOperator; label: string }> = [
+  { value: 'eq', label: 'Equals' },
+  { value: 'neq', label: 'Not equal' },
+  { value: 'contains', label: 'Contains' },
+  { value: 'gt', label: 'Greater than' },
+  { value: 'gte', label: 'Greater or equal' },
+  { value: 'lt', label: 'Less than' },
+  { value: 'lte', label: 'Less or equal' },
+];
+
+const REPORT_TEMPLATES: Array<{
+  id: string;
+  title: string;
+  description: string;
+  reportType: ReportType;
+  groupBy: ReportDimension[];
+  metrics: ReportMetric[];
+  sortBy: ReportDimension | ReportMetric;
+}> = [
   {
-    label: string;
-    groupBy: string[];
-    columns: ReportColumn[];
-    defaultColumns: ReportColumnKey[];
-  }
-> = {
-  traffic: {
-    label: 'Traffic Report',
+    id: 'traffic-command',
+    title: 'Traffic Command',
+    description: 'Campaign volume, reach, and conversion rate',
+    reportType: 'traffic',
     groupBy: ['campaign'],
-    columns: [
-      { key: 'dimension', label: 'Campaign / Dimension' },
-      { key: 'clicks', label: 'Clicks', align: 'right' },
-      { key: 'impressions', label: 'Impressions', align: 'right' },
-      { key: 'unique_visitors', label: 'Unique Visitors', align: 'right' },
-      { key: 'conversions', label: 'Conversions', align: 'right' },
-      { key: 'cr', label: 'CR', align: 'right' },
-    ],
-    defaultColumns: ['dimension', 'clicks', 'impressions', 'conversions', 'cr'],
+    metrics: ['clicks', 'impressions', 'conversions', 'cr'],
+    sortBy: 'clicks',
   },
-  conversion: {
-    label: 'Conversion Report',
-    groupBy: ['campaign'],
-    columns: [
-      { key: 'dimension', label: 'Campaign / Dimension' },
-      { key: 'conversions', label: 'Conversions', align: 'right' },
-      { key: 'revenue', label: 'Revenue', align: 'right' },
-      { key: 'cost', label: 'Cost', align: 'right' },
-      { key: 'profit', label: 'Profit', align: 'right' },
-      { key: 'roi', label: 'ROI', align: 'right' },
-    ],
-    defaultColumns: ['dimension', 'conversions', 'revenue', 'cost', 'profit', 'roi'],
+  {
+    id: 'offer-profit',
+    title: 'Offer Profit',
+    description: 'Offer-level revenue and ROI ranking',
+    reportType: 'conversion',
+    groupBy: ['offer'],
+    metrics: ['conversions', 'revenue', 'profit', 'roi'],
+    sortBy: 'revenue',
   },
-  financial: {
-    label: 'Financial Report',
-    groupBy: ['campaign'],
-    columns: [
-      { key: 'dimension', label: 'Campaign / Dimension' },
-      { key: 'spend', label: 'Spend', align: 'right' },
-      { key: 'revenue', label: 'Revenue', align: 'right' },
-      { key: 'profit', label: 'Profit', align: 'right' },
-      { key: 'margin', label: 'Margin', align: 'right' },
-    ],
-    defaultColumns: ['dimension', 'spend', 'revenue', 'profit', 'margin'],
+  {
+    id: 'landing-quality',
+    title: 'Landing Quality',
+    description: 'Landing page conversion efficiency',
+    reportType: 'traffic',
+    groupBy: ['landing'],
+    metrics: ['clicks', 'conversions', 'cr', 'revenue'],
+    sortBy: 'cr',
   },
-  roi: {
-    label: 'ROI Report',
-    groupBy: ['campaign'],
-    columns: [
-      { key: 'dimension', label: 'Campaign / Dimension' },
-      { key: 'spend', label: 'Spend', align: 'right' },
-      { key: 'revenue', label: 'Revenue', align: 'right' },
-      { key: 'profit', label: 'Profit', align: 'right' },
-      { key: 'roi', label: 'ROI', align: 'right' },
-      { key: 'epc', label: 'EPC', align: 'right' },
-      { key: 'cpc', label: 'CPC', align: 'right' },
-    ],
-    defaultColumns: ['dimension', 'spend', 'revenue', 'profit', 'roi', 'epc', 'cpc'],
+  {
+    id: 'geo-margin',
+    title: 'Geo Margin',
+    description: 'Country-level cost, revenue, and margin',
+    reportType: 'financial',
+    groupBy: ['country'],
+    metrics: ['clicks', 'revenue', 'spend', 'profit', 'margin'],
+    sortBy: 'profit',
   },
+  {
+    id: 'browser-roi',
+    title: 'Browser ROI',
+    description: 'Browser mix for quality and profit',
+    reportType: 'roi',
+    groupBy: ['browser'],
+    metrics: ['clicks', 'conversions', 'revenue', 'roi', 'epc'],
+    sortBy: 'roi',
+  },
+];
+
+const DEFAULT_CONFIG: BuilderConfig = {
+  reportType: 'traffic',
+  startDate: normalizeDateValue(getDateRange('last7days').startDate),
+  endDate: normalizeDateValue(getDateRange('last7days').endDate),
+  groupBy: ['campaign'],
+  metrics: ['clicks', 'impressions', 'conversions', 'cr'],
+  filters: [],
+  limit: 250,
+  sortBy: 'clicks',
+  sortOrder: 'desc',
 };
 
 function cn(...inputs: Array<string | false | null | undefined>) {
   return inputs.filter(Boolean).join(' ');
 }
 
-function normalizeReportRow(row: Record<string, unknown>): ReportRow {
+function normalizeDateValue(value: string) {
+  return value.split('T')[0] || value;
+}
+
+function cloneConfig(config: BuilderConfig): BuilderConfig {
   return {
-    dimension: String(row.date ?? row.dimension ?? row.name ?? 'N/A'),
-    clicks: Number(row.clicks ?? 0),
-    impressions: Number(row.impressions ?? 0),
-    unique_visitors: Number(row.unique_visitors ?? 0),
-    conversions: Number(row.conversions ?? 0),
-    revenue: Number(row.revenue ?? 0),
-    cost: Number(row.cost ?? 0),
-    spend: Number(row.spend ?? 0),
-    profit: Number(row.profit ?? 0),
-    roi: typeof row.roi === 'string' ? row.roi : undefined,
-    cr: typeof row.cr === 'string' ? row.cr : undefined,
-    margin: typeof row.margin === 'string' ? row.margin : undefined,
-    epc: typeof row.epc === 'string' ? row.epc : undefined,
-    cpc: typeof row.cpc === 'string' ? row.cpc : undefined,
+    ...config,
+    groupBy: [...config.groupBy],
+    metrics: [...config.metrics],
+    filters: config.filters.map((filter) => ({ ...filter })),
   };
 }
 
-function formatValue(key: ReportColumnKey, value: ReportRow[ReportColumnKey]) {
-  if (key === 'dimension') {
+function formatMetricValue(metric: ReportMetric, value: unknown) {
+  const numericValue = Number(value ?? 0);
+  const option = METRIC_OPTIONS.find((item) => item.value === metric);
+
+  if (!option) {
     return String(value ?? '-');
   }
 
-  if (['roi', 'cr', 'margin', 'epc', 'cpc'].includes(key)) {
-    return String(value ?? '-');
+  if (option.format === 'currency') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: metric === 'epc' || metric === 'cpc' ? 4 : 2,
+    }).format(numericValue);
   }
 
-  const numberValue = Number(value ?? 0);
-  if (['revenue', 'cost', 'spend', 'profit'].includes(key)) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numberValue);
+  if (option.format === 'percent') {
+    return `${numericValue.toFixed(2)}%`;
   }
 
-  return numberValue.toLocaleString();
+  return numericValue.toLocaleString();
+}
+
+function formatCellValue(key: string, value: unknown) {
+  if (METRIC_OPTIONS.some((option) => option.value === key)) {
+    return formatMetricValue(key as ReportMetric, value);
+  }
+
+  return String(value ?? '-');
+}
+
+function getColumnLabel(key: string) {
+  const dimension = DIMENSION_OPTIONS.find((option) => option.value === key);
+  if (dimension) {
+    return dimension.label;
+  }
+
+  const metric = METRIC_OPTIONS.find((option) => option.value === key);
+  if (metric) {
+    return metric.label;
+  }
+
+  if (key === 'summary') {
+    return 'Summary';
+  }
+
+  return key;
+}
+
+function readSavedViews(): SavedView[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SAVED_VIEWS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedViews(views: SavedView[]) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(views));
+}
+
+function createFilterDraft(): ReportFilterCondition {
+  return {
+    field: 'campaign',
+    operator: 'eq',
+    value: '',
+  };
 }
 
 export default function Reports() {
-  const [reportType, setReportType] = useState<ReportType>('traffic');
-  const [dateRange, setDateRange] = useState<DateRangeValue>(getDateRange('last7days'));
-  const [searchQuery, setSearchQuery] = useState('');
+  const [dateRange, setDateRange] = useState<DateRangeValue>({
+    startDate: DEFAULT_CONFIG.startDate,
+    endDate: DEFAULT_CONFIG.endDate,
+  });
+  const [builder, setBuilder] = useState<BuilderConfig>(cloneConfig(DEFAULT_CONFIG));
+  const [appliedConfig, setAppliedConfig] = useState<BuilderConfig>(cloneConfig(DEFAULT_CONFIG));
   const [rows, setRows] = useState<ReportRow[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showColumns, setShowColumns] = useState(false);
-  const [sortKey, setSortKey] = useState<ReportColumnKey>('dimension');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [visibleColumns, setVisibleColumns] = useState<ReportColumnKey[]>(REPORT_CONFIG.traffic.defaultColumns);
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [viewName, setViewName] = useState('');
+  const [activeTemplateId, setActiveTemplateId] = useState<string>('traffic-command');
 
   useEffect(() => {
-    setVisibleColumns(REPORT_CONFIG[reportType].defaultColumns);
-    setSortKey('dimension');
-    setSortOrder('asc');
-  }, [reportType]);
+    setSavedViews(readSavedViews());
+  }, []);
 
-  const loadReport = useCallback(async () => {
+  useEffect(() => {
+    setBuilder((current) => ({
+      ...current,
+      startDate: normalizeDateValue(dateRange.startDate),
+      endDate: normalizeDateValue(dateRange.endDate),
+    }));
+  }, [dateRange.endDate, dateRange.startDate]);
+
+  const runReport = useCallback(async (config?: BuilderConfig) => {
+    const nextConfig = cloneConfig(config || builder);
+
+    if (nextConfig.metrics.length === 0) {
+      setError('Select at least one metric before running the report.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const report = await fetchReport(reportType, {
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-        groupBy: REPORT_CONFIG[reportType].groupBy,
-        limit: 500,
+      const reportData = await queryReport({
+        startDate: nextConfig.startDate,
+        endDate: nextConfig.endDate,
+        groupBy: nextConfig.groupBy,
+        metrics: nextConfig.metrics,
+        filters: nextConfig.filters.filter((filter) => String(filter.value).trim().length > 0),
+        limit: nextConfig.limit,
+        sortBy: nextConfig.sortBy,
+        sortOrder: nextConfig.sortOrder,
       });
 
-      const normalizedRows = Array.isArray(report?.data)
-        ? report.data.map((row: Record<string, unknown>) => normalizeReportRow(row))
-        : [];
-
-      setRows(normalizedRows);
+      setRows(Array.isArray(reportData) ? reportData : []);
+      setAppliedConfig(nextConfig);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load report');
+      setError(err instanceof Error ? err.message : 'Failed to run report');
     } finally {
       setLoading(false);
     }
-  }, [dateRange.endDate, dateRange.startDate, reportType]);
+  }, [builder]);
 
   useEffect(() => {
-    void loadReport();
-  }, [loadReport]);
-
-  const columns = REPORT_CONFIG[reportType].columns;
+    void runReport(DEFAULT_CONFIG);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredRows = useMemo(() => {
-    const loweredSearch = searchQuery.trim().toLowerCase();
-    const searchedRows = loweredSearch
-      ? rows.filter((row) =>
-          Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(loweredSearch))
-        )
-      : rows;
+    const lowered = searchQuery.trim().toLowerCase();
+    if (!lowered) {
+      return rows;
+    }
 
-    return [...searchedRows].sort((left, right) => {
-      const leftValue = left[sortKey] ?? '';
-      const rightValue = right[sortKey] ?? '';
-
-      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
-        return sortOrder === 'asc' ? leftValue - rightValue : rightValue - leftValue;
-      }
-
-      return sortOrder === 'asc'
-        ? String(leftValue).localeCompare(String(rightValue))
-        : String(rightValue).localeCompare(String(leftValue));
-    });
-  }, [rows, searchQuery, sortKey, sortOrder]);
-
-  const summary = useMemo(() => {
-    return filteredRows.reduce(
-      (accumulator, row) => ({
-        clicks: accumulator.clicks + Number(row.clicks || 0),
-        conversions: accumulator.conversions + Number(row.conversions || 0),
-        revenue: accumulator.revenue + Number(row.revenue || 0),
-        profit: accumulator.profit + Number(row.profit || 0),
-      }),
-      { clicks: 0, conversions: 0, revenue: 0, profit: 0 }
+    return rows.filter((row) =>
+      Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(lowered))
     );
-  }, [filteredRows]);
+  }, [rows, searchQuery]);
 
-  const handleExport = useCallback(
-    async (format: ExportFormat) => {
-      setExporting(true);
-      setError(null);
+  const visibleColumns = useMemo(() => {
+    if (appliedConfig.groupBy.length === 0) {
+      return ['summary', ...appliedConfig.metrics];
+    }
 
-      try {
-        const blob = await exportReport({
-          type: reportType,
-          format,
-          startDate: dateRange.startDate,
-          endDate: dateRange.endDate,
-          groupBy: REPORT_CONFIG[reportType].groupBy,
-          columns: visibleColumns.map((key) => (key === 'dimension' ? 'date' : key)),
-        });
+    return [...appliedConfig.groupBy, ...appliedConfig.metrics];
+  }, [appliedConfig.groupBy, appliedConfig.metrics]);
 
-        downloadReport(blob, `${reportType}-report.${format === 'excel' ? 'xlsx' : 'csv'}`);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to export report');
-      } finally {
-        setExporting(false);
+  const summaryCards = useMemo(() => {
+    const candidates = appliedConfig.metrics.slice(0, 4);
+
+    return candidates.map((metric) => {
+      const isRatio = ['roi', 'cr', 'margin'].includes(metric);
+      const total = filteredRows.reduce((sum, row) => sum + Number(row[metric] ?? 0), 0);
+      const value = isRatio && filteredRows.length > 0 ? total / filteredRows.length : total;
+
+      return {
+        label: getColumnLabel(metric),
+        value: formatMetricValue(metric, value),
+      };
+    });
+  }, [appliedConfig.metrics, filteredRows]);
+
+  const isDirty = useMemo(() => JSON.stringify(builder) !== JSON.stringify(appliedConfig), [appliedConfig, builder]);
+
+  const applyTemplate = useCallback((templateId: string) => {
+    const template = REPORT_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) {
+      return;
+    }
+
+    const nextConfig: BuilderConfig = {
+      ...cloneConfig(builder),
+      reportType: template.reportType,
+      groupBy: [...template.groupBy],
+      metrics: [...template.metrics],
+      sortBy: template.sortBy,
+      sortOrder: 'desc',
+    };
+
+    setBuilder(nextConfig);
+    setActiveTemplateId(templateId);
+    void runReport(nextConfig);
+  }, [builder, runReport]);
+
+  const toggleDimension = useCallback((dimension: ReportDimension) => {
+    setBuilder((current) => {
+      const active = current.groupBy.includes(dimension);
+      const nextGroupBy = active
+        ? current.groupBy.filter((item) => item !== dimension)
+        : [...current.groupBy, dimension];
+
+      const fallbackSort = nextGroupBy.includes(current.sortBy as ReportDimension)
+        || current.metrics.includes(current.sortBy as ReportMetric)
+        ? current.sortBy
+        : nextGroupBy[0] || current.metrics[0];
+
+      return {
+        ...current,
+        groupBy: nextGroupBy,
+        sortBy: fallbackSort,
+      };
+    });
+  }, []);
+
+  const toggleMetric = useCallback((metric: ReportMetric) => {
+    setBuilder((current) => {
+      const active = current.metrics.includes(metric);
+      const nextMetrics = active
+        ? current.metrics.filter((item) => item !== metric)
+        : [...current.metrics, metric];
+
+      if (nextMetrics.length === 0) {
+        return current;
       }
-    },
-    [dateRange.endDate, dateRange.startDate, reportType, visibleColumns]
-  );
+
+      const fallbackSort = current.groupBy.includes(current.sortBy as ReportDimension)
+        || nextMetrics.includes(current.sortBy as ReportMetric)
+        ? current.sortBy
+        : nextMetrics[0];
+
+      return {
+        ...current,
+        metrics: nextMetrics,
+        sortBy: fallbackSort,
+      };
+    });
+  }, []);
+
+  const updateFilter = useCallback((index: number, patch: Partial<ReportFilterCondition>) => {
+    setBuilder((current) => ({
+      ...current,
+      filters: current.filters.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }));
+  }, []);
+
+  const saveCurrentView = useCallback(() => {
+    const nextName = viewName.trim();
+    if (!nextName) {
+      setError('Enter a view name before saving.');
+      return;
+    }
+
+    const nextView: SavedView = {
+      id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `view-${Date.now()}`,
+      name: nextName,
+      createdAt: new Date().toISOString(),
+      config: cloneConfig(builder),
+    };
+
+    const nextViews = [nextView, ...savedViews].slice(0, 12);
+    setSavedViews(nextViews);
+    writeSavedViews(nextViews);
+    setViewName('');
+  }, [builder, savedViews, viewName]);
+
+  const loadSavedView = useCallback((view: SavedView) => {
+    const nextConfig = cloneConfig(view.config);
+    setBuilder(nextConfig);
+    setAppliedConfig(nextConfig);
+    setDateRange({
+      startDate: nextConfig.startDate,
+      endDate: nextConfig.endDate,
+    });
+    void runReport(nextConfig);
+  }, [runReport]);
+
+  const deleteSavedView = useCallback((id: string) => {
+    const nextViews = savedViews.filter((view) => view.id !== id);
+    setSavedViews(nextViews);
+    writeSavedViews(nextViews);
+  }, [savedViews]);
+
+  const handleExport = useCallback(async (format: ExportFormat) => {
+    setExporting(true);
+    setError(null);
+
+    try {
+      const blob = await exportReport({
+        type: appliedConfig.reportType,
+        format,
+        startDate: appliedConfig.startDate,
+        endDate: appliedConfig.endDate,
+        groupBy: appliedConfig.groupBy,
+        metrics: appliedConfig.metrics,
+        filters: appliedConfig.filters.filter((filter) => String(filter.value).trim().length > 0),
+        limit: appliedConfig.limit,
+        sortBy: appliedConfig.sortBy,
+        sortOrder: appliedConfig.sortOrder,
+        columns: visibleColumns,
+      });
+
+      const safeName = `${appliedConfig.reportType}-builder.${format === 'excel' ? 'xlsx' : 'csv'}`;
+      downloadReport(blob, safeName);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export report');
+    } finally {
+      setExporting(false);
+    }
+  }, [appliedConfig, visibleColumns]);
 
   return (
     <div className="min-h-full bg-background p-6">
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold text-on-surface">Reports Center</h1>
-          <p className="mt-1 text-sm text-on-surface-variant">Live analytics reports backed by `/api/analytics/reports/*`.</p>
+          <h1 className="text-2xl font-display font-bold text-on-surface">Report Builder</h1>
+          <p className="mt-1 max-w-3xl text-sm text-on-surface-variant">
+            Build Keitaro-style analytical views with flexible dimensions, metrics, filters, saved views, and exports.
+          </p>
         </div>
-        <div className="grid gap-3 md:grid-cols-[180px_minmax(320px,1fr)_minmax(220px,320px)]">
+        <div className="grid gap-3 md:grid-cols-[minmax(280px,340px)_160px_160px]">
+          <DateRangePickerComponent
+            value={dateRange}
+            onChange={(value) => value && setDateRange(value)}
+            showTime={false}
+          />
           <select
-            value={reportType}
-            onChange={(event) => setReportType(event.target.value as ReportType)}
-            aria-label="Select report type"
-            className="border border-outline-variant bg-surface px-3 py-2 text-sm"
+            value={builder.sortBy}
+            onChange={(event) =>
+              setBuilder((current) => ({
+                ...current,
+                sortBy: event.target.value as ReportDimension | ReportMetric,
+              }))
+            }
+            className="border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface"
           >
-            {Object.entries(REPORT_CONFIG).map(([key, config]) => (
-              <option key={key} value={key}>
-                {config.label}
+            {[...builder.groupBy, ...builder.metrics].map((field) => (
+              <option key={field} value={field}>
+                Sort by {getColumnLabel(field)}
               </option>
             ))}
+            {builder.groupBy.length === 0 && builder.metrics.length === 0 && <option value="clicks">Sort by Clicks</option>}
           </select>
-          <DateRangePickerComponent value={dateRange} onChange={(value) => value && setDateRange(value)} showTime={true} />
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+          <select
+            value={builder.sortOrder}
+            onChange={(event) =>
+              setBuilder((current) => ({
+                ...current,
+                sortOrder: event.target.value as 'asc' | 'desc',
+              }))
+            }
+            className="border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface"
+          >
+            <option value="desc">Descending</option>
+            <option value="asc">Ascending</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="mb-6 grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+        <div className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <BarChart3 size={16} />
+            Quick Templates
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {REPORT_TEMPLATES.map((template) => {
+              const active = template.id === activeTemplateId;
+              return (
+                <button
+                  key={template.id}
+                  onClick={() => applyTemplate(template.id)}
+                  className={cn(
+                    'rounded-sm border p-4 text-left transition-colors',
+                    active
+                      ? 'border-primary bg-primary/10'
+                      : 'border-outline-variant/30 bg-surface-container hover:border-primary/40'
+                  )}
+                >
+                  <div className="text-sm font-semibold text-on-surface">{template.title}</div>
+                  <div className="mt-1 text-xs text-on-surface-variant">{template.description}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <Bookmark size={16} />
+            Saved Views
+          </div>
+          <div className="flex gap-2">
             <input
               type="text"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search current report..."
-              aria-label="Search current report"
-              className="w-full border border-outline-variant bg-surface py-2 pl-10 pr-4 text-sm"
+              value={viewName}
+              onChange={(event) => setViewName(event.target.value)}
+              placeholder="Save current layout as..."
+              className="w-full border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
             />
+            <button
+              onClick={saveCurrentView}
+              className="flex items-center gap-2 rounded-sm bg-primary px-4 py-2 text-sm text-on-primary"
+            >
+              <Save size={16} />
+              Save
+            </button>
+          </div>
+          <div className="mt-4 space-y-2">
+            {savedViews.length === 0 ? (
+              <div className="rounded-sm border border-dashed border-outline-variant/40 px-3 py-4 text-sm text-on-surface-variant">
+                No saved views yet.
+              </div>
+            ) : (
+              savedViews.map((view) => (
+                <div key={view.id} className="flex items-center justify-between rounded-sm border border-outline-variant/20 bg-surface-container px-3 py-3">
+                  <button onClick={() => loadSavedView(view)} className="text-left">
+                    <div className="text-sm font-medium text-on-surface">{view.name}</div>
+                    <div className="text-xs text-on-surface-variant">
+                      {view.config.groupBy.map(getColumnLabel).join(' / ') || 'Summary'} · {view.config.metrics.map(getColumnLabel).join(', ')}
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => deleteSavedView(view.id)}
+                    className="rounded-sm border border-outline-variant px-2 py-2 text-on-surface-variant hover:text-error"
+                    aria-label={`Delete saved view ${view.name}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="mb-6 grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
+        <section className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-3 text-sm font-semibold text-on-surface">Dimensions</div>
+          <div className="flex flex-wrap gap-2">
+            {DIMENSION_OPTIONS.map((option) => {
+              const active = builder.groupBy.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => toggleDimension(option.value)}
+                  className={cn(
+                    'rounded-sm border px-3 py-2 text-left text-sm transition-colors',
+                    active
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-outline-variant bg-surface-container text-on-surface'
+                  )}
+                >
+                  <div>{option.label}</div>
+                  <div className="mt-1 text-[11px] text-on-surface-variant">{option.hint}</div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-3 text-sm font-semibold text-on-surface">Metrics</div>
+          <div className="flex flex-wrap gap-2">
+            {METRIC_OPTIONS.map((option) => {
+              const active = builder.metrics.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => toggleMetric(option.value)}
+                  className={cn(
+                    'rounded-sm border px-3 py-2 text-sm transition-colors',
+                    active
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-outline-variant bg-surface-container text-on-surface'
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <Filter size={16} />
+            Filters
+          </div>
+          <div className="space-y-3">
+            {builder.filters.length === 0 ? (
+              <div className="rounded-sm border border-dashed border-outline-variant/40 px-3 py-4 text-sm text-on-surface-variant">
+                No filters. Add rules for country, device, campaign, or even metric thresholds like ROI greater than 20.
+              </div>
+            ) : (
+              builder.filters.map((filter, index) => (
+                <div key={`${filter.field}-${index}`} className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+                  <select
+                    value={filter.field}
+                    onChange={(event) =>
+                      updateFilter(index, { field: event.target.value as ReportDimension | ReportMetric })
+                    }
+                    className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
+                  >
+                    {FILTER_FIELD_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={filter.operator}
+                    onChange={(event) => updateFilter(index, { operator: event.target.value as ReportFilterOperator })}
+                    className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
+                  >
+                    {FILTER_OPERATORS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={String(filter.value)}
+                    onChange={(event) => updateFilter(index, { value: event.target.value })}
+                    placeholder="Filter value"
+                    className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
+                  />
+                  <button
+                    onClick={() =>
+                      setBuilder((current) => ({
+                        ...current,
+                        filters: current.filters.filter((_, itemIndex) => itemIndex !== index),
+                      }))
+                    }
+                    className="rounded-sm border border-outline-variant px-3 py-2 text-on-surface-variant hover:text-error"
+                    aria-label="Remove filter"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))
+            )}
+            <button
+              onClick={() =>
+                setBuilder((current) => ({
+                  ...current,
+                  filters: [...current.filters, createFilterDraft()],
+                }))
+              }
+              className="flex items-center gap-2 rounded-sm border border-outline-variant px-3 py-2 text-sm text-on-surface"
+            >
+              <Plus size={14} />
+              Add filter
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard label="Rows" value={filteredRows.length.toLocaleString()} />
-        <SummaryCard label="Clicks" value={summary.clicks.toLocaleString()} />
-        <SummaryCard label="Conversions" value={summary.conversions.toLocaleString()} />
-        <SummaryCard label="Revenue" value={formatValue('revenue', summary.revenue)} />
+        <SummaryCard label="Dimensions" value={(appliedConfig.groupBy.length || 0).toString()} />
+        {summaryCards.map((card) => (
+          <SummaryCard key={card.label} label={card.label} value={card.value} />
+        ))}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button onClick={() => void loadReport()} disabled={loading} aria-label="Refresh report data" className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm">
-          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          Refresh
+        <button
+          onClick={() => void runReport()}
+          disabled={loading}
+          className="flex items-center gap-2 rounded-sm bg-primary px-4 py-2 text-sm text-on-primary"
+        >
+          <Play size={16} />
+          Run Report
         </button>
-        <button onClick={() => void handleExport('csv')} disabled={exporting} aria-label="Export report as CSV" className="flex items-center gap-2 rounded-sm bg-primary px-4 py-2 text-sm text-on-primary">
+        <button
+          onClick={() => {
+            setBuilder(cloneConfig(DEFAULT_CONFIG));
+            setDateRange({ startDate: DEFAULT_CONFIG.startDate, endDate: DEFAULT_CONFIG.endDate });
+            setActiveTemplateId('traffic-command');
+          }}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <RefreshCw size={16} />
+          Reset Builder
+        </button>
+        <button
+          onClick={() => void handleExport('csv')}
+          disabled={exporting}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
           <Download size={16} />
           Export CSV
         </button>
-        <button onClick={() => void handleExport('excel')} disabled={exporting} aria-label="Export report as Excel" className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm">
+        <button
+          onClick={() => void handleExport('excel')}
+          disabled={exporting}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
           <Download size={16} />
           Export Excel
         </button>
-        <button onClick={() => setShowColumns((current) => !current)} aria-label="Toggle report columns panel" className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm">
-          <Settings2 size={16} />
-          Columns
-        </button>
+        <div className="ml-auto flex items-center gap-2 rounded-sm border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface-variant">
+          <Search size={14} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search visible rows"
+            className="bg-transparent outline-none placeholder:text-on-surface-variant"
+          />
+        </div>
       </div>
 
-      {showColumns && (
-        <div className="mb-4 flex flex-wrap gap-2 rounded-sm border border-outline-variant/20 bg-surface-container p-4">
-          {columns.map((column) => {
-            const active = visibleColumns.includes(column.key);
-            return (
-              <button
-                key={column.key}
-                onClick={() =>
-                  setVisibleColumns((current) =>
-                    active ? current.filter((key) => key !== column.key) : [...current, column.key]
-                  )
-                }
-                className={cn(
-                  'rounded-sm border px-3 py-1.5 text-xs font-medium',
-                  active ? 'border-primary bg-primary/10 text-primary' : 'border-outline-variant bg-surface text-on-surface'
-                )}
-              >
-                {column.label}
-              </button>
-            );
-          })}
+      {isDirty && (
+        <div className="mb-4 rounded-sm border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-on-surface">
+          Builder settings changed but not yet applied. Click <strong>Run Report</strong> to refresh the dataset.
         </div>
       )}
 
       {error && <div className="mb-4 rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>}
 
-      <div
-        className="overflow-hidden rounded-sm border border-outline-variant bg-surface"
-        style={{ contentVisibility: 'auto', containIntrinsicSize: '960px' }}
-      >
+      <div className="overflow-hidden rounded-sm border border-outline-variant bg-surface">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left">
             <thead>
               <tr className="border-b border-outline-variant bg-surface-container">
-                {columns
-                  .filter((column) => visibleColumns.includes(column.key))
-                  .map((column) => (
-                    <th
-                      key={column.key}
-                      className={cn(
-                        'cursor-pointer px-4 py-3 text-xs font-bold uppercase tracking-widest text-on-surface-variant',
-                        column.align === 'right' && 'text-right'
-                      )}
-                      onClick={() => {
-                        if (sortKey === column.key) {
-                          setSortOrder((current) => (current === 'asc' ? 'desc' : 'asc'));
-                        } else {
-                          setSortKey(column.key);
-                          setSortOrder(column.key === 'dimension' ? 'asc' : 'desc');
-                        }
-                      }}
-                    >
-                      {column.label}
-                    </th>
-                  ))}
+                {visibleColumns.map((column) => (
+                  <th
+                    key={column}
+                    className={cn(
+                      'px-4 py-3 text-xs font-bold uppercase tracking-widest text-on-surface-variant',
+                      METRIC_OPTIONS.some((option) => option.value === column) && 'text-right'
+                    )}
+                  >
+                    {getColumnLabel(column)}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
                   <td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-sm text-on-surface-variant">
-                    Loading report...
+                    Running report...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-sm text-on-surface-variant">
-                    No rows returned for this report.
+                    No rows matched the current query.
                   </td>
                 </tr>
               ) : (
                 filteredRows.map((row, index) => (
-                  <tr key={`${row.dimension}-${index}`} className="border-b border-outline-variant/10 hover:bg-surface-container/40">
-                    {columns
-                      .filter((column) => visibleColumns.includes(column.key))
-                      .map((column) => (
-                        <td
-                          key={column.key}
-                          className={cn(
-                            'px-4 py-3 text-sm text-on-surface',
-                            column.align === 'right' && 'text-right font-mono'
-                          )}
-                        >
-                          {formatValue(column.key, row[column.key])}
-                        </td>
-                      ))}
+                  <tr key={`${index}-${visibleColumns.map((column) => row[column]).join('-')}`} className="border-b border-outline-variant/10 hover:bg-surface-container/40">
+                    {visibleColumns.map((column) => (
+                      <td
+                        key={column}
+                        className={cn(
+                          'px-4 py-3 text-sm text-on-surface',
+                          METRIC_OPTIONS.some((option) => option.value === column) && 'text-right font-mono'
+                        )}
+                      >
+                        {formatCellValue(column, row[column])}
+                      </td>
+                    ))}
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div
-        className="mt-4 rounded-sm border border-outline-variant/20 bg-surface-container p-4 text-sm text-on-surface-variant"
-        style={{ contentVisibility: 'auto', containIntrinsicSize: '160px' }}
-      >
-        <div className="flex items-center gap-2 font-medium text-on-surface">
-          <BarChart3 size={16} />
-          Implementation note
-        </div>
-        <p className="mt-2">
-          The backend currently groups report rows into a generic `date` field that often represents campaign or
-          entity names. This page normalizes that into a shared dimension column so the reports are usable now.
-        </p>
       </div>
     </div>
   );

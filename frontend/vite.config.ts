@@ -157,8 +157,6 @@ export default defineConfig({
             dep.includes('router') ||
             dep.includes('app-shell') ||
             dep.includes('app-contexts') ||
-            dep.includes('hooks') ||
-            dep.includes('services') ||
             dep.includes('filters-ui')
         ),
     },
@@ -174,9 +172,7 @@ export default defineConfig({
         manualChunks: (id) => {
           if (
             id.includes('src/contexts/InitialDataContext.tsx') ||
-            id.includes('src\\contexts\\InitialDataContext.tsx') ||
-            id.includes('src/contexts/CloudSyncContext.tsx') ||
-            id.includes('src\\contexts\\CloudSyncContext.tsx')
+            id.includes('src\\contexts\\InitialDataContext.tsx')
           ) {
             return 'app-contexts';
           }
@@ -303,21 +299,10 @@ export default defineConfig({
             return null;
           }
 
-          if (id.includes('/src/pages/')) {
-            const page = id.split('/src/pages/')[1].split('/')[0];
-            return `page-${page}`;
-          }
-
-          if (id.includes('/src/components/')) {
-            return 'components';
-          }
-
-          if (id.includes('/src/hooks/')) {
-            return 'hooks';
-          }
-
-          if (id.includes('/src/services/')) {
-            return 'services';
+          if (id.includes('/src/pages/') || id.includes('\\src\\pages\\')) {
+            const normalizedId = id.replace(/\\/g, '/');
+            const page = normalizedId.split('/src/pages/')[1]?.split('/')[0];
+            return page ? `page-${page}` : null;
           }
 
           return null;

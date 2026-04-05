@@ -6,14 +6,13 @@
 import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { CloudSyncProvider } from './contexts/CloudSyncContext';
 import { InitialDataContext } from './contexts/InitialDataContext';
-import Dashboard from './pages/Dashboard';
 
 interface AppProps {
   initialData?: unknown;
 }
 
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CampaignManagement = lazy(() => import('./pages/CampaignManagement'));
 const CampaignDetail = lazy(() => import('./pages/CampaignDetail'));
 const RuleManagement = lazy(() => import('./pages/RuleManagement'));
@@ -96,33 +95,31 @@ export default function App({ initialData }: AppProps) {
   return (
     <InitialDataContext.Provider value={{ data: initialData }}>
       <Router>
-        <CloudSyncProvider>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={renderPage(<Dashboard />)} />
-              <Route path="dashboard" element={renderPage(<Dashboard />)} />
-              <Route path="campaigns" element={renderPage(<CampaignManagement />)} />
-              <Route path="campaigns/:id" element={renderPage(<CampaignDetail />)} />
-              <Route path="rules" element={renderPage(<RuleManagement />)} />
-              <Route path="platforms" element={renderPage(<PlatformManagement />)} />
-              <Route path="landings" element={renderPage(<Landings />)} />
-              <Route path="l" element={renderPage(<Landings />)} />
-              <Route path="offers" element={renderPage(<Offers />)} />
-              <Route path="traffic-sources" element={renderPage(<TrafficSources />)} />
-              <Route path="affiliate-networks" element={renderPage(<AffiliateNetworks />)} />
-              <Route path="domains" element={renderPage(<Domains />)} />
-              <Route path="trends" element={renderPage(<Trends />)} />
-              <Route path="reports" element={renderPage(<Reports />)} />
-              <Route path="audit" element={renderPage(<ClicksLog />)} />
-              <Route path="conversions" element={renderPage(<ConversionsLog />)} />
-              <Route path="blacklist" element={renderPage(<Blacklist />)} />
-              <Route path="whitelist" element={renderPage(<Whitelist />)} />
-              <Route path="target" element={renderPage(<TargetPage />)} />
-              <Route path="settings" element={renderPage(<Settings />)} />
-              <Route path="help" element={renderPage(<HelpCenter />)} />
-            </Route>
-          </Routes>
-        </CloudSyncProvider>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={renderPage(<Dashboard />)} />
+            <Route path="dashboard" element={renderPage(<Dashboard />)} />
+            <Route path="campaigns" element={renderPage(<CampaignManagement />)} />
+            <Route path="campaigns/:id" element={renderPage(<CampaignDetail />)} />
+            <Route path="rules" element={renderPage(<RuleManagement />)} />
+            <Route path="platforms" element={renderPage(<PlatformManagement />)} />
+            <Route path="landings" element={renderPage(<Landings />)} />
+            <Route path="l" element={renderPage(<Landings />)} />
+            <Route path="offers" element={renderPage(<Offers />)} />
+            <Route path="traffic-sources" element={renderPage(<TrafficSources />)} />
+            <Route path="affiliate-networks" element={renderPage(<AffiliateNetworks />)} />
+            <Route path="domains" element={renderPage(<Domains />)} />
+            <Route path="trends" element={renderPage(<Trends />)} />
+            <Route path="reports" element={renderPage(<Reports />)} />
+            <Route path="audit" element={renderPage(<ClicksLog />)} />
+            <Route path="conversions" element={renderPage(<ConversionsLog />)} />
+            <Route path="blacklist" element={renderPage(<Blacklist />)} />
+            <Route path="whitelist" element={renderPage(<Whitelist />)} />
+            <Route path="target" element={renderPage(<TargetPage />)} />
+            <Route path="settings" element={renderPage(<Settings />)} />
+            <Route path="help" element={renderPage(<HelpCenter />)} />
+          </Route>
+        </Routes>
       </Router>
     </InitialDataContext.Provider>
   );

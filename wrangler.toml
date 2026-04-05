@@ -53,6 +53,10 @@ name = "USER_PREFERENCE_DO"
 class_name = "UserPreferenceDurableObject"
 
 [[durable_objects.bindings]]
+name = "CACHE_EVENT_DO"
+class_name = "CacheEventBrokerDurableObject"
+
+[[durable_objects.bindings]]
 name = "CACHE_DO"
 class_name = "CacheDurableObject"
 
@@ -107,6 +111,10 @@ new_sqlite_classes = []
 [[migrations]]
 tag = "v9"
 new_sqlite_classes = ["TrackingStatsDO"]
+
+[[migrations]]
+tag = "v10"
+new_classes = ["CacheEventBrokerDurableObject"]
 
 [assets]
 directory = "./frontend/dist"

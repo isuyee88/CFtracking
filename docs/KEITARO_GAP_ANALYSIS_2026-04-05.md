@@ -432,3 +432,124 @@ Keitaro 在 Campaigns、Landings、Offers、Domains 等多页都有 groups 与 g
 
 实际采样页面：
 - Keitaro demo 后台：https://demo.keitaro.io/admin/
+
+## 8. 本轮迭代回顾（2026-04-05 第二轮补强）
+
+### 本轮已完成
+
+1. `Reports` 已从固定报表切换为接近 Keitaro `Create report` 的 `Report Builder`
+- 已支持维度、指标、筛选条件、保存视图、报表执行、CSV/Excel 导出
+- 后端已同步支持自定义报表查询参数，不再局限于预设 4 类报表
+
+2. `CampaignDetail` 已从基础详情页升级为 Campaign 控制台
+- 已补齐 `General / Routing / Tracking / Parameters / Postback / Notes` 六段式工作流
+- 已补齐日期范围统计、最近转化、准备度检查、路由摘要等运营信息
+- 已补齐 `regular / forced / default` flow 类型编辑、`flowRotation`、`visitorBinding`
+- 已补齐 tracking script / KClient 片段、API token、traffic loss、完整 uniqueness 策略编辑能力
+
+### 与上一版对标结论的变化
+
+- 原 `P0：报表中心仍是预置报表` 已由“缺失”调整为“核心能力已落地，仍待继续深化”
+- 原 `P0：Campaign 编排能力不完整` 已由“基础能力不足”调整为“主干工作流已建立，仍缺高级编排器”
+- 当前项目已经不只是“实体台账 + 基础报表”，而是开始具备可执行的 tracker 控制台形态
+
+### 本轮后重新评估的阶段完成度
+
+#### 第一阶段：从“管理台”升级为“可运行 tracker 控制台”
+- `Campaign Tracking / Parameters / Postback` 多页签：已完成
+- `Campaign Routing / Flow Editor`：部分完成
+- `Domains` 模块：未开始
+- `Landing / Offer hosted mode`：未开始
+- `Traffic Source / Affiliate Network` 深化配置：未开始
+
+#### 第二阶段：把分析能力补成产品壁垒
+- `Report Builder`：已完成首版
+- `Exported Reports`：未开始
+- `Log Explorer`：未开始
+- `Custom Metrics`：未开始
+- `Conversion Types`：未开始
+
+#### 第三阶段：补系统治理与运营后台
+- 整体仍未开始
+
+#### 第四阶段：预留组织化能力
+- 认证仍按既定策略延后，由 Cloudflare One 在交付前统一处理
+- 资源权限、API key、审计主体模型仍未展开
+
+## 9. 当前版本新的对标判断
+
+### 已明显缩小差距的部分
+
+- `Campaign` 已具备 Keitaro 风格的主工作流骨架
+- `Reports` 已具备自定义查询思路，不再只是“切换几个固定图表”
+- Campaign 页面中的追踪、参数、回传、备注已进入真实运营可配置区间
+
+### 仍然存在的关键差距
+
+#### P0：Campaign 高级编排器还不够深
+- 目前更多是“配置面”完整，仍缺规则级编排能力
+- 还需要把现有 flow 后端能力真正接入前端，包括：
+  - flow rule builder
+  - 条件树 / 过滤器编辑
+  - 路由测试执行
+  - schema 驱动规则表单
+  - equalize / clone / validate 等运维动作
+
+#### P0：Domains 仍是主链路缺口
+- 这是 Keitaro 把“投放入口域名、停放域名、后台访问域名、Cloudflare 代理域”统一治理的核心模块
+- 当前缺口依旧会限制 campaign 投放链路的完整性
+
+#### P1：Log Explorer / Exported Reports / Conversion Types 仍未补齐
+- `Reports` 已升级，但“调查型日志产品”和“运营沉淀能力”仍然缺位
+
+#### P1：Landing / Offer 托管能力仍弱
+- 当前仍偏 URL 资源管理，尚未形成 Keitaro 式的托管资产模型
+
+#### P2：部署元数据暴露风险仍未处理
+- `src/index.ts` 对外暴露部署元数据与作者邮箱的评审项仍然开放
+- 该问题不影响当前功能推进，但不应带入正式生产交付
+
+## 10. 下一阶段工作任务（建议按顺序执行）
+
+1. 深化 `Campaign Routing`
+- 接入 `/api/flows/:id/schema`
+- 接入 `/api/flows/:id/rules`
+- 接入 `/api/flows/:id/test`
+- 在 `CampaignDetail` 中增加可视化 flow rule builder、测试面板、规则摘要
+
+2. 同步补强 `CampaignDetail` 的业务完整性
+- 强化 `forced/default flow` 的创建、排序、启停和降级逻辑
+- 增加更完整的 routing diagnostics、异常流量去向、命中路径解释
+- 让 uniqueness / visitor binding / traffic loss 形成可验证配置，而不只是表单字段
+
+3. 启动 `Domains` 模块首版
+- 建立域名台账、状态、DNS / SSL / Provider 字段
+- 预留 Cloudflare zone / proxy / access 域名映射字段
+- 建立 default campaign / index page 关联关系
+
+4. 准备第二批分析壁垒能力
+- `Exported Reports`
+- `Log Explorer`
+- `Conversion Types`
+- `Custom Metrics`
+
+5. 在进入正式上线前处理安全收口项
+- 收敛部署元数据暴露
+- 将认证统一切换到 Cloudflare One
+
+## 11. 后续每轮完成后的文档更新模板
+
+每完成一轮实施后，都在本文件追加以下结构：
+
+### 本轮迭代回顾（日期 + 轮次）
+- 本轮目标
+- 实际完成
+- 与 Keitaro 对标后差距变化
+- 阶段计划完成度变化
+- 新发现的问题 / 风险
+
+### 下一阶段工作任务
+- 下一轮主任务 1
+- 下一轮主任务 2
+- 依赖项 / 风险项
+- 是否需要上线验证 / 浏览器回归 / 性能复测

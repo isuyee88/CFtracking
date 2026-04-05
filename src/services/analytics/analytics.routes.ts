@@ -27,6 +27,7 @@ import { HTTP_STATUS } from '@/config/constants';
 import { createDashboardQueryService } from './dashboard-query.service';
 import { ETagCacheManager } from '@/services/cache/etag-cache-manager';
 import { CacheKeyBuilder } from '@/services/cache/unified-cache-manager';
+import type { ReportDimension, ReportFilter, ReportMetric } from '@/handlers/d1/traffic.repo';
 
 export function createAnalyticsRouter() {
   const router = new Hono<{ Bindings: Env }>();
@@ -251,10 +252,12 @@ export function createAnalyticsRouter() {
       const reportType = c.req.param('type') as 'traffic' | 'conversion' | 'financial' | 'roi';
       const startDate = c.req.query('startDate');
       const endDate = c.req.query('endDate');
-      const groupBy = c.req.query('groupBy')?.split(',') || ['date'];
+      const groupBy = parseCsvParam(c.req.query('groupBy')) as ReportDimension[];
+      const metrics = parseCsvParam(c.req.query('metrics')) as ReportMetric[];
       const limit = parseInt(c.req.query('limit') || '100');
-      const sortBy = c.req.query('sortBy') || 'clicks';
+      const sortBy = (c.req.query('sortBy') || 'clicks') as ReportDimension | ReportMetric;
       const sortOrder = (c.req.query('sortOrder') || 'desc') as 'asc' | 'desc';
+      const filters = parseReportFilters(c.req.query('filters'));
 
       if (!['traffic', 'conversion', 'financial', 'roi'].includes(reportType)) {
         return c.json(
@@ -274,7 +277,9 @@ export function createAnalyticsRouter() {
       const reportData = await dashboardQuery.getReport(reportType, {
         startDate,
         endDate,
-        groupBy,
+        groupBy: groupBy.length > 0 ? groupBy : ['campaign'],
+        metrics,
+        filters,
         limit,
         sortBy,
         sortOrder,
@@ -283,13 +288,55 @@ export function createAnalyticsRouter() {
       return c.json(success({
         type: reportType,
         data: reportData,
-        params: { startDate, endDate, groupBy, limit, sortBy, sortOrder },
+        params: { startDate, endDate, groupBy, metrics, filters, limit, sortBy, sortOrder },
         queryTime: new Date().toISOString(),
       }));
     } catch (err) {
       console.error(`[Analytics API] Report ${c.req.param('type')} error:`, err);
       return c.json(
         error(err instanceof Error ? err.message : 'Failed to fetch report'),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
+  router.post('/reports/query', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { startDate, endDate } = body;
+
+      if (!startDate || !endDate) {
+        return c.json(error('startDate and endDate are required'), HTTP_STATUS.BAD_REQUEST);
+      }
+
+      const dashboardQuery = createDashboardQueryService(c.env);
+      const groupBy = normalizeDimensions(body.groupBy);
+      const metrics = normalizeMetrics(body.metrics);
+      const filters = normalizeFilters(body.filters);
+      const sortBy = (body.sortBy || metrics[0] || groupBy[0] || 'summary') as ReportDimension | ReportMetric;
+      const sortOrder = body.sortOrder === 'asc' ? 'asc' : 'desc';
+      const limit = Number(body.limit) || 250;
+
+      const reportData = await dashboardQuery.getCustomReport({
+        startDate,
+        endDate,
+        groupBy,
+        metrics,
+        filters,
+        limit,
+        sortBy,
+        sortOrder,
+      });
+
+      return c.json(success({
+        data: reportData,
+        params: { startDate, endDate, groupBy, metrics, filters, limit, sortBy, sortOrder },
+        queryTime: new Date().toISOString(),
+      }));
+    } catch (err) {
+      console.error('[Analytics API] Report builder query error:', err);
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to query report'),
         HTTP_STATUS.INTERNAL_ERROR
       );
     }
@@ -312,6 +359,11 @@ export function createAnalyticsRouter() {
         startDate,
         endDate,
         groupBy = ['date'],
+        metrics,
+        filters,
+        limit,
+        sortBy,
+        sortOrder,
         columns,
       } = body;
 
@@ -333,10 +385,12 @@ export function createAnalyticsRouter() {
       const reportData = await dashboardQuery.getReport(type, {
         startDate,
         endDate,
-        groupBy,
-        limit: 10000,
-        sortBy: 'date',
-        sortOrder: 'desc',
+        groupBy: normalizeDimensions(groupBy),
+        metrics: normalizeMetrics(metrics),
+        filters: normalizeFilters(filters),
+        limit: Number(limit) || 10000,
+        sortBy: (sortBy || 'date') as ReportDimension | ReportMetric,
+        sortOrder: sortOrder === 'asc' ? 'asc' : 'desc',
       });
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -372,6 +426,64 @@ export function createAnalyticsRouter() {
 /**
  * 生成CSV格式数据
  */
+function parseCsvParam(value?: string): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseReportFilters(value?: string): ReportFilter[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    return normalizeFilters(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeDimensions(value: unknown): ReportDimension[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is ReportDimension => typeof item === 'string' && item.length > 0);
+}
+
+function normalizeMetrics(value: unknown): ReportMetric[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is ReportMetric => typeof item === 'string' && item.length > 0);
+}
+
+function normalizeFilters(value: unknown): ReportFilter[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is ReportFilter => {
+    if (!item || typeof item !== 'object') {
+      return false;
+    }
+
+    const candidate = item as Partial<ReportFilter>;
+    return (
+      typeof candidate.field === 'string' &&
+      typeof candidate.operator === 'string' &&
+      (typeof candidate.value === 'string' || typeof candidate.value === 'number')
+    );
+  });
+}
+
 function generateCSV(data: any[], columns?: string[]): string {
   if (!data || data.length === 0) {
     return '';
