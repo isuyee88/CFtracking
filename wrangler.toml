@@ -78,7 +78,7 @@ class_name = "TrackingStatsDO"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject"]
+new_sqlite_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject"]
 
 [[migrations]]
 tag = "v2"
@@ -114,7 +114,7 @@ new_sqlite_classes = ["TrackingStatsDO"]
 
 [[migrations]]
 tag = "v10"
-new_classes = ["CacheEventBrokerDurableObject"]
+new_sqlite_classes = ["CacheEventBrokerDurableObject"]
 
 [assets]
 directory = "./frontend/dist"
