@@ -225,6 +225,132 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     };
   }
 
+  private hasAggregateData(data: { clicks?: number; conversions?: number; spend?: number; revenue?: number; impressions?: number }): boolean {
+    return [data.clicks, data.conversions, data.spend, data.revenue, data.impressions].some((value) => Number(value) > 0);
+  }
+
+  private getTimestampRange(range: string): { start: string; end: string } {
+    const { start, end } = this.getDateRange(range);
+    return {
+      start: `${start}T00:00:00.000Z`,
+      end: `${end}T23:59:59.999Z`,
+    };
+  }
+
+  private async getRawDashboardMetrics(range: string): Promise<TrackingMetrics> {
+    const { start, end } = this.getTimestampRange(range);
+    const result = await this.db
+      .prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM clicks WHERE timestamp >= ? AND timestamp <= ?) AS clicks,
+          (SELECT COUNT(DISTINCT visitorId) FROM clicks WHERE timestamp >= ? AND timestamp <= ?) AS uniqueClicks,
+          (SELECT COALESCE(SUM(cost), 0) FROM clicks WHERE timestamp >= ? AND timestamp <= ?) AS spend,
+          (SELECT COUNT(*) FROM conversions WHERE timestamp >= ? AND timestamp <= ? AND status = 'approved') AS conversions,
+          (SELECT COALESCE(SUM(revenue), 0) FROM conversions WHERE timestamp >= ? AND timestamp <= ? AND status = 'approved') AS revenue
+      `)
+      .bind(start, end, start, end, start, end, start, end, start, end)
+      .first();
+
+    const metrics = this.calculateMetrics({
+      impressions: 0,
+      clicks: Number(result?.clicks) || 0,
+      conversions: Number(result?.conversions) || 0,
+      spend: Number(result?.spend) || 0,
+      revenue: Number(result?.revenue) || 0,
+    });
+
+    return {
+      ...metrics,
+      uniqueClicks: Number(result?.uniqueClicks) || 0,
+    };
+  }
+
+  private async getRawChartData(range: string): Promise<any[]> {
+    const { start, end } = this.getTimestampRange(range);
+    const result = await this.db
+      .prepare(`
+        SELECT
+          date,
+          SUM(clicks) AS clicks,
+          SUM(conversions) AS conversions,
+          SUM(spend) AS spend,
+          SUM(revenue) AS revenue
+        FROM (
+          SELECT
+            substr(timestamp, 1, 10) AS date,
+            COUNT(*) AS clicks,
+            0 AS conversions,
+            COALESCE(SUM(cost), 0) AS spend,
+            0 AS revenue
+          FROM clicks
+          WHERE timestamp >= ? AND timestamp <= ?
+          GROUP BY substr(timestamp, 1, 10)
+
+          UNION ALL
+
+          SELECT
+            substr(timestamp, 1, 10) AS date,
+            0 AS clicks,
+            COUNT(*) AS conversions,
+            0 AS spend,
+            COALESCE(SUM(revenue), 0) AS revenue
+          FROM conversions
+          WHERE timestamp >= ? AND timestamp <= ? AND status = 'approved'
+          GROUP BY substr(timestamp, 1, 10)
+        )
+        GROUP BY date
+        ORDER BY date ASC
+      `)
+      .bind(start, end, start, end)
+      .all();
+
+    return (result.results as unknown as any[]) || [];
+  }
+
+  private async getRawEntityStats(fieldName: string, range: string): Promise<any[]> {
+    const { start, end } = this.getTimestampRange(range);
+    const result = await this.db
+      .prepare(`
+        SELECT
+          name,
+          0 AS impressions,
+          SUM(clicks) AS clicks,
+          SUM(conversions) AS conversions,
+          SUM(spend) AS spend,
+          SUM(revenue) AS revenue
+        FROM (
+          SELECT
+            COALESCE(${fieldName}, 'Unknown') AS name,
+            COUNT(*) AS clicks,
+            0 AS conversions,
+            COALESCE(SUM(cost), 0) AS spend,
+            0 AS revenue
+          FROM clicks
+          WHERE timestamp >= ? AND timestamp <= ? AND ${fieldName} IS NOT NULL
+          GROUP BY ${fieldName}
+
+          UNION ALL
+
+          SELECT
+            COALESCE(${fieldName}, 'Unknown') AS name,
+            0 AS clicks,
+            COUNT(*) AS conversions,
+            0 AS spend,
+            COALESCE(SUM(revenue), 0) AS revenue
+          FROM conversions
+          WHERE timestamp >= ? AND timestamp <= ? AND status = 'approved' AND ${fieldName} IS NOT NULL
+          GROUP BY ${fieldName}
+        )
+        GROUP BY name
+        ORDER BY clicks DESC, conversions DESC
+        LIMIT 10
+      `)
+      .bind(start, end, start, end)
+      .all();
+
+    return (result.results as unknown as any[]) || [];
+  }
+
   /**
    * 获取仪表板统计数据
    */
@@ -245,15 +371,24 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
       .bind(dateRange.start, dateRange.end)
       .first();
 
-    const data = result || { impressions: 0, clicks: 0, conversions: 0, spend: 0, revenue: 0 };
+    const summaryData = {
+      impressions: Number(result?.impressions) || 0,
+      clicks: Number(result?.clicks) || 0,
+      conversions: Number(result?.conversions) || 0,
+      spend: Number(result?.spend) || 0,
+      revenue: Number(result?.revenue) || 0,
+    };
+    const rawMetrics = await this.getRawDashboardMetrics(range);
+    const metrics = this.hasAggregateData(summaryData)
+      ? {
+          ...this.calculateMetrics(summaryData),
+          uniqueClicks: rawMetrics.uniqueClicks ?? summaryData.clicks,
+        }
+      : rawMetrics;
     
-    // 计算其他指标
-    const metrics = this.calculateMetrics(data);
-    
-    // 转换为前端需要的格式
     return [
       { key: 'clicks', label: 'Clicks', value: metrics.clicks.toLocaleString(), isPositive: true, format: 'number' },
-      { key: 'unique_clicks_campaign', label: 'Unique clicks (campaign)', value: metrics.clicks.toLocaleString(), isPositive: true, format: 'number' },
+      { key: 'unique_clicks_campaign', label: 'Unique clicks (campaign)', value: (metrics.uniqueClicks ?? metrics.clicks).toLocaleString(), isPositive: true, format: 'number' },
       { key: 'conversions', label: 'Conversions', value: metrics.conversions.toLocaleString(), isPositive: true, format: 'number' },
       { key: 'spend', label: 'Cost', value: `$${metrics.spend.toFixed(2)}`, isPositive: false, format: 'currency' },
       { key: 'revenue_confirmed', label: 'Revenue (confirmed)', value: `$${metrics.revenue.toFixed(2)}`, isPositive: true, format: 'currency' },
@@ -284,7 +419,12 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
       .bind(dateRange.start, dateRange.end)
       .all();
 
-    return (result.results as unknown as any[]) || [];
+    const summaryRows = (result.results as unknown as any[]) || [];
+    if (summaryRows.length > 0) {
+      return summaryRows;
+    }
+
+    return this.getRawChartData(range);
   }
 
   /**
@@ -413,7 +553,12 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
       .bind(dateRange.start, dateRange.end)
       .all();
 
-    return (result.results as unknown as any[]) || [];
+    const summaryRows = (result.results as unknown as any[]) || [];
+    if (summaryRows.length > 0) {
+      return summaryRows;
+    }
+
+    return this.getRawEntityStats(fieldName, range);
   }
 
   /**

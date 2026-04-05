@@ -96,12 +96,14 @@ export class ETagGenerator {
    */
   static matches(requestETag: string | null, currentETag: string): boolean {
     if (!requestETag) return false;
-    
-    // 处理W/前缀
-    const normalizedRequest = requestETag.replace(/^W\//, '');
-    const normalizedCurrent = currentETag.replace(/^W\//, '');
-    
-    return normalizedRequest === normalizedCurrent;
+
+    const normalize = (value: string) => value.trim().replace(/^W\//, '');
+    const normalizedCurrent = normalize(currentETag);
+
+    return requestETag
+      .split(',')
+      .map(normalize)
+      .some((candidate) => candidate === '*' || candidate === normalizedCurrent);
   }
 }
 

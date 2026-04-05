@@ -96,16 +96,11 @@ export class DashboardQueryService {
    * - > 90天数据 ──► D1读取
    */
   async getDashboardStats(range: string, env: Env): Promise<DashboardQueryResult> {
-    const { startDate, endDate } = this.getDateRange(range);
-    
-    // 判断是否在90天以内
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    const startDateObj = new Date(startDate);
-    const useDO = startDateObj >= ninetyDaysAgo;
+    // Only keep DO on the hot "today" path until DO/D1 aggregates are fully aligned.
+    const useDO = range === 'today';
     const dataSource: DataSource = useDO ? 'DO' : 'D1';
 
-    console.log(`[DashboardQueryService] Range: ${range}, DataSource: ${dataSource}, Start: ${startDate}, End: ${endDate}`);
+    console.log(`[DashboardQueryService] Range: ${range}, DataSource: ${dataSource}`);
 
     if (useDO) {
       // 从 DO 获取数据
@@ -446,42 +441,6 @@ export class DashboardQueryService {
     });
   }
 
-  /**
-   * 根据 range 获取日期范围
-   */
-  private getDateRange(range: string): { startDate: string; endDate: string } {
-    const now = new Date();
-    const endDate = now.toISOString().split('T')[0]!;
-    let startDate: string = endDate;
-
-    switch (range) {
-      case 'today':
-        break;
-      case 'yesterday':
-        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
-      case 'last7days':
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
-      case 'last30days':
-        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
-      case 'last3months':
-        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
-      case 'thismonth':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]!;
-        break;
-      case 'lastmonth':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]!;
-        break;
-      default:
-        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
-    }
-
-    return { startDate, endDate };
-  }
 }
 
 export function createDashboardQueryService(env: Env): DashboardQueryService {
