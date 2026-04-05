@@ -690,3 +690,71 @@ Keitaro 在 Campaigns、Landings、Offers、Domains 等多页都有 groups 与 g
 
 4. 安全收口
 - 修复 `src/index.ts` 对外暴露部署元数据和作者邮箱
+
+## 16. 本轮迭代回顾（2026-04-05 第五轮补强）
+
+### 本轮目标
+- 继续推进 `Routing` 的可解释性
+- 把“为什么会这样路由”直接展示在 `CampaignDetail / Routing` 中
+
+### 实际完成
+
+1. 新增 `Routing Explainability` 区块
+- 已展示 `rotation`
+- 已展示 `regular weight`
+- 已展示 `forced flows / default flows`
+- 已展示 `fallback target`
+- 已展示 `traffic loss` 解释
+
+2. 新增优先级冲突提示
+- 已检测 active rules 中的重复 `priority`
+- 已在工作台中显式提示 `Priority conflicts`
+- 使规则冲突从“隐性风险”变成“可见问题”
+
+3. 已把 Campaign 级路由配置注入工作台
+- `flowRotation`
+- `trafficLoss`
+- 让 Routing Explainability 不再只看单个 flow，而是能结合 campaign 级策略解释行为
+
+### 本轮验证结果
+- `npm run typecheck`：通过
+- `npm --prefix frontend run build`：通过
+
+### 与 Keitaro 对标后差距变化
+- `Routing` 现在已经具备：
+  - 配置
+  - 测试
+  - 观测
+  - 解释
+- 当前差距继续收敛，剩余重点已经集中到：
+  - nested groups / condition tree
+  - 命中路径解释进一步细化
+  - `Domains` 主链路模块
+
+### 阶段计划完成度变化
+
+#### 第一阶段：从“管理台”升级为“可运行 tracker 控制台”
+- `Campaign Routing / Flow Editor`：已进入高完成度阶段，剩余主要是深度和细节完善
+- `Domains` 模块：仍未开始，继续保持第一优先级的结构性缺口
+
+### 新发现的问题 / 风险
+- 当前 explainability 仍是“摘要级解释”，还不是完整的 rule path trace
+- nested groups 依旧只读
+- `src/index.ts` 部署元数据暴露风险依旧未处理
+
+## 17. 下一阶段工作任务
+
+1. 深化 `Routing` 的命中路径解释
+- 展示本次测试是如何逐条经过规则并最终命中
+- 展示 fallback / default / traffic loss 的实际决策路径
+
+2. 深化 `Routing` 的规则结构表达
+- nested groups / condition tree 编辑
+- 规则优先级拖拽排序
+- 规则复制 / 批量启停
+
+3. 启动 `Domains` 模块首版
+- 继续作为当前最优先的 Keitaro 主链路差距项
+
+4. 收口生产风险
+- 修复 `src/index.ts` 对外暴露部署元数据与作者邮箱

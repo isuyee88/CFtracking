@@ -29,6 +29,12 @@ import { ETagCacheManager } from '@/services/cache/etag-cache-manager';
 import { CacheKeyBuilder } from '@/services/cache/unified-cache-manager';
 import type { ReportDimension, ReportFilter, ReportMetric } from '@/handlers/d1/traffic.repo';
 
+function buildAnalyticsCacheKey(parts: Array<string | number | undefined>) {
+  return CacheKeyBuilder.custom(
+    parts.filter((part): part is string | number => part !== undefined).map(String)
+  );
+}
+
 export function createAnalyticsRouter() {
   const router = new Hono<{ Bindings: Env }>();
 
@@ -84,70 +90,81 @@ export function createAnalyticsRouter() {
       const limit = parseInt(c.req.query('limit') || '50');
       const range = c.req.query('range') || 'today';
       const campaignId = c.req.query('campaignId') || undefined;
+      const cacheManager = new ETagCacheManager(c.env);
+      const cacheType = ETagCacheManager.inferCacheType('/recent-clicks', range);
 
-      const dashboardQuery = createDashboardQueryService(c.env);
+      return await cacheManager.fetch(
+        c.req.raw,
+        async () => {
+          const dashboardQuery = createDashboardQueryService(c.env);
 
-      const result = await dashboardQuery.getRecentClicks({
-        limit,
-        range,
-        campaignId,
-      });
+          const result = await dashboardQuery.getRecentClicks({
+            limit,
+            range,
+            campaignId,
+          });
 
-      const formattedList = result.list.map((item: any) => ({
-        event_id: item.event_id || item.clickId || '',
-        datetime: item.datetime || item.timestamp || '',
-        campaign: item.campaign || item.campaignId || '',
-        stream: item.stream || item.flowId || '',
-        landing: item.landing || item.landingPageId || '',
-        offer: item.offer || item.offerId || '',
-        source: item.source || '',
-        ip: item.ip || '127.0.0.1',
-        country: item.country || '',
-        region: item.region || '',
-        city: item.city || '',
-        isp: item.isp || '',
-        operator: item.operator || '',
-        device_type: item.device_type || item.device || '',
-        device_model: item.device_model || '',
-        os: item.os || '',
-        os_version: item.os_version || '',
-        browser: item.browser || '',
-        browser_version: item.browser_version || '',
-        os_icon: item.os_icon || '',
-        browser_icon: item.browser_icon || '',
-        connection_type: item.connection_type || '',
-        proxy: item.proxy || 'No',
-        creative_id: item.creative_id || '',
-        external_id: item.external_id || '',
-        ad_campaign_id: item.ad_campaign_id || '',
-        sub_id: item.sub_id || '',
-        sub1: item.sub1 || item.subId1 || '',
-        sub2: item.sub2 || item.subId2 || '',
-        sub3: item.sub3 || item.subId3 || '',
-        sub4: item.sub4 || '',
-        sub5: item.sub5 || '',
-        referrer: item.referrer || item.referer || '',
-        referrer_domain: item.referrer_domain || '',
-        search_engine: item.search_engine || '',
-        keyword: item.keyword || '',
-        destination: item.destination || '',
-        cost: item.cost || '$0.00',
-        bot: item.bot || 'No',
-        unique_stream: item.unique_stream || 'Yes',
-        unique_campaign: item.unique_campaign || 'Yes',
-        user_agent: item.user_agent || item.userAgent || '',
-        visitor_code: item.visitor_code || item.visitorId || '',
-        fingerprint: item.fingerprint || '',
-        risk_score: item.risk_score || item.riskScore || 0,
-        cf_bot_score: item.cf_bot_score || item.cfBotScore || 0,
-      }));
+          const formattedList = result.list.map((item: any) => ({
+            event_id: item.event_id || item.clickId || '',
+            datetime: item.datetime || item.timestamp || '',
+            campaign: item.campaign || item.campaignId || '',
+            stream: item.stream || item.flowId || '',
+            landing: item.landing || item.landingPageId || '',
+            offer: item.offer || item.offerId || '',
+            source: item.source || '',
+            ip: item.ip || '127.0.0.1',
+            country: item.country || '',
+            region: item.region || '',
+            city: item.city || '',
+            isp: item.isp || '',
+            operator: item.operator || '',
+            device_type: item.device_type || item.device || '',
+            device_model: item.device_model || '',
+            os: item.os || '',
+            os_version: item.os_version || '',
+            browser: item.browser || '',
+            browser_version: item.browser_version || '',
+            os_icon: item.os_icon || '',
+            browser_icon: item.browser_icon || '',
+            connection_type: item.connection_type || '',
+            proxy: item.proxy || 'No',
+            creative_id: item.creative_id || '',
+            external_id: item.external_id || '',
+            ad_campaign_id: item.ad_campaign_id || '',
+            sub_id: item.sub_id || '',
+            sub1: item.sub1 || item.subId1 || '',
+            sub2: item.sub2 || item.subId2 || '',
+            sub3: item.sub3 || item.subId3 || '',
+            sub4: item.sub4 || '',
+            sub5: item.sub5 || '',
+            referrer: item.referrer || item.referer || '',
+            referrer_domain: item.referrer_domain || '',
+            search_engine: item.search_engine || '',
+            keyword: item.keyword || '',
+            destination: item.destination || '',
+            cost: item.cost || '$0.00',
+            bot: item.bot || 'No',
+            unique_stream: item.unique_stream || 'Yes',
+            unique_campaign: item.unique_campaign || 'Yes',
+            user_agent: item.user_agent || item.userAgent || '',
+            visitor_code: item.visitor_code || item.visitorId || '',
+            fingerprint: item.fingerprint || '',
+            risk_score: item.risk_score || item.riskScore || 0,
+            cf_bot_score: item.cf_bot_score || item.cfBotScore || 0,
+          }));
 
-      return c.json(success({
-        list: formattedList,
-        total: result.total,
-        dataSource: result.dataSource,
-        queryTime: new Date().toISOString(),
-      }));
+          return success({
+            list: formattedList,
+            total: result.total,
+            dataSource: result.dataSource,
+            queryTime: new Date().toISOString(),
+          });
+        },
+        {
+          cacheType,
+          cacheKey: buildAnalyticsCacheKey(['recent-clicks', range, `limit-${limit}`, campaignId || 'all']),
+        }
+      );
     } catch (err) {
       console.error('[Analytics API] Recent clicks error:', err);
       return c.json(

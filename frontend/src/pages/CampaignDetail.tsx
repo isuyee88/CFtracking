@@ -1244,6 +1244,8 @@ export default function CampaignDetail() {
             flows={flows}
             landings={landings.map((item) => ({ id: item.id, name: item.name }))}
             offers={offers.map((item) => ({ id: item.id, name: item.name }))}
+            flowRotation={draft.flowRotation}
+            trafficLoss={draft.trafficLoss}
             onRefreshFlows={refreshRoutingFlows}
           />
 

@@ -941,6 +941,7 @@ export const Dashboard = () => {
   // 初始加载标记 - 避免重复请求
   const isInitialMount = useRef(true);
   const previousTimeRangeRef = useRef(timeRangeKey);
+  const recentClicksIdleHandleRef = useRef<number | null>(null);
   
   // 数据加载 - 统一管理，避免重复请求
   useEffect(() => {
@@ -956,7 +957,17 @@ export const Dashboard = () => {
       }
       
       refreshStatsAndEntities();
-      refreshRecentClicks();
+
+      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        recentClicksIdleHandleRef.current = window.requestIdleCallback(() => {
+          void refreshRecentClicks();
+        }, { timeout: 2500 });
+      } else {
+        recentClicksIdleHandleRef.current = window.setTimeout(() => {
+          void refreshRecentClicks();
+        }, 1200);
+      }
+
       previousTimeRangeRef.current = timeRangeKey;
       return;
     }
@@ -971,6 +982,22 @@ export const Dashboard = () => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metricsKey, entitiesKey, timeRangeKey]);
+
+  useEffect(() => {
+    return () => {
+      if (recentClicksIdleHandleRef.current !== null) {
+        const idleWindow = window as Window & {
+          cancelIdleCallback?: (handle: number) => void;
+        };
+
+        if (typeof idleWindow.cancelIdleCallback === 'function') {
+          idleWindow.cancelIdleCallback(recentClicksIdleHandleRef.current);
+        } else {
+          window.clearTimeout(recentClicksIdleHandleRef.current);
+        }
+      }
+    };
+  }, []);
 
   // Recent Clicks 手动刷新功能 - 移除自动刷新，由用户手动控制
   const refreshRecentClicksRef = useRef<() => Promise<void>>(refreshRecentClicks);

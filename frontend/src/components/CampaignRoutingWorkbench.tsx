@@ -46,6 +46,8 @@ interface RoutingWorkbenchProps {
   flows: FlowNode[];
   landings: DestinationItem[];
   offers: DestinationItem[];
+  flowRotation: string;
+  trafficLoss: number;
   onRefreshFlows: () => Promise<void> | void;
 }
 
@@ -298,6 +300,8 @@ export function CampaignRoutingWorkbench({
   flows,
   landings,
   offers,
+  flowRotation,
+  trafficLoss,
   onRefreshFlows,
 }: RoutingWorkbenchProps) {
   const toast = useToast();
@@ -626,6 +630,36 @@ export function CampaignRoutingWorkbench({
     };
   }, [flowLogs, selectedStats]);
 
+  const routingExplainability = useMemo(() => {
+    const regularFlows = flows.filter((flow) => flow.config?.flowType === 'regular');
+    const forcedFlows = flows.filter((flow) => flow.config?.flowType === 'forced');
+    const defaultFlows = flows.filter((flow) => flow.config?.flowType === 'default');
+    const priorityMap = new Map<number, string[]>();
+
+    activeRules.forEach((rule) => {
+      const current = priorityMap.get(rule.priority) || [];
+      current.push(rule.name);
+      priorityMap.set(rule.priority, current);
+    });
+
+    const duplicatePriorities = Array.from(priorityMap.entries()).filter(([, names]) => names.length > 1);
+
+    return {
+      regularWeight: regularFlows.reduce((sum, flow) => sum + Number(flow.weight || 0), 0),
+      forcedCount: forcedFlows.length,
+      defaultCount: defaultFlows.length,
+      fallbackTarget:
+        defaultFlows[0] ? getDestinationName(defaultFlows[0], landings, offers) : 'No default flow configured',
+      duplicatePriorities,
+      rotationLabel: flowRotation || 'position',
+      trafficLossLabel: trafficLoss > 0 ? `${trafficLoss}% may be dropped before fallback` : 'No traffic loss configured',
+      flowNarrative:
+        forcedFlows.length > 0
+          ? `${forcedFlows.length} forced flow(s) can override regular routing before weighted distribution starts.`
+          : 'No forced overrides configured; traffic enters regular weighted routing directly.',
+    };
+  }, [activeRules, flowRotation, flows, landings, offers, trafficLoss]);
+
   return (
     <div className="grid gap-6 xl:grid-cols-[320px,minmax(0,1fr)]">
       <div className="space-y-6">
@@ -720,6 +754,35 @@ export function CampaignRoutingWorkbench({
             </div>
           ) : (
             <div className="mt-4 text-sm text-on-surface-variant">No flow selected.</div>
+          )}
+        </div>
+
+        <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Routing Explainability</h3>
+          <div className="mt-4 space-y-3 text-sm">
+            <DiagnosticRow label="Rotation" value={routingExplainability.rotationLabel} />
+            <DiagnosticRow label="Regular Weight" value={`${routingExplainability.regularWeight}%`} />
+            <DiagnosticRow label="Forced Flows" value={String(routingExplainability.forcedCount)} />
+            <DiagnosticRow label="Default Flows" value={String(routingExplainability.defaultCount)} />
+            <DiagnosticRow label="Fallback Target" value={routingExplainability.fallbackTarget} />
+            <DiagnosticRow label="Traffic Loss" value={routingExplainability.trafficLossLabel} />
+          </div>
+          <div className="mt-4 rounded-sm bg-surface p-4 text-sm text-on-surface-variant">
+            {routingExplainability.flowNarrative}
+          </div>
+          {routingExplainability.duplicatePriorities.length > 0 && (
+            <div className="mt-4 rounded-sm border border-warning/30 bg-warning/10 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle size={18} className="mt-0.5 text-warning" />
+                <div className="text-sm text-on-surface-variant">
+                  Priority conflicts detected:
+                  {' '}
+                  {routingExplainability.duplicatePriorities
+                    .map(([priority, names]) => `P${priority} -> ${names.join(', ')}`)
+                    .join(' | ')}
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
