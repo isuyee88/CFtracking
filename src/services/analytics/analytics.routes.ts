@@ -26,6 +26,7 @@ import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
 import { createDashboardQueryService } from './dashboard-query.service';
 import { ETagCacheManager } from '@/services/cache/etag-cache-manager';
+import { CacheKeyBuilder } from '@/services/cache/unified-cache-manager';
 
 export function createAnalyticsRouter() {
   const router = new Hono<{ Bindings: Env }>();
@@ -58,7 +59,7 @@ export function createAnalyticsRouter() {
         },
         {
           cacheType,
-          cacheKey: `dashboard:${range}`,
+          cacheKey: CacheKeyBuilder.dashboard(range),
         }
       );
     } catch (err) {

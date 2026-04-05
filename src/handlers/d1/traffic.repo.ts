@@ -8,7 +8,78 @@ import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
 import type { TrafficSummary, TrackingMetrics } from '@/types/tracking';
 
+export type ReportDimension =
+  | 'date'
+  | 'campaign'
+  | 'offer'
+  | 'flow'
+  | 'landing'
+  | 'country'
+  | 'device'
+  | 'browser';
+
+export type ReportMetric =
+  | 'clicks'
+  | 'impressions'
+  | 'conversions'
+  | 'revenue'
+  | 'spend'
+  | 'cost'
+  | 'profit'
+  | 'roi'
+  | 'cr'
+  | 'margin'
+  | 'epc'
+  | 'cpc'
+  | 'unique_visitors';
+
+export type ReportFilterOperator = 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte';
+
+export interface ReportFilter {
+  field: ReportDimension | ReportMetric;
+  operator: ReportFilterOperator;
+  value: string | number;
+}
+
+export interface ReportQueryOptions {
+  startDate: string;
+  endDate: string;
+  groupBy?: ReportDimension[];
+  metrics?: ReportMetric[];
+  filters?: ReportFilter[];
+  limit?: number;
+  sortBy?: ReportDimension | ReportMetric;
+  sortOrder?: 'asc' | 'desc';
+}
+
 export class TrafficRepository extends BaseRepository<TrafficSummary> {
+  private static readonly REPORT_DIMENSION_MAP: Record<ReportDimension, string> = {
+    date: 'date',
+    campaign: 'campaignId',
+    offer: 'offerId',
+    flow: 'flowId',
+    landing: 'landingPageId',
+    country: 'country',
+    device: 'device',
+    browser: 'browser',
+  };
+
+  private static readonly REPORT_METRIC_SQL: Record<ReportMetric, string> = {
+    clicks: 'COALESCE(SUM(clicks), 0)',
+    impressions: 'COALESCE(SUM(impressions), 0)',
+    conversions: 'COALESCE(SUM(conversions), 0)',
+    revenue: 'COALESCE(SUM(revenue), 0)',
+    spend: 'COALESCE(SUM(spend), 0)',
+    cost: 'COALESCE(SUM(spend), 0)',
+    profit: 'COALESCE(SUM(revenue) - SUM(spend), 0)',
+    roi: 'CASE WHEN SUM(spend) > 0 THEN ROUND(((SUM(revenue) - SUM(spend)) * 100.0 / SUM(spend)), 2) ELSE 0 END',
+    cr: 'CASE WHEN SUM(clicks) > 0 THEN ROUND((SUM(conversions) * 100.0 / SUM(clicks)), 2) ELSE 0 END',
+    margin: 'CASE WHEN SUM(revenue) > 0 THEN ROUND(((SUM(revenue) - SUM(spend)) * 100.0 / SUM(revenue)), 2) ELSE 0 END',
+    epc: 'CASE WHEN SUM(clicks) > 0 THEN ROUND((SUM(revenue) * 1.0 / SUM(clicks)), 4) ELSE 0 END',
+    cpc: 'CASE WHEN SUM(clicks) > 0 THEN ROUND((SUM(spend) * 1.0 / SUM(clicks)), 4) ELSE 0 END',
+    unique_visitors: '0',
+  };
+
   constructor(db: D1Database) {
     super(db, 'trafficSummary');
   }
@@ -561,6 +632,91 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     return this.getRawEntityStats(fieldName, range);
   }
 
+  async getCustomReport(options: ReportQueryOptions): Promise<any[]> {
+    const groupBy = (options.groupBy || []).filter((value, index, array) => array.indexOf(value) === index);
+    const metrics = (options.metrics || ['clicks', 'conversions', 'revenue']).filter(
+      (value, index, array) => array.indexOf(value) === index
+    ) as ReportMetric[];
+    const filters = options.filters || [];
+    const limit = Math.min(Math.max(Number(options.limit) || 100, 1), 5000);
+    const sortOrder = options.sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+    const selectClauses: string[] = [];
+    const groupByClauses: string[] = [];
+    const whereClauses: string[] = ['date >= ?', 'date <= ?'];
+    const havingClauses: string[] = [];
+    const bindings: Array<string | number> = [options.startDate, options.endDate];
+
+    for (const dimension of groupBy) {
+      const column = TrafficRepository.REPORT_DIMENSION_MAP[dimension];
+      if (!column) {
+        continue;
+      }
+
+      selectClauses.push(`COALESCE(${column}, 'Unknown') AS ${dimension}`);
+      groupByClauses.push(column);
+    }
+
+    if (groupBy.length === 0) {
+      selectClauses.push(`'Total' AS summary`);
+    }
+
+    for (const metric of metrics) {
+      const expression = TrafficRepository.REPORT_METRIC_SQL[metric];
+      if (!expression) {
+        continue;
+      }
+
+      selectClauses.push(`${expression} AS ${metric}`);
+    }
+
+    for (const filter of filters) {
+      const dimensionColumn = TrafficRepository.REPORT_DIMENSION_MAP[filter.field as ReportDimension];
+      const metricExpression = TrafficRepository.REPORT_METRIC_SQL[filter.field as ReportMetric];
+
+      if (dimensionColumn) {
+        const clause = this.buildFilterClause(dimensionColumn, filter.operator, filter.value, bindings, false);
+        if (clause) {
+          whereClauses.push(clause);
+        }
+        continue;
+      }
+
+      if (metricExpression) {
+        const clause = this.buildFilterClause(metricExpression, filter.operator, filter.value, bindings, true);
+        if (clause) {
+          havingClauses.push(clause);
+        }
+      }
+    }
+
+    const selectedKeys = new Set<string>([
+      ...groupBy,
+      ...(groupBy.length === 0 ? ['summary'] : []),
+      ...metrics,
+    ]);
+
+    const sortBy = selectedKeys.has(options.sortBy || '')
+      ? options.sortBy || ''
+      : metrics[0] || groupBy[0] || 'summary';
+
+    const sql = `
+      SELECT
+        ${selectClauses.join(',\n        ')}
+      FROM trafficSummary
+      WHERE ${whereClauses.join(' AND ')}
+      ${groupByClauses.length > 0 ? `GROUP BY ${groupByClauses.join(', ')}` : ''}
+      ${havingClauses.length > 0 ? `HAVING ${havingClauses.join(' AND ')}` : ''}
+      ORDER BY ${sortBy} ${sortOrder}
+      LIMIT ?
+    `;
+
+    bindings.push(limit);
+
+    const result = await this.db.prepare(sql).bind(...bindings).all();
+    return (result.results as unknown as any[]) || [];
+  }
+
   /**
    * 根据时间范围获取日期区间
    */
@@ -594,5 +750,42 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     }
     
     return { start, end };
+  }
+
+  private buildFilterClause(
+    expression: string,
+    operator: ReportFilterOperator,
+    value: string | number,
+    bindings: Array<string | number>,
+    numericOnly: boolean
+  ): string | null {
+    switch (operator) {
+      case 'eq':
+        bindings.push(value);
+        return `${expression} = ?`;
+      case 'neq':
+        bindings.push(value);
+        return `${expression} != ?`;
+      case 'contains':
+        if (numericOnly) {
+          return null;
+        }
+        bindings.push(`%${String(value)}%`);
+        return `${expression} LIKE ?`;
+      case 'gt':
+        bindings.push(value);
+        return `${expression} > ?`;
+      case 'gte':
+        bindings.push(value);
+        return `${expression} >= ?`;
+      case 'lt':
+        bindings.push(value);
+        return `${expression} < ?`;
+      case 'lte':
+        bindings.push(value);
+        return `${expression} <= ?`;
+      default:
+        return null;
+    }
   }
 }
