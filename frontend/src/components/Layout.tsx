@@ -35,9 +35,10 @@ import {
   Target,
   Home
 } from 'lucide-react';
-import { Link, useLocation, Outlet } from 'react-router-dom';
+import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { loadBootstrapForLocation } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -89,17 +90,21 @@ const SidebarItem = ({
   label, 
   to, 
   active = false, 
-  onClick 
+  onClick,
+  onPrefetch,
 }: { 
   icon: any, 
   label: string, 
   to: string, 
   active?: boolean, 
-  onClick?: () => void 
+  onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void,
+  onPrefetch?: () => void,
 }) => (
   <Link 
     to={to}
     onClick={onClick}
+    onMouseEnter={onPrefetch}
+    onFocus={onPrefetch}
     aria-current={active ? "page" : undefined}
     aria-label={label}
     className={cn(
@@ -125,7 +130,40 @@ export const Layout = () => {
     return true;
   });
   const location = useLocation();
+  const navigate = useNavigate();
   const { isDarkMode, toggleDarkMode } = useDarkMode();
+
+  const prefetchRouteBootstrap = async (to: string) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const nextUrl = new URL(to, window.location.origin);
+    await loadBootstrapForLocation({ url: nextUrl }).catch(() => null);
+  };
+
+  const handleNavigation =
+    (to: string) =>
+    async (event: React.MouseEvent<HTMLAnchorElement>) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      await prefetchRouteBootstrap(to);
+      navigate(to);
+    };
+
+  const handlePrefetch = (to: string) => {
+    void prefetchRouteBootstrap(to);
+  };
 
   // 监听窗口大小变化，自动调整侧边栏状态（仅桌面端）
   useEffect(() => {
@@ -233,6 +271,8 @@ export const Layout = () => {
                         label={item.label} 
                         to={item.to}
                         active={isActive}
+                        onClick={handleNavigation(item.to)}
+                        onPrefetch={() => handlePrefetch(item.to)}
                       />
                     </div>
                   );
@@ -321,39 +361,39 @@ export const Layout = () => {
 
       {/* Mobile Bottom Navigation - Scrollable */}
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <Link to="/" className={cn("mobile-nav-item", (location.pathname === "/" || location.pathname === "") && "active")} title="Dashboard">
+        <Link to="/" onClick={handleNavigation('/')} onMouseEnter={() => handlePrefetch('/')} onFocus={() => handlePrefetch('/')} className={cn("mobile-nav-item", (location.pathname === "/" || location.pathname === "") && "active")} title="Dashboard">
           <LayoutDashboard size={20} aria-hidden="true" />
           <span>Dashboard</span>
         </Link>
-        <Link to="/campaigns" className={cn("mobile-nav-item", location.pathname === "/campaigns" && "active")} title="Campaigns">
+        <Link to="/campaigns" onClick={handleNavigation('/campaigns')} onMouseEnter={() => handlePrefetch('/campaigns')} onFocus={() => handlePrefetch('/campaigns')} className={cn("mobile-nav-item", location.pathname === "/campaigns" && "active")} title="Campaigns">
           <Zap size={20} aria-hidden="true" />
           <span>Campaigns</span>
         </Link>
-        <Link to="/landings" className={cn("mobile-nav-item", location.pathname === "/landings" && "active")} title="Landings">
+        <Link to="/landings" onClick={handleNavigation('/landings')} onMouseEnter={() => handlePrefetch('/landings')} onFocus={() => handlePrefetch('/landings')} className={cn("mobile-nav-item", location.pathname === "/landings" && "active")} title="Landings">
           <Image size={20} aria-hidden="true" />
           <span>Landings</span>
         </Link>
-        <Link to="/offers" className={cn("mobile-nav-item", location.pathname === "/offers" && "active")} title="Offers">
+        <Link to="/offers" onClick={handleNavigation('/offers')} onMouseEnter={() => handlePrefetch('/offers')} onFocus={() => handlePrefetch('/offers')} className={cn("mobile-nav-item", location.pathname === "/offers" && "active")} title="Offers">
           <Gift size={20} aria-hidden="true" />
           <span>Offers</span>
         </Link>
-        <Link to="/traffic-sources" className={cn("mobile-nav-item", location.pathname === "/traffic-sources" && "active")} title="Traffic Sources">
+        <Link to="/traffic-sources" onClick={handleNavigation('/traffic-sources')} onMouseEnter={() => handlePrefetch('/traffic-sources')} onFocus={() => handlePrefetch('/traffic-sources')} className={cn("mobile-nav-item", location.pathname === "/traffic-sources" && "active")} title="Traffic Sources">
           <Globe size={20} aria-hidden="true" />
           <span>Sources</span>
         </Link>
-        <Link to="/trends" className={cn("mobile-nav-item", location.pathname === "/trends" && "active")} title="Trends">
+        <Link to="/trends" onClick={handleNavigation('/trends')} onMouseEnter={() => handlePrefetch('/trends')} onFocus={() => handlePrefetch('/trends')} className={cn("mobile-nav-item", location.pathname === "/trends" && "active")} title="Trends">
           <LineChart size={20} aria-hidden="true" />
           <span>Trends</span>
         </Link>
-        <Link to="/audit" className={cn("mobile-nav-item", location.pathname === "/audit" && "active")} title="Click Log">
+        <Link to="/audit" onClick={handleNavigation('/audit')} onMouseEnter={() => handlePrefetch('/audit')} onFocus={() => handlePrefetch('/audit')} className={cn("mobile-nav-item", location.pathname === "/audit" && "active")} title="Click Log">
           <MousePointerClick size={20} aria-hidden="true" />
           <span>Clicks</span>
         </Link>
-        <Link to="/rules" className={cn("mobile-nav-item", location.pathname === "/rules" && "active")} title="Autorules">
+        <Link to="/rules" onClick={handleNavigation('/rules')} onMouseEnter={() => handlePrefetch('/rules')} onFocus={() => handlePrefetch('/rules')} className={cn("mobile-nav-item", location.pathname === "/rules" && "active")} title="Autorules">
           <Shield size={20} aria-hidden="true" />
           <span>Rules</span>
         </Link>
-        <Link to="/settings" className={cn("mobile-nav-item", location.pathname === "/settings" && "active")} title="Settings">
+        <Link to="/settings" onClick={handleNavigation('/settings')} onMouseEnter={() => handlePrefetch('/settings')} onFocus={() => handlePrefetch('/settings')} className={cn("mobile-nav-item", location.pathname === "/settings" && "active")} title="Settings">
           <Settings size={20} aria-hidden="true" />
           <span>Settings</span>
         </Link>

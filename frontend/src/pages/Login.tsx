@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Button, Checkbox, Form, Input, message, Card, Divider, Typography, Alert } from 'antd';
 import { GoogleOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
 import './Login.css';
@@ -8,7 +7,6 @@ const { Title, Text, Link } = Typography;
 
 const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
 
   const onFinish = async (values: any) => {
     setLoading(true);
@@ -18,7 +16,7 @@ const Login: React.FC = () => {
       // 登录成功后存储token
       localStorage.setItem('token', 'mock-token');
       message.success('登录成功');
-      navigate('/dashboard');
+      window.location.assign('/dashboard');
     } catch (error) {
       message.error('登录失败，请检查用户名和密码');
     } finally {

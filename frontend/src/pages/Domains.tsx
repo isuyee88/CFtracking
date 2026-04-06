@@ -19,6 +19,7 @@ import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/Vir
 import { createDomain, deleteDomain, fetchCampaigns, fetchDomains, fetchLandings, updateDomain } from '../services/api';
 import { useToast } from '../components/Toast';
 import type { Domain } from '../types/domain';
+import { readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -169,10 +170,30 @@ function getStatusIcon(status: Domain['status']) {
 
 export default function Domains() {
   const toast = useToast();
-  const [domains, setDomains] = useState<Domain[]>([]);
-  const [campaignOptions, setCampaignOptions] = useState<Array<{ id: string; name: string }>>([]);
-  const [landingOptions, setLandingOptions] = useState<Array<{ id: string; name: string }>>([]);
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage<{
+    domains?: Domain[];
+    campaigns?: Array<{ id: string; displayId?: string; name: string }>;
+    landings?: Array<{ id: string; displayId?: string; name: string }>;
+  }>('domains');
+  const hasBootstrap = Boolean(bootstrap);
+  const [domains, setDomains] = useState<Domain[]>(Array.isArray(bootstrap?.data?.domains) ? bootstrap.data.domains : []);
+  const [campaignOptions, setCampaignOptions] = useState<Array<{ id: string; name: string }>>(
+    Array.isArray(bootstrap?.data?.campaigns)
+      ? bootstrap.data.campaigns.map((campaign: any) => ({
+          id: String(campaign.displayId || campaign.id),
+          name: String(campaign.name || campaign.id),
+        }))
+      : []
+  );
+  const [landingOptions, setLandingOptions] = useState<Array<{ id: string; name: string }>>(
+    Array.isArray(bootstrap?.data?.landings)
+      ? bootstrap.data.landings.map((landing: any) => ({
+          id: String(landing.displayId || landing.id),
+          name: String(landing.name || landing.id),
+        }))
+      : []
+  );
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | Domain['status']>('All');
@@ -184,7 +205,9 @@ export default function Domains() {
 
   const loadDomains = async () => {
     try {
-      setLoading(true);
+      if (!hasBootstrap && domains.length === 0) {
+        setLoading(true);
+      }
       setError(null);
       const [domainsData, campaignsData, landingsData] = await Promise.all([
         fetchDomains(),

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -99,9 +100,16 @@ const typeOptions: { value: BlacklistType; label: string; icon: React.ReactNode 
 ];
 
 export const Blacklist = () => {
-  const [entries, setEntries] = useState<BlacklistEntry[]>([]);
-  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage<{
+    entries?: BlacklistEntry[];
+    trafficSources?: TrafficSource[];
+  }>('blacklist');
+  const hasBootstrap = Boolean(bootstrap);
+  const [entries, setEntries] = useState<BlacklistEntry[]>(Array.isArray(bootstrap?.data?.entries) ? bootstrap.data.entries : []);
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>(
+    Array.isArray(bootstrap?.data?.trafficSources) ? bootstrap.data.trafficSources : []
+  );
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSource, setFilterSource] = useState<string>('all');
@@ -126,20 +134,16 @@ export const Blacklist = () => {
 
   const fetchData = async () => {
     try {
-      setLoading(true);
-      // Fetch blacklist entries
-      const response = await fetch('/api/blacklist');
-      const data = await response.json();
-      if (data.success) {
-        setEntries(data.data || []);
+      if (!hasBootstrap && entries.length === 0) {
+        setLoading(true);
       }
+      const bundle = readBootstrapPage<{
+        entries?: BlacklistEntry[];
+        trafficSources?: TrafficSource[];
+      }>('blacklist');
 
-      // Fetch traffic sources for filter
-      const tsResponse = await fetch('/api/traffic-sources');
-      const tsData = await tsResponse.json();
-      if (tsData.success) {
-        setTrafficSources(tsData.data || []);
-      }
+      setEntries(Array.isArray(bundle?.data?.entries) ? bundle.data.entries : []);
+      setTrafficSources(Array.isArray(bundle?.data?.trafficSources) ? bundle.data.trafficSources : []);
     } catch (err) {
       console.error('Failed to fetch blacklist:', err);
     } finally {
@@ -156,7 +160,7 @@ export const Blacklist = () => {
       const data = await response.json();
       if (data.success) {
         alert(`Sync completed: ${data.data.synced} synced, ${data.data.failed} failed`);
-        fetchData();
+        window.location.reload();
       }
     } catch (err) {
       console.error('Failed to sync:', err);
@@ -173,7 +177,7 @@ export const Blacklist = () => {
         method: 'DELETE'
       });
       if (response.ok) {
-        fetchData();
+        setEntries(prev => prev.filter(entry => entry.id !== id));
       }
     } catch (err) {
       console.error('Failed to remove:', err);
@@ -270,8 +274,16 @@ export const Blacklist = () => {
       });
 
       if (response.ok) {
+        const result = await response.json();
+        const savedEntry = result?.data;
+        if (savedEntry?.id) {
+          setEntries(prev =>
+            isEditMode
+              ? prev.map(entry => entry.id === savedEntry.id ? savedEntry : entry)
+              : [savedEntry, ...prev]
+          );
+        }
         closeModal();
-        fetchData();
       } else {
         const error = await response.json();
         alert(error.message || 'Failed to save blacklist entry');
@@ -339,7 +351,7 @@ export const Blacklist = () => {
         </div>
         <div className="flex gap-3">
           <button 
-            onClick={fetchData}
+            onClick={() => window.location.reload()}
             className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
           >
             <RefreshCw size={16} />

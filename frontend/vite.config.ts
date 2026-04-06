@@ -2,7 +2,6 @@ import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
-import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   plugins: [
@@ -10,130 +9,6 @@ export default defineConfig({
       include: '**/*.tsx',
     }),
     tailwindcss(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: false,
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webp}'],
-        globIgnores: [
-          'assets/page-*.js',
-          'assets/recharts-*.js',
-          'assets/d3-*.js',
-          'assets/vendor-victory-vendor-*.js',
-        ],
-        globDirectory: 'dist',
-        cleanupOutdatedCaches: true,
-        skipWaiting: true,
-        clientsClaim: true,
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/auth\//, /stats\.html$/],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/cdn\.example\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'cdn-cache',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-          {
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'images-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-          {
-            urlPattern: /\.(?:woff|woff2)$/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-          {
-            urlPattern: /\.(?:css|js)$/i,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'assets-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 7,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/api\.example\.com\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              networkTimeoutSeconds: 10,
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-        ],
-      },
-      manifest: {
-        name: 'CF Tracking',
-        short_name: 'CFTrack',
-        description: 'Affiliate Tracking Platform',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
-        display: 'standalone',
-        start_url: '/',
-        icons: [
-          {
-            src: '/pwa-192x192.svg',
-            sizes: '192x192',
-            type: 'image/svg+xml',
-          },
-          {
-            src: '/pwa-512x512.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml',
-          },
-          {
-            src: '/pwa-512x512.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml',
-            purpose: 'any maskable',
-          },
-        ],
-      },
-      devOptions: {
-        enabled: false,
-        type: 'module',
-      },
-    }),
   ],
   resolve: {
     alias: {

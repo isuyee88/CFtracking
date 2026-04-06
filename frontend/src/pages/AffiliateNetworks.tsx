@@ -34,6 +34,7 @@ import { ExportButton } from '../components/ExportButton';
 import { formatAffiliateNetworkForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { AFFILIATE_NETWORK_TEMPLATES, getAffiliateTemplateById, type AffiliateNetworkOfferParameter } from '../data/affiliateNetworkTemplates';
+import { readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -164,8 +165,12 @@ const NETWORK_FIELDS: FormField[] = [
 ];
 
 export const AffiliateNetworks = () => {
-  const [networks, setNetworks] = useState<AffiliateNetwork[]>([]);
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage<{ affiliateNetworks?: AffiliateNetwork[] }>('affiliate-networks');
+  const hasBootstrap = Boolean(bootstrap);
+  const [networks, setNetworks] = useState<AffiliateNetwork[]>(
+    Array.isArray(bootstrap?.data?.affiliateNetworks) ? bootstrap.data.affiliateNetworks : []
+  );
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   
   // Form modal state
@@ -214,7 +219,9 @@ export const AffiliateNetworks = () => {
   useEffect(() => {
     const loadNetworks = async () => {
       try {
-        setLoading(true);
+        if (!hasBootstrap && networks.length === 0) {
+          setLoading(true);
+        }
         const data = await fetchAffiliateNetworks();
         if (Array.isArray(data)) {
           setNetworks(data);
@@ -276,7 +283,7 @@ export const AffiliateNetworks = () => {
     };
 
     loadNetworks();
-  }, []);
+  }, [hasBootstrap, networks.length]);
 
   const handleCreateNetwork = () => {
     setFormMode('create');

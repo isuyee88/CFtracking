@@ -119,7 +119,12 @@ new_sqlite_classes = ["CacheEventBrokerDurableObject"]
 [assets]
 directory = "./frontend/dist"
 binding = "ASSETS"
+html_handling = "none"
 not_found_handling = "single-page-application"
+run_worker_first = ["/", "/dashboard", "/campaigns", "/campaigns/*", "/landings", "/l", "/offers", "/traffic-sources", "/affiliate-networks", "/domains", "/platforms", "/rules", "/trends", "/reports", "/audit", "/conversions", "/blacklist", "/whitelist", "/target", "/settings", "/help", "/api/*", "/events/*", "/health", "/sw.js", "/__bootstrap/*", "/__bootstrap-object/*"]
+
+[version_metadata]
+binding = "CF_VERSION_METADATA"
 
 [observability]
 enabled = true

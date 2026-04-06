@@ -25,25 +25,25 @@ export const CACHE_CONFIGS: Record<CacheType, CacheHeaderPolicy> = {
     description: 'Static assets and content that should not change once deployed',
   },
   [CacheType.HISTORICAL]: {
-    browserMaxAge: 3_600,
-    edgeMaxAge: 86_400,
-    swr: 172_800,
-    immutable: false,
-    description: 'Closed periods such as yesterday, last month, and older data',
-  },
-  [CacheType.RECENT]: {
-    browserMaxAge: 300,
-    edgeMaxAge: 21_600,
+    browserMaxAge: 0,
+    edgeMaxAge: 43_200,
     swr: 43_200,
     immutable: false,
-    description: 'Near-stable windows such as last 7 days or last 30 days',
+    description: 'Non-today analytical windows cached at the edge for 12 hours with browser revalidation',
+  },
+  [CacheType.RECENT]: {
+    browserMaxAge: 0,
+    edgeMaxAge: 43_200,
+    swr: 43_200,
+    immutable: false,
+    description: 'Near-stable analytical windows cached at the edge for 12 hours with browser revalidation',
   },
   [CacheType.REALTIME]: {
-    browserMaxAge: 30,
+    browserMaxAge: 0,
     edgeMaxAge: 300,
-    swr: 600,
+    swr: 300,
     immutable: false,
-    description: 'Today and other actively changing views backed by SSE refreshes',
+    description: 'Today and other actively changing views cached at the edge for 5 minutes',
   },
 };
 
@@ -71,7 +71,15 @@ export class ETagGenerator {
       return data;
     }
 
-    const { timestamp, queryTime, generatedAt, ...rest } = data as Record<string, unknown>;
+    const {
+      timestamp,
+      queryTime,
+      generatedAt,
+      staleAt,
+      etag,
+      contentVersion,
+      ...rest
+    } = data as Record<string, unknown>;
     return rest;
   }
 

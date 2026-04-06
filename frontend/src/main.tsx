@@ -1,31 +1,33 @@
-/**
- * @fileoverview 前端入口文件
- * @description React 应用入口，使用 CSR 模式
- * 输出：渲染的 React 应用
- * 逻辑交互：
- *   - 直接渲染 React 应用
- *   - 初始数据通过 Context 传递给子组件
- */
-
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { ToastProvider } from './components/Toast'
+import { getRawBootstrapData, loadBootstrapForLocation, setPageBootstrapData } from './services/bootstrap'
+import { initPerformanceDebug } from './services/performance-debug'
 
-// 声明全局类型
 declare global {
   interface Window {
     __INITIAL_DATA__?: any
+    __PAGE_BOOTSTRAP__?: any
     requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
   }
 }
 
-// 获取初始数据（如果有的话）
-const initialData = window.__INITIAL_DATA__
+function migrateLegacyHashRoute() {
+  const { hash, pathname, search } = window.location
 
-// 清理全局变量，避免内存泄漏
-delete window.__INITIAL_DATA__
+  if (!hash.startsWith('#/')) {
+    return
+  }
+
+  const nextLocation = hash.slice(1)
+  if (!nextLocation || nextLocation === pathname + search) {
+    return
+  }
+
+  window.history.replaceState(null, '', nextLocation)
+}
 
 function isLocalPreviewHost() {
   return ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -41,69 +43,66 @@ function hideBootScreen() {
   window.setTimeout(() => bootScreen.remove(), 240)
 }
 
-function registerServiceWorker() {
-  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) {
+async function purgeLegacyServiceWorkers() {
+  if (!('serviceWorker' in navigator)) {
     return
   }
 
-  if (isLocalPreviewHost()) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations.forEach((registration) => {
-        void registration.unregister()
-      })
-    })
-
-    if ('caches' in window) {
-      void caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
-    }
-
+  if (!import.meta.env.PROD && !isLocalPreviewHost()) {
     return
   }
 
-  const scheduleRegistration = () => {
-    const onIdle = window.requestIdleCallback
-      ? (callback: IdleRequestCallback) => window.requestIdleCallback!(callback, { timeout: 10000 })
-      : (callback: IdleRequestCallback) =>
-          window.setTimeout(
-            () => callback({ didTimeout: false, timeRemaining: () => 0 } as IdleDeadline),
-            0
-          )
-
-    onIdle(() => {
-      navigator.serviceWorker.register('/sw.js').catch((error) => {
-        console.warn('[PWA] Service worker registration failed', error)
-      })
-    })
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(registrations.map((registration) => registration.unregister()))
+  } catch (error) {
+    console.warn('[PWA] Service worker cleanup failed', error)
   }
 
-  const deferRegistration = () => {
-    window.setTimeout(scheduleRegistration, 5000)
-  }
-
-  if (document.readyState === 'complete') {
-    deferRegistration()
+  if (!('caches' in window)) {
     return
   }
 
-  window.addEventListener('load', deferRegistration, { once: true })
+  try {
+    const cacheKeys = await caches.keys()
+    await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)))
+  } catch (error) {
+    console.warn('[PWA] Cache cleanup failed', error)
+  }
 }
 
-console.log('[App] Initial data:', initialData)
+async function startApp() {
+  migrateLegacyHashRoute()
+  initPerformanceDebug()
 
-// 使用 CSR 模式
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ToastProvider>
-      <App initialData={initialData} />
-    </ToastProvider>
-  </StrictMode>,
-)
+  const injectedInitialData = window.__INITIAL_DATA__
+  if (injectedInitialData !== undefined) {
+    setPageBootstrapData(injectedInitialData)
+    delete window.__INITIAL_DATA__
+  } else {
+    try {
+      await loadBootstrapForLocation()
+    } catch (error) {
+      console.warn('[Bootstrap] Initial preload failed', error)
+    }
+  }
 
-requestAnimationFrame(() => {
-  requestAnimationFrame(hideBootScreen)
-})
+  const initialData = getRawBootstrapData()
+  window.__PAGE_BOOTSTRAP__ = initialData
 
-registerServiceWorker()
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ToastProvider>
+        <App initialData={initialData} />
+      </ToastProvider>
+    </StrictMode>,
+  )
 
-console.log('[App] CSR mode enabled')
+  requestAnimationFrame(() => {
+    requestAnimationFrame(hideBootScreen)
+  })
 
+  void purgeLegacyServiceWorkers()
+}
+
+void startApp()

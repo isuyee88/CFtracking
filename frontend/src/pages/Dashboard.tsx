@@ -6,22 +6,9 @@
  * 样式优化：统一主色调、玻璃拟态效果、自动昼夜模式
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { 
-  TrendingUp, 
-  ChevronRight,
-  MoreHorizontal,
-  Calendar,
-  RefreshCw,
-  Settings,
-  X,
-  GripVertical,
-  Eye,
-  EyeOff,
-  Sun,
-  Moon
-} from 'lucide-react';
+import { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
+import { Link } from 'react-router-dom';
+import { RefreshCw, Settings, X, Sun, Moon } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -34,8 +21,21 @@ import { useDashboardURLState } from '../hooks/useURLState';
 import type { VirtualTableColumn } from '../components/VirtualTableEnhanced';
 import { DataSourceBadge, DataSourceInfo, DataSourceWarning } from '../components/DataSourceBadge';
 import { useInitialData } from '../contexts/InitialDataContext';
-import { fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
+import {
+  fetchDashboardStats,
+  fetchRecentClicks,
+  fetchEntityStats,
+  invalidateApiCache,
+} from '../services/api';
+import {
+  invalidateBootstrap,
+  isCurrentBootstrapTarget,
+  normalizeRangeParam,
+  refreshBootstrapIfVersionChanged,
+} from '../services/bootstrap';
 import { BrowserIcon, OSIcon } from '../components/BrandIcon';
+import { useSSECacheUpdate } from '../hooks/useSSECacheUpdate';
+import { SSEEventType, type SSEEvent } from '@/services/cache/sse-cache-notification';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -521,18 +521,6 @@ function getRecentClicksSorter(key: string) {
   }
 }
 
-// 时间范围选项 - 使用新的日期选择器组件
-const TIME_RANGES = [
-  { value: 'today', label: 'Today' },
-  { value: 'yesterday', label: 'Yesterday' },
-  { value: 'last7days', label: 'Last 7 Days' },
-  { value: 'last30days', label: 'Last 30 Days' },
-  { value: 'thismonth', label: 'This Month' },
-  { value: 'lastmonth', label: 'Last Month' },
-  { value: 'thisyear', label: 'This Year' },
-  { value: 'lastyear', label: 'Last Year' },
-];
-
 // ==================== 数据生成函数 ====================
 
 // 加载状态组件
@@ -797,28 +785,32 @@ const PreferencesModal = ({
 export const Dashboard = () => {
   // URL状态管理
   const { state, setState } = useDashboardURLState();
-  const navigate = useNavigate();
   
   // 获取初始数据
   const { data: initialData } = useInitialData();
+  const initialSnapshot = (initialData as any) || null;
+  const hasInitialBootstrap = initialSnapshot?.scope?.page === 'dashboard';
   
   // 自动昼夜模式
   const { isDarkMode, currentTime } = useAutoDarkMode();
   
   // 本地状态 - 优先使用 SSR 初始数据
-  const [stats, setStats] = useState<any[]>(initialData?.metrics || []);
-  const [chartData, setChartData] = useState<any[]>(initialData?.chartData || []);
-  const [recentClicks, setRecentClicks] = useState<any[]>(initialData?.recentClicks || []);
-  const [entityData, setEntityData] = useState<Record<string, any[]>>(initialData?.entityData || {});
+  const [stats, setStats] = useState<any[]>(initialSnapshot?.metrics || []);
+  const [chartData, setChartData] = useState<any[]>(initialSnapshot?.chartData || []);
+  const [recentClicks, setRecentClicks] = useState<any[]>(initialSnapshot?.recentClicks || []);
+  const [entityData, setEntityData] = useState<Record<string, any[]>>(initialSnapshot?.entityData || {});
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
-  const [dataSource, setDataSource] = useState<'DO' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT'>(initialData?.dataSource || 'DO');
-  const [queryTime, setQueryTime] = useState<string | null>(initialData?.queryTime || null);
+  const [dataSource, setDataSource] = useState<'DO' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT'>(
+    initialSnapshot?.dataSource || 'CACHE'
+  );
+  const [queryTime, setQueryTime] = useState<string | null>(initialSnapshot?.queryTime || null);
+  const [hasResolvedBootstrap, setHasResolvedBootstrap] = useState(hasInitialBootstrap);
   const [loading, setLoading] = useState(() => ({
-    stats: !(initialData?.metrics?.length > 0),
-    recentClicks: !(initialData?.recentClicks?.length > 0),
-    entities: !(initialData?.entityData && Object.keys(initialData.entityData).length > 0)
+    stats: !hasInitialBootstrap && !(initialSnapshot?.metrics?.length > 0),
+    recentClicks: !hasInitialBootstrap && !(initialSnapshot?.recentClicks?.length > 0),
+    entities: !hasInitialBootstrap && !(initialSnapshot?.entityData && Object.keys(initialSnapshot.entityData).length > 0)
   }));
   const [errors, setErrors] = useState({
     stats: '',
@@ -827,7 +819,14 @@ export const Dashboard = () => {
   });
   
   // 初始数据已加载标记
-  const initialDataLoaded = useRef(initialData?.metrics?.length > 0);
+  const initialDataLoaded = useRef(
+    Boolean(
+      hasInitialBootstrap ||
+        initialSnapshot?.metrics?.length ||
+        initialSnapshot?.recentClicks?.length ||
+        (initialSnapshot?.entityData && Object.keys(initialSnapshot.entityData).length > 0)
+    )
+  );
   
   // 应用暗色模式类
   useEffect(() => {
@@ -862,16 +861,29 @@ export const Dashboard = () => {
   // 使用 useMemo 稳定依赖值，避免无限循环
   const metricsKey = useMemo(() => config.metrics.join(','), [config.metrics]);
   const entitiesKey = useMemo(() => config.entities.join(','), [config.entities]);
-  const timeRangeKey = useMemo(() => state.range?.interval || 'today', [state.range?.interval]);
+  const timeRangeKey = useMemo(() => normalizeRangeParam(state.range?.interval), [state.range?.interval]);
+  const selectedCampaignKey = useMemo(() => state.selectedCampaign || 'all', [state.selectedCampaign]);
+  const analyticsEdgeKeys = useMemo(
+    () => ({
+      dashboard: `cftrack:v1:dashboard:${timeRangeKey}:${selectedCampaignKey}`,
+      recentClicks: `cftrack:v1:recent-clicks:${timeRangeKey}:limit-10:${selectedCampaignKey}`,
+      entities: config.entities.map((entityKey) => `cftrack:v1:entity-stats:${entityKey}:${timeRangeKey}:${selectedCampaignKey}`),
+    }),
+    [config.entities, selectedCampaignKey, timeRangeKey]
+  );
   
   // 刷新统计数据和实体数据 - 仅在配置或时间范围变化时
-  const refreshStatsAndEntities = useCallback(async () => {
+  const refreshStatsAndEntities = useCallback(async (options: { background?: boolean } = {}) => {
+    const background = options.background ?? hasResolvedBootstrap;
+
     setIsRefreshing(true);
-    setLoading(prev => ({ ...prev, stats: true, entities: true }));
+    if (!background) {
+      setLoading(prev => ({ ...prev, stats: true, entities: true }));
+    }
     setErrors(prev => ({ ...prev, stats: '', entities: '' }));
 
     try {
-      const statsData = await fetchDashboardStats(timeRangeKey);
+      const statsData = await fetchDashboardStats(timeRangeKey, state.selectedCampaign);
 
       if (statsData) {
         setStats(statsData.metrics || []);
@@ -894,7 +906,7 @@ export const Dashboard = () => {
 
       const currentEntities = config.entities;
       const entityPromises = currentEntities.map(entityKey =>
-        fetchEntityStats(entityKey, timeRangeKey)
+        fetchEntityStats(entityKey, timeRangeKey, state.selectedCampaign)
       );
 
       const entityResults = await Promise.all(entityPromises);
@@ -905,6 +917,7 @@ export const Dashboard = () => {
       });
 
       setEntityData(newEntityData);
+      setHasResolvedBootstrap(true);
 
     } catch (error) {
       console.error('Error refreshing stats:', error);
@@ -920,28 +933,32 @@ export const Dashboard = () => {
     }
   // 使用稳定的字符串依赖而非数组引用
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entitiesKey, timeRangeKey]);
+  }, [entitiesKey, hasResolvedBootstrap, state.selectedCampaign, timeRangeKey]);
 
   // 单独刷新 Recent Clicks 数据
-  const refreshRecentClicks = useCallback(async () => {
-    setLoading(prev => ({ ...prev, recentClicks: true }));
+  const refreshRecentClicks = useCallback(async (options: { background?: boolean } = {}) => {
+    const background = options.background ?? hasResolvedBootstrap;
+
+    if (!background) {
+      setLoading(prev => ({ ...prev, recentClicks: true }));
+    }
     setErrors(prev => ({ ...prev, recentClicks: '' }));
 
     try {
-      const clicksData = await fetchRecentClicks(10, timeRangeKey);
+      const clicksData = await fetchRecentClicks(10, timeRangeKey, state.selectedCampaign);
       setRecentClicks(clicksData || []);
+      setHasResolvedBootstrap(true);
     } catch (error) {
       console.error('Error refreshing recent clicks:', error);
       setErrors(prev => ({ ...prev, recentClicks: 'Failed to fetch recent clicks' }));
     } finally {
       setLoading(prev => ({ ...prev, recentClicks: false }));
     }
-  }, [timeRangeKey]);
+  }, [hasResolvedBootstrap, state.selectedCampaign, timeRangeKey]);
 
   // 初始加载标记 - 避免重复请求
   const isInitialMount = useRef(true);
-  const previousTimeRangeRef = useRef(timeRangeKey);
-  const recentClicksIdleHandleRef = useRef<number | null>(null);
+  const previousQueryScopeRef = useRef(`${timeRangeKey}:${selectedCampaignKey}`);
   
   // 数据加载 - 统一管理，避免重复请求
   useEffect(() => {
@@ -951,57 +968,66 @@ export const Dashboard = () => {
       
       // 如果初始数据已加载，跳过首次加载
       if (initialDataLoaded.current) {
-        console.log('[Dashboard] Initial data already loaded, skipping initial fetch');
         setLoading({ stats: false, recentClicks: false, entities: false });
+        previousQueryScopeRef.current = `${timeRangeKey}:${selectedCampaignKey}`;
         return;
       }
       
-      refreshStatsAndEntities();
+      void refreshStatsAndEntities();
+      void refreshRecentClicks();
 
-      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-        recentClicksIdleHandleRef.current = window.requestIdleCallback(() => {
-          void refreshRecentClicks();
-        }, { timeout: 2500 });
-      } else {
-        recentClicksIdleHandleRef.current = window.setTimeout(() => {
-          void refreshRecentClicks();
-        }, 1200);
-      }
-
-      previousTimeRangeRef.current = timeRangeKey;
+      previousQueryScopeRef.current = `${timeRangeKey}:${selectedCampaignKey}`;
       return;
     }
     
     // 配置或时间范围变化时刷新 - 仅刷新统计数据
     // Recent Clicks 有独立的定时刷新机制
-    refreshStatsAndEntities();
+    void refreshStatsAndEntities();
 
-    if (previousTimeRangeRef.current !== timeRangeKey) {
-      refreshRecentClicks();
-      previousTimeRangeRef.current = timeRangeKey;
+    if (previousQueryScopeRef.current !== `${timeRangeKey}:${selectedCampaignKey}`) {
+      void refreshRecentClicks();
+      previousQueryScopeRef.current = `${timeRangeKey}:${selectedCampaignKey}`;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metricsKey, entitiesKey, timeRangeKey]);
+  }, [entitiesKey, metricsKey, selectedCampaignKey, timeRangeKey]);
 
-  useEffect(() => {
-    return () => {
-      if (recentClicksIdleHandleRef.current !== null) {
-        const idleWindow = window as Window & {
-          cancelIdleCallback?: (handle: number) => void;
-        };
-
-        if (typeof idleWindow.cancelIdleCallback === 'function') {
-          idleWindow.cancelIdleCallback(recentClicksIdleHandleRef.current);
-        } else {
-          window.clearTimeout(recentClicksIdleHandleRef.current);
+  const handleRealtimeEvent = useCallback((event: SSEEvent) => {
+    if (
+      event.type === SSEEventType.CACHE_UPDATED &&
+      isCurrentBootstrapTarget(event.page, event.scopeHash)
+    ) {
+      void refreshBootstrapIfVersionChanged(event.version).then((bundle) => {
+        if (!bundle || bundle.page !== 'dashboard') {
+          return;
         }
-      }
-    };
-  }, []);
 
-  // Recent Clicks 手动刷新功能 - 移除自动刷新，由用户手动控制
-  const refreshRecentClicksRef = useRef<() => Promise<void>>(refreshRecentClicks);
-  refreshRecentClicksRef.current = refreshRecentClicks;
+        void refreshStatsAndEntities({ background: true });
+        void refreshRecentClicks({ background: true });
+      });
+      return;
+    }
+
+    const isRelevantCacheKey =
+      event.cacheKey === '*' ||
+      event.cacheKey === analyticsEdgeKeys.dashboard ||
+      event.cacheKey === analyticsEdgeKeys.recentClicks ||
+      analyticsEdgeKeys.entities.includes(event.cacheKey);
+
+    const isRelevantDataChange = event.type === SSEEventType.DATA_CHANGED;
+
+    if (!isRelevantCacheKey && !isRelevantDataChange) {
+      return;
+    }
+
+    invalidateBootstrap((bootstrap) => bootstrap?.scope?.page === 'dashboard');
+    invalidateApiCache('/api/analytics/');
+    void refreshStatsAndEntities({ background: true });
+    void refreshRecentClicks({ background: true });
+  }, [analyticsEdgeKeys, refreshRecentClicks, refreshStatsAndEntities]);
+
+  const { isConnected: isRealtimeConnected } = useSSECacheUpdate({
+    onEvent: handleRealtimeEvent,
+  });
 
   // 处理配置变化
   const handleConfigChange = (newConfig: any) => {
@@ -1011,19 +1037,6 @@ export const Dashboard = () => {
       enabledEntities: newConfig.entities,
       lastClicksColumns: newConfig.recentClicksColumns
     });
-  };
-  
-  // 处理时间范围切换
-  const handleTimeRangeChange = (range: string) => {
-    const today = new Date().toISOString().split('T')[0];
-    setState(prev => ({
-      range: {
-        ...prev.range,
-        interval: range as any,
-        from: today,
-        to: today
-      }
-    }));
   };
   
   // 格式化时间
@@ -1076,6 +1089,11 @@ export const Dashboard = () => {
             </div>
             <div className="mt-1 flex min-h-[3.5rem] flex-col items-start gap-1 text-sm text-on-surface-variant sm:min-h-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
               <span className="leading-5">Real-time tracking overview</span>
+              <span>Updated {formatTime(lastUpdated)}</span>
+              <span>Local {formatTime(currentTime)}</span>
+              <span className={cn(isRealtimeConnected ? 'text-success-fg' : 'text-warning-fg')}>
+                {isRealtimeConnected ? 'Edge sync live' : 'Realtime reconnecting'}
+              </span>
               <DataSourceInfo dataSource={dataSource} queryTime={queryTime || undefined} />
             </div>
             <DataSourceWarning dataSource={dataSource} className="mt-1" />
@@ -1085,10 +1103,18 @@ export const Dashboard = () => {
             {/* Campaign 选择 */}
             <select
               aria-label="Select campaign scope"
+              value={state.selectedCampaign || 'all'}
+              onChange={(event) => {
+                setState({
+                  selectedCampaign: event.target.value === 'all' ? null : event.target.value,
+                });
+              }}
               className="w-full rounded-sm border border-outline-variant/20 bg-surface-container-lowest px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none sm:w-auto"
             >
-              <option>Campaigns</option>
-              <option>All Campaigns</option>
+              <option value="all">All Campaigns</option>
+              {state.selectedCampaign ? (
+                <option value={state.selectedCampaign}>{`Campaign: ${state.selectedCampaign}`}</option>
+              ) : null}
             </select>
             
             {/* 时间范围 - 使用新的日期选择器组件 */}
@@ -1099,7 +1125,7 @@ export const Dashboard = () => {
                   if (range) {
                     setState(prev => ({
                       range: {
-                        interval: preset as any,
+                        interval: normalizeRangeParam(preset) as any,
                         from: range.startDate.split('T')[0],
                         to: range.endDate.split('T')[0]
                       }
@@ -1114,7 +1140,12 @@ export const Dashboard = () => {
             {/* 刷新按钮 */}
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { refreshStatsAndEntities(); refreshRecentClicks(); }}
+                onClick={() => {
+                  invalidateBootstrap((bootstrap) => bootstrap?.scope?.page === 'dashboard');
+                  invalidateApiCache('/api/analytics/');
+                  void refreshStatsAndEntities();
+                  void refreshRecentClicks();
+                }}
                 disabled={isRefreshing}
                 aria-label="Refresh dashboard data"
                 title="Refresh dashboard data"
@@ -1398,7 +1429,9 @@ export const Dashboard = () => {
             <div className="section-header flex items-center justify-between">
               <h2 className="font-display font-semibold text-on-surface">Recent Clicks</h2>
               <button
-                onClick={() => refreshRecentClicksRef.current()?.catch(console.error)}
+                onClick={() => {
+                  void refreshRecentClicks();
+                }}
                 disabled={loading.recentClicks}
                 aria-label="Refresh recent clicks data"
                 className={cn(

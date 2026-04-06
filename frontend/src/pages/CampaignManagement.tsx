@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { 
   Zap, 
   Plus, 
@@ -28,9 +27,58 @@ import { GroupByFilter, filterByGroupBy } from '../components/GroupByFilter';
 import type { GroupByState, GroupByOption } from '../types/filter';
 import { useToast } from '../components/Toast';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { loadBootstrapForLocation, normalizeRangeParam, readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function resolveDateRangeFromPreset(preset: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const start = new Date(today);
+  const normalizedPreset = normalizeRangeParam(preset);
+
+  switch (normalizedPreset) {
+    case 'yesterday':
+      start.setDate(start.getDate() - 1);
+      return {
+        from: start.toISOString().split('T')[0]!,
+        to: start.toISOString().split('T')[0]!,
+        pickerValue: 'yesterday',
+      };
+    case 'last7days':
+      start.setDate(start.getDate() - 6);
+      return {
+        from: start.toISOString().split('T')[0]!,
+        to: today.toISOString().split('T')[0]!,
+        pickerValue: 'last7days',
+      };
+    case 'last30days':
+      start.setDate(start.getDate() - 29);
+      return {
+        from: start.toISOString().split('T')[0]!,
+        to: today.toISOString().split('T')[0]!,
+        pickerValue: 'last30days',
+      };
+    case 'today':
+    default:
+      return {
+        from: today.toISOString().split('T')[0]!,
+        to: today.toISOString().split('T')[0]!,
+        pickerValue: 'today',
+      };
+  }
+}
+
+function getCurrentRangePreset(fallback: string): string {
+  if (typeof window === 'undefined') {
+    return normalizeRangeParam(fallback);
+  }
+
+  return normalizeRangeParam(new URLSearchParams(window.location.search).get('range') || fallback);
 }
 
 // Backend Campaign data structure
@@ -101,19 +149,57 @@ const transformCampaign = (backend: BackendCampaign, stats?: CampaignStats): Cam
   cr: stats?.clicks ? `${(((stats?.conversions || 0) / stats.clicks) * 100).toFixed(1)}%` : '0%'
 });
 
+function mapBootstrapCampaigns(bundle: {
+  data?: {
+    campaigns?: BackendCampaign[];
+    entityStats?: CampaignStats[];
+  };
+} | null | undefined): Campaign[] {
+  const statsMap = new Map<string, CampaignStats>();
+
+  if (Array.isArray(bundle?.data?.entityStats)) {
+    bundle.data.entityStats.forEach((stat) => {
+      if (stat?.name) {
+        statsMap.set(stat.name, stat);
+      }
+    });
+  }
+
+  if (!Array.isArray(bundle?.data?.campaigns)) {
+    return [];
+  }
+
+  return bundle.data.campaigns.map((item) => {
+    const campaignStats =
+      statsMap.get(item.displayId || '') ||
+      statsMap.get(item.id) ||
+      statsMap.get(item.name);
+    return transformCampaign(item, campaignStats);
+  });
+}
+
 export const CampaignManagement = () => {
-  const navigate = useNavigate();
   const toast = useToast();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const bootstrap = readBootstrapPage<{ campaigns?: BackendCampaign[]; entityStats?: CampaignStats[] }>('campaigns');
+  const hasBootstrap = Boolean(bootstrap);
+  const initialBootstrapCampaigns = mapBootstrapCampaigns(bootstrap);
+  const urlRangePreset =
+    typeof window !== 'undefined' ? new URLSearchParams(location.search).get('range') || null : null;
+  const initialRangePreset =
+    urlRangePreset || (typeof bootstrap?.scope?.range === 'string' ? bootstrap.scope.range : 'today');
+  const initialDateRange = resolveDateRangeFromPreset(initialRangePreset);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(initialBootstrapCampaigns);
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
   
   // Date range state
   const [dateRange, setDateRange] = useState<{from: string; to: string}>({
-    from: new Date().toISOString().split('T')[0],
-    to: new Date().toISOString().split('T')[0]
+    from: initialDateRange.from,
+    to: initialDateRange.to
   });
   
   // Form modal state
@@ -142,21 +228,39 @@ export const CampaignManagement = () => {
       const isToday = fromDate.toDateString() === today.toDateString();
       return isToday ? 'today' : 'yesterday';
     } else if (diffDays === 6) {
-      return '7days';
+      return 'last7days';
     } else if (diffDays === 29) {
-      return '30days';
+      return 'last30days';
     }
     return 'custom';
   };
 
   const loadCampaignsWithStats = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!hasBootstrap && campaigns.length === 0) {
+        setLoading(true);
+      }
       setError(null);
+
+      const refreshedBootstrap = await loadBootstrapForLocation().catch(() => null);
+      const requestedRange = getCurrentRangePreset(
+        initialRangePreset || getRangeFromDates(dateRange.from, dateRange.to)
+      );
+
+      if (
+        refreshedBootstrap?.page === 'campaigns' &&
+        (refreshedBootstrap.scope?.range || 'today') === requestedRange
+      ) {
+        const bootstrapCampaigns = mapBootstrapCampaigns(refreshedBootstrap as typeof bootstrap);
+        if (bootstrapCampaigns.length > 0) {
+          setCampaigns(bootstrapCampaigns);
+          return;
+        }
+      }
       
       const [campaignsData, statsData] = await Promise.all([
         fetchCampaigns(),
-        fetchEntityStats('campaigns', getRangeFromDates(dateRange.from, dateRange.to))
+        fetchEntityStats('campaigns', requestedRange)
       ]);
       
       if (Array.isArray(campaignsData)) {
@@ -182,7 +286,7 @@ export const CampaignManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [dateRange.from, dateRange.to]);
+  }, [campaigns.length, dateRange.from, dateRange.to, hasBootstrap, initialRangePreset, location.search]);
 
   useEffect(() => {
     loadCampaignsWithStats();
@@ -322,7 +426,7 @@ export const CampaignManagement = () => {
         <X size={48} className="mb-4" />
         <p className="text-lg font-bold">{error}</p>
         <button 
-          onClick={() => window.location.reload()}
+          onClick={() => void loadCampaignsWithStats()}
           className="mt-4 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest rounded-sm"
         >
           Retry
@@ -352,14 +456,17 @@ export const CampaignManagement = () => {
           {/* Date Range Picker */}
           <div className="w-[280px]">
             <QuickDateRangePicker
-              value="today"
+              value={initialDateRange.pickerValue}
               onChange={(preset, range) => {
+                const normalizedPreset = normalizeRangeParam(preset);
+                const nextUrl = normalizedPreset ? `/campaigns?range=${normalizedPreset}` : '/campaigns';
                 if (range) {
                   setDateRange({
-                    from: range.startDate.split('T')[0],
-                    to: range.endDate.split('T')[0]
+                    from: range.startDate.split('T')[0]!,
+                    to: range.endDate.split('T')[0]!,
                   });
                 }
+                navigate(nextUrl);
               }}
               showTime={false}
               maxRangeDays={365}

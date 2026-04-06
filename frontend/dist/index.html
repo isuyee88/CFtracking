@@ -16,16 +16,6 @@
         --font-display: "Segoe UI", var(--font-sans);
       }
 
-      @keyframes shell-shimmer {
-        0% {
-          background-position: -200% 0;
-        }
-
-        100% {
-          background-position: 200% 0;
-        }
-      }
-
       body {
         margin: 0;
         min-height: 100vh;
@@ -36,163 +26,16 @@
       #root {
         min-height: 100vh;
       }
-
-      .app-boot {
-        position: fixed;
-        inset: 0;
-        z-index: 9999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-        box-sizing: border-box;
-        background:
-          radial-gradient(circle at top, rgba(94, 106, 210, 0.12), transparent 38%),
-          linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-        transition: opacity 180ms ease, visibility 180ms ease;
-      }
-
-      .app-boot.boot-hidden {
-        opacity: 0;
-        visibility: hidden;
-      }
-
-      .boot-panel {
-        width: min(420px, 100%);
-        padding: 28px;
-        border-radius: 24px;
-        background: rgba(255, 255, 255, 0.82);
-        border: 1px solid rgba(255, 255, 255, 0.7);
-        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
-        backdrop-filter: blur(16px);
-      }
-
-      .boot-brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 18px;
-      }
-
-      .boot-logo {
-        width: 40px;
-        height: 40px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, #5e6ad2 0%, #44ddc1 100%);
-      }
-
-      .boot-copy {
-        flex: 1;
-      }
-
-      .boot-title {
-        height: 16px;
-        width: 132px;
-        margin-bottom: 10px;
-      }
-
-      .boot-subtitle {
-        height: 10px;
-        width: 188px;
-      }
-
-      .boot-line {
-        background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
-        background-size: 200% 100%;
-        animation: shell-shimmer 1.2s linear infinite;
-        border-radius: 999px;
-      }
-
-      .boot-metrics {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-        margin-bottom: 12px;
-      }
-
-      .boot-card {
-        min-height: 88px;
-        padding: 16px;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.88);
-        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
-      }
-
-      .boot-card .boot-line:first-child {
-        width: 58%;
-        height: 10px;
-        margin-bottom: 12px;
-      }
-
-      .boot-card .boot-line:last-child {
-        width: 44%;
-        height: 24px;
-      }
-
-      .boot-chart {
-        height: 180px;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.88);
-        padding: 16px;
-        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
-      }
-
-      .boot-chart .boot-line:first-child {
-        width: 42%;
-        height: 10px;
-        margin-bottom: 16px;
-      }
-
-      .boot-chart .boot-line:last-child {
-        height: 128px;
-        border-radius: 14px;
-      }
-
-      @media (max-width: 640px) {
-        .boot-panel {
-          padding: 22px;
-          border-radius: 22px;
-        }
-
-        .boot-metrics {
-          grid-template-columns: 1fr;
-        }
-      }
     </style>
-    <script type="module" crossorigin src="/assets/index-CWJOuaWi.js"></script>
+    <script type="module" crossorigin src="/assets/index-9gsfKyd5.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/react-vendor-CDCYAkPt.js">
-    <link rel="modulepreload" crossorigin href="/assets/router-B5v3Odnl.js">
-    <link rel="modulepreload" crossorigin href="/assets/app-shell-BhHjPDQi.js">
+    <link rel="modulepreload" crossorigin href="/assets/router-DWJrlgOR.js">
+    <link rel="modulepreload" crossorigin href="/assets/app-shell-C5QBSd-8.js">
     <link rel="modulepreload" crossorigin href="/assets/app-contexts-wZWBy7ah.js">
-    <link rel="modulepreload" crossorigin href="/assets/filters-ui-kRiPdOf-.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-BlRE7CuX.css">
-  <link rel="manifest" href="/manifest.webmanifest"></head>
+    <link rel="modulepreload" crossorigin href="/assets/filters-ui-B1Wy5RRl.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-CXkc0UeO.css">
+  </head>
   <body>
-    <div id="app-boot" class="app-boot" aria-hidden="true">
-      <div class="boot-panel">
-        <div class="boot-brand">
-          <div class="boot-logo"></div>
-          <div class="boot-copy">
-            <div class="boot-line boot-title"></div>
-            <div class="boot-line boot-subtitle"></div>
-          </div>
-        </div>
-        <div class="boot-metrics">
-          <div class="boot-card">
-            <div class="boot-line"></div>
-            <div class="boot-line"></div>
-          </div>
-          <div class="boot-card">
-            <div class="boot-line"></div>
-            <div class="boot-line"></div>
-          </div>
-        </div>
-        <div class="boot-chart">
-          <div class="boot-line"></div>
-          <div class="boot-line"></div>
-        </div>
-      </div>
-    </div>
     <div id="root"></div>
   </body>
 </html>

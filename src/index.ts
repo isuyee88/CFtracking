@@ -28,7 +28,11 @@ import { CacheDurableObject } from '@/ssr/cache-do';
 import { EventActor, StatsActor } from '@/handlers/do/deprecated-do';
 import { createAggregationService } from '@/services/analytics/aggregation.service';
 import { handlePlatformCron } from '@/services/platform';
+import { CACHE_CONFIGS, ETagCacheManager, ETagGenerator } from '@/services/cache/etag-cache-manager';
 import { CacheRefreshConsumer, type CacheRefreshMessage } from '@/services/cache/cache-refresh-consumer';
+import { matchAdminPage } from '@/services/page/admin-page-bundle';
+import { getWorkerVersionInfo } from '@/services/cache/version-utils';
+import { appendServerTiming, durationMs, nowMs } from '@/utils/server-timing';
 
 // 导出 Durable Objects（Cloudflare Workers 要求）
 export {
@@ -45,6 +49,59 @@ export {
 };
 
 const app = new Hono<{ Bindings: Env }>();
+const LEGACY_SW_CLEANUP_SCRIPT = `
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((key) => caches.delete(key)));
+    await self.registration.unregister();
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+
+    for (const client of clients) {
+      client.navigate(client.url);
+    }
+  })());
+});
+
+self.addEventListener('fetch', () => {});
+`.trim();
+const HTML_BROWSER_MAX_AGE = 0;
+
+interface HtmlCachePolicy {
+  browserMaxAge: number;
+  edgeMaxAge: number;
+  staleWhileRevalidate: number;
+}
+
+function resolveHtmlCachePolicy(pathname: string, range?: string | null): HtmlCachePolicy {
+  const cacheType = ETagCacheManager.inferCacheType(pathname, range || undefined);
+  const cachePolicy = CACHE_CONFIGS[cacheType];
+
+  return {
+    browserMaxAge: HTML_BROWSER_MAX_AGE,
+    edgeMaxAge: cachePolicy.edgeMaxAge,
+    staleWhileRevalidate: cachePolicy.swr,
+  };
+}
+
+function applyHtmlCacheHeaders(headers: Headers, policy: HtmlCachePolicy) {
+  headers.set('Cache-Control', `public, max-age=${policy.browserMaxAge}, must-revalidate`);
+  headers.set(
+    'CDN-Cache-Control',
+    `public, s-maxage=${policy.edgeMaxAge}, stale-while-revalidate=${policy.staleWhileRevalidate}`
+  );
+  headers.set(
+    'Cloudflare-CDN-Cache-Control',
+    `public, s-maxage=${policy.edgeMaxAge}, stale-while-revalidate=${policy.staleWhileRevalidate}`
+  );
+}
 
 app.use('*', logger());
 app.use(
@@ -73,6 +130,75 @@ app.use('*', async (c, next) => {
 
 app.get('/health', (c) => {
   return c.json(success({ status: 'healthy', timestamp: new Date().toISOString() }));
+});
+
+app.get('/sw.js', () => {
+  return new Response(LEGACY_SW_CLEANUP_SCRIPT, {
+    headers: {
+      'Content-Type': 'application/javascript; charset=UTF-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Service-Worker-Allowed': '/',
+    },
+  });
+});
+
+app.get('/__bootstrap/dashboard/*', async (c) => {
+  const requestUrl = new URL(c.req.url);
+  const pathname = requestUrl.pathname;
+  const requestedHash = pathname.split('/').pop()?.replace(/\.json$/i, '') || '';
+  const requestedVersion = requestUrl.searchParams.get('__version');
+
+  if (requestUrl.searchParams.get('__mode') === 'object' && requestedVersion) {
+    return serveDashboardBootstrapObject(c.req.raw, c.env, requestedHash, requestedVersion);
+  }
+
+  return serveDashboardBootstrap(c.req.raw, c.env, requestedHash);
+});
+
+app.get('/__bootstrap-object/dashboard/*', async (c) => {
+  const pathname = new URL(c.req.url).pathname;
+  const segments = pathname.split('/').filter(Boolean);
+  const requestedHash = segments[2] || '';
+  const requestedVersion = segments[3]?.replace(/\.json$/i, '') || '';
+
+  if (!requestedHash || !requestedVersion) {
+    return c.notFound();
+  }
+
+  return serveDashboardBootstrapObject(c.req.raw, c.env, requestedHash, requestedVersion);
+});
+
+app.get('/__bootstrap/*', async (c) => {
+  const requestUrl = new URL(c.req.url);
+  const pathname = requestUrl.pathname;
+  const segments = pathname.split('/').filter(Boolean);
+  const page = segments[1] || '';
+  const requestedHash = segments[2]?.replace(/\.json$/i, '') || '';
+  const requestedVersion = requestUrl.searchParams.get('__version');
+
+  if (!page || !requestedHash) {
+    return c.notFound();
+  }
+
+  if (requestUrl.searchParams.get('__mode') === 'object' && requestedVersion) {
+    return serveAdminPageBootstrapObject(c.req.raw, c.env, page, requestedHash, requestedVersion);
+  }
+
+  return serveAdminPageBootstrap(c.req.raw, c.env, page, requestedHash);
+});
+
+app.get('/__bootstrap-object/*', async (c) => {
+  const pathname = new URL(c.req.url).pathname;
+  const segments = pathname.split('/').filter(Boolean);
+  const page = segments[1] || '';
+  const requestedHash = segments[2] || '';
+  const requestedVersion = segments[3]?.replace(/\.json$/i, '') || '';
+
+  if (!page || !requestedHash || !requestedVersion) {
+    return c.notFound();
+  }
+
+  return serveAdminPageBootstrapObject(c.req.raw, c.env, page, requestedHash, requestedVersion);
 });
 
 app.get('/api/deployment/info', (c) => {
@@ -125,6 +251,163 @@ import { userPreferenceRoutes } from '@/services/user-preferences/user-preferenc
 import { createMigrationRouter } from '@/services/migration/migration.routes';
 import { createCacheUpdateRoutes } from '@/services/cache/cache-update-service';
 import { createSSECacheNotification } from '@/services/cache/sse-cache-notification';
+import {
+  serveAdminPageBootstrap,
+  serveAdminPageBootstrapObject,
+} from '@/services/bootstrap/admin-bootstrap';
+import {
+  serveDashboardBootstrap,
+  serveDashboardBootstrapObject,
+} from '@/services/bootstrap/dashboard-bootstrap';
+
+type CacheMutationAction = 'create' | 'update' | 'delete';
+
+interface CacheMutationEvent {
+  entity: string;
+  entityId: string;
+  action: CacheMutationAction;
+}
+
+const MUTATION_ENTITY_PREFIXES: Array<{ prefix: string; entity: string }> = [
+  { prefix: '/api/flows/rules', entity: 'rule' },
+  { prefix: '/api/campaigns', entity: 'campaign' },
+  { prefix: '/api/offers', entity: 'offer' },
+  { prefix: '/api/landing-pages', entity: 'landing' },
+  { prefix: '/api/traffic-sources', entity: 'traffic-source' },
+  { prefix: '/api/affiliate-networks', entity: 'affiliate-network' },
+  { prefix: '/api/flows', entity: 'flow' },
+  { prefix: '/api/conversions', entity: 'conversion' },
+  { prefix: '/api/clicks', entity: 'click' },
+  { prefix: '/api/domains', entity: 'domain' },
+  { prefix: '/api/rules', entity: 'rule' },
+  { prefix: '/api/blacklist', entity: 'blacklist' },
+  { prefix: '/api/whitelist', entity: 'whitelist' },
+  { prefix: '/api/user-preferences', entity: 'user-preferences' },
+];
+
+const RESERVED_MUTATION_SEGMENTS = new Set([
+  'schema',
+  'stats',
+  'rules',
+  'equalize',
+  'test',
+  'test-connection',
+  'clone',
+  'regenerate-token',
+  'sync',
+]);
+
+function mapMethodToMutationAction(method: string): CacheMutationAction | null {
+  switch (method.toUpperCase()) {
+    case 'POST':
+      return 'create';
+    case 'PUT':
+    case 'PATCH':
+      return 'update';
+    case 'DELETE':
+      return 'delete';
+    default:
+      return null;
+  }
+}
+
+function extractEntityIdFromPath(pathname: string, prefix: string): string | null {
+  const suffix = pathname.slice(prefix.length).replace(/^\/+/, '');
+  if (!suffix) {
+    return null;
+  }
+
+  const candidate = suffix.split('/')[0];
+  if (!candidate || RESERVED_MUTATION_SEGMENTS.has(candidate)) {
+    return null;
+  }
+
+  return decodeURIComponent(candidate);
+}
+
+function extractEntityIdFromPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const result =
+    'data' in payload && payload.data && typeof payload.data === 'object'
+      ? (payload.data as Record<string, unknown>)
+      : (payload as Record<string, unknown>);
+
+  const candidates = [
+    result.id,
+    result.displayId,
+    result.conversionId,
+    result.clickId,
+    result.preferenceId,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+async function resolveCacheMutationEvent(c: any): Promise<CacheMutationEvent | null> {
+  const action = mapMethodToMutationAction(c.req.method);
+  if (!action || !c.res.ok) {
+    return null;
+  }
+
+  const url = new URL(c.req.url);
+  const mapping = MUTATION_ENTITY_PREFIXES.find(({ prefix }) => url.pathname.startsWith(prefix));
+  if (!mapping) {
+    return null;
+  }
+
+  const pathEntityId = extractEntityIdFromPath(url.pathname, mapping.prefix);
+  let entityId = pathEntityId;
+  let normalizedAction = action;
+
+  if (!entityId && action === 'create') {
+    try {
+      const payload = await c.res.clone().json();
+      entityId = extractEntityIdFromPayload(payload);
+    } catch {
+      entityId = null;
+    }
+  }
+
+  if (pathEntityId && action === 'create') {
+    normalizedAction = 'update';
+  }
+
+  if (!entityId) {
+    return null;
+  }
+
+  return {
+    entity: mapping.entity,
+    entityId,
+    action: normalizedAction,
+  };
+}
+
+app.use('/api/*', async (c, next) => {
+  await next();
+
+  const mutation = await resolveCacheMutationEvent(c);
+  if (!mutation) {
+    return;
+  }
+
+  c.executionCtx.waitUntil(
+    createCacheUpdateRoutes(c.env)
+      .onDataChanged(mutation.entity, mutation.entityId, mutation.action)
+      .catch((error) => {
+        console.error('[CacheUpdate] Post-mutation invalidation failed:', error);
+      })
+  );
+});
 
 app.route('/api/campaigns', createCampaignRouter());
 app.route('/api/flows', createFlowRouter());
@@ -160,10 +443,111 @@ app.get('/api/cache/events', async (c) => {
   return sseService.handleConnection(c.req.raw, userId);
 });
 
+app.get('/events/cache', async (c) => {
+  const userId = c.req.query('userId') || 'anonymous';
+  const sseService = createSSECacheNotification(c.env);
+  return sseService.handleConnection(c.req.raw, userId);
+});
+
 app.onError((err, c) => {
   console.error('Error:', err);
   return c.json(error(err.message, 'INTERNAL_ERROR'), HTTP_STATUS.INTERNAL_ERROR);
 });
+
+function isHtmlPageRequest(request: Request, pathname: string) {
+  if (request.method !== 'GET') {
+    return false;
+  }
+
+  return ['/', '/dashboard'].includes(pathname) || Boolean(matchAdminPage(new URL(request.url)));
+}
+
+function isAppControlRequest(pathname: string) {
+  return (
+    pathname === '/health' ||
+    pathname === '/sw.js' ||
+    pathname.startsWith('/__bootstrap/') ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/events/')
+  );
+}
+
+function resolveRequestedRange(pathname: string, url: URL): string | null {
+  const queryRange = url.searchParams.get('range');
+  if (queryRange) {
+    return queryRange;
+  }
+
+  if (pathname === '/' || pathname === '/dashboard' || pathname === '/campaigns') {
+    return 'today';
+  }
+
+  return null;
+}
+
+async function serveSpaShellHtml(request: Request, env: Env): Promise<Response> {
+  const requestStartedAt = nowMs();
+  const url = new URL(request.url);
+  const cachePolicy = resolveHtmlCachePolicy(url.pathname, resolveRequestedRange(url.pathname, url));
+  const assetRequest = new Request(new URL('/index.html', url.origin).toString(), request);
+  const assetFetchStartedAt = nowMs();
+  const assetResponse = await env.ASSETS.fetch(assetRequest);
+  const assetFetchDuration = durationMs(assetFetchStartedAt);
+
+  if (!assetResponse.ok) {
+    return assetResponse;
+  }
+
+  const htmlReadStartedAt = nowMs();
+  const html = await assetResponse.text();
+  const htmlReadDuration = durationMs(htmlReadStartedAt);
+  const workerVersion = getWorkerVersionInfo(env);
+  const etagStartedAt = nowMs();
+  const etag = ETagGenerator.generate(
+    {
+      html,
+      version: workerVersion.namespace,
+    },
+    `spa-shell-${workerVersion.namespace}`
+  );
+  const etagDuration = durationMs(etagStartedAt);
+  const headers = new Headers(assetResponse.headers);
+
+  headers.set('Content-Type', 'text/html; charset=UTF-8');
+  applyHtmlCacheHeaders(headers, cachePolicy);
+  headers.set('ETag', etag);
+  headers.set('Timing-Allow-Origin', '*');
+  headers.set('Vary', 'Accept-Encoding');
+
+  const metrics = [
+    { name: 'asset', dur: assetFetchDuration, desc: 'index.html' },
+    { name: 'htmlread', dur: htmlReadDuration, desc: 'asset-body' },
+    { name: 'etag', dur: etagDuration, desc: 'shell' },
+    { name: 'ttl', desc: `edge=${cachePolicy.edgeMaxAge};swr=${cachePolicy.staleWhileRevalidate}` },
+  ];
+
+  if (ETagGenerator.matches(request.headers.get('If-None-Match'), etag)) {
+    appendServerTiming(headers, [
+      ...metrics,
+      { name: 'reval', desc: '304' },
+      { name: 'total', dur: durationMs(requestStartedAt), desc: 'spa-shell' },
+    ]);
+    return new Response(null, {
+      status: 304,
+      headers,
+    });
+  }
+
+  appendServerTiming(headers, [
+    ...metrics,
+    { name: 'total', dur: durationMs(requestStartedAt), desc: 'spa-shell' },
+  ]);
+
+  return new Response(html, {
+    status: assetResponse.status,
+    headers,
+  });
+}
 
 // 导出 app 供 SSR Worker 使用
 export { app }
@@ -182,8 +566,12 @@ export default {
     }
     
     // 处理 API 请求（包括 /api/* 和 /health）
-    if (url.pathname.startsWith('/api/') || url.pathname === '/health') {
+    if (isAppControlRequest(url.pathname)) {
       return app.fetch(request, env, ctx);
+    }
+
+    if (isHtmlPageRequest(request, url.pathname)) {
+      return serveSpaShellHtml(request, env);
     }
     
     // 处理直接通过域名访问的追踪请求

@@ -19,6 +19,7 @@
     "deploy": "npm run verify && npm run build:frontend && node scripts/generate-deploy-message.js && wrangler deploy --keep-vars --message \"$(Get-Content -Raw dist/deploy-message.txt)\"",
     "deploy:bash": "npm run verify && npm run build:frontend && node scripts/generate-deploy-message.js && wrangler deploy --keep-vars --message $(cat dist/deploy-message.txt)",
     "deploy:with-commit": "npm run verify && npm run build:frontend && node scripts/deploy-with-git-commit.js",
+    "warm:prod": "npx tsx scripts/warm-prod-bootstrap.ts",
     "preview": "npm run build:frontend && wrangler dev --config wrangler.dev.toml",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",

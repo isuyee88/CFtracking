@@ -40,6 +40,7 @@ import { formatTrafficSourceForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import type { TrafficSource, ParameterTemplate, PostbackConfig } from '../types/trafficSource';
 import { getTemplateById } from '../data/trafficSourceTemplates';
+import { readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -69,8 +70,12 @@ const getTemplateName = (templateId?: string): string => {
 
 export const TrafficSources = () => {
   const toast = useToast();
-  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage<{ trafficSources?: TrafficSource[] }>('traffic-sources');
+  const hasBootstrap = Boolean(bootstrap);
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>(
+    Array.isArray(bootstrap?.data?.trafficSources) ? bootstrap.data.trafficSources : []
+  );
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   
   // Form modal state
@@ -100,7 +105,9 @@ export const TrafficSources = () => {
   useEffect(() => {
     const loadTrafficSources = async () => {
       try {
-        setLoading(true);
+        if (!hasBootstrap && trafficSources.length === 0) {
+          setLoading(true);
+        }
         const data = await fetchTrafficSources();
         if (Array.isArray(data)) {
           setTrafficSources(data);
@@ -189,7 +196,7 @@ export const TrafficSources = () => {
     };
 
     loadTrafficSources();
-  }, []);
+  }, [hasBootstrap, trafficSources.length]);
 
   const handleCreateSource = () => {
     setFormMode('create');

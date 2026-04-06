@@ -1,12 +1,13 @@
 /**
  * File: RuleManagement.tsx
  * Purpose: 规则管理页面，创建和管理自动化规则
- * Input/Output: 展示规则列表，支持CRUD操作
- * Logic: 从API获取规则数据，提供创建、编辑、删除、启用/禁用功能
- * 前后端交互: 调用 /api/rules 接口
+ * Input/Output: 展示规则列表，支持 CRUD 操作
+ * Logic: 从边缘 bootstrap 读取规则数据，提供创建、编辑、删除、启用/禁用功能
+ * 前后端交互: 首屏读取 bootstrap，对规则变更仍保留写接口
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Plus, 
   Trash2, 
@@ -26,23 +27,33 @@ import {
   fetchRules, createRule, updateRule, deleteRule, enableRule, disableRule,
   type Rule, type CreateRuleDTO, type UpdateRuleDTO 
 } from '../services/api';
+import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 export const RuleManagement = () => {
-  const [rules, setRules] = useState<Rule[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentQuery = searchParams.toString();
+  const bootstrap = readBootstrapPage<{ rules?: Rule[]; meta?: { total?: number } }>('rules');
+  const hasBootstrap = Boolean(bootstrap);
+  const [rules, setRules] = useState<Rule[]>(Array.isArray(bootstrap?.data?.rules) ? bootstrap.data.rules : []);
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedRule, setSelectedRule] = useState<Rule | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedType, setSelectedType] = useState<'all' | 'campaign' | 'platform' | 'flow'>('all');
-  const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'paused' | 'deleted'>('all');
-  const [total, setTotal] = useState(0);
+  const [selectedType, setSelectedType] = useState<'all' | 'campaign' | 'platform' | 'flow'>(
+    (bootstrap?.scope?.type as 'all' | 'campaign' | 'platform' | 'flow') || 'all'
+  );
+  const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'paused' | 'deleted'>(
+    (bootstrap?.scope?.status as 'all' | 'active' | 'paused' | 'deleted') || 'all'
+  );
+  const [total, setTotal] = useState(Number(bootstrap?.data?.meta?.total || 0));
   const [saving, setSaving] = useState(false);
+  const skipInitialBootstrapLoadRef = useRef(Boolean(bootstrap?.data?.rules));
 
   const [formData, setFormData] = useState({
     name: '',
@@ -59,6 +70,31 @@ export const RuleManagement = () => {
     setError(null);
     
     try {
+      const nextUrl = new URL(window.location.href);
+      if (selectedType === 'all') {
+        nextUrl.searchParams.delete('type');
+      } else {
+        nextUrl.searchParams.set('type', selectedType);
+      }
+      if (selectedStatus === 'all') {
+        nextUrl.searchParams.delete('status');
+      } else {
+        nextUrl.searchParams.set('status', selectedStatus);
+      }
+
+      const nextQuery = nextUrl.searchParams.toString();
+      if (nextQuery !== currentQuery) {
+        setSearchParams(nextUrl.searchParams, { replace: true });
+        return;
+      }
+
+      const bundle = await loadBootstrapForLocation({ url: nextUrl, force: true }).catch(() => null);
+      if (bundle?.page === 'rules') {
+        setRules(Array.isArray(bundle.data?.rules) ? bundle.data.rules as Rule[] : []);
+        setTotal(Number(bundle.data?.meta?.total || 0));
+        return;
+      }
+
       const result = await fetchRules({
         type: selectedType === 'all' ? undefined : selectedType,
         status: selectedStatus === 'all' ? undefined : selectedStatus,
@@ -71,9 +107,14 @@ export const RuleManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedType, selectedStatus]);
+  }, [currentQuery, selectedStatus, selectedType, setSearchParams]);
 
   useEffect(() => {
+    if (skipInitialBootstrapLoadRef.current) {
+      skipInitialBootstrapLoadRef.current = false;
+      return;
+    }
+
     loadRules();
   }, [loadRules]);
 

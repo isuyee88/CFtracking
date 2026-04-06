@@ -36,6 +36,7 @@ import { formatOfferForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 import { useToast } from '../components/Toast';
+import { readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -150,8 +151,10 @@ const OFFER_FIELDS: FormField[] = [
 
 export const Offers = () => {
   const toast = useToast();
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage<{ offers?: Offer[]; affiliateNetworks?: Array<{ id: string; name: string }> }>('offers');
+  const hasBootstrap = Boolean(bootstrap);
+  const [offers, setOffers] = useState<Offer[]>(Array.isArray(bootstrap?.data?.offers) ? bootstrap.data.offers : []);
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   
   // Form modal state
@@ -181,10 +184,18 @@ export const Offers = () => {
   });
 
   // Affiliate networks state
-  const [affiliateNetworks, setAffiliateNetworks] = useState<{id: string; name: string}[]>([]);
+  const [affiliateNetworks, setAffiliateNetworks] = useState<{id: string; name: string}[]>(
+    Array.isArray(bootstrap?.data?.affiliateNetworks)
+      ? bootstrap.data.affiliateNetworks.map((network: any) => ({ id: network.id, name: network.name }))
+      : []
+  );
 
   // Fetch affiliate networks for dropdown
   useEffect(() => {
+    if (affiliateNetworks.length > 0) {
+      return;
+    }
+
     const loadAffiliateNetworks = async () => {
       try {
         const data = await fetchAffiliateNetworks();
@@ -196,13 +207,15 @@ export const Offers = () => {
       }
     };
     loadAffiliateNetworks();
-  }, []);
+  }, [affiliateNetworks.length]);
 
   // Fetch offers from API
   useEffect(() => {
     const loadOffers = async () => {
       try {
-        setLoading(true);
+        if (!hasBootstrap && offers.length === 0) {
+          setLoading(true);
+        }
         const data = await fetchOffers();
         if (Array.isArray(data)) {
           setOffers(data);
@@ -273,7 +286,7 @@ export const Offers = () => {
     };
 
     loadOffers();
-  }, []);
+  }, [hasBootstrap, offers.length]);
 
   const handleCreateOffer = () => {
     setFormMode('create');

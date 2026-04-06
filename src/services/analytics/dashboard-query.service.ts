@@ -96,31 +96,31 @@ export class DashboardQueryService {
    * - < 90澶╂暟鎹?鈹€鈹€鈻?DO璇诲彇
    * - > 90澶╂暟鎹?鈹€鈹€鈻?D1璇诲彇
    */
-  async getDashboardStats(range: string, env: Env): Promise<DashboardQueryResult> {
+  async getDashboardStats(range: string, env: Env, campaignId?: string): Promise<DashboardQueryResult> {
     // Only keep DO on the hot "today" path until DO/D1 aggregates are fully aligned.
-    const useDO = range === 'today';
+    const useDO = range === 'today' && !campaignId;
     const dataSource: DataSource = useDO ? 'DO' : 'D1';
 
-    console.log(`[DashboardQueryService] Range: ${range}, DataSource: ${dataSource}`);
+    console.log(`[DashboardQueryService] Range: ${range}, Campaign: ${campaignId || 'all'}, DataSource: ${dataSource}`);
 
     if (useDO) {
       // 浠?DO 鑾峰彇鏁版嵁
       return this.getDashboardStatsFromDO(range, env);
     } else {
       // 浠?D1 鑾峰彇鏁版嵁
-      return this.getDashboardStatsFromD1(range);
+      return this.getDashboardStatsFromD1(range, campaignId);
     }
   }
 
   /**
    * 浠?D1 鑾峰彇 Dashboard 缁熻鏁版嵁
    */
-  private async getDashboardStatsFromD1(range: string): Promise<DashboardQueryResult> {
-    const d1Result = await this.trafficRepo.getDashboardStats(range);
-    const d1ChartData = await this.trafficRepo.getChartData(range);
+  private async getDashboardStatsFromD1(range: string, campaignId?: string): Promise<DashboardQueryResult> {
+    const d1Result = await this.trafficRepo.getDashboardStats(range, campaignId);
+    const d1ChartData = await this.trafficRepo.getChartData(range, campaignId);
     const metrics = this.formatD1Metrics(d1Result);
     const chartData = this.formatD1ChartData(d1ChartData);
-    const entityStats = await this.getEntityStatsFromD1(range);
+    const entityStats = await this.getEntityStatsFromD1(range, campaignId);
 
     return {
       metrics,
@@ -214,7 +214,11 @@ export class DashboardQueryService {
     country?: string;
     device?: string;
   }): Promise<{ list: any[]; total: number; dataSource: DataSource }> {
-    const clicks = await this.trafficRepo.getRecentClicks(params.limit || 50);
+    const clicks = await this.trafficRepo.getRecentClicks({
+      limit: params.limit || 50,
+      range: params.range,
+      campaignId: params.campaignId,
+    });
     return {
       list: clicks,
       total: clicks.length,
@@ -226,8 +230,8 @@ export class DashboardQueryService {
    * 鑾峰彇瀹炰綋缁熻鏁版嵁
    * 浠?D1 鑾峰彇鏁版嵁
    */
-  async getEntityStats(entityType: string, range: string): Promise<EntityStatItem[]> {
-    const stats = await this.trafficRepo.getEntityStats(entityType, range);
+  async getEntityStats(entityType: string, range: string, campaignId?: string): Promise<EntityStatItem[]> {
+    const stats = await this.trafficRepo.getEntityStats(entityType, range, campaignId);
     return stats.map((item: any) => ({
       name: item.name || 'Unknown',
       clicks: Number(item.clicks) || 0,
@@ -242,13 +246,13 @@ export class DashboardQueryService {
   /**
    * 浠?D1 鑾峰彇瀹炰綋缁熻鏁版嵁
    */
-  private async getEntityStatsFromD1(range: string): Promise<Record<string, EntityStatItem[]>> {
+  private async getEntityStatsFromD1(range: string, campaignId?: string): Promise<Record<string, EntityStatItem[]>> {
     const entityTypes = ['campaigns', 'countries', 'device_types', 'browsers'];
     const stats: Record<string, EntityStatItem[]> = {};
 
     for (const entityType of entityTypes) {
       try {
-        const entityStats = await this.trafficRepo.getEntityStats(entityType, range);
+        const entityStats = await this.trafficRepo.getEntityStats(entityType, range, campaignId);
         stats[entityType] = entityStats.map((item: any) => ({
           name: item.name || 'Unknown',
           clicks: Number(item.clicks) || 0,

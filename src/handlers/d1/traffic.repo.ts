@@ -308,18 +308,33 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     };
   }
 
-  private async getRawDashboardMetrics(range: string): Promise<TrackingMetrics> {
+  private async getRawDashboardMetrics(range: string, campaignId?: string): Promise<TrackingMetrics> {
     const { start, end } = this.getTimestampRange(range);
+    const campaignFilter = campaignId ? ' AND campaignId = ?' : '';
+    const bindings: Array<string> = [];
+    const pushRangeBinding = () => {
+      bindings.push(start, end);
+      if (campaignId) {
+        bindings.push(campaignId);
+      }
+    };
+
+    pushRangeBinding();
+    pushRangeBinding();
+    pushRangeBinding();
+    pushRangeBinding();
+    pushRangeBinding();
+
     const result = await this.db
       .prepare(`
         SELECT
-          (SELECT COUNT(*) FROM clicks WHERE timestamp >= ? AND timestamp <= ?) AS clicks,
-          (SELECT COUNT(DISTINCT visitorId) FROM clicks WHERE timestamp >= ? AND timestamp <= ?) AS uniqueClicks,
-          (SELECT COALESCE(SUM(cost), 0) FROM clicks WHERE timestamp >= ? AND timestamp <= ?) AS spend,
-          (SELECT COUNT(*) FROM conversions WHERE timestamp >= ? AND timestamp <= ? AND status = 'approved') AS conversions,
-          (SELECT COALESCE(SUM(revenue), 0) FROM conversions WHERE timestamp >= ? AND timestamp <= ? AND status = 'approved') AS revenue
+          (SELECT COUNT(*) FROM clicks WHERE timestamp >= ? AND timestamp <= ?${campaignFilter}) AS clicks,
+          (SELECT COUNT(DISTINCT visitorId) FROM clicks WHERE timestamp >= ? AND timestamp <= ?${campaignFilter}) AS uniqueClicks,
+          (SELECT COALESCE(SUM(cost), 0) FROM clicks WHERE timestamp >= ? AND timestamp <= ?${campaignFilter}) AS spend,
+          (SELECT COUNT(*) FROM conversions WHERE timestamp >= ? AND timestamp <= ?${campaignFilter} AND status = 'approved') AS conversions,
+          (SELECT COALESCE(SUM(revenue), 0) FROM conversions WHERE timestamp >= ? AND timestamp <= ?${campaignFilter} AND status = 'approved') AS revenue
       `)
-      .bind(start, end, start, end, start, end, start, end, start, end)
+      .bind(...bindings)
       .first();
 
     const metrics = this.calculateMetrics({
@@ -336,8 +351,21 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     };
   }
 
-  private async getRawChartData(range: string): Promise<any[]> {
+  private async getRawChartData(range: string, campaignId?: string): Promise<any[]> {
     const { start, end } = this.getTimestampRange(range);
+    const campaignFilter = campaignId ? ' AND campaignId = ?' : '';
+    const bindings: Array<string> = [start, end];
+
+    if (campaignId) {
+      bindings.push(campaignId);
+    }
+
+    bindings.push(start, end);
+
+    if (campaignId) {
+      bindings.push(campaignId);
+    }
+
     const result = await this.db
       .prepare(`
         SELECT
@@ -354,7 +382,7 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
             COALESCE(SUM(cost), 0) AS spend,
             0 AS revenue
           FROM clicks
-          WHERE timestamp >= ? AND timestamp <= ?
+          WHERE timestamp >= ? AND timestamp <= ?${campaignFilter}
           GROUP BY substr(timestamp, 1, 10)
 
           UNION ALL
@@ -366,20 +394,33 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
             0 AS spend,
             COALESCE(SUM(revenue), 0) AS revenue
           FROM conversions
-          WHERE timestamp >= ? AND timestamp <= ? AND status = 'approved'
+          WHERE timestamp >= ? AND timestamp <= ?${campaignFilter} AND status = 'approved'
           GROUP BY substr(timestamp, 1, 10)
         )
         GROUP BY date
         ORDER BY date ASC
       `)
-      .bind(start, end, start, end)
+      .bind(...bindings)
       .all();
 
     return (result.results as unknown as any[]) || [];
   }
 
-  private async getRawEntityStats(fieldName: string, range: string): Promise<any[]> {
+  private async getRawEntityStats(fieldName: string, range: string, campaignId?: string): Promise<any[]> {
     const { start, end } = this.getTimestampRange(range);
+    const campaignFilter = campaignId ? ' AND campaignId = ?' : '';
+    const bindings: Array<string> = [start, end];
+
+    if (campaignId) {
+      bindings.push(campaignId);
+    }
+
+    bindings.push(start, end);
+
+    if (campaignId) {
+      bindings.push(campaignId);
+    }
+
     const result = await this.db
       .prepare(`
         SELECT
@@ -397,7 +438,7 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
             COALESCE(SUM(cost), 0) AS spend,
             0 AS revenue
           FROM clicks
-          WHERE timestamp >= ? AND timestamp <= ? AND ${fieldName} IS NOT NULL
+          WHERE timestamp >= ? AND timestamp <= ?${campaignFilter} AND ${fieldName} IS NOT NULL
           GROUP BY ${fieldName}
 
           UNION ALL
@@ -409,14 +450,14 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
             0 AS spend,
             COALESCE(SUM(revenue), 0) AS revenue
           FROM conversions
-          WHERE timestamp >= ? AND timestamp <= ? AND status = 'approved' AND ${fieldName} IS NOT NULL
+          WHERE timestamp >= ? AND timestamp <= ?${campaignFilter} AND status = 'approved' AND ${fieldName} IS NOT NULL
           GROUP BY ${fieldName}
         )
         GROUP BY name
         ORDER BY clicks DESC, conversions DESC
         LIMIT 10
       `)
-      .bind(start, end, start, end)
+      .bind(...bindings)
       .all();
 
     return (result.results as unknown as any[]) || [];
@@ -425,8 +466,14 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
   /**
    * 获取仪表板统计数据
    */
-  async getDashboardStats(range: string): Promise<any[]> {
+  async getDashboardStats(range: string, campaignId?: string): Promise<any[]> {
     const dateRange = this.getDateRange(range);
+    const bindings: Array<string> = [dateRange.start, dateRange.end];
+    const campaignFilter = campaignId ? ' AND campaignId = ?' : '';
+
+    if (campaignId) {
+      bindings.push(campaignId);
+    }
     
     const result = await this.db
       .prepare(`
@@ -437,9 +484,9 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
           COALESCE(SUM(spend), 0) as spend,
           COALESCE(SUM(revenue), 0) as revenue
         FROM trafficSummary
-        WHERE date >= ? AND date <= ?
+        WHERE date >= ? AND date <= ?${campaignFilter}
       `)
-      .bind(dateRange.start, dateRange.end)
+      .bind(...bindings)
       .first();
 
     const summaryData = {
@@ -449,7 +496,7 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
       spend: Number(result?.spend) || 0,
       revenue: Number(result?.revenue) || 0,
     };
-    const rawMetrics = await this.getRawDashboardMetrics(range);
+    const rawMetrics = await this.getRawDashboardMetrics(range, campaignId);
     const metrics = this.hasAggregateData(summaryData)
       ? {
           ...this.calculateMetrics(summaryData),
@@ -471,8 +518,14 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
   /**
    * 获取图表数据
    */
-  async getChartData(range: string): Promise<any[]> {
+  async getChartData(range: string, campaignId?: string): Promise<any[]> {
     const dateRange = this.getDateRange(range);
+    const bindings: Array<string> = [dateRange.start, dateRange.end];
+    const campaignFilter = campaignId ? ' AND campaignId = ?' : '';
+
+    if (campaignId) {
+      bindings.push(campaignId);
+    }
     
     const result = await this.db
       .prepare(`
@@ -483,11 +536,11 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
           SUM(spend) as spend,
           SUM(revenue) as revenue
         FROM trafficSummary
-        WHERE date >= ? AND date <= ?
+        WHERE date >= ? AND date <= ?${campaignFilter}
         GROUP BY date
         ORDER BY date ASC
       `)
-      .bind(dateRange.start, dateRange.end)
+      .bind(...bindings)
       .all();
 
     const summaryRows = (result.results as unknown as any[]) || [];
@@ -495,13 +548,23 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
       return summaryRows;
     }
 
-    return this.getRawChartData(range);
+    return this.getRawChartData(range, campaignId);
   }
 
   /**
    * 获取最近点击数据 - 从clicks表读取真实数据
    */
-  async getRecentClicks(limit: number): Promise<any[]> {
+  async getRecentClicks(params: { limit: number; range?: string; campaignId?: string }): Promise<any[]> {
+    const { start, end } = this.getTimestampRange(params.range || 'today');
+    const bindings: Array<string | number> = [start, end];
+    const campaignFilter = params.campaignId ? ' AND campaignId = ?' : '';
+
+    if (params.campaignId) {
+      bindings.push(params.campaignId);
+    }
+
+    bindings.push(params.limit);
+
     const result = await this.db
       .prepare(`
         SELECT 
@@ -528,10 +591,11 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
           cost,
           isUnique
         FROM clicks 
+        WHERE timestamp >= ? AND timestamp <= ?${campaignFilter}
         ORDER BY timestamp DESC
         LIMIT ?
       `)
-      .bind(limit)
+      .bind(...bindings)
       .all();
 
     const clicks = (result.results as unknown as any[]) || [];
@@ -586,7 +650,7 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
   /**
    * 获取实体统计数据
    */
-  async getEntityStats(entityType: string, range: string): Promise<any[]> {
+  async getEntityStats(entityType: string, range: string, campaignId?: string): Promise<any[]> {
     const dateRange = this.getDateRange(range);
     let fieldName = entityType;
     
@@ -606,6 +670,13 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
       fieldName = fieldMap[entityType];
     }
     
+    const bindings: Array<string> = [dateRange.start, dateRange.end];
+    const campaignFilter = campaignId ? ' AND campaignId = ?' : '';
+
+    if (campaignId) {
+      bindings.push(campaignId);
+    }
+
     const result = await this.db
       .prepare(`
         SELECT 
@@ -616,12 +687,12 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
           SUM(spend) as spend,
           SUM(revenue) as revenue
         FROM trafficSummary
-        WHERE date >= ? AND date <= ? AND ${fieldName} IS NOT NULL
+        WHERE date >= ? AND date <= ?${campaignFilter} AND ${fieldName} IS NOT NULL
         GROUP BY ${fieldName}
         ORDER BY clicks DESC
         LIMIT 10
       `)
-      .bind(dateRange.start, dateRange.end)
+      .bind(...bindings)
       .all();
 
     const summaryRows = (result.results as unknown as any[]) || [];
@@ -629,7 +700,7 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
       return summaryRows;
     }
 
-    return this.getRawEntityStats(fieldName, range);
+    return this.getRawEntityStats(fieldName, range, campaignId);
   }
 
   async getCustomReport(options: ReportQueryOptions): Promise<any[]> {

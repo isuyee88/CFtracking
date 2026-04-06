@@ -17,6 +17,7 @@ import { IdService } from '@/services/id.service';
 
 export class FlowRepository extends BaseRepository<Flow> {
   private idService: IdService;
+  private flowRulesTableReady = false;
 
   constructor(db: D1Database) {
     super(db, 'flows');
@@ -225,6 +226,8 @@ export class FlowRepository extends BaseRepository<Flow> {
    * 创建 Flow 规则
    */
   async createFlowRule(data: CreateFlowRuleDTO): Promise<FlowRule> {
+    await this.ensureFlowRulesTable();
+
     const now = new Date().toISOString();
     const priority = data.priority ?? 0;
     const ruleId = crypto.randomUUID();
@@ -260,6 +263,8 @@ export class FlowRepository extends BaseRepository<Flow> {
    * 获取 Flow 规则详情
    */
   async getFlowRuleById(id: string): Promise<FlowRule | null> {
+    await this.ensureFlowRulesTable();
+
     const result = await this.db
       .prepare('SELECT * FROM flowRules WHERE id = ?')
       .bind(id)
@@ -276,6 +281,8 @@ export class FlowRepository extends BaseRepository<Flow> {
    * 获取 Flow 的所有规则
    */
   async getFlowRules(flowId: string): Promise<FlowRule[]> {
+    await this.ensureFlowRulesTable();
+
     const result = await this.db
       .prepare('SELECT * FROM flowRules WHERE flowId = ? ORDER BY priority ASC, createdAt ASC')
       .bind(flowId)
@@ -292,6 +299,8 @@ export class FlowRepository extends BaseRepository<Flow> {
    * 更新 Flow 规则
    */
   async updateFlowRule(id: string, data: UpdateFlowRuleDTO): Promise<FlowRule | null> {
+    await this.ensureFlowRulesTable();
+
     const fields: string[] = [];
     const values: unknown[] = [];
 
@@ -340,6 +349,8 @@ export class FlowRepository extends BaseRepository<Flow> {
    * 删除 Flow 规则（软删除）
    */
   async deleteFlowRule(id: string): Promise<boolean> {
+    await this.ensureFlowRulesTable();
+
     const result = await this.db
       .prepare("UPDATE flowRules SET status = 'deleted' WHERE id = ?")
       .bind(id)
@@ -351,18 +362,86 @@ export class FlowRepository extends BaseRepository<Flow> {
    * 解析 FlowRule 数据库记录
    */
   private parseFlowRule(row: Record<string, unknown>): FlowRule {
+    const fallbackCondition: FilterGroup = {
+      id: `recovered-${String(row.id || 'rule')}`,
+      name: 'Recovered condition group',
+      logic: 'AND',
+      filters: [],
+      groups: [],
+      enabled: true,
+    };
+
+    const parsedCondition = this.safeParseJson<FilterGroup>(row.condition, fallbackCondition);
+    const parsedAction = this.safeParseJson<FlowRule['action']>(row.action, { type: 'allow' });
+
     return {
       id: row.id as string,
       flowId: row.flowId as string,
       name: row.name as string,
       description: row.description as string | undefined,
       priority: row.priority as number,
-      condition: JSON.parse(row.condition as string) as FilterGroup,
-      action: JSON.parse(row.action as string) as FlowRule['action'],
+      condition: {
+        ...fallbackCondition,
+        ...parsedCondition,
+        filters: Array.isArray(parsedCondition.filters) ? parsedCondition.filters : [],
+        groups: Array.isArray(parsedCondition.groups) ? parsedCondition.groups : [],
+        logic: parsedCondition.logic === 'OR' ? 'OR' : 'AND',
+        enabled: typeof parsedCondition.enabled === 'boolean' ? parsedCondition.enabled : true,
+      },
+      action: {
+        type: parsedAction.type || 'allow',
+        targetId: parsedAction.targetId,
+        redirectUrl: parsedAction.redirectUrl,
+        blockReason: parsedAction.blockReason,
+        weight: typeof parsedAction.weight === 'number' ? parsedAction.weight : undefined,
+      },
       status: row.status as FlowRule['status'],
       createdAt: row.createdAt as string,
       updatedAt: row.updatedAt as string,
     };
+  }
+
+  private safeParseJson<T>(value: unknown, fallback: T): T {
+    if (value === null || value === undefined || value === '') {
+      return fallback;
+    }
+
+    if (typeof value !== 'string') {
+      return value as T;
+    }
+
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private async ensureFlowRulesTable(): Promise<void> {
+    if (this.flowRulesTableReady) {
+      return;
+    }
+
+    await this.db.batch([
+      this.db.prepare(`
+        CREATE TABLE IF NOT EXISTS flowRules (
+          id TEXT PRIMARY KEY,
+          flowId TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          priority INTEGER NOT NULL DEFAULT 0,
+          condition TEXT NOT NULL,
+          action TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        )
+      `),
+      this.db.prepare('CREATE INDEX IF NOT EXISTS idx_flowRules_flowId ON flowRules(flowId)'),
+      this.db.prepare('CREATE INDEX IF NOT EXISTS idx_flowRules_status ON flowRules(status)'),
+    ]);
+
+    this.flowRulesTableReady = true;
   }
 
   // ==================== Flow Statistics ====================

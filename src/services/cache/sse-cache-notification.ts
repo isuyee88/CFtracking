@@ -13,10 +13,20 @@ export interface SSEEvent {
   type: SSEEventType;
   timestamp: number;
   cacheKey: string;
+  page?: string;
+  scopeHash?: string;
   entity?: string;
   entityId?: string;
   action?: 'create' | 'update' | 'delete';
   message?: string;
+  version?: string;
+}
+
+export interface BootstrapSSEPayload {
+  cacheKey: string;
+  page: string;
+  scopeHash: string;
+  version: string;
 }
 
 interface NotifyResponse {
@@ -49,6 +59,54 @@ export class SSECacheNotificationService {
           cacheKey,
         },
       ],
+      userId
+    );
+  }
+
+  async notifyCacheUpdated(cacheKey: string, version?: string, userId?: string): Promise<void> {
+    await this.dispatchEvents(
+      [
+        {
+          type: SSEEventType.CACHE_UPDATED,
+          timestamp: Date.now(),
+          cacheKey,
+          version,
+        },
+      ],
+      userId
+    );
+  }
+
+  async notifyCacheUpdatedMany(cacheKeys: string[], version?: string, userId?: string): Promise<void> {
+    if (cacheKeys.length === 0) {
+      return;
+    }
+
+    await this.dispatchEvents(
+      cacheKeys.map((cacheKey) => ({
+        type: SSEEventType.CACHE_UPDATED,
+        timestamp: Date.now(),
+        cacheKey,
+        version,
+      })),
+      userId
+    );
+  }
+
+  async notifyBootstrapUpdatedMany(payloads: BootstrapSSEPayload[], userId?: string): Promise<void> {
+    if (payloads.length === 0) {
+      return;
+    }
+
+    await this.dispatchEvents(
+      payloads.map((payload) => ({
+        type: SSEEventType.CACHE_UPDATED,
+        timestamp: Date.now(),
+        cacheKey: payload.cacheKey,
+        page: payload.page,
+        scopeHash: payload.scopeHash,
+        version: payload.version,
+      })),
       userId
     );
   }

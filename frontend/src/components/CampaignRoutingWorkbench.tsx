@@ -21,7 +21,6 @@ import {
   fetchFlowFilterOperators,
   fetchFlowFilterTargets,
   fetchFlowLogs,
-  fetchFlowRules,
   fetchFlowSchema,
   testFlow,
   updateFlowRule,
@@ -327,6 +326,16 @@ function buildRulePayload(form: RuleFormState, targetsMap: Map<string, FlowTarge
   };
 }
 
+function sortRules(rules: FlowRuleDocument[]) {
+  return [...rules].sort((left, right) => {
+    if (left.priority === right.priority) {
+      return left.createdAt.localeCompare(right.createdAt);
+    }
+
+    return left.priority - right.priority;
+  });
+}
+
 export function CampaignRoutingWorkbench({
   campaignId,
   flows,
@@ -371,6 +380,20 @@ export function CampaignRoutingWorkbench({
 
   const targetsMap = useMemo(() => new Map(targets.map((target) => [target.value, target])), [targets]);
 
+  const patchSchemaRules = useCallback((updater: (rules: FlowRuleDocument[]) => FlowRuleDocument[]) => {
+    setSchema((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        rules: sortRules(updater(current.rules)),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  }, []);
+
   const refreshSelectedFlow = useCallback(async () => {
     if (!selectedFlowId) {
       setSchema(null);
@@ -379,15 +402,8 @@ export function CampaignRoutingWorkbench({
 
     try {
       setLoadingSchema(true);
-      const [schemaData, rulesData] = await Promise.all([
-        fetchFlowSchema(selectedFlowId),
-        fetchFlowRules(selectedFlowId).catch(() => []),
-      ]);
-
-      setSchema({
-        ...schemaData,
-        rules: Array.isArray(rulesData) ? rulesData : schemaData.rules,
-      });
+      const schemaData = await fetchFlowSchema(selectedFlowId);
+      setSchema(schemaData);
     } catch (err) {
       setSchema(null);
       toast.error('Routing schema load failed', err instanceof Error ? err.message : 'Unable to load flow schema');
@@ -543,20 +559,28 @@ export function CampaignRoutingWorkbench({
     try {
       setSavingRule(true);
       const payload = buildRulePayload(ruleForm, targetsMap);
+      let persistedRule: FlowRuleDocument;
 
       if (ruleForm.ruleId) {
-        await updateFlowRule(ruleForm.ruleId, {
+        persistedRule = await updateFlowRule(ruleForm.ruleId, {
           ...payload,
           status: ruleForm.status,
         });
       } else {
         const created = await createFlowRule(selectedFlowId, payload);
-        if (ruleForm.status !== 'active') {
-          await updateFlowRule(created.id, { status: ruleForm.status });
-        }
+        persistedRule =
+          ruleForm.status !== 'active'
+            ? await updateFlowRule(created.id, { status: ruleForm.status })
+            : created;
       }
 
-      await refreshSelectedFlow();
+      patchSchemaRules((currentRules) => {
+        if (ruleForm.ruleId) {
+          return currentRules.map((rule) => (rule.id === persistedRule.id ? persistedRule : rule));
+        }
+
+        return [...currentRules, persistedRule];
+      });
       setEditorOpen(false);
       toast.success('Routing rule saved', 'Flow rule definition has been updated.');
     } catch (err) {
@@ -564,14 +588,16 @@ export function CampaignRoutingWorkbench({
     } finally {
       setSavingRule(false);
     }
-  }, [refreshSelectedFlow, ruleForm, selectedFlowId, targetsMap, toast]);
+  }, [patchSchemaRules, ruleForm, selectedFlowId, targetsMap, toast]);
 
   const changeRuleStatus = useCallback(
     async (rule: FlowRuleDocument, status: 'active' | 'paused') => {
       try {
         setActionLoading(`status-${rule.id}`);
-        await updateFlowRule(rule.id, { status });
-        await refreshSelectedFlow();
+        const updatedRule = await updateFlowRule(rule.id, { status });
+        patchSchemaRules((currentRules) =>
+          currentRules.map((currentRule) => (currentRule.id === updatedRule.id ? updatedRule : currentRule))
+        );
         toast.success('Rule status updated', `${rule.name} is now ${status}.`);
       } catch (err) {
         toast.error('Rule status update failed', err instanceof Error ? err.message : 'Unable to update rule status');
@@ -579,7 +605,7 @@ export function CampaignRoutingWorkbench({
         setActionLoading(null);
       }
     },
-    [refreshSelectedFlow, toast]
+    [patchSchemaRules, toast]
   );
 
   const removeRule = useCallback(
@@ -591,7 +617,7 @@ export function CampaignRoutingWorkbench({
       try {
         setActionLoading(`delete-${rule.id}`);
         await deleteFlowRule(rule.id);
-        await refreshSelectedFlow();
+        patchSchemaRules((currentRules) => currentRules.filter((currentRule) => currentRule.id !== rule.id));
         toast.success('Rule deleted', `${rule.name} was removed from this flow.`);
       } catch (err) {
         toast.error('Rule delete failed', err instanceof Error ? err.message : 'Unable to delete rule');
@@ -599,7 +625,7 @@ export function CampaignRoutingWorkbench({
         setActionLoading(null);
       }
     },
-    [refreshSelectedFlow, toast]
+    [patchSchemaRules, toast]
   );
 
   const runEqualize = useCallback(async () => {

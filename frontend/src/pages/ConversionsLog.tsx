@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   CheckCircle2,
   ChevronDown,
@@ -21,6 +22,7 @@ import {
   type ConversionLogParams,
   type ConversionStats,
 } from '../services/api';
+import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
 
 type ConversionStatus = 'approved' | 'pending' | 'rejected';
 
@@ -62,18 +64,39 @@ function formatTime(value: string) {
 }
 
 export default function ConversionsLog() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentQuery = searchParams.toString();
+  const bootstrap = readBootstrapPage<{
+    conversions?: ConversionLogItem[];
+    stats?: ConversionStats;
+    pagination?: { page?: number; pageSize?: number; total?: number; totalPages?: number };
+  }>('conversions');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | ConversionStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | ConversionStatus>(
+    (bootstrap?.scope?.status as 'all' | ConversionStatus) || 'all'
+  );
   const [datePreset, setDatePreset] = useState('last7days');
-  const [dateRange, setDateRange] = useState<DateRangeValue>(getDateRange('last7days'));
+  const [dateRange, setDateRange] = useState<DateRangeValue>(
+    typeof bootstrap?.scope?.startDate === 'string' && typeof bootstrap?.scope?.endDate === 'string'
+      ? { startDate: bootstrap.scope.startDate, endDate: bootstrap.scope.endDate }
+      : getDateRange('last7days')
+  );
   const [groupByStates, setGroupByStates] = useState<GroupByState[]>([]);
-  const [conversions, setConversions] = useState<ConversionLogItem[]>([]);
+  const [conversions, setConversions] = useState<ConversionLogItem[]>(
+    Array.isArray(bootstrap?.data?.conversions) ? bootstrap.data.conversions : []
+  );
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
-  const [stats, setStats] = useState<ConversionStats>(EMPTY_STATS);
+  const [stats, setStats] = useState<ConversionStats>((bootstrap?.data?.stats as ConversionStats) || EMPTY_STATS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
+  const skipInitialBootstrapLoadRef = useRef(Boolean(bootstrap?.data?.conversions));
+  const [pagination, setPagination] = useState({
+    page: Number(bootstrap?.data?.pagination?.page || 1),
+    pageSize: Number(bootstrap?.data?.pagination?.pageSize || 20),
+    total: Number(bootstrap?.data?.pagination?.total || 0),
+    totalPages: Number(bootstrap?.data?.pagination?.totalPages || 0),
+  });
 
   const loadConversions = useCallback(async () => {
     setLoading(true);
@@ -88,6 +111,42 @@ export default function ConversionsLog() {
         endDate: dateRange.endDate,
         status: statusFilter === 'all' ? undefined : statusFilter,
       };
+
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('page', String(params.page || 1));
+      nextUrl.searchParams.set('pageSize', String(params.pageSize || 20));
+      nextUrl.searchParams.set('startDate', params.startDate || '');
+      nextUrl.searchParams.set('endDate', params.endDate || '');
+      if (params.search) {
+        nextUrl.searchParams.set('search', params.search);
+      } else {
+        nextUrl.searchParams.delete('search');
+      }
+      if (params.status) {
+        nextUrl.searchParams.set('status', params.status);
+      } else {
+        nextUrl.searchParams.delete('status');
+      }
+
+      const nextQuery = nextUrl.searchParams.toString();
+      if (nextQuery !== currentQuery) {
+        setSearchParams(nextUrl.searchParams, { replace: true });
+        return;
+      }
+
+      const bundle = await loadBootstrapForLocation({ url: nextUrl, force: true }).catch(() => null);
+      if (bundle?.page === 'conversions') {
+        setConversions(Array.isArray(bundle.data?.conversions) ? bundle.data.conversions as ConversionLogItem[] : []);
+        setStats((bundle.data?.stats as ConversionStats) || EMPTY_STATS);
+        setPagination((current) => ({
+          ...current,
+          page: Number(bundle.data?.pagination?.page || params.page || 1),
+          pageSize: Number(bundle.data?.pagination?.pageSize || params.pageSize || 20),
+          total: Number(bundle.data?.pagination?.total || 0),
+          totalPages: Number(bundle.data?.pagination?.totalPages || 0),
+        }));
+        return;
+      }
 
       const [listResult, statsResult] = await Promise.all([
         fetchConversions(params),
@@ -106,9 +165,14 @@ export default function ConversionsLog() {
     } finally {
       setLoading(false);
     }
-  }, [dateRange.endDate, dateRange.startDate, pagination.page, pagination.pageSize, searchQuery, statusFilter]);
+  }, [currentQuery, dateRange.endDate, dateRange.startDate, pagination.page, pagination.pageSize, searchQuery, setSearchParams, statusFilter]);
 
   useEffect(() => {
+    if (skipInitialBootstrapLoadRef.current) {
+      skipInitialBootstrapLoadRef.current = false;
+      return;
+    }
+
     void loadConversions();
   }, [loadConversions]);
 
@@ -168,7 +232,7 @@ export default function ConversionsLog() {
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-display font-bold text-primary">Conversions Log</h1>
-          <p className="text-sm text-on-surface-variant">Real conversion data from `/api/conversions`.</p>
+          <p className="text-sm text-on-surface-variant">Real conversion data streamed from the current edge bootstrap snapshot.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => void loadConversions()} disabled={loading} aria-label="Refresh conversions log" className="rounded-sm p-2 hover:bg-surface-container">

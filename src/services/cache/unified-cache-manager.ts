@@ -29,12 +29,39 @@ export interface CacheStats {
   layer: CacheLayer;
 }
 
+export type CacheFetchSource = 'workers-memory' | 'edge' | 'origin';
+
+export interface CacheFetchMeta {
+  source: CacheFetchSource;
+  key: string;
+  strategy: CacheStrategy;
+  edgeTTL: number;
+  workersTTL: number;
+  lookupMs: number;
+  originMs: number;
+  writeMs: number;
+  totalMs: number;
+}
+
 export class CacheKeyBuilder {
   private static readonly PREFIX = 'cftrack';
-  private static readonly VERSION = 'v1';
+  private static readonly VERSION = 'v3';
 
-  static dashboard(range: string): string {
-    return `${this.PREFIX}:${this.VERSION}:dashboard:${range}`;
+  static dashboard(range: string, campaignId = 'all'): string {
+    return `${this.PREFIX}:${this.VERSION}:dashboard:${range}:${campaignId}`;
+  }
+
+  static recentClicks(range: string, limit = 10, campaignId = 'all'): string {
+    return `${this.PREFIX}:${this.VERSION}:recent-clicks:${range}:limit-${limit}:${campaignId}`;
+  }
+
+  static entityStats(entityType: string, range: string, campaignId = 'all'): string {
+    return `${this.PREFIX}:${this.VERSION}:entity-stats:${entityType}:${range}:${campaignId}`;
+  }
+
+  static pageBundle(page: string, layer: string, scope: Record<string, unknown>): string {
+    const scopeHash = this.hashObject(scope);
+    return `${this.PREFIX}:${this.VERSION}:page:${page}:${layer}:${scopeHash}`;
   }
 
   static entityList(entity: string, page = 1, filters?: Record<string, unknown>): string {
@@ -152,7 +179,7 @@ export class UnifiedCacheManager {
     request: Request,
     fetcher: () => Promise<T>,
     config: Partial<CacheConfig> = {}
-  ): Promise<{ data: T; etag?: string }> {
+  ): Promise<{ data: T; etag?: string; meta: CacheFetchMeta }> {
     const {
       strategy = CacheStrategy.CACHE_FIRST,
       edgeTTL = 300,
@@ -165,22 +192,23 @@ export class UnifiedCacheManager {
     const key = cacheKey || this.buildCacheKey(request);
 
     if (forceRefresh) {
-      return this.fetchAndCache(key, fetcher, edgeTTL, workersTTL, providedEtag);
+      return this.fetchAndCache(key, fetcher, edgeTTL, workersTTL, strategy, 0, providedEtag);
     }
 
     switch (strategy) {
       case CacheStrategy.CACHE_FIRST:
-        return this.cacheFirst(key, fetcher, edgeTTL, workersTTL, providedEtag);
+        return this.cacheFirst(key, fetcher, edgeTTL, workersTTL, strategy, providedEtag);
       case CacheStrategy.NETWORK_FIRST:
-        return this.networkFirst(key, fetcher, edgeTTL, workersTTL, providedEtag);
+        return this.networkFirst(key, fetcher, edgeTTL, workersTTL, strategy, providedEtag);
       case CacheStrategy.STALE_WHILE_REVALIDATE:
-        return this.staleWhileRevalidate(key, fetcher, edgeTTL, workersTTL, providedEtag);
+        return this.staleWhileRevalidate(key, fetcher, edgeTTL, workersTTL, strategy, providedEtag);
       case CacheStrategy.CACHE_ONLY:
-        return this.cacheOnly(key);
+        return this.cacheOnly(key, edgeTTL, workersTTL, strategy);
       default:
         return {
           data: await fetcher(),
           etag: providedEtag,
+          meta: this.createMeta('origin', key, strategy, edgeTTL, workersTTL, {}),
         };
     }
   }
@@ -217,6 +245,35 @@ export class UnifiedCacheManager {
     );
   }
 
+  async get<T>(
+    key: string,
+    config: {
+      edgeTTL?: number;
+      workersTTL?: number;
+    } = {}
+  ): Promise<{ data: T; etag?: string; meta: CacheFetchMeta }> {
+    return this.fetch<T>(new Request(this.createEdgeRequest(key)), async () => {
+      throw new Error('Cache miss with get() helper');
+    }, {
+      strategy: CacheStrategy.CACHE_ONLY,
+      cacheKey: key,
+      edgeTTL: config.edgeTTL ?? 300,
+      workersTTL: config.workersTTL ?? 60,
+    });
+  }
+
+  async write<T>(
+    key: string,
+    data: T,
+    config: {
+      edgeTTL: number;
+      workersTTL: number;
+      etag?: string;
+    }
+  ): Promise<void> {
+    await this.cacheToAllLayers(key, data, config.edgeTTL, config.workersTTL, config.etag);
+  }
+
   getStats(): { edge: CacheStats; workers: CacheStats; overall: CacheStats } {
     const edgeTotal = sharedStats.edgeHits + sharedStats.edgeMisses;
     const workersTotal = sharedStats.workersHits + sharedStats.workersMisses;
@@ -250,12 +307,20 @@ export class UnifiedCacheManager {
     fetcher: () => Promise<T>,
     edgeTTL: number,
     workersTTL: number,
+    strategy: CacheStrategy,
     providedEtag?: string
-  ): Promise<{ data: T; etag?: string }> {
+  ): Promise<{ data: T; etag?: string; meta: CacheFetchMeta }> {
+    const lookupStartedAt = this.now();
     const memoryResult = this.memoryCache.get<T>(key);
     if (memoryResult) {
       sharedStats.workersHits++;
-      return memoryResult;
+      return {
+        ...memoryResult,
+        meta: this.createMeta('workers-memory', key, strategy, edgeTTL, workersTTL, {
+          lookupMs: this.elapsedSince(lookupStartedAt),
+          totalMs: this.elapsedSince(lookupStartedAt),
+        }),
+      };
     }
     sharedStats.workersMisses++;
 
@@ -263,11 +328,25 @@ export class UnifiedCacheManager {
     if (edgeResult) {
       sharedStats.edgeHits++;
       this.memoryCache.set(key, edgeResult.data, workersTTL, edgeResult.etag);
-      return edgeResult;
+      return {
+        ...edgeResult,
+        meta: this.createMeta('edge', key, strategy, edgeTTL, workersTTL, {
+          lookupMs: this.elapsedSince(lookupStartedAt),
+          totalMs: this.elapsedSince(lookupStartedAt),
+        }),
+      };
     }
     sharedStats.edgeMisses++;
 
-    return this.fetchAndCache(key, fetcher, edgeTTL, workersTTL, providedEtag);
+    return this.fetchAndCache(
+      key,
+      fetcher,
+      edgeTTL,
+      workersTTL,
+      strategy,
+      this.elapsedSince(lookupStartedAt),
+      providedEtag
+    );
   }
 
   private async networkFirst<T>(
@@ -275,21 +354,28 @@ export class UnifiedCacheManager {
     fetcher: () => Promise<T>,
     edgeTTL: number,
     workersTTL: number,
+    strategy: CacheStrategy,
     providedEtag?: string
-  ): Promise<{ data: T; etag?: string }> {
+  ): Promise<{ data: T; etag?: string; meta: CacheFetchMeta }> {
     try {
-      return await this.fetchAndCache(key, fetcher, edgeTTL, workersTTL, providedEtag);
+      return await this.fetchAndCache(key, fetcher, edgeTTL, workersTTL, strategy, 0, providedEtag);
     } catch (error) {
       console.warn('[CacheManager] Network-first fallback triggered:', error);
 
       const memoryResult = this.memoryCache.get<T>(key);
       if (memoryResult) {
-        return memoryResult;
+        return {
+          ...memoryResult,
+          meta: this.createMeta('workers-memory', key, strategy, edgeTTL, workersTTL, {}),
+        };
       }
 
       const edgeResult = await this.getFromEdgeCache<T>(key);
       if (edgeResult) {
-        return edgeResult;
+        return {
+          ...edgeResult,
+          meta: this.createMeta('edge', key, strategy, edgeTTL, workersTTL, {}),
+        };
       }
 
       throw error;
@@ -301,13 +387,21 @@ export class UnifiedCacheManager {
     fetcher: () => Promise<T>,
     edgeTTL: number,
     workersTTL: number,
+    strategy: CacheStrategy,
     providedEtag?: string
-  ): Promise<{ data: T; etag?: string }> {
+  ): Promise<{ data: T; etag?: string; meta: CacheFetchMeta }> {
+    const lookupStartedAt = this.now();
     const memoryResult = this.memoryCache.get<T>(key);
     if (memoryResult) {
       sharedStats.workersHits++;
       this.backgroundUpdate(key, fetcher, edgeTTL, workersTTL, providedEtag);
-      return memoryResult;
+      return {
+        ...memoryResult,
+        meta: this.createMeta('workers-memory', key, strategy, edgeTTL, workersTTL, {
+          lookupMs: this.elapsedSince(lookupStartedAt),
+          totalMs: this.elapsedSince(lookupStartedAt),
+        }),
+      };
     }
     sharedStats.workersMisses++;
 
@@ -316,22 +410,54 @@ export class UnifiedCacheManager {
       sharedStats.edgeHits++;
       this.memoryCache.set(key, edgeResult.data, workersTTL, edgeResult.etag);
       this.backgroundUpdate(key, fetcher, edgeTTL, workersTTL, providedEtag);
-      return edgeResult;
+      return {
+        ...edgeResult,
+        meta: this.createMeta('edge', key, strategy, edgeTTL, workersTTL, {
+          lookupMs: this.elapsedSince(lookupStartedAt),
+          totalMs: this.elapsedSince(lookupStartedAt),
+        }),
+      };
     }
     sharedStats.edgeMisses++;
 
-    return this.fetchAndCache(key, fetcher, edgeTTL, workersTTL, providedEtag);
+    return this.fetchAndCache(
+      key,
+      fetcher,
+      edgeTTL,
+      workersTTL,
+      strategy,
+      this.elapsedSince(lookupStartedAt),
+      providedEtag
+    );
   }
 
-  private async cacheOnly<T>(key: string): Promise<{ data: T; etag?: string }> {
+  private async cacheOnly<T>(
+    key: string,
+    edgeTTL: number,
+    workersTTL: number,
+    strategy: CacheStrategy
+  ): Promise<{ data: T; etag?: string; meta: CacheFetchMeta }> {
+    const lookupStartedAt = this.now();
     const memoryResult = this.memoryCache.get<T>(key);
     if (memoryResult) {
-      return memoryResult;
+      return {
+        ...memoryResult,
+        meta: this.createMeta('workers-memory', key, strategy, edgeTTL, workersTTL, {
+          lookupMs: this.elapsedSince(lookupStartedAt),
+          totalMs: this.elapsedSince(lookupStartedAt),
+        }),
+      };
     }
 
     const edgeResult = await this.getFromEdgeCache<T>(key);
     if (edgeResult) {
-      return edgeResult;
+      return {
+        ...edgeResult,
+        meta: this.createMeta('edge', key, strategy, edgeTTL, workersTTL, {
+          lookupMs: this.elapsedSince(lookupStartedAt),
+          totalMs: this.elapsedSince(lookupStartedAt),
+        }),
+      };
     }
 
     throw new Error('Cache miss with CACHE_ONLY strategy');
@@ -342,12 +468,27 @@ export class UnifiedCacheManager {
     fetcher: () => Promise<T>,
     edgeTTL: number,
     workersTTL: number,
+    strategy: CacheStrategy,
+    lookupMs: number,
     providedEtag?: string
-  ): Promise<{ data: T; etag?: string }> {
+  ): Promise<{ data: T; etag?: string; meta: CacheFetchMeta }> {
+    const originStartedAt = this.now();
     const data = await fetcher();
+    const originMs = this.elapsedSince(originStartedAt);
     const resolvedEtag = providedEtag || this.generateEtag(data);
+    const writeStartedAt = this.now();
     await this.cacheToAllLayers(key, data, edgeTTL, workersTTL, resolvedEtag);
-    return { data, etag: resolvedEtag };
+    const writeMs = this.elapsedSince(writeStartedAt);
+    return {
+      data,
+      etag: resolvedEtag,
+      meta: this.createMeta('origin', key, strategy, edgeTTL, workersTTL, {
+        lookupMs,
+        originMs,
+        writeMs,
+        totalMs: Number((lookupMs + originMs + writeMs).toFixed(1)),
+      }),
+    };
   }
 
   private async cacheToAllLayers<T>(
@@ -441,5 +582,34 @@ export class UnifiedCacheManager {
     }
 
     return `W/"cache-${Math.abs(hash).toString(36)}"`;
+  }
+
+  private createMeta(
+    source: CacheFetchSource,
+    key: string,
+    strategy: CacheStrategy,
+    edgeTTL: number,
+    workersTTL: number,
+    values: Partial<Omit<CacheFetchMeta, 'source' | 'key' | 'strategy' | 'edgeTTL' | 'workersTTL'>>
+  ): CacheFetchMeta {
+    return {
+      source,
+      key,
+      strategy,
+      edgeTTL,
+      workersTTL,
+      lookupMs: values.lookupMs ?? 0,
+      originMs: values.originMs ?? 0,
+      writeMs: values.writeMs ?? 0,
+      totalMs: values.totalMs ?? 0,
+    };
+  }
+
+  private now(): number {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  }
+
+  private elapsedSince(startedAt: number): number {
+    return Number(Math.max(0, this.now() - startedAt).toFixed(1));
   }
 }

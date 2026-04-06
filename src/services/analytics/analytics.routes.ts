@@ -1,23 +1,23 @@
 /**
- * @fileoverview 分析数据 API 路由
- * @description 提供仪表板和分析数据的 HTTP 接口
+ * @fileoverview 鍒嗘瀽鏁版嵁 API 璺敱
+ * @description 鎻愪緵浠〃鏉垮拰鍒嗘瀽鏁版嵁鐨?HTTP 鎺ュ彛
  * @module services/analytics/analytics.routes
  *
- * 数据存储架构:
- *   - DO (Durable Objects): 唯一性检查和计数器
- *   - D1: 主存储，用于所有数据查询
+ * 鏁版嵁瀛樺偍鏋舵瀯:
+ *   - DO (Durable Objects): 鍞竴鎬ф鏌ュ拰璁℃暟鍣?
+ *   - D1: 涓诲瓨鍌紝鐢ㄤ簬鎵€鏈夋暟鎹煡璇?
  *
- * 数据流:
- *   点击请求 → DO(唯一性检查) → D1(主存储)
+ * 鏁版嵁娴?
+ *   鐐瑰嚮璇锋眰 鈫?DO(鍞竴鎬ф鏌? 鈫?D1(涓诲瓨鍌?
  *
- * Dashboard数据读取逻辑:
- *   - 所有数据 ──► D1读取
+ * Dashboard鏁版嵁璇诲彇閫昏緫:
+ *   - 鎵€鏈夋暟鎹?鈹€鈹€鈻?D1璇诲彇
  *
- * 输入: HTTP 查询参数
- * 输出: JSON 格式的分析数据
- * 逻辑交互:
- *   - 调用 DashboardQueryService 从 D1 获取数据
- * 前后端交互: 前端通过 /api/analytics/* 调用
+ * 杈撳叆: HTTP 鏌ヨ鍙傛暟
+ * 杈撳嚭: JSON 鏍煎紡鐨勫垎鏋愭暟鎹?
+ * 閫昏緫浜や簰:
+ *   - 璋冪敤 DashboardQueryService 浠?D1 鑾峰彇鏁版嵁
+ * 鍓嶅悗绔氦浜? 鍓嶇閫氳繃 /api/analytics/* 璋冪敤
  */
 
 import { Hono } from 'hono';
@@ -25,14 +25,23 @@ import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
 import { createDashboardQueryService } from './dashboard-query.service';
+import {
+  buildDashboardPageBundle,
+  buildDashboardPageCacheKey,
+  createDashboardPageScope,
+} from './dashboard-page-bundle';
 import { ETagCacheManager } from '@/services/cache/etag-cache-manager';
 import { CacheKeyBuilder } from '@/services/cache/unified-cache-manager';
 import type { ReportDimension, ReportFilter, ReportMetric } from '@/handlers/d1/traffic.repo';
+import { getWorkerVersionInfo } from '@/services/cache/version-utils';
 
-function buildAnalyticsCacheKey(parts: Array<string | number | undefined>) {
-  return CacheKeyBuilder.custom(
-    parts.filter((part): part is string | number => part !== undefined).map(String)
-  );
+function normalizeCampaignId(value: string | undefined | null) {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized && normalized !== 'all' ? normalized : undefined;
 }
 
 export function createAnalyticsRouter() {
@@ -40,33 +49,34 @@ export function createAnalyticsRouter() {
 
   /**
    * GET /api/analytics/dashboard
-   * 获取仪表板统计数据
+   * 鑾峰彇浠〃鏉跨粺璁℃暟鎹?
    * 
-   * 缓存策略:
-   * - today: 实时数据, 5分钟TTL
-   * - last7days/last30days: 近期数据, 6小时TTL
-   * - 历史数据: 24小时TTL
+   * 缂撳瓨绛栫暐:
+   * - today: 瀹炴椂鏁版嵁, 5鍒嗛挓TTL
+   * - last7days/last30days: 杩戞湡鏁版嵁, 6灏忔椂TTL
+   * - 鍘嗗彶鏁版嵁: 24灏忔椂TTL
    * 
-   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
-   * 用途: Dashboard 核心指标显示
+   * 鏁版嵁婧? 鑷姩閫夋嫨 (DO < 90澶? D1 > 90澶?
+   * 鐢ㄩ€? Dashboard 鏍稿績鎸囨爣鏄剧ず
    */
   router.get('/dashboard', async (c) => {
     try {
       const range = c.req.query('range') || 'today';
+      const campaignId = normalizeCampaignId(c.req.query('campaignId') || c.req.query('campaign'));
       const cacheManager = new ETagCacheManager(c.env);
       
-      // 根据时间范围推断缓存类型
+      // 鏍规嵁鏃堕棿鑼冨洿鎺ㄦ柇缂撳瓨绫诲瀷
       const cacheType = ETagCacheManager.inferCacheType('/dashboard', range);
       
       return await cacheManager.fetch(
         c.req.raw,
         async () => {
           const dashboardQuery = createDashboardQueryService(c.env);
-          return dashboardQuery.getDashboardStats(range, c.env);
+          return dashboardQuery.getDashboardStats(range, c.env, campaignId);
         },
         {
           cacheType,
-          cacheKey: CacheKeyBuilder.dashboard(range),
+          cacheKey: CacheKeyBuilder.dashboard(range, campaignId || 'all'),
         }
       );
     } catch (err) {
@@ -78,18 +88,44 @@ export function createAnalyticsRouter() {
     }
   });
 
+  router.get('/dashboard-bundle', async (c) => {
+    try {
+      const url = new URL(c.req.url);
+      const layerParam = c.req.query('layer');
+      const layer = layerParam === 'critical' || layerParam === 'secondary' ? layerParam : 'full';
+      const scope = createDashboardPageScope(url);
+      const cacheManager = new ETagCacheManager(c.env);
+      const cacheType = ETagCacheManager.inferCacheType('/dashboard', scope.range);
+
+      return await cacheManager.fetch(
+        c.req.raw,
+        async () => success(await buildDashboardPageBundle(c.env, scope, layer)),
+        {
+          cacheType,
+          cacheKey: buildDashboardPageCacheKey(scope, layer, getWorkerVersionInfo(c.env).namespace),
+        }
+      );
+    } catch (err) {
+      console.error('[Analytics API] Dashboard bundle error:', err);
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to fetch dashboard bundle'),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
   /**
    * GET /api/analytics/recent-clicks
-   * 获取最近点击数据
+   * 鑾峰彇鏈€杩戠偣鍑绘暟鎹?
    *
-   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
-   * 用途: 查看最近点击详情，支持实时监控
+   * 鏁版嵁婧? 鑷姩閫夋嫨 (DO < 90澶? D1 > 90澶?
+   * 鐢ㄩ€? 鏌ョ湅鏈€杩戠偣鍑昏鎯咃紝鏀寔瀹炴椂鐩戞帶
    */
   router.get('/recent-clicks', async (c) => {
     try {
       const limit = parseInt(c.req.query('limit') || '50');
       const range = c.req.query('range') || 'today';
-      const campaignId = c.req.query('campaignId') || undefined;
+      const campaignId = normalizeCampaignId(c.req.query('campaignId') || c.req.query('campaign'));
       const cacheManager = new ETagCacheManager(c.env);
       const cacheType = ETagCacheManager.inferCacheType('/recent-clicks', range);
 
@@ -162,7 +198,7 @@ export function createAnalyticsRouter() {
         },
         {
           cacheType,
-          cacheKey: buildAnalyticsCacheKey(['recent-clicks', range, `limit-${limit}`, campaignId || 'all']),
+          cacheKey: CacheKeyBuilder.recentClicks(range, limit, campaignId || 'all'),
         }
       );
     } catch (err) {
@@ -176,15 +212,16 @@ export function createAnalyticsRouter() {
 
   /**
    * GET /api/analytics/entity-stats
-   * 获取实体统计数据
+   * 鑾峰彇瀹炰綋缁熻鏁版嵁
    *
-   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
-   * 用途: 按维度查看统计分布
+   * 鏁版嵁婧? 鑷姩閫夋嫨 (DO < 90澶? D1 > 90澶?
+   * 鐢ㄩ€? 鎸夌淮搴︽煡鐪嬬粺璁″垎甯?
    */
   router.get('/entity-stats', async (c) => {
     try {
       const type = c.req.query('type');
       const range = c.req.query('range') || 'today';
+      const campaignId = normalizeCampaignId(c.req.query('campaignId') || c.req.query('campaign'));
 
       if (!type) {
         return c.json(
@@ -193,21 +230,31 @@ export function createAnalyticsRouter() {
         );
       }
 
-      const dashboardQuery = createDashboardQueryService(c.env);
+      const cacheManager = new ETagCacheManager(c.env);
+      const cacheType = ETagCacheManager.inferCacheType('/entity-stats', range);
 
-      let stats: any[];
-      try {
-        stats = await dashboardQuery.getEntityStats(type, range);
-      } catch (entityError) {
-        // 静默处理错误，返回空数组
-        // 常见原因：数据源中没有该类型的数据，或者引用了已删除的实体
-        console.warn(`[Analytics API] Entity stats for ${type} unavailable, returning empty array`);
-        stats = [];
-      }
+      return await cacheManager.fetch(
+        c.req.raw,
+        async () => {
+          const dashboardQuery = createDashboardQueryService(c.env);
 
-      return c.json(success(stats));
+          let stats: any[];
+          try {
+            stats = await dashboardQuery.getEntityStats(type, range, campaignId);
+          } catch {
+            console.warn(`[Analytics API] Entity stats for ${type} unavailable, returning empty array`);
+            stats = [];
+          }
+
+          return success(stats);
+        },
+        {
+          cacheType,
+          cacheKey: CacheKeyBuilder.entityStats(type, range, campaignId || 'all'),
+        }
+      );
     } catch (err) {
-      // 捕获所有未处理的错误，返回友好的错误信息
+      // 鎹曡幏鎵€鏈夋湭澶勭悊鐨勯敊璇紝杩斿洖鍙嬪ソ鐨勯敊璇俊鎭?
       console.warn('[Analytics API] Entity stats error:', err instanceof Error ? err.message : err);
       return c.json(
         error(err instanceof Error ? err.message : 'Failed to fetch entity stats'),
@@ -218,10 +265,10 @@ export function createAnalyticsRouter() {
 
   /**
    * GET /api/analytics/trend-report
-   * 获取趋势报告数据
+   * 鑾峰彇瓒嬪娍鎶ュ憡鏁版嵁
    *
-   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
-   * 用途: 查看流量趋势变化
+   * 鏁版嵁婧? 鑷姩閫夋嫨 (DO < 90澶? D1 > 90澶?
+   * 鐢ㄩ€? 鏌ョ湅娴侀噺瓒嬪娍鍙樺寲
    */
   router.get('/trend-report', async (c) => {
     try {
@@ -258,11 +305,11 @@ export function createAnalyticsRouter() {
 
   /**
    * GET /api/analytics/reports/:type
-   * 获取指定类型的统计报表
+   * 鑾峰彇鎸囧畾绫诲瀷鐨勭粺璁℃姤琛?
    *
-   * 数据源: 自动选择 (DO < 90天, D1 > 90天)
-   * 类型: traffic | conversion | financial | roi
-   * 用途: 生成详细的统计分析报表
+   * 鏁版嵁婧? 鑷姩閫夋嫨 (DO < 90澶? D1 > 90澶?
+   * 绫诲瀷: traffic | conversion | financial | roi
+   * 鐢ㄩ€? 鐢熸垚璇︾粏鐨勭粺璁″垎鏋愭姤琛?
    */
   router.get('/reports/:type', async (c) => {
     try {
@@ -361,11 +408,11 @@ export function createAnalyticsRouter() {
 
   /**
    * POST /api/analytics/reports/export
-   * 导出报表为CSV或Excel格式
+   * 瀵煎嚭鎶ヨ〃涓篊SV鎴朎xcel鏍煎紡
    *
    * Body: { type, format, startDate, endDate, groupBy, columns }
-   * 格式: csv | excel
-   * 用途: 导出报表进行进一步分析
+   * 鏍煎紡: csv | excel
+   * 鐢ㄩ€? 瀵煎嚭鎶ヨ〃杩涜杩涗竴姝ュ垎鏋?
    */
   router.post('/reports/export', async (c) => {
     try {
@@ -441,7 +488,7 @@ export function createAnalyticsRouter() {
 }
 
 /**
- * 生成CSV格式数据
+ * 鐢熸垚CSV鏍煎紡鏁版嵁
  */
 function parseCsvParam(value?: string): string[] {
   if (!value) {
@@ -530,7 +577,7 @@ function generateCSV(data: any[], columns?: string[]): string {
 }
 
 /**
- * 生成Excel格式数据
+ * 鐢熸垚Excel鏍煎紡鏁版嵁
  */
 function generateExcel(data: any[], columns?: string[]): ArrayBuffer {
   const headers = columns || Object.keys(data[0] || {});

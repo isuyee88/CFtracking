@@ -33,6 +33,7 @@ import { formatLandingPageForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 import { useToast } from '../components/Toast';
+import { readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -101,8 +102,10 @@ const LANDING_FIELDS: FormField[] = [
 
 export const Landings = () => {
   const toast = useToast();
-  const [landings, setLandings] = useState<LandingPage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage<{ landings?: LandingPage[] }>('landings');
+  const hasBootstrap = Boolean(bootstrap);
+  const [landings, setLandings] = useState<LandingPage[]>(Array.isArray(bootstrap?.data?.landings) ? bootstrap.data.landings : []);
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   
   // Form modal state
@@ -135,7 +138,9 @@ export const Landings = () => {
   useEffect(() => {
     const loadLandings = async () => {
       try {
-        setLoading(true);
+        if (!hasBootstrap && landings.length === 0) {
+          setLoading(true);
+        }
         const data = await fetchLandings();
         if (Array.isArray(data)) {
           setLandings(data);
@@ -188,7 +193,7 @@ export const Landings = () => {
     };
 
     loadLandings();
-  }, []);
+  }, [hasBootstrap, landings.length]);
 
   const handleCreateLanding = () => {
     setFormMode('create');

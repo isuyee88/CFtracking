@@ -282,6 +282,27 @@ Decision:
    - D1 for persisted reports, lists, settings, clicks, conversions
    - Durable Objects for serialized hot counters and event fanout coordination
 
+## 6.3 Page bundle keying update (implemented 2026-04-05)
+
+The earlier idea of caching by "page + time range + first screen/second screen" is directionally good, but literal screen-position keys are too fragile:
+
+- viewport height changes what counts as "first screen"
+- user-customized widget order would explode the key space
+- mobile/desktop fold boundaries are different even with the same business query
+
+The better model for this project is:
+
+1. `page`
+   - example: `dashboard`
+2. `scope`
+   - range, campaign, timezone, selected metrics/entities/recent columns when they affect payload shape
+3. `bundle layer`
+   - `critical`: above-the-fold summary blocks
+   - `secondary`: lower-priority tables/panels
+   - `full`: complete bootstrap snapshot for HTML injection
+
+This has now been reflected in the code with page-bundle scope parsing and cache-key generation, while the current production bootstrap uses the `full` dashboard bundle so the first HTML response can already carry real data. The next optimization phase can safely move the homepage from `full` bootstrap to `critical + secondary` progressive hydration without changing the cache taxonomy again.
+
 ### 6.2 Data class policy
 
 #### Static assets

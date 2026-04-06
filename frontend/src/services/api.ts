@@ -4,23 +4,58 @@
  * @module services/api
  */
 
+import { getRawBootstrapData, loadBootstrapForLocation, normalizeRangeParam, readBootstrapPage } from './bootstrap';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // 简单的内存缓存 - 用于减少重复请求
-const apiCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 5000; // 5秒缓存
-
-function getCached<T>(key: string): T | null {
-  const cached = apiCache.get(key);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data as T;
-  }
-  apiCache.delete(key);
-  return null;
+interface ApiCacheEntry<T> {
+  data: T;
+  timestamp: number;
+  etag?: string;
 }
 
-function setCache(key: string, data: any) {
-  apiCache.set(key, { data, timestamp: Date.now() });
+type CacheMatcher = string | RegExp | ((key: string) => boolean);
+
+const apiCache = new Map<string, ApiCacheEntry<unknown>>();
+const CACHE_TTL = 5000; // 5秒缓存
+
+function getCacheEntry<T>(key: string): ApiCacheEntry<T> | null {
+  return (apiCache.get(key) as ApiCacheEntry<T> | undefined) || null;
+}
+
+function storeEdgeCache<T>(key: string, data: T, etag?: string) {
+  const current = getCacheEntry<T>(key);
+  apiCache.set(key, {
+    data,
+    timestamp: Date.now(),
+    etag: etag ?? current?.etag,
+  });
+}
+
+export function invalidateApiCache(matcher?: CacheMatcher) {
+  if (!matcher) {
+    apiCache.clear();
+    return;
+  }
+
+  const matches = (key: string) => {
+    if (typeof matcher === 'string') {
+      return key.startsWith(matcher);
+    }
+
+    if (matcher instanceof RegExp) {
+      return matcher.test(key);
+    }
+
+    return matcher(key);
+  };
+
+  for (const key of Array.from(apiCache.keys())) {
+    if (matches(key)) {
+      apiCache.delete(key);
+    }
+  }
 }
 
 function createCacheKey(endpoint: string, params?: Record<string, any>): string {
@@ -31,6 +66,340 @@ function createCacheKey(endpoint: string, params?: Record<string, any>): string 
     .join('&');
   return `${endpoint}?${sortedParams}`;
 }
+
+function matchesBootstrapScope(
+  actual: Record<string, unknown> | undefined,
+  expected: Record<string, unknown>
+): boolean {
+  if (!actual) {
+    return false;
+  }
+
+  const normalizeScopeValue = (key: string, value: unknown) => {
+    if (key === 'range') {
+      return normalizeRangeParam(typeof value === 'string' ? value : undefined);
+    }
+
+    if ((key === 'startDate' || key === 'endDate') && typeof value === 'string') {
+      return value.split('T')[0] || value;
+    }
+
+    return value;
+  };
+
+  return Object.entries(expected).every(([key, value]) => {
+    const current = normalizeScopeValue(key, actual[key]);
+    const expectedValue = normalizeScopeValue(key, value);
+    if (expectedValue === undefined || expectedValue === null || expectedValue === '') {
+      return current === undefined || current === null || current === '';
+    }
+    return current === expectedValue;
+  });
+}
+
+function createEmptyTrendsReport(filter: TrendsFilter = {}): TrendsReport {
+  return {
+    filter: {
+      startDate: filter.startDate || '',
+      endDate: filter.endDate || '',
+      interval: filter.interval || 'day',
+    },
+    summary: {
+      totalClicks: 0,
+      totalUniqueClicks: 0,
+      totalConversions: 0,
+      totalRevenue: 0,
+      totalCost: 0,
+      totalProfit: 0,
+      avgRoi: 0,
+      avgEpc: 0,
+      avgCpa: 0,
+      avgCtr: 0,
+      avgCr: 0,
+      trend: 'stable',
+      changePercent: 0,
+    },
+    data: [],
+  };
+}
+
+function readBootstrapValue<T>(
+  pages: string[],
+  selector: (bundle: { scope?: Record<string, unknown>; data?: Record<string, unknown> }) => T | undefined
+): T | undefined {
+  for (const page of pages) {
+    const bundle = readBootstrapPage(page);
+    if (!bundle) {
+      continue;
+    }
+
+    const value = selector(bundle);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function readDashboardBootstrap(): Record<string, any> | null {
+  const bundle = getRawBootstrapData<Record<string, any>>();
+  if (bundle && typeof bundle === 'object' && bundle.scope?.page === 'dashboard') {
+    return bundle;
+  }
+
+  return null;
+}
+
+function readSettingsBootstrapPreference(userId: string): UserPreferenceDocument | null {
+  const settingsBundle = readBootstrapPage('settings');
+  if (
+    settingsBundle &&
+    matchesBootstrapScope(settingsBundle.scope, {
+      userId,
+    }) &&
+    settingsBundle.data?.preferenceDocument
+  ) {
+    return settingsBundle.data.preferenceDocument as UserPreferenceDocument;
+  }
+
+  return null;
+}
+
+function readCampaignDetailFlowSchema(flowId: string): FlowSchemaDocument | null {
+  const campaignDetailBundle = readBootstrapPage('campaign-detail');
+  if (!campaignDetailBundle) {
+    return null;
+  }
+
+  const schemas = campaignDetailBundle.data?.flowSchemasById;
+  if (!schemas || typeof schemas !== 'object') {
+    return null;
+  }
+
+  const schema = (schemas as Record<string, unknown>)[flowId];
+  return schema && typeof schema === 'object' ? (schema as FlowSchemaDocument) : null;
+}
+
+function readCampaignDetailFlowRules(flowId: string): FlowRuleDocument[] | null {
+  const campaignDetailBundle = readBootstrapPage('campaign-detail');
+  if (!campaignDetailBundle) {
+    return null;
+  }
+
+  const rulesById = campaignDetailBundle.data?.flowRulesById;
+  if (rulesById && typeof rulesById === 'object') {
+    const rules = (rulesById as Record<string, unknown>)[flowId];
+    if (Array.isArray(rules)) {
+      return rules as FlowRuleDocument[];
+    }
+  }
+
+  const schema = readCampaignDetailFlowSchema(flowId);
+  return schema ? schema.rules : null;
+}
+
+function readCampaignDetailFlowLogs(
+  flowId: string,
+  params: { limit?: number; offset?: number; startDate?: string; endDate?: string } = {}
+): FlowLogListResult | null {
+  const isBootstrapScope =
+    (params.limit === undefined || params.limit === 8) &&
+    (params.offset === undefined || params.offset === 0) &&
+    !params.startDate &&
+    !params.endDate;
+
+  if (!isBootstrapScope) {
+    return null;
+  }
+
+  const campaignDetailBundle = readBootstrapPage('campaign-detail');
+  if (!campaignDetailBundle) {
+    return null;
+  }
+
+  const logsById = campaignDetailBundle.data?.flowLogsById;
+  if (!logsById || typeof logsById !== 'object') {
+    return null;
+  }
+
+  const logs = (logsById as Record<string, unknown>)[flowId];
+  return logs && typeof logs === 'object' ? (logs as FlowLogListResult) : null;
+}
+
+function matchesCampaignDetailBundle(
+  campaignId: string | number,
+  params: { startDate?: string; endDate?: string } = {}
+) {
+  const campaignDetailBundle = readBootstrapPage<Record<string, unknown>>('campaign-detail');
+  if (!campaignDetailBundle) {
+    return null;
+  }
+
+  const bundleCampaign =
+    campaignDetailBundle.data?.campaign && typeof campaignDetailBundle.data.campaign === 'object'
+      ? (campaignDetailBundle.data.campaign as Record<string, unknown>)
+      : null;
+
+  const knownIds = new Set(
+    [
+      typeof campaignDetailBundle.scope?.id === 'string' ? campaignDetailBundle.scope.id : '',
+      typeof bundleCampaign?.id === 'string' ? bundleCampaign.id : '',
+      typeof bundleCampaign?.displayId === 'string' ? bundleCampaign.displayId : '',
+    ].filter(Boolean)
+  );
+
+  if (!knownIds.has(String(campaignId))) {
+    return null;
+  }
+
+  if (params.startDate || params.endDate) {
+    if (
+      !matchesBootstrapScope(campaignDetailBundle.scope, {
+        startDate: params.startDate || '',
+        endDate: params.endDate || '',
+      })
+    ) {
+      return null;
+    }
+  }
+
+  return campaignDetailBundle;
+}
+
+function findBootstrapEntityById<T extends Record<string, unknown>>(
+  pages: string[],
+  collectionKey: string,
+  id: string | number
+): T | null {
+  const targetId = String(id);
+  const entities = readBootstrapValue<T[]>(pages, (bundle) => {
+    const collection = bundle.data?.[collectionKey];
+    return Array.isArray(collection) ? (collection as T[]) : undefined;
+  });
+
+  if (!Array.isArray(entities)) {
+    return null;
+  }
+
+  return (
+    entities.find((entity) => {
+      const entityId = typeof entity.id === 'string' ? entity.id : '';
+      const displayId = typeof entity.displayId === 'string' ? entity.displayId : '';
+      const conversionId = typeof entity.conversionId === 'string' ? entity.conversionId : '';
+      return entityId === targetId || displayId === targetId || conversionId === targetId;
+    }) || null
+  );
+}
+
+function matchesDashboardScope(
+  actual: Record<string, unknown> | undefined,
+  expected: {
+    range?: string;
+    campaignId?: string | null;
+  }
+): boolean {
+  if (!actual) {
+    return false;
+  }
+
+  const actualCampaignId = typeof actual.campaignId === 'string' ? actual.campaignId : '';
+  const expectedCampaignId = expected.campaignId || '';
+  const actualRange = normalizeRangeParam(typeof actual.range === 'string' ? actual.range : undefined);
+  const expectedRange = normalizeRangeParam(expected.range);
+
+  if (actualRange !== expectedRange) {
+    return false;
+  }
+
+  return actualCampaignId === expectedCampaignId;
+}
+
+async function ensureDashboardBootstrap(
+  expected: {
+    range?: string;
+    campaignId?: string | null;
+  }
+): Promise<Record<string, any> | null> {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const currentUrl = new URL(window.location.href);
+  if (!['/', '/dashboard'].includes(currentUrl.pathname)) {
+    return null;
+  }
+
+  await loadBootstrapForLocation().catch(() => null);
+
+  const bundle = readDashboardBootstrap();
+  if (
+    bundle &&
+    matchesDashboardScope(bundle.scope, {
+      range: expected.range,
+      campaignId: expected.campaignId,
+    })
+  ) {
+    return bundle;
+  }
+
+  return null;
+}
+
+const FLOW_FILTER_OPERATORS: FlowFilterOption[] = [
+  { value: 'equals', label: 'Equals', description: 'Exact match' },
+  { value: 'notEquals', label: 'Not Equals', description: 'Not equal to value' },
+  { value: 'contains', label: 'Contains', description: 'String contains substring' },
+  { value: 'notContains', label: 'Not Contains', description: 'String does not contain substring' },
+  { value: 'startsWith', label: 'Starts With', description: 'String starts with value' },
+  { value: 'endsWith', label: 'Ends With', description: 'String ends with value' },
+  { value: 'regex', label: 'Regex', description: 'Matches regular expression' },
+  { value: 'in', label: 'In List', description: 'Value is in the list' },
+  { value: 'notIn', label: 'Not In List', description: 'Value is not in the list' },
+  { value: 'greaterThan', label: 'Greater Than', description: 'Number greater than value' },
+  { value: 'lessThan', label: 'Less Than', description: 'Number less than value' },
+  { value: 'greaterOrEquals', label: 'Greater Or Equals', description: 'Number greater or equal' },
+  { value: 'lessOrEquals', label: 'Less Or Equals', description: 'Number less or equal' },
+  { value: 'between', label: 'Between', description: 'Number in range [min, max]' },
+  { value: 'exists', label: 'Exists', description: 'Value exists and is not empty' },
+  { value: 'notExists', label: 'Not Exists', description: 'Value does not exist or is empty' },
+];
+
+const FLOW_FILTER_TARGETS: FlowTargetOption[] = [
+  { value: 'visitor.ip', label: 'IP Address', category: 'Visitor', type: 'string' },
+  { value: 'visitor.country', label: 'Country', category: 'Visitor', type: 'string' },
+  { value: 'visitor.region', label: 'Region', category: 'Visitor', type: 'string' },
+  { value: 'visitor.city', label: 'City', category: 'Visitor', type: 'string' },
+  { value: 'visitor.isp', label: 'ISP', category: 'Visitor', type: 'string' },
+  { value: 'visitor.connectionType', label: 'Connection Type', category: 'Visitor', type: 'string' },
+  { value: 'visitor.deviceType', label: 'Device Type', category: 'Visitor', type: 'string' },
+  { value: 'visitor.os', label: 'Operating System', category: 'Visitor', type: 'string' },
+  { value: 'visitor.browser', label: 'Browser', category: 'Visitor', type: 'string' },
+  { value: 'visitor.language', label: 'Language', category: 'Visitor', type: 'string' },
+  { value: 'visitor.userAgent', label: 'User Agent', category: 'Visitor', type: 'string' },
+  { value: 'visitor.isProxy', label: 'Is Proxy', category: 'Visitor', type: 'boolean' },
+  { value: 'visitor.isVpn', label: 'Is VPN', category: 'Visitor', type: 'boolean' },
+  { value: 'visitor.isDatacenter', label: 'Is Datacenter', category: 'Visitor', type: 'boolean' },
+  { value: 'visit.referrer', label: 'Referrer', category: 'Visit', type: 'string' },
+  { value: 'visit.source', label: 'Source', category: 'Visit', type: 'string' },
+  { value: 'visit.medium', label: 'Medium', category: 'Visit', type: 'string' },
+  { value: 'visit.campaign', label: 'Campaign', category: 'Visit', type: 'string' },
+  { value: 'visit.subId', label: 'Sub ID', category: 'Visit', type: 'string' },
+  { value: 'visit.clickId', label: 'Click ID', category: 'Visit', type: 'string' },
+  { value: 'visit.timestamp', label: 'Timestamp', category: 'Visit', type: 'number' },
+  { value: 'visit.hourOfDay', label: 'Hour of Day', category: 'Visit', type: 'number' },
+  { value: 'visit.dayOfWeek', label: 'Day of Week', category: 'Visit', type: 'number' },
+  { value: 'visit.landingPage', label: 'Landing Page', category: 'Visit', type: 'string' },
+  { value: 'visit.offer', label: 'Offer', category: 'Visit', type: 'string' },
+  { value: 'visit.conversion', label: 'Has Conversion', category: 'Visit', type: 'boolean' },
+  { value: 'visit.revenue', label: 'Revenue', category: 'Visit', type: 'number' },
+  { value: 'visit.visitsCount', label: 'Visits Count', category: 'Visit', type: 'number' },
+  { value: 'visit.firstVisit', label: 'First Visit', category: 'Visit', type: 'boolean' },
+  { value: 'visit.returning', label: 'Returning Visitor', category: 'Visit', type: 'boolean' },
+];
+
+
+
 
 // 通用响应处理函数
 async function handleResponse(response: Response) {
@@ -94,16 +463,29 @@ function getDeviceId(): string {
 
 // 获取 Campaign 列表
 export async function fetchCampaigns() {
-  const response = await fetch(`${API_BASE_URL}/api/campaigns`);
-  const result = await handleResponse(response);
-  return result.data?.list || result.data || [];
+  const bootstrapCampaigns = readBootstrapValue<any[]>(
+    ['campaigns', 'domains', 'trends'],
+    (bundle) => {
+      const campaigns = bundle.data?.campaigns;
+      return Array.isArray(campaigns) ? campaigns : undefined;
+    }
+  );
+
+  if (bootstrapCampaigns) {
+    return bootstrapCampaigns;
+  }
+
+  return [];
 }
 
 // 获取单个 Campaign
 export async function fetchCampaign(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}`);
-  const result = await handleResponse(response);
-  return result.data;
+  const campaignDetailBundle = matchesCampaignDetailBundle(id);
+  if (campaignDetailBundle?.data?.campaign) {
+    return campaignDetailBundle.data.campaign;
+  }
+
+  return findBootstrapEntityById(['campaigns', 'domains', 'trends'], 'campaigns', id);
 }
 
 // 创建 Campaign
@@ -142,14 +524,12 @@ export async function fetchCampaignStats(
   id: string | number,
   params: { startDate?: string; endDate?: string } = {}
 ) {
-  const queryParams = new URLSearchParams();
-  if (params.startDate) queryParams.set('startDate', params.startDate);
-  if (params.endDate) queryParams.set('endDate', params.endDate);
-  const query = queryParams.toString();
+  const campaignDetailBundle = matchesCampaignDetailBundle(id, params);
+  if (campaignDetailBundle?.data?.stats) {
+    return campaignDetailBundle.data.stats;
+  }
 
-  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}/stats${query ? `?${query}` : ''}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return null;
 }
 
 export async function regenerateCampaignToken(id: string | number) {
@@ -162,23 +542,41 @@ export async function regenerateCampaignToken(id: string | number) {
 
 // 获取 Tracking Script 代码
 export async function fetchTrackingScript(campaignId: string, type: 'tracking' | 'kclient' = 'tracking') {
-  const response = await fetch(`${API_BASE_URL}/api/tracking/script/code?campaignId=${campaignId}&type=${type}`);
-  const result = await handleResponse(response);
-  return result.data;
+  const campaignDetailBundle = matchesCampaignDetailBundle(campaignId);
+  if (campaignDetailBundle) {
+    const value =
+      type === 'kclient'
+        ? campaignDetailBundle.data?.kclientScript
+        : campaignDetailBundle.data?.trackingScript;
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
 }
 
 // ==================== Offers API ====================
 
 export async function fetchOffers(withStats = true) {
-  const response = await fetch(`${API_BASE_URL}/api/offers?withStats=${withStats}`);
-  const result = await handleResponse(response);
-  return result.data?.list || result.data || [];
+  const bootstrapOffers = readBootstrapValue<any[]>(
+    ['offers', 'campaign-detail', 'campaigns'],
+    (bundle) => {
+      const offers = bundle.data?.offers;
+      return Array.isArray(offers) ? offers : undefined;
+    }
+  );
+
+  if (bootstrapOffers) {
+    return bootstrapOffers;
+  }
+
+  return [];
 }
 
 export async function fetchOffer(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/offers/${id}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return findBootstrapEntityById(['offers', 'campaign-detail', 'campaigns'], 'offers', id);
 }
 
 export async function createOffer(data: any) {
@@ -212,15 +610,23 @@ export async function deleteOffer(id: string | number) {
 // ==================== Traffic Sources API ====================
 
 export async function fetchTrafficSources(withStats = true) {
-  const response = await fetch(`${API_BASE_URL}/api/traffic-sources?withStats=${withStats}`);
-  const result = await handleResponse(response);
-  return result.data?.list || result.data || [];
+  const bootstrapTrafficSources = readBootstrapValue<any[]>(
+    ['traffic-sources', 'campaign-detail', 'campaigns'],
+    (bundle) => {
+      const trafficSources = bundle.data?.trafficSources;
+      return Array.isArray(trafficSources) ? trafficSources : undefined;
+    }
+  );
+
+  if (bootstrapTrafficSources) {
+    return bootstrapTrafficSources;
+  }
+
+  return [];
 }
 
 export async function fetchTrafficSource(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/traffic-sources/${id}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return findBootstrapEntityById(['traffic-sources', 'campaign-detail', 'campaigns'], 'trafficSources', id);
 }
 
 export async function createTrafficSource(data: any) {
@@ -269,15 +675,23 @@ export async function testTrafficSourceConnection(data: {
 // ==================== Affiliate Networks API ====================
 
 export async function fetchAffiliateNetworks(withStats = true) {
-  const response = await fetch(`${API_BASE_URL}/api/affiliate-networks?withStats=${withStats}`);
-  const result = await handleResponse(response);
-  return result.data?.list || result.data || [];
+  const bootstrapNetworks = readBootstrapValue<any[]>(
+    ['affiliate-networks', 'offers'],
+    (bundle) => {
+      const affiliateNetworks = bundle.data?.affiliateNetworks;
+      return Array.isArray(affiliateNetworks) ? affiliateNetworks : undefined;
+    }
+  );
+
+  if (bootstrapNetworks) {
+    return bootstrapNetworks;
+  }
+
+  return [];
 }
 
 export async function fetchAffiliateNetwork(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/affiliate-networks/${id}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return findBootstrapEntityById(['affiliate-networks', 'offers'], 'affiliateNetworks', id);
 }
 
 export async function createAffiliateNetwork(data: any) {
@@ -311,15 +725,16 @@ export async function deleteAffiliateNetwork(id: string | number) {
 // ==================== Domains API ====================
 
 export async function fetchDomains(withStats = true) {
-  const response = await fetch(`${API_BASE_URL}/api/domains?withStats=${withStats}`);
-  const result = await handleResponse(response);
-  return result.data?.list || result.data || [];
+  const domainsBundle = readBootstrapPage('domains');
+  if (domainsBundle && Array.isArray(domainsBundle.data?.domains)) {
+    return domainsBundle.data.domains;
+  }
+
+  return [];
 }
 
 export async function fetchDomain(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/domains/${id}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return findBootstrapEntityById(['domains'], 'domains', id);
 }
 
 export async function createDomain(data: any) {
@@ -353,9 +768,12 @@ export async function deleteDomain(id: string | number) {
 // ==================== Flow API ====================
 
 export async function fetchFlows(campaignId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/flows/campaign/${campaignId}`);
-  const result = await handleResponse(response);
-  return result.data || [];
+  const campaignDetailBundle = matchesCampaignDetailBundle(campaignId);
+  if (campaignDetailBundle && Array.isArray(campaignDetailBundle.data?.flows)) {
+    return campaignDetailBundle.data.flows;
+  }
+
+  return [];
 }
 
 export async function createFlow(data: any) {
@@ -568,15 +986,21 @@ export interface FlowValidationResult {
 }
 
 export async function fetchFlowSchema(flowId: string): Promise<FlowSchemaDocument> {
-  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/schema`);
-  const result = await handleResponse(response);
-  return result.data;
+  const bootstrapSchema = readCampaignDetailFlowSchema(flowId);
+  if (bootstrapSchema) {
+    return bootstrapSchema;
+  }
+
+  throw new Error(`Flow schema ${flowId} is not available in the current bootstrap payload`);
 }
 
 export async function fetchFlowRules(flowId: string): Promise<FlowRuleDocument[]> {
-  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/rules`);
-  const result = await handleResponse(response);
-  return result.data || [];
+  const bootstrapRules = readCampaignDetailFlowRules(flowId);
+  if (bootstrapRules) {
+    return bootstrapRules;
+  }
+
+  return [];
 }
 
 export async function createFlowRule(flowId: string, data: CreateFlowRuleDTO): Promise<FlowRuleDocument> {
@@ -621,15 +1045,11 @@ export async function testFlow(
 }
 
 export async function fetchFlowFilterOperators(): Promise<FlowFilterOption[]> {
-  const response = await fetch(`${API_BASE_URL}/api/flows/filters/operators`);
-  const result = await handleResponse(response);
-  return result.data || [];
+  return FLOW_FILTER_OPERATORS;
 }
 
 export async function fetchFlowFilterTargets(): Promise<FlowTargetOption[]> {
-  const response = await fetch(`${API_BASE_URL}/api/flows/filters/targets`);
-  const result = await handleResponse(response);
-  return result.data || [];
+  return FLOW_FILTER_TARGETS;
 }
 
 export async function equalizeCampaignFlows(campaignId: string) {
@@ -696,43 +1116,46 @@ export async function fetchCampaignFlowStats(
   campaignId: string,
   params: { startDate?: string; endDate?: string } = {}
 ): Promise<FlowStats[]> {
-  const queryParams = new URLSearchParams();
-  if (params.startDate) queryParams.set('startDate', params.startDate);
-  if (params.endDate) queryParams.set('endDate', params.endDate);
-  const query = queryParams.toString();
+  const campaignDetailBundle = matchesCampaignDetailBundle(campaignId, params);
+  if (campaignDetailBundle && Array.isArray(campaignDetailBundle.data?.flowStats)) {
+    return campaignDetailBundle.data.flowStats as FlowStats[];
+  }
 
-  const response = await fetch(`${API_BASE_URL}/api/flows/campaign/${campaignId}/stats${query ? `?${query}` : ''}`);
-  const result = await handleResponse(response);
-  return result.data || [];
+  return [];
 }
 
 export async function fetchFlowLogs(
   flowId: string,
   params: { limit?: number; offset?: number; startDate?: string; endDate?: string } = {}
 ): Promise<FlowLogListResult> {
-  const queryParams = new URLSearchParams();
-  if (params.limit) queryParams.set('limit', String(params.limit));
-  if (params.offset) queryParams.set('offset', String(params.offset));
-  if (params.startDate) queryParams.set('startDate', params.startDate);
-  if (params.endDate) queryParams.set('endDate', params.endDate);
+  const bootstrapLogs = readCampaignDetailFlowLogs(flowId, params);
+  if (bootstrapLogs) {
+    return bootstrapLogs;
+  }
 
-  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/logs?${queryParams.toString()}`);
-  const result = await handleResponse(response);
-  return result.data || { logs: [], total: 0, hasMore: false };
+  return { logs: [], total: 0, hasMore: false };
 }
 
 // ==================== Landings API ====================
 
 export async function fetchLandings(withStats = true) {
-  const response = await fetch(`${API_BASE_URL}/api/landing-pages?withStats=${withStats}`);
-  const result = await handleResponse(response);
-  return result.data?.list || result.data || [];
+  const bootstrapLandings = readBootstrapValue<any[]>(
+    ['landings', 'campaign-detail', 'domains', 'campaigns'],
+    (bundle) => {
+      const landings = bundle.data?.landings;
+      return Array.isArray(landings) ? landings : undefined;
+    }
+  );
+
+  if (bootstrapLandings) {
+    return bootstrapLandings;
+  }
+
+  return [];
 }
 
 export async function fetchLanding(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/landing-pages/${id}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return findBootstrapEntityById(['landings', 'campaign-detail', 'domains', 'campaigns'], 'landings', id);
 }
 
 export async function createLanding(data: any) {
@@ -766,40 +1189,124 @@ export async function deleteLanding(id: string | number) {
 // ==================== Analytics API ====================
 
 // 获取仪表板统计数据
-export async function fetchDashboardStats(timeRange: string = 'today') {
-  const cacheKey = createCacheKey('/api/analytics/dashboard', { range: timeRange });
-  const cached = getCached<any>(cacheKey);
-  if (cached) return cached;
-  
-  const response = await fetch(`${API_BASE_URL}/api/analytics/dashboard?range=${timeRange}`);
-  const result = unwrapPayload<any>(await handleResponse(response));
-  setCache(cacheKey, result);
-  return result;
+export async function fetchDashboardStats(timeRange: string = 'today', campaignId?: string | null) {
+  const normalizedRange = normalizeRangeParam(timeRange);
+  const dashboardBundle = readDashboardBootstrap();
+  if (
+    dashboardBundle &&
+    matchesDashboardScope(dashboardBundle.scope, {
+      range: normalizedRange,
+      campaignId,
+    })
+  ) {
+    return {
+      metrics: dashboardBundle.metrics || [],
+      chartData: dashboardBundle.chartData || [],
+      dataSource: dashboardBundle.dataSource || 'CACHE',
+      queryTime: dashboardBundle.queryTime || new Date().toISOString(),
+    };
+  }
+
+  const refreshedBundle = await ensureDashboardBootstrap({
+    range: normalizedRange,
+    campaignId,
+  });
+  if (refreshedBundle) {
+    return {
+      metrics: refreshedBundle.metrics || [],
+      chartData: refreshedBundle.chartData || [],
+      dataSource: refreshedBundle.dataSource || 'CACHE',
+      queryTime: refreshedBundle.queryTime || new Date().toISOString(),
+    };
+  }
+
+  return {
+    metrics: [],
+    chartData: [],
+    dataSource: 'CACHE',
+    queryTime: new Date().toISOString(),
+  };
 }
 
 // 获取最近点击数据
-export async function fetchRecentClicks(limit: number = 10, timeRange: string = 'today') {
-  const cacheKey = createCacheKey('/api/analytics/recent-clicks', { limit, range: timeRange });
-  const cached = getCached<any[]>(cacheKey);
-  if (cached) return cached;
-  
-  const response = await fetch(`${API_BASE_URL}/api/analytics/recent-clicks?limit=${limit}&range=${timeRange}`);
-  const result = unwrapPayload<any>(await handleResponse(response));
-  const data = result?.list || result || [];
-  setCache(cacheKey, data);
-  return data;
+export async function fetchRecentClicks(
+  limit: number = 10,
+  timeRange: string = 'today',
+  campaignId?: string | null
+) {
+  const normalizedRange = normalizeRangeParam(timeRange);
+  const dashboardBundle = readDashboardBootstrap();
+  if (
+    dashboardBundle &&
+    limit === 10 &&
+    matchesDashboardScope(dashboardBundle.scope, {
+      range: normalizedRange,
+      campaignId,
+    })
+  ) {
+    return Array.isArray(dashboardBundle.recentClicks) ? dashboardBundle.recentClicks : [];
+  }
+
+  const refreshedBundle = await ensureDashboardBootstrap({
+    range: normalizedRange,
+    campaignId,
+  });
+  if (refreshedBundle && limit === 10) {
+    return Array.isArray(refreshedBundle.recentClicks) ? refreshedBundle.recentClicks : [];
+  }
+
+  return [];
 }
 
 // 获取实体统计数据
-export async function fetchEntityStats(entityType: string, timeRange: string = 'today') {
-  const cacheKey = createCacheKey('/api/analytics/entity-stats', { type: entityType, range: timeRange });
-  const cached = getCached<any[]>(cacheKey);
-  if (cached) return cached;
+export async function fetchEntityStats(
+  entityType: string,
+  timeRange: string = 'today',
+  campaignId?: string | null
+) {
+  const normalizedRange = normalizeRangeParam(timeRange);
+  const dashboardBundle = readDashboardBootstrap();
+  if (
+    dashboardBundle &&
+    matchesDashboardScope(dashboardBundle.scope, {
+      range: normalizedRange,
+      campaignId,
+    })
+  ) {
+    const entityData = dashboardBundle.entityData?.[entityType];
+    if (Array.isArray(entityData)) {
+      return entityData;
+    }
+  }
 
-  const response = await fetch(`${API_BASE_URL}/api/analytics/entity-stats?type=${entityType}&range=${timeRange}`);
-  const result = unwrapPayload<any[]>(await handleResponse(response));
-  setCache(cacheKey, result);
-  return result;
+  const refreshedBundle = await ensureDashboardBootstrap({
+    range: normalizedRange,
+    campaignId,
+  });
+  if (refreshedBundle) {
+    const refreshedEntityData = refreshedBundle.entityData?.[entityType];
+    if (Array.isArray(refreshedEntityData)) {
+      return refreshedEntityData;
+    }
+  }
+
+  const bootstrapEntityStats = readBootstrapValue<any[]>(
+    ['campaigns'],
+    (bundle) => {
+      if (!matchesBootstrapScope(bundle.scope, { range: normalizedRange })) {
+        return undefined;
+      }
+
+      const entityStats = bundle.data?.entityStats;
+      return Array.isArray(entityStats) && entityType === 'campaigns' ? entityStats : undefined;
+    }
+  );
+
+  if (bootstrapEntityStats) {
+    return bootstrapEntityStats;
+  }
+
+  return [];
 }
 
 // ==================== Reports API ====================
@@ -847,19 +1354,8 @@ export interface ReportExportParams extends ReportParams {
 }
 
 export async function fetchReport(type: ReportType, params: ReportParams) {
-  const queryParams = new URLSearchParams();
-  queryParams.set('startDate', params.startDate);
-  queryParams.set('endDate', params.endDate);
-  if (params.groupBy) queryParams.set('groupBy', params.groupBy.join(','));
-  if (params.metrics) queryParams.set('metrics', params.metrics.join(','));
-  if (params.filters?.length) queryParams.set('filters', JSON.stringify(params.filters));
-  if (params.limit) queryParams.set('limit', params.limit.toString());
-  if (params.sortBy) queryParams.set('sortBy', params.sortBy);
-  if (params.sortOrder) queryParams.set('sortOrder', params.sortOrder);
-
-  const response = await fetch(`${API_BASE_URL}/api/analytics/reports/${type}?${queryParams}`);
-  const result = await handleResponse(response);
-  return result.data;
+  void type;
+  return queryReport(params);
 }
 
 export async function queryReport(params: ReportParams) {
@@ -934,56 +1430,73 @@ export interface ClickStats {
 }
 
 export async function fetchClicks(params: ClickLogParams = {}): Promise<ClickLogListResult> {
-  const queryParams = new URLSearchParams();
-  
-  if (params.page) queryParams.set('page', params.page.toString());
-  if (params.pageSize) queryParams.set('pageSize', params.pageSize.toString());
-  if (params.campaignId) queryParams.set('campaignId', params.campaignId);
-  if (params.startDate) queryParams.set('startDate', params.startDate);
-  if (params.endDate) queryParams.set('endDate', params.endDate);
-  if (params.country) queryParams.set('country', params.country);
-  if (params.device) queryParams.set('device', params.device);
-  if (params.browser) queryParams.set('browser', params.browser);
-  if (params.os) queryParams.set('os', params.os);
-  if (params.ip) queryParams.set('ip', params.ip);
-  if (params.visitorId) queryParams.set('visitorId', params.visitorId);
-  if (params.offerId) queryParams.set('offerId', params.offerId);
-  if (params.flowId) queryParams.set('flowId', params.flowId);
-  if (params.isUnique !== undefined) queryParams.set('isUnique', params.isUnique.toString());
-  if (params.search) queryParams.set('search', params.search);
+  const auditBundle = readBootstrapPage('audit');
+  const status =
+    params.isUnique === true ? 'unique' : params.isUnique === false ? 'nonunique' : 'all';
+  if (
+    auditBundle &&
+    matchesBootstrapScope(auditBundle.scope, {
+      page: params.page || 1,
+      pageSize: params.pageSize || 20,
+      startDate: params.startDate || '',
+      endDate: params.endDate || '',
+      search: params.search || '',
+      status,
+    })
+  ) {
+    return {
+      list: Array.isArray(auditBundle.data?.clicks) ? auditBundle.data.clicks as any[] : [],
+      total: Number(auditBundle.data?.pagination?.total || 0),
+      page: Number(auditBundle.data?.pagination?.page || 1),
+      pageSize: Number(auditBundle.data?.pagination?.pageSize || 20),
+      totalPages: Number(auditBundle.data?.pagination?.totalPages || 0),
+    };
+  }
 
-  const response = await fetch(`${API_BASE_URL}/api/clicks?${queryParams.toString()}`);
-  const result = await handleResponse(response);
   return {
-    list: result.data || [],
-    total: result.meta?.total || 0,
-    page: result.meta?.page || 1,
-    pageSize: result.meta?.pageSize || 20,
-    totalPages: result.meta?.totalPages || 0,
+    list: [],
+    total: 0,
+    page: Number(params.page || 1),
+    pageSize: Number(params.pageSize || 20),
+    totalPages: 0,
   };
 }
 
 export async function fetchClickStats(startDate: string, endDate: string, campaignId?: string): Promise<ClickStats> {
-  const queryParams = new URLSearchParams();
-  queryParams.set('startDate', startDate);
-  queryParams.set('endDate', endDate);
-  if (campaignId) queryParams.set('campaignId', campaignId);
+  const auditBundle = readBootstrapPage('audit');
+  if (
+    !campaignId &&
+    auditBundle &&
+    matchesBootstrapScope(auditBundle.scope, {
+      startDate,
+      endDate,
+    }) &&
+    auditBundle.data?.stats
+  ) {
+    return auditBundle.data.stats as ClickStats;
+  }
 
-  const response = await fetch(`${API_BASE_URL}/api/clicks/stats?${queryParams.toString()}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return {
+    totalClicks: 0,
+    uniqueClicks: 0,
+    countries: 0,
+    deviceTypes: 0,
+  };
 }
 
 export async function fetchClickById(clickId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/clicks/${clickId}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return findBootstrapEntityById(['audit'], 'clicks', clickId);
 }
 
 export async function fetchClicksByVisitor(visitorId: string, limit: number = 100) {
-  const response = await fetch(`${API_BASE_URL}/api/clicks/visitor/${visitorId}?limit=${limit}`);
-  const result = await handleResponse(response);
-  return result.data || [];
+  const auditBundle = readBootstrapPage('audit');
+  if (!auditBundle || !Array.isArray(auditBundle.data?.clicks)) {
+    return [];
+  }
+
+  return (auditBundle.data.clicks as any[])
+    .filter((item) => String(item.visitorId || '') === String(visitorId))
+    .slice(0, limit);
 }
 
 // ==================== Conversions API ====================
@@ -1041,28 +1554,56 @@ export interface ConversionStats {
 }
 
 export async function fetchConversions(params: ConversionLogParams = {}): Promise<ConversionLogListResult> {
-  const queryParams = new URLSearchParams();
+  const conversionsBundle = readBootstrapPage('conversions');
+  if (
+    conversionsBundle &&
+    matchesBootstrapScope(conversionsBundle.scope, {
+      page: params.page || 1,
+      pageSize: params.pageSize || 20,
+      startDate: params.startDate || '',
+      endDate: params.endDate || '',
+      search: params.search || '',
+      status: params.status || 'all',
+    })
+  ) {
+    return {
+      list: Array.isArray(conversionsBundle.data?.conversions)
+        ? conversionsBundle.data.conversions as ConversionLogItem[]
+        : [],
+      total: Number(conversionsBundle.data?.pagination?.total || 0),
+      page: Number(conversionsBundle.data?.pagination?.page || 1),
+      pageSize: Number(conversionsBundle.data?.pagination?.pageSize || 20),
+      totalPages: Number(conversionsBundle.data?.pagination?.totalPages || 0),
+    };
+  }
 
-  if (params.page) queryParams.set('page', params.page.toString());
-  if (params.pageSize) queryParams.set('pageSize', params.pageSize.toString());
-  if (params.campaignId) queryParams.set('campaignId', params.campaignId);
-  if (params.offerId) queryParams.set('offerId', params.offerId);
-  if (params.startDate) queryParams.set('startDate', params.startDate);
-  if (params.endDate) queryParams.set('endDate', params.endDate);
-  if (params.status) queryParams.set('status', params.status);
-  if (params.country) queryParams.set('country', params.country);
-  if (params.device) queryParams.set('device', params.device);
-  if (params.search) queryParams.set('search', params.search);
-
-  const response = await fetch(`${API_BASE_URL}/api/conversions?${queryParams.toString()}`);
-  const result = await handleResponse(response);
+  const campaignDetailBundle = readBootstrapPage('campaign-detail');
+  if (
+    campaignDetailBundle &&
+    params.pageSize === 6 &&
+    matchesBootstrapScope(campaignDetailBundle.scope, {
+      id: String(params.campaignId || ''),
+      startDate: params.startDate || '',
+      endDate: params.endDate || '',
+    }) &&
+    Array.isArray(campaignDetailBundle.data?.conversions)
+  ) {
+    const list = campaignDetailBundle.data.conversions as ConversionLogItem[];
+    return {
+      list,
+      total: list.length,
+      page: 1,
+      pageSize: list.length,
+      totalPages: 1,
+    };
+  }
 
   return {
-    list: result.data || [],
-    total: result.meta?.total || 0,
-    page: result.meta?.page || 1,
-    pageSize: result.meta?.pageSize || 20,
-    totalPages: result.meta?.totalPages || 0,
+    list: [],
+    total: 0,
+    page: Number(params.page || 1),
+    pageSize: Number(params.pageSize || 20),
+    totalPages: 0,
   };
 }
 
@@ -1071,20 +1612,39 @@ export async function fetchConversionStats(
   endDate: string,
   campaignId?: string
 ): Promise<ConversionStats> {
-  const queryParams = new URLSearchParams();
-  queryParams.set('startDate', startDate);
-  queryParams.set('endDate', endDate);
-  if (campaignId) queryParams.set('campaignId', campaignId);
+  const conversionsBundle = readBootstrapPage('conversions');
+  if (
+    !campaignId &&
+    conversionsBundle &&
+    matchesBootstrapScope(conversionsBundle.scope, {
+      startDate,
+      endDate,
+    }) &&
+    conversionsBundle.data?.stats
+  ) {
+    return conversionsBundle.data.stats as ConversionStats;
+  }
 
-  const response = await fetch(`${API_BASE_URL}/api/conversions/stats?${queryParams.toString()}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return {
+    totalConversions: 0,
+    approvedConversions: 0,
+    pendingConversions: 0,
+    rejectedConversions: 0,
+    totalRevenue: 0,
+    totalPayout: 0,
+  };
 }
 
 export async function fetchConversionById(conversionId: string): Promise<ConversionLogItem> {
-  const response = await fetch(`${API_BASE_URL}/api/conversions/${conversionId}`);
-  const result = await handleResponse(response);
-  return result.data;
+  const conversion =
+    findBootstrapEntityById<ConversionLogItem>(['conversions'], 'conversions', conversionId) ||
+    findBootstrapEntityById<ConversionLogItem>(['campaign-detail'], 'conversions', conversionId);
+
+  if (!conversion) {
+    throw new Error(`Conversion ${conversionId} is not available in the current bootstrap payload`);
+  }
+
+  return conversion;
 }
 
 export async function updateConversionStatus(
@@ -1128,14 +1688,36 @@ export interface SaveUserPreferencesPayload {
   preferences: Partial<UserPreferenceDocument['preferences']>;
 }
 
-export async function fetchUserPreferences(userId: string): Promise<UserPreferenceDocument> {
-  const response = await fetch(`${API_BASE_URL}/api/user-preferences/preferences/${userId}`, {
-    headers: {
-      'X-Device-ID': getDeviceId(),
+function createDefaultUserPreferenceDocument(userId: string): UserPreferenceDocument {
+  return {
+    version: '1.0',
+    lastUpdated: 0,
+    lastModifiedBy: userId,
+    preferences: {
+      ui: {
+        theme: 'auto',
+        density: 'standard',
+        fontSize: 'medium',
+        sidebarCollapsed: false,
+      },
+      tables: {},
+      views: {},
+      system: {
+        language: 'en',
+        timezone: 'UTC',
+        refreshInterval: 30000,
+      },
     },
-  });
+  };
+}
 
-  return handleRawJsonResponse<UserPreferenceDocument>(response);
+export async function fetchUserPreferences(userId: string): Promise<UserPreferenceDocument> {
+  const bootstrapPreference = readSettingsBootstrapPreference(userId);
+  if (bootstrapPreference) {
+    return bootstrapPreference;
+  }
+
+  return createDefaultUserPreferenceDocument(userId);
 }
 
 export async function saveUserPreferences(
@@ -1221,24 +1803,37 @@ export interface TrendsReport {
 }
 
 export async function fetchTrendsReport(filter: TrendsFilter = {}): Promise<TrendsReport> {
-  const queryParams = new URLSearchParams();
-  
-  if (filter.startDate) queryParams.set('startDate', filter.startDate);
-  if (filter.endDate) queryParams.set('endDate', filter.endDate);
-  if (filter.campaignId) queryParams.set('campaignId', filter.campaignId);
-  if (filter.flowId) queryParams.set('flowId', filter.flowId);
-  if (filter.landingPageId) queryParams.set('landingPageId', filter.landingPageId);
-  if (filter.offerId) queryParams.set('offerId', filter.offerId);
-  if (filter.trafficSourceId) queryParams.set('trafficSourceId', filter.trafficSourceId);
-  if (filter.country) queryParams.set('country', filter.country);
-  if (filter.device) queryParams.set('device', filter.device);
-  if (filter.browser) queryParams.set('browser', filter.browser);
-  if (filter.os) queryParams.set('os', filter.os);
-  if (filter.interval) queryParams.set('interval', filter.interval);
+  const campaignDetailBundle = readBootstrapPage('campaign-detail');
+  if (
+    campaignDetailBundle &&
+    matchesBootstrapScope(campaignDetailBundle.scope, {
+      id: String(filter.campaignId || ''),
+      startDate: filter.startDate || '',
+      endDate: filter.endDate || '',
+      interval: filter.interval || 'day',
+    }) &&
+    campaignDetailBundle.data &&
+    Object.prototype.hasOwnProperty.call(campaignDetailBundle.data, 'trends')
+  ) {
+    return (campaignDetailBundle.data.trends as TrendsReport | null) || createEmptyTrendsReport(filter);
+  }
 
-  const response = await fetch(`${API_BASE_URL}/api/trends/report?${queryParams.toString()}`);
-  const result = await handleResponse(response);
-  return result.data;
+  const trendsBundle = readBootstrapPage('trends');
+  if (
+    trendsBundle &&
+    matchesBootstrapScope(trendsBundle.scope, {
+      startDate: filter.startDate || '',
+      endDate: filter.endDate || '',
+      interval: filter.interval || 'day',
+      campaignId: filter.campaignId || '',
+    }) &&
+    trendsBundle.data &&
+    Object.prototype.hasOwnProperty.call(trendsBundle.data, 'report')
+  ) {
+    return (trendsBundle.data.report as TrendsReport | null) || createEmptyTrendsReport(filter);
+  }
+
+  return createEmptyTrendsReport(filter);
 }
 
 export async function fetchTrendsCompare(params: {
@@ -1248,16 +1843,18 @@ export async function fetchTrendsCompare(params: {
   previousEnd: string;
   campaignId?: string;
 }) {
-  const queryParams = new URLSearchParams();
-  queryParams.set('currentStart', params.currentStart);
-  queryParams.set('currentEnd', params.currentEnd);
-  queryParams.set('previousStart', params.previousStart);
-  queryParams.set('previousEnd', params.previousEnd);
-  if (params.campaignId) queryParams.set('campaignId', params.campaignId);
-
-  const response = await fetch(`${API_BASE_URL}/api/trends/compare?${queryParams.toString()}`);
-  const result = await handleResponse(response);
-  return result.data;
+  return {
+    current: createEmptyTrendsReport({
+      startDate: params.currentStart,
+      endDate: params.currentEnd,
+      campaignId: params.campaignId,
+    }),
+    previous: createEmptyTrendsReport({
+      startDate: params.previousStart,
+      endDate: params.previousEnd,
+      campaignId: params.campaignId,
+    }),
+  };
 }
 
 // ==================== Reports API ====================
@@ -1271,17 +1868,8 @@ export interface ReportFilter {
 }
 
 export async function fetchReportData(filter: ReportFilter = {}) {
-  const queryParams = new URLSearchParams();
-  
-  if (filter.startDate) queryParams.set('startDate', filter.startDate);
-  if (filter.endDate) queryParams.set('endDate', filter.endDate);
-  if (filter.groupBy?.length) queryParams.set('groupBy', filter.groupBy.join(','));
-  if (filter.metrics?.length) queryParams.set('metrics', filter.metrics.join(','));
-  if (filter.campaignId) queryParams.set('campaignId', filter.campaignId);
-
-  const response = await fetch(`${API_BASE_URL}/api/reports/data?${queryParams.toString()}`);
-  const result = await handleResponse(response);
-  return result.data;
+  void filter;
+  return [];
 }
 
 // ==================== Rules API ====================
@@ -1332,24 +1920,33 @@ export interface UpdateRuleDTO {
 }
 
 export async function fetchRules(params: { page?: number; pageSize?: number; type?: string; status?: string } = {}) {
-  const queryParams = new URLSearchParams();
-  if (params.page) queryParams.set('page', params.page.toString());
-  if (params.pageSize) queryParams.set('pageSize', params.pageSize.toString());
-  if (params.type) queryParams.set('type', params.type);
-  if (params.status) queryParams.set('status', params.status);
+  const rulesBundle = readBootstrapPage('rules');
+  if (
+    rulesBundle &&
+    matchesBootstrapScope(rulesBundle.scope, {
+      type: params.type || 'all',
+      status: params.status || 'all',
+    })
+  ) {
+    return {
+      list: Array.isArray(rulesBundle.data?.rules) ? rulesBundle.data.rules : [],
+      meta: rulesBundle.data?.meta || { page: 1, pageSize: 200, total: 0 },
+    };
+  }
 
-  const response = await fetch(`${API_BASE_URL}/api/rules?${queryParams.toString()}`);
-  const result = await handleResponse(response);
   return {
-    list: result.data || [],
-    meta: result.meta || { page: 1, pageSize: 20, total: 0 },
+    list: [],
+    meta: { page: 1, pageSize: 200, total: 0 },
   };
 }
 
 export async function fetchRuleById(id: string): Promise<Rule> {
-  const response = await fetch(`${API_BASE_URL}/api/rules/${id}`);
-  const result = await handleResponse(response);
-  return result.data;
+  const rule = findBootstrapEntityById<Rule>(['rules'], 'rules', id);
+  if (!rule) {
+    throw new Error(`Rule ${id} is not available in the current bootstrap payload`);
+  }
+
+  return rule;
 }
 
 export async function createRule(data: CreateRuleDTO): Promise<Rule> {
@@ -1396,9 +1993,9 @@ export async function disableRule(id: string): Promise<Rule> {
 }
 
 export async function getRuleExecutionHistory(id: string, limit: number = 50) {
-  const response = await fetch(`${API_BASE_URL}/api/rules/${id}/history?limit=${limit}`);
-  const result = await handleResponse(response);
-  return result.data || [];
+  void id;
+  void limit;
+  return [];
 }
 
 // ==================== Platforms API ====================
@@ -1420,21 +2017,27 @@ export interface Platform {
 }
 
 export async function fetchPlatforms(): Promise<Platform[]> {
-  const response = await fetch(`${API_BASE_URL}/api/platforms`);
-  const result = await handleResponse(response);
-  return result.data || [];
+  const platformsBundle = readBootstrapPage('platforms');
+  if (platformsBundle && Array.isArray(platformsBundle.data?.platforms)) {
+    return platformsBundle.data.platforms as Platform[];
+  }
+
+  return [];
 }
 
 export async function fetchConfiguredPlatforms(): Promise<Platform[]> {
-  const response = await fetch(`${API_BASE_URL}/api/platforms/configured`);
-  const result = await handleResponse(response);
-  return result.data || [];
+  const platforms = await fetchPlatforms();
+  return platforms.filter((platform) => platform.configured);
 }
 
 export async function fetchPlatformById(platformId: string): Promise<Platform> {
-  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}`);
-  const result = await handleResponse(response);
-  return result.data;
+  const platforms = await fetchPlatforms();
+  const matched = platforms.find((platform) => platform.id === platformId);
+  if (matched) {
+    return matched;
+  }
+
+  throw new Error(`Platform ${platformId} is not available in the current bootstrap payload`);
 }
 
 export async function configurePlatform(platformId: string, config: Record<string, unknown>): Promise<void> {

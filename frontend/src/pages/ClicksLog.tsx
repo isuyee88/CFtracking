@@ -2,11 +2,12 @@
  * File: ClicksLog.tsx
  * Purpose: 点击日志页面，展示所有点击记录
  * Input/Output: 显示点击数据列表，支持搜索、筛选、分页
- * Logic: 从后端API获取真实点击数据，展示点击流的详细信息
- * 前后端交互: 调用 /api/clicks 和 /api/clicks/stats 接口
+ * Logic: 从边缘 bootstrap 快照读取点击数据，展示点击流的详细信息
+ * 前后端交互: 首屏读取 bootstrap，对数据写入仍保留现有写接口
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   History,
   Search,
@@ -34,6 +35,7 @@ import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/compo
 import { GroupByFilter, DEFAULT_GROUP_BY_OPTIONS, filterByGroupBy } from '@/components/GroupByFilter';
 import type { GroupByState, GroupByOption } from '@/types/filter';
 import { fetchClicks, fetchClickStats, type ClickLogParams, type ClickStats } from '../services/api';
+import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
 
 // ============================================
 // 类型定义
@@ -86,28 +88,46 @@ const CLICKS_LOG_GROUP_BY_OPTIONS: GroupByOption[] = [
 ];
 
 export const ClicksLog = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentQuery = searchParams.toString();
+  const bootstrap = readBootstrapPage<{
+    clicks?: ClickLog[];
+    stats?: ClickStats;
+    pagination?: { page?: number; pageSize?: number; total?: number; totalPages?: number };
+  }>('audit');
   const [searchQuery, setSearchQuery] = useState('');
-  const [dateRange, setDateRange] = useState<DateRangeValue>(getDateRange(7));
+  const [dateRange, setDateRange] = useState<DateRangeValue>(
+    typeof bootstrap?.scope?.startDate === 'string' && typeof bootstrap?.scope?.endDate === 'string'
+      ? { startDate: bootstrap.scope.startDate, endDate: bootstrap.scope.endDate }
+      : getDateRange(7)
+  );
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>(
+    typeof bootstrap?.scope?.status === 'string' ? bootstrap.scope.status : 'all'
+  );
   
   const [groupByStates, setGroupByStates] = useState<GroupByState[]>([]);
   
-  const [clicks, setClicks] = useState<ClickLog[]>([]);
-  const [stats, setStats] = useState<ClickStats>({
-    totalClicks: 0,
-    uniqueClicks: 0,
-    countries: 0,
-    deviceTypes: 0,
-  });
+  const [clicks, setClicks] = useState<ClickLog[]>(
+    Array.isArray(bootstrap?.data?.clicks) ? bootstrap.data.clicks : []
+  );
+  const [stats, setStats] = useState<ClickStats>(
+    (bootstrap?.data?.stats as ClickStats) || {
+      totalClicks: 0,
+      uniqueClicks: 0,
+      countries: 0,
+      deviceTypes: 0,
+    }
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const skipInitialBootstrapLoadRef = useRef(Boolean(bootstrap?.data?.clicks));
   
   const [pagination, setPagination] = useState({
-    page: 1,
-    pageSize: 20,
-    total: 0,
-    totalPages: 0,
+    page: Number(bootstrap?.data?.pagination?.page || 1),
+    pageSize: Number(bootstrap?.data?.pagination?.pageSize || 20),
+    total: Number(bootstrap?.data?.pagination?.total || 0),
+    totalPages: Number(bootstrap?.data?.pagination?.totalPages || 0),
   });
 
   const loadClicks = useCallback(async () => {
@@ -129,6 +149,43 @@ export const ClicksLog = () => {
         params.isUnique = false;
       }
 
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('page', String(params.page || 1));
+      nextUrl.searchParams.set('pageSize', String(params.pageSize || 20));
+      nextUrl.searchParams.set('startDate', params.startDate || '');
+      nextUrl.searchParams.set('endDate', params.endDate || '');
+      if (params.search) {
+        nextUrl.searchParams.set('search', params.search);
+      } else {
+        nextUrl.searchParams.delete('search');
+      }
+      nextUrl.searchParams.set('status', statusFilter);
+
+      const nextQuery = nextUrl.searchParams.toString();
+      if (nextQuery !== currentQuery) {
+        setSearchParams(nextUrl.searchParams, { replace: true });
+        return;
+      }
+
+      const bundle = await loadBootstrapForLocation({ url: nextUrl, force: true }).catch(() => null);
+      if (bundle?.page === 'audit') {
+        setClicks(Array.isArray(bundle.data?.clicks) ? bundle.data.clicks as ClickLog[] : []);
+        setPagination((prev) => ({
+          ...prev,
+          page: Number(bundle.data?.pagination?.page || params.page || 1),
+          pageSize: Number(bundle.data?.pagination?.pageSize || params.pageSize || 20),
+          total: Number(bundle.data?.pagination?.total || 0),
+          totalPages: Number(bundle.data?.pagination?.totalPages || 0),
+        }));
+        setStats((bundle.data?.stats as ClickStats) || {
+          totalClicks: 0,
+          uniqueClicks: 0,
+          countries: 0,
+          deviceTypes: 0,
+        });
+        return;
+      }
+
       const [clicksResult, statsResult] = await Promise.all([
         fetchClicks(params),
         fetchClickStats(params.startDate!, params.endDate!),
@@ -147,9 +204,14 @@ export const ClicksLog = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.pageSize, searchQuery, dateRange, statusFilter]);
+  }, [currentQuery, dateRange, pagination.page, pagination.pageSize, searchQuery, setSearchParams, statusFilter]);
 
   useEffect(() => {
+    if (skipInitialBootstrapLoadRef.current) {
+      skipInitialBootstrapLoadRef.current = false;
+      return;
+    }
+
     loadClicks();
   }, [loadClicks]);
 

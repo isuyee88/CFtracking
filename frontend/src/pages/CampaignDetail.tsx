@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
@@ -57,6 +57,7 @@ import {
   LazyYAxis,
 } from '../components/ChartWrapper';
 import type { ParameterTemplate, TrafficSource } from '../types/trafficSource';
+import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -447,30 +448,103 @@ function getDestinationName(flow: FlowNode, landings: DestinationItem[], offers:
   return offers.find((item) => item.id === itemId)?.name || itemId;
 }
 
+function normalizeScopeDateValue(value?: string) {
+  return typeof value === 'string' ? value.split('T')[0] || value : '';
+}
+
 export default function CampaignDetail() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const toast = useToast();
+  const bootstrap = readBootstrapPage('campaign-detail');
+  const hasMatchingBootstrap = Boolean(
+    bootstrap &&
+      typeof bootstrap.scope?.id === 'string' &&
+      id &&
+      bootstrap.scope.id === id &&
+      bootstrap.data &&
+      typeof bootstrap.data === 'object'
+  );
+  const needsBootstrapRefresh = Boolean(
+    bootstrap &&
+      (!bootstrap.data ||
+        typeof bootstrap.data !== 'object' ||
+        !('flowSchemasById' in bootstrap.data) ||
+        !('flowLogsById' in bootstrap.data))
+  );
 
   const [activeTab, setActiveTab] = useState<CampaignTab>('general');
-  const [campaign, setCampaign] = useState<BackendCampaign | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [flows, setFlows] = useState<FlowNode[]>([]);
+  const initialCampaign = hasMatchingBootstrap ? (bootstrap?.data?.campaign as BackendCampaign | null) || null : null;
+  const initialBackendFlows =
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.flows) ? (bootstrap.data.flows as BackendFlow[]) : [];
+  const [campaign, setCampaign] = useState<BackendCampaign | null>(initialCampaign);
+  const [draft, setDraft] = useState<Draft | null>(initialCampaign ? toDraft(initialCampaign) : null);
+  const [flows, setFlows] = useState<FlowNode[]>(initialBackendFlows.map(toFlowNode));
+  const [backendFlows, setBackendFlows] = useState<BackendFlow[]>(initialBackendFlows);
   const [connections] = useState<FlowConnection[]>([]);
-  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
-  const [landings, setLandings] = useState<DestinationItem[]>([]);
-  const [offers, setOffers] = useState<DestinationItem[]>([]);
-  const [stats, setStats] = useState<CampaignStats | null>(null);
-  const [chartData, setChartData] = useState<Array<Record<string, unknown>>>([]);
-  const [recentConversions, setRecentConversions] = useState<RecentConversion[]>([]);
-  const [trackingScript, setTrackingScript] = useState('');
-  const [kclientScript, setKclientScript] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>(
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.trafficSources)
+      ? (bootstrap.data.trafficSources as TrafficSource[])
+      : []
+  );
+  const [landings, setLandings] = useState<DestinationItem[]>(
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.landings)
+      ? (bootstrap.data.landings as DestinationItem[])
+      : []
+  );
+  const [offers, setOffers] = useState<DestinationItem[]>(
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.offers)
+      ? (bootstrap.data.offers as DestinationItem[])
+      : []
+  );
+  const [stats, setStats] = useState<CampaignStats | null>(
+    hasMatchingBootstrap ? ((bootstrap?.data?.stats as CampaignStats | null) || null) : null
+  );
+  const [chartData, setChartData] = useState<Array<Record<string, unknown>>>(
+    hasMatchingBootstrap && bootstrap?.data?.trends && Array.isArray((bootstrap.data.trends as any)?.data)
+      ? (bootstrap.data.trends as any).data.map((item: any) => ({
+          name: item.date,
+          clicks: Number(item.clicks || 0),
+          conversions: Number(item.conversions || 0),
+          revenue: Number(item.revenue || 0),
+          cost: Number(item.cost || 0),
+          profit: Number(item.profit || 0),
+          roi: Number(item.roi || 0),
+        }))
+      : []
+  );
+  const [recentConversions, setRecentConversions] = useState<RecentConversion[]>(
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.conversions)
+      ? (bootstrap.data.conversions as RecentConversion[])
+      : []
+  );
+  const [trackingScript, setTrackingScript] = useState(
+    hasMatchingBootstrap && typeof (bootstrap?.data?.trackingScript as any)?.code === 'string'
+      ? (bootstrap?.data?.trackingScript as any).code
+      : ''
+  );
+  const [kclientScript, setKclientScript] = useState(
+    hasMatchingBootstrap && typeof (bootstrap?.data?.kclientScript as any)?.code === 'string'
+      ? (bootstrap?.data?.kclientScript as any).code
+      : ''
+  );
+  const [loading, setLoading] = useState(!hasMatchingBootstrap);
+  const [analyticsLoading, setAnalyticsLoading] = useState(!hasMatchingBootstrap);
   const [saving, setSaving] = useState(false);
   const [routingSaving, setRoutingSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState<DateRangeValue>(getDateRange('last7days'));
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => {
+    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const startDate = searchParams.get('startDate') || (typeof bootstrap?.scope?.startDate === 'string' ? bootstrap.scope.startDate : '');
+    const endDate = searchParams.get('endDate') || (typeof bootstrap?.scope?.endDate === 'string' ? bootstrap.scope.endDate : '');
+
+    if (startDate && endDate) {
+      return { startDate, endDate };
+    }
+
+    return getDateRange('last7days');
+  });
 
   const campaignKey = campaign?.displayId || campaign?.id || id || '';
 
@@ -484,8 +558,12 @@ export default function CampaignDetail() {
     }
 
     try {
-      setLoading(true);
+      if (!hasMatchingBootstrap && !campaign) {
+        setLoading(true);
+      }
       setError(null);
+
+      await loadBootstrapForLocation().catch(() => null);
 
       const [campaignData, flowsData, sourcesData, landingsData, offersData] = await Promise.all([
         fetchCampaign(id),
@@ -500,9 +578,11 @@ export default function CampaignDetail() {
         return;
       }
 
+      const normalizedFlows = Array.isArray(flowsData) ? (flowsData as BackendFlow[]) : [];
       setCampaign(campaignData as BackendCampaign);
       setDraft(toDraft(campaignData as BackendCampaign));
-      setFlows(Array.isArray(flowsData) ? (flowsData as BackendFlow[]).map(toFlowNode) : []);
+      setBackendFlows(normalizedFlows);
+      setFlows(normalizedFlows.map(toFlowNode));
       setTrafficSources(Array.isArray(sourcesData) ? (sourcesData as TrafficSource[]) : []);
       setLandings(
         Array.isArray(landingsData)
@@ -529,11 +609,41 @@ export default function CampaignDetail() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [campaign, hasMatchingBootstrap, id]);
 
   useEffect(() => {
+    if (needsBootstrapRefresh) {
+      void loadBootstrapForLocation({ force: true })
+        .catch(() => null)
+        .then(() => {
+          void loadBaseData();
+        });
+      return;
+    }
+
     void loadBaseData();
-  }, [loadBaseData]);
+  }, [loadBaseData, needsBootstrapRefresh, location.pathname]);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+
+    if (startDate && endDate) {
+      setDateRange({ startDate, endDate });
+      return;
+    }
+
+    if (typeof bootstrap?.scope?.startDate === 'string' && typeof bootstrap?.scope?.endDate === 'string') {
+      setDateRange({
+        startDate: bootstrap.scope.startDate,
+        endDate: bootstrap.scope.endDate,
+      });
+      return;
+    }
+
+    setDateRange(getDateRange('last7days'));
+  }, [bootstrap?.scope?.endDate, bootstrap?.scope?.startDate, location.search]);
 
   useEffect(() => {
     if (!campaignKey) {
@@ -542,6 +652,8 @@ export default function CampaignDetail() {
 
     const loadScripts = async () => {
       try {
+        await loadBootstrapForLocation().catch(() => null);
+
         const [trackingResult, kclientResult] = await Promise.all([
           fetchTrackingScript(campaignKey, 'tracking').catch(() => null),
           fetchTrackingScript(campaignKey, 'kclient').catch(() => null),
@@ -566,6 +678,80 @@ export default function CampaignDetail() {
     const loadAnalytics = async () => {
       try {
         setAnalyticsLoading(true);
+
+        const loadedBootstrap = await loadBootstrapForLocation().catch(() => null);
+        const detailBootstrap =
+          readBootstrapPage<Record<string, unknown>>('campaign-detail') ||
+          (loadedBootstrap?.page === 'campaign-detail'
+            ? (loadedBootstrap as typeof bootstrap)
+            : null);
+        const detailScope = detailBootstrap?.scope;
+        const hasExplicitRange =
+          typeof window !== 'undefined' &&
+          (new URLSearchParams(window.location.search).has('startDate') ||
+            new URLSearchParams(window.location.search).has('endDate'));
+
+        if (
+          !hasExplicitRange &&
+          detailBootstrap &&
+          typeof detailScope?.startDate === 'string' &&
+          typeof detailScope?.endDate === 'string'
+        ) {
+          const bootstrapRange = {
+            startDate: detailScope.startDate as string,
+            endDate: detailScope.endDate as string,
+          };
+
+          const needsRangeSync =
+            normalizeScopeDateValue(dateRange.startDate) !== normalizeScopeDateValue(bootstrapRange.startDate) ||
+            normalizeScopeDateValue(dateRange.endDate) !== normalizeScopeDateValue(bootstrapRange.endDate);
+
+          if (needsRangeSync) {
+            setDateRange(bootstrapRange);
+            return;
+          }
+
+          setDateRange((current) => {
+            if (
+              normalizeScopeDateValue(current.startDate) === normalizeScopeDateValue(bootstrapRange.startDate) &&
+              normalizeScopeDateValue(current.endDate) === normalizeScopeDateValue(bootstrapRange.endDate)
+            ) {
+              return current;
+            }
+
+            return bootstrapRange;
+          });
+        }
+
+        if (
+          detailBootstrap &&
+          normalizeScopeDateValue(typeof detailScope?.startDate === 'string' ? detailScope.startDate : '') ===
+            normalizeScopeDateValue(dateRange.startDate) &&
+          normalizeScopeDateValue(typeof detailScope?.endDate === 'string' ? detailScope.endDate : '') ===
+            normalizeScopeDateValue(dateRange.endDate)
+        ) {
+          const bootstrapData = detailBootstrap.data as Record<string, unknown> | undefined;
+          const bootstrapTrends = bootstrapData?.trends as any;
+          const bootstrapConversions = Array.isArray(bootstrapData?.conversions)
+            ? (bootstrapData.conversions as RecentConversion[])
+            : [];
+
+          setStats((bootstrapData?.stats as CampaignStats | null) || null);
+          setChartData(
+            Array.isArray(bootstrapTrends?.data)
+              ? bootstrapTrends.data.map((item: any) => ({
+                  name: item.date,
+                  clicks: item.clicks,
+                  conversions: item.conversions,
+                  revenue: item.revenue,
+                  cost: item.cost,
+                  profit: item.profit,
+                }))
+              : []
+          );
+          setRecentConversions(bootstrapConversions);
+          return;
+        }
 
         const [statsData, trendsData, conversionsData] = await Promise.all([
           fetchCampaignStats(campaignKey, {
@@ -606,7 +792,7 @@ export default function CampaignDetail() {
     };
 
     void loadAnalytics();
-  }, [campaignKey, dateRange.endDate, dateRange.startDate]);
+  }, [campaignKey, dateRange.endDate, dateRange.startDate, location.search]);
 
   const selectedSource = useMemo(
     () => trafficSources.find((source) => source.id === draft?.trafficSourceId),
@@ -777,13 +963,8 @@ export default function CampaignDetail() {
   }, [campaign, toast]);
 
   const refreshRoutingFlows = useCallback(async () => {
-    if (!campaignKey) {
-      return;
-    }
-
-    const refreshed = (await fetchFlows(campaignKey).catch(() => [])) as BackendFlow[];
-    setFlows(Array.isArray(refreshed) ? refreshed.map(toFlowNode) : []);
-  }, [campaignKey]);
+    setFlows(backendFlows.map(toFlowNode));
+  }, [backendFlows]);
 
   const saveFlows = useCallback(
     async (nextFlows: FlowNode[]) => {
@@ -800,7 +981,9 @@ export default function CampaignDetail() {
       try {
         setRoutingSaving(true);
 
-        const existing = (await fetchFlows(campaignKey).catch(() => [])) as BackendFlow[];
+        const existing = [...backendFlows];
+        const persistedBackendFlows: BackendFlow[] = [];
+        const persistedNodes: FlowNode[] = [];
 
         for (const flow of nextFlows) {
           const existingFlow = existing.find((item) => String(item.id) === flow.id || item.name === flow.name);
@@ -825,12 +1008,13 @@ export default function CampaignDetail() {
           };
 
           let flowId = '';
+          let persistedFlow: BackendFlow;
           if (existingFlow) {
-            await updateFlow(String(existingFlow.id), payload);
+            persistedFlow = (await updateFlow(String(existingFlow.id), payload)) as BackendFlow;
             flowId = String(existingFlow.id);
           } else {
-            const created = await createFlow(payload);
-            flowId = String(created.id);
+            persistedFlow = (await createFlow(payload)) as BackendFlow;
+            flowId = String(persistedFlow.id);
           }
 
           if (flow.type === 'offer' && itemId) {
@@ -840,6 +1024,30 @@ export default function CampaignDetail() {
           if (flow.type === 'landing' && itemId) {
             await addLandingPageToFlow(flowId, itemId, flow.weight);
           }
+
+          persistedBackendFlows.push({
+            ...persistedFlow,
+            id: flowId,
+            name: flow.name,
+            type: flowType,
+            status: flowStatus,
+            weight: flow.weight,
+            actionType,
+            actionConfig,
+            filters: Array.isArray(existingFlow?.filters) ? existingFlow.filters : [],
+          });
+
+          persistedNodes.push({
+            ...flow,
+            id: flowId,
+            weight: flow.weight,
+            config: {
+              ...flow.config,
+              itemId,
+              flowType,
+              flowStatus,
+            },
+          });
         }
 
         const nextNames = new Set(nextFlows.map((flow) => flow.name));
@@ -847,7 +1055,8 @@ export default function CampaignDetail() {
           await deleteFlow(String(flow.id));
         }
 
-        await refreshRoutingFlows();
+        setBackendFlows(persistedBackendFlows);
+        setFlows(persistedNodes);
         toast.success('Routing saved', 'Regular, forced, and default flow policies were updated.');
       } catch (err) {
         toast.error('Routing save failed', err instanceof Error ? err.message : 'Unable to save routing');
@@ -855,7 +1064,7 @@ export default function CampaignDetail() {
         setRoutingSaving(false);
       }
     },
-    [campaignKey, refreshRoutingFlows, toast]
+    [backendFlows, campaignKey, toast]
   );
 
   if (loading) {
@@ -1089,7 +1298,22 @@ export default function CampaignDetail() {
                 <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Performance Overview</h3>
                 <p className="mt-2 text-sm text-on-surface-variant">Campaign-level trend and conversion movement for the selected date range.</p>
               </div>
-              <DateRangePickerComponent value={dateRange} onChange={(value) => value && setDateRange(value)} showTime={false} />
+              <DateRangePickerComponent
+                value={dateRange}
+                onChange={(value) => {
+                  if (!value || !id) {
+                    return;
+                  }
+
+                  const searchParams = new URLSearchParams(window.location.search);
+                  searchParams.set('startDate', value.startDate);
+                  searchParams.set('endDate', value.endDate);
+                  searchParams.set('interval', searchParams.get('interval') || 'day');
+                  setDateRange(value);
+                  navigate(`/campaigns/${id}?${searchParams.toString()}`);
+                }}
+                showTime={false}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-8">
               {performanceCards.map((card) => (

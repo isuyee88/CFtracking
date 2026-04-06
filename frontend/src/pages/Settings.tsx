@@ -23,6 +23,7 @@ import {
   type SaveUserPreferencesPayload,
   type UserPreferenceDocument,
 } from '../services/api';
+import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -132,10 +133,16 @@ function mapDocumentToForm(document: UserPreferenceDocument): SettingsFormState 
 }
 
 export const Settings: React.FC = () => {
+  const bootstrapBundle = readBootstrapPage<{ preferenceDocument?: UserPreferenceDocument }>('settings');
+  const bootstrapPreferenceDocument = bootstrapBundle?.data?.preferenceDocument ?? null;
+  const needsBootstrapRefresh = Boolean(bootstrapBundle && !bootstrapPreferenceDocument);
+
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
-  const [settings, setSettings] = useState<SettingsFormState>(DEFAULT_SETTINGS);
-  const [document, setDocument] = useState<UserPreferenceDocument | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<SettingsFormState>(() =>
+    bootstrapPreferenceDocument ? mapDocumentToForm(bootstrapPreferenceDocument) : DEFAULT_SETTINGS
+  );
+  const [document, setDocument] = useState<UserPreferenceDocument | null>(bootstrapPreferenceDocument);
+  const [loading, setLoading] = useState(!bootstrapPreferenceDocument);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -156,8 +163,21 @@ export const Settings: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (needsBootstrapRefresh) {
+      void loadBootstrapForLocation({ force: true })
+        .catch(() => null)
+        .then(() => {
+          void loadSettings();
+        });
+      return;
+    }
+
+    if (bootstrapPreferenceDocument) {
+      return;
+    }
+
     void loadSettings();
-  }, [loadSettings]);
+  }, [bootstrapPreferenceDocument, loadSettings, needsBootstrapRefresh]);
 
   const handleSettingChange = useCallback(
     <K extends keyof SettingsFormState>(key: K, value: SettingsFormState[K]) => {
