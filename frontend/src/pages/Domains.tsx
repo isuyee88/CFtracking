@@ -20,6 +20,8 @@ import { createDomain, deleteDomain, fetchCampaigns, fetchDomains, fetchLandings
 import { useToast } from '../components/Toast';
 import type { Domain } from '../types/domain';
 import { readBootstrapPage } from '../services/bootstrap';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -36,6 +38,7 @@ function buildDomainFields(
     type: 'text',
     required: true,
     placeholder: 'trk.example.com',
+    maxLength: FIELD_MAX_LENGTH.HOSTNAME,
     validation: (value) => {
       const hostname = String(value || '').trim();
       return /^(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(hostname) ? null : 'Please enter a valid hostname';
@@ -96,12 +99,14 @@ function buildDomainFields(
     label: 'Registrar',
     type: 'text',
     placeholder: 'Cloudflare Registrar',
+    maxLength: FIELD_MAX_LENGTH.REGISTRAR,
   },
   {
     name: 'cloudflareZoneId',
     label: 'Cloudflare Zone ID',
     type: 'text',
     placeholder: 'Optional zone id',
+    maxLength: FIELD_MAX_LENGTH.CLOUDFLARE_ZONE_ID,
   },
   {
     name: 'cloudflareProxyEnabled',
@@ -113,6 +118,7 @@ function buildDomainFields(
     name: 'defaultCampaignId',
     label: 'Default Campaign',
     type: 'select',
+    optionLabelMaxLength: DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL,
     options: campaigns.map((campaign) => ({
       value: campaign.id,
       label: `${campaign.name} (${campaign.id})`,
@@ -122,6 +128,7 @@ function buildDomainFields(
     name: 'defaultLandingPageId',
     label: 'Default Landing',
     type: 'select',
+    optionLabelMaxLength: DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL,
     options: landings.map((landing) => ({
       value: landing.id,
       label: `${landing.name} (${landing.id})`,
@@ -132,6 +139,7 @@ function buildDomainFields(
     label: 'Notes',
     type: 'textarea',
     placeholder: 'DNS handover steps, SSL plan, access notes...',
+    maxLength: FIELD_MAX_LENGTH.NOTES,
   },
 ];
 }
@@ -416,9 +424,13 @@ export default function Domains() {
         title: 'Default Mapping',
         width: 210,
         render: (_, domain) => (
-          <div className="text-sm text-fg-default">
-            <div>{domain.defaultCampaignId || 'No default campaign'}</div>
-            <div className="text-xs text-fg-muted">{domain.defaultLandingPageId || 'No default landing'}</div>
+          <div className="text-sm text-fg-default min-w-0">
+            <div className="truncate" title={domain.defaultCampaignId || 'No default campaign'}>
+              {truncateLabel(domain.defaultCampaignId || 'No default campaign', DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+            </div>
+            <div className="text-xs text-fg-muted truncate" title={domain.defaultLandingPageId || 'No default landing'}>
+              {truncateLabel(domain.defaultLandingPageId || 'No default landing', DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+            </div>
           </div>
         ),
       },

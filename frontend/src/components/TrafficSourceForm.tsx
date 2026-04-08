@@ -35,6 +35,8 @@ import type {
   TrafficSourceApiConfig,
   ConversionStatus 
 } from '../types/trafficSource';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 
 interface TrafficSourceFormProps {
   isOpen: boolean;
@@ -94,6 +96,11 @@ const EMPTY_PARAMETER: ParameterTemplate = {
   paramName: '',
   macro: ''
 };
+
+const TRAFFIC_SOURCE_NAME_MAX_LENGTH = FIELD_MAX_LENGTH.NAME;
+const TRAFFIC_SOURCE_NOTES_MAX_LENGTH = FIELD_MAX_LENGTH.NOTES;
+const TRAFFIC_SOURCE_URL_MAX_LENGTH = FIELD_MAX_LENGTH.URL;
+const TRAFFIC_SOURCE_API_KEY_MAX_LENGTH = FIELD_MAX_LENGTH.API_KEY;
 
 export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   isOpen,
@@ -198,7 +205,24 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   };
 
   const handleChange = (name: string, value: any) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    let nextValue = value;
+
+    if (typeof value === 'string') {
+      const maxLengthMap: Record<string, number> = {
+        name: TRAFFIC_SOURCE_NAME_MAX_LENGTH,
+        notes: TRAFFIC_SOURCE_NOTES_MAX_LENGTH,
+        postbackUrl: TRAFFIC_SOURCE_URL_MAX_LENGTH,
+        apiBaseUrl: TRAFFIC_SOURCE_URL_MAX_LENGTH,
+        apiKey: TRAFFIC_SOURCE_API_KEY_MAX_LENGTH,
+      };
+
+      const maxLength = maxLengthMap[name];
+      if (maxLength) {
+        nextValue = clampInput(value, maxLength);
+      }
+    }
+
+    setFormData(prev => ({ ...prev, [name]: nextValue }));
     if (errors[name]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -239,9 +263,16 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   };
 
   const handleParameterChange = (index: number, field: keyof ParameterTemplate, value: string) => {
+    const maxLengthMap: Record<keyof ParameterTemplate, number> = {
+      alias: FIELD_MAX_LENGTH.PARAMETER_ALIAS,
+      paramName: FIELD_MAX_LENGTH.PARAMETER_NAME,
+      macro: FIELD_MAX_LENGTH.PARAMETER_VALUE,
+    };
+    const normalizedValue = clampInput(value, maxLengthMap[field]);
+
     setFormData(prev => {
       const newParams = [...(prev.parameters || [])];
-      newParams[index] = { ...newParams[index], [field]: value };
+      newParams[index] = { ...newParams[index], [field]: normalizedValue };
       return { ...prev, parameters: newParams };
     });
   };
@@ -454,8 +485,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                 >
                   {getTemplateOptions().map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
+                    <option key={opt.value} value={opt.value} title={opt.label}>
+                      {truncateLabel(opt.label, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
                     </option>
                   ))}
                 </select>
@@ -474,6 +505,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   value={formData.name}
                   onChange={(e) => handleChange('name', e.target.value)}
                   placeholder="Enter traffic source name"
+                  maxLength={TRAFFIC_SOURCE_NAME_MAX_LENGTH}
                   className={`w-full px-4 py-3 bg-surface border rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 ${
                     errors.name ? 'border-error' : 'border-outline-variant'
                   }`}
@@ -602,6 +634,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   onChange={(e) => handleChange('notes', e.target.value)}
                   placeholder="Add notes about this traffic source..."
                   rows={3}
+                  maxLength={TRAFFIC_SOURCE_NOTES_MAX_LENGTH}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
                 />
               </div>
@@ -648,6 +681,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             value={param.alias}
                             onChange={(e) => handleParameterChange(index, 'alias', e.target.value)}
                             placeholder="e.g., Campaign"
+                            maxLength={FIELD_MAX_LENGTH.PARAMETER_ALIAS}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
                         </td>
@@ -657,6 +691,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             value={param.paramName}
                             onChange={(e) => handleParameterChange(index, 'paramName', e.target.value)}
                             placeholder="e.g., utm_campaign"
+                            maxLength={FIELD_MAX_LENGTH.PARAMETER_NAME}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
                         </td>
@@ -666,6 +701,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             value={param.macro}
                             onChange={(e) => handleParameterChange(index, 'macro', e.target.value)}
                             placeholder="e.g., {campaign_id}"
+                            maxLength={FIELD_MAX_LENGTH.PARAMETER_VALUE}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
                         </td>
@@ -740,9 +776,10 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   value={formData.postbackConfig?.url || ''}
                   onChange={(e) => setFormData(prev => ({
                     ...prev,
-                    postbackConfig: { ...prev.postbackConfig, url: e.target.value }
+                    postbackConfig: { ...prev.postbackConfig, url: clampInput(e.target.value, TRAFFIC_SOURCE_URL_MAX_LENGTH) }
                   }))}
                   placeholder="https://example.com/postback?click_id={click_id}&payout={payout}"
+                  maxLength={TRAFFIC_SOURCE_URL_MAX_LENGTH}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                 />
                 <p className="mt-1 text-xs text-on-surface-variant/60">
@@ -785,9 +822,10 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                     value={formData.postbackConfig?.taboolaKey || ''}
                     onChange={(e) => setFormData(prev => ({
                       ...prev,
-                      postbackConfig: { ...prev.postbackConfig, taboolaKey: e.target.value }
+                      postbackConfig: { ...prev.postbackConfig, taboolaKey: clampInput(e.target.value, TRAFFIC_SOURCE_API_KEY_MAX_LENGTH) }
                     }))}
                     placeholder="Enter your Taboola API key"
+                    maxLength={TRAFFIC_SOURCE_API_KEY_MAX_LENGTH}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                   />
                   <p className="mt-2 text-xs text-on-surface-variant">
@@ -854,6 +892,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                       value={formData.apiBaseUrl}
                       onChange={(e) => handleChange('apiBaseUrl', e.target.value)}
                       placeholder="https://api.example.com/v1"
+                      maxLength={TRAFFIC_SOURCE_URL_MAX_LENGTH}
                       className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                     />
                   </div>
@@ -868,6 +907,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                       value={formData.apiKey}
                       onChange={(e) => handleChange('apiKey', e.target.value)}
                       placeholder="Enter your API key"
+                      maxLength={TRAFFIC_SOURCE_API_KEY_MAX_LENGTH}
                       className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                     />
                   </div>

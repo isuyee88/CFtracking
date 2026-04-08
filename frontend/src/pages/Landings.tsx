@@ -35,6 +35,8 @@ import { FilterPanel, type FilterConfig, type FilterValues } from '../components
 import { useToast } from '../components/Toast';
 import { readBootstrapPage } from '../services/bootstrap';
 import { useLocation } from 'react-router-dom';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -60,7 +62,8 @@ const LANDING_FIELDS: FormField[] = [
     label: 'Landing Page Name',
     type: 'text',
     required: true,
-    placeholder: 'Enter landing page name'
+    placeholder: 'Enter landing page name',
+    maxLength: FIELD_MAX_LENGTH.NAME,
   },
   {
     name: 'url',
@@ -68,6 +71,7 @@ const LANDING_FIELDS: FormField[] = [
     type: 'url',
     required: true,
     placeholder: 'https://example.com/landing-page',
+    maxLength: FIELD_MAX_LENGTH.URL,
     validation: (value) => {
       try {
         new URL(value);
@@ -81,7 +85,8 @@ const LANDING_FIELDS: FormField[] = [
     name: 'group',
     label: 'Group',
     type: 'text',
-    placeholder: 'Select or create group'
+    placeholder: 'Select or create group',
+    maxLength: FIELD_MAX_LENGTH.GROUP,
   },
   {
     name: 'status',
@@ -97,7 +102,8 @@ const LANDING_FIELDS: FormField[] = [
     name: 'notes',
     label: 'Notes',
     type: 'textarea',
-    placeholder: 'Add notes about this landing page...'
+    placeholder: 'Add notes about this landing page...',
+    maxLength: FIELD_MAX_LENGTH.NOTES,
   }
 ];
 
@@ -517,15 +523,20 @@ export const Landings = () => {
                   <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
                     <Image size={20} className="text-primary" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-primary">{row.name}</h3>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-primary truncate max-w-[220px]" title={row.name}>
+                      {truncateLabel(row.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                    </h3>
                     <a 
                       href={row.url} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-xs text-secondary hover:underline flex items-center gap-1"
+                      className="text-xs text-secondary hover:underline flex items-center gap-1 max-w-[220px]"
+                      title={row.url}
                     >
-                      {row.url}
+                      <span className="truncate">
+                        {truncateLabel(row.url, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+                      </span>
                       <ExternalLink size={12} />
                     </a>
                   </div>
@@ -572,8 +583,11 @@ export const Landings = () => {
               showSorter: true,
               showFilter: true,
               render: (_, row) => (
-                <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm">
-                  {row.group || 'Default'}
+                <span
+                  className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm inline-block max-w-[120px] truncate"
+                  title={row.group || 'Default'}
+                >
+                  {truncateLabel(row.group || 'Default', DISPLAY_MAX_LENGTH.TAG_TEXT)}
                 </span>
               ),
             },

@@ -9,6 +9,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -19,6 +21,8 @@ export interface FormField {
   label: string;
   type: 'text' | 'textarea' | 'select' | 'multiselect' | 'number' | 'url' | 'email' | 'password' | 'json' | 'checkbox';
   required?: boolean;
+  maxLength?: number;
+  optionLabelMaxLength?: number;
   placeholder?: string;
   options?: { value: string; label: string }[];
   description?: string;
@@ -68,7 +72,22 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   }, [isOpen, computedInitialData]);
 
   const handleChange = (name: string, value: any) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const field = fields.find(item => item.name === name);
+    let nextValue = value;
+
+    if (
+      field?.maxLength &&
+      typeof value === 'string' &&
+      (field.type === 'text' ||
+        field.type === 'textarea' ||
+        field.type === 'url' ||
+        field.type === 'email' ||
+        field.type === 'password')
+    ) {
+      nextValue = clampInput(value, field.maxLength);
+    }
+
+    setFormData(prev => ({ ...prev, [name]: nextValue }));
     
     // Clear error when field is modified
     if (errors[name]) {
@@ -142,6 +161,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   const renderField = (field: FormField) => {
     const value = formData[field.name];
     const error = touched[field.name] ? errors[field.name] : null;
+    const optionLabelMaxLength = field.optionLabelMaxLength ?? DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL;
 
     const baseInputClass = cn(
       "w-full px-4 py-3 bg-surface border rounded-sm text-sm transition-all",
@@ -158,6 +178,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
             onBlur={() => handleBlur(field.name)}
             placeholder={field.placeholder}
             rows={4}
+            maxLength={field.maxLength}
             className={cn(baseInputClass, "resize-none")}
           />
         );
@@ -171,11 +192,14 @@ export const EntityForm: React.FC<EntityFormProps> = ({
             className={baseInputClass}
           >
             <option value="">Select {field.label}...</option>
-            {field.options?.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
+            {field.options?.map(option => {
+              const fullLabel = option.label || option.value;
+              return (
+                <option key={option.value} value={option.value} title={fullLabel}>
+                  {truncateLabel(fullLabel, optionLabelMaxLength)}
+                </option>
+              );
+            })}
           </select>
         );
 
@@ -195,8 +219,9 @@ export const EntityForm: React.FC<EntityFormProps> = ({
                     <span
                       key={idx}
                       className="inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary text-sm rounded-sm"
+                      title={option?.label || item}
                     >
-                      {option?.label || item}
+                      {truncateLabel(option?.label || item, optionLabelMaxLength)}
                       <button
                         type="button"
                         onClick={() => {
@@ -225,11 +250,14 @@ export const EntityForm: React.FC<EntityFormProps> = ({
                   className={baseInputClass}
                 >
                   <option value="">Select {field.label}...</option>
-                  {availableOptions.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
+                  {availableOptions.map(option => {
+                    const fullLabel = option.label || option.value;
+                    return (
+                      <option key={option.value} value={option.value} title={fullLabel}>
+                        {truncateLabel(fullLabel, optionLabelMaxLength)}
+                      </option>
+                    );
+                  })}
                 </select>
               )}
               
@@ -239,11 +267,12 @@ export const EntityForm: React.FC<EntityFormProps> = ({
                   type="text"
                   placeholder={field.placeholder || "Search or add custom value..."}
                   className={cn(baseInputClass, "flex-1")}
+                  maxLength={field.maxLength}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       const input = e.target as HTMLInputElement;
-                      const inputValue = input.value.trim();
+                      const inputValue = clampInput(input.value.trim(), field.maxLength).trim();
                       if (inputValue && !selectedValues.includes(inputValue)) {
                         handleChange(field.name, [...selectedValues, inputValue]);
                         input.value = '';
@@ -255,7 +284,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
                   type="button"
                   onClick={(e) => {
                     const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
-                    const inputValue = input.value.trim();
+                    const inputValue = clampInput(input.value.trim(), field.maxLength).trim();
                     if (inputValue && !selectedValues.includes(inputValue)) {
                       handleChange(field.name, [...selectedValues, inputValue]);
                       input.value = '';
@@ -278,8 +307,9 @@ export const EntityForm: React.FC<EntityFormProps> = ({
                 <span
                   key={idx}
                   className="inline-flex items-center gap-1 px-3 py-1 bg-surface-container text-sm rounded-sm"
+                  title={item}
                 >
-                  {item}
+                  {truncateLabel(item, optionLabelMaxLength)}
                   <button
                     type="button"
                     onClick={() => {
@@ -294,27 +324,30 @@ export const EntityForm: React.FC<EntityFormProps> = ({
               ))}
             </div>
             <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Add item..."
-                className={cn(baseInputClass, "flex-1")}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const input = e.target as HTMLInputElement;
-                    if (input.value.trim()) {
-                      handleChange(field.name, [...(value || []), input.value.trim()]);
-                      input.value = '';
+                <input
+                  type="text"
+                  placeholder="Add item..."
+                  className={cn(baseInputClass, "flex-1")}
+                  maxLength={field.maxLength}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const input = e.target as HTMLInputElement;
+                      const nextValue = clampInput(input.value.trim(), field.maxLength).trim();
+                      if (nextValue) {
+                        handleChange(field.name, [...(value || []), nextValue]);
+                        input.value = '';
+                      }
                     }
-                  }
                 }}
               />
               <button
                 type="button"
                 onClick={(e) => {
                   const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
-                  if (input.value.trim()) {
-                    handleChange(field.name, [...(value || []), input.value.trim()]);
+                  const nextValue = clampInput(input.value.trim(), field.maxLength).trim();
+                  if (nextValue) {
+                    handleChange(field.name, [...(value || []), nextValue]);
                     input.value = '';
                   }
                 }}
@@ -366,6 +399,11 @@ export const EntityForm: React.FC<EntityFormProps> = ({
             onChange={(e) => handleChange(field.name, e.target.value)}
             onBlur={() => handleBlur(field.name)}
             placeholder={field.placeholder}
+            maxLength={
+              field.type === 'text' || field.type === 'url' || field.type === 'email' || field.type === 'password'
+                ? field.maxLength
+                : undefined
+            }
             className={baseInputClass}
           />
         );

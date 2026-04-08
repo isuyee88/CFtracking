@@ -39,6 +39,8 @@ import { useToast } from '../components/Toast';
 import { readBootstrapPage } from '../services/bootstrap';
 import { COUNTRIES, getCountryLabel } from '../data/countries';
 import { useLocation } from 'react-router-dom';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -76,7 +78,8 @@ const OFFER_FIELDS: FormField[] = [
     label: 'Offer Name',
     type: 'text',
     required: true,
-    placeholder: 'Enter offer name'
+    placeholder: 'Enter offer name',
+    maxLength: FIELD_MAX_LENGTH.NAME,
   },
   {
     name: 'url',
@@ -84,6 +87,7 @@ const OFFER_FIELDS: FormField[] = [
     type: 'url',
     required: true,
     placeholder: 'https://example.com/offer',
+    maxLength: FIELD_MAX_LENGTH.URL,
     validation: (value) => {
       try {
         new URL(value);
@@ -153,7 +157,8 @@ const OFFER_FIELDS: FormField[] = [
     name: 'group',
     label: 'Group',
     type: 'text',
-    placeholder: 'Select or create group'
+    placeholder: 'Select or create group',
+    maxLength: FIELD_MAX_LENGTH.GROUP,
   },
   {
     name: 'status',
@@ -169,7 +174,8 @@ const OFFER_FIELDS: FormField[] = [
     name: 'notes',
     label: 'Notes',
     type: 'textarea',
-    placeholder: 'Add notes about this offer...'
+    placeholder: 'Add notes about this offer...',
+    maxLength: FIELD_MAX_LENGTH.NOTES,
   }
 ];
 
@@ -645,15 +651,20 @@ export const Offers = () => {
                   <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
                     <Gift size={20} className="text-primary" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-primary">{row.name}</h3>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-primary truncate max-w-[220px]" title={row.name}>
+                      {truncateLabel(row.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                    </h3>
                     <a 
                       href={row.url} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-xs text-secondary hover:underline flex items-center gap-1"
+                      className="text-xs text-secondary hover:underline flex items-center gap-1 max-w-[220px]"
+                      title={row.url}
                     >
-                      {row.url.substring(0, 40)}...
+                      <span className="truncate">
+                        {truncateLabel(row.url, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+                      </span>
                       <ExternalLink size={12} />
                     </a>
                   </div>
@@ -773,10 +784,15 @@ export const Offers = () => {
               showFilter: true,
               render: (_, row) => (
                 <div className="flex flex-col">
-                  <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm w-fit">
-                    {row.network || 'Default'}
+                  <span
+                    className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm w-fit max-w-[140px] truncate"
+                    title={row.network || 'Default'}
+                  >
+                    {truncateLabel(row.network || 'Default', DISPLAY_MAX_LENGTH.TAG_TEXT)}
                   </span>
-                  <span className="text-[10px] text-on-surface-variant mt-1">{row.group || 'Default'}</span>
+                  <span className="text-[10px] text-on-surface-variant mt-1 truncate max-w-[160px]" title={row.group || 'Default'}>
+                    {truncateLabel(row.group || 'Default', DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                  </span>
                 </div>
               ),
             },

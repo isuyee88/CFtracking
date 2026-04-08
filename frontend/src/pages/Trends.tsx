@@ -18,6 +18,8 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { fetchTrendsReport, type TrendsReport } from '../services/api';
 import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -407,6 +409,14 @@ export const Trends = () => {
     [report?.breakdowns?.device]
   );
 
+  const selectedCampaignName = useMemo(() => {
+    if (!selectedCampaignId) {
+      return 'All Campaigns';
+    }
+    const campaign = campaigns.find(item => item.id === selectedCampaignId);
+    return campaign?.name || selectedCampaignId;
+  }, [campaigns, selectedCampaignId]);
+
   // Conditional rendering after all hooks
   if (loading) {
     return (
@@ -587,11 +597,14 @@ export const Trends = () => {
         <select
           value={selectedCampaignId}
           onChange={(e) => setSelectedCampaignId(e.target.value)}
-          className="px-3 py-2 bg-surface-container border border-border-default rounded-md text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+          className="w-[280px] min-w-[220px] px-3 py-2 bg-surface-container border border-border-default rounded-md text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+          title={selectedCampaignName}
         >
           <option value="">All Campaigns</option>
           {campaigns.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+            <option key={c.id} value={c.id} title={c.name}>
+              {truncateLabel(c.name, DISPLAY_MAX_LENGTH.CAMPAIGN_OPTION_LABEL)}
+            </option>
           ))}
         </select>
         

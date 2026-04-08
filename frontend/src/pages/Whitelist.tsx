@@ -32,6 +32,8 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { readBootstrapPage } from '../services/bootstrap';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -99,6 +101,9 @@ const typeOptions: { value: WhitelistType; label: string; icon: React.ReactNode 
   { value: 'ip', label: 'IP Address', icon: <Monitor size={16} /> },
   { value: 'user_agent', label: 'User Agent', icon: <ExternalLink size={16} /> },
 ];
+
+const getWhitelistValueMaxLength = (type: WhitelistType) =>
+  type === 'user_agent' ? FIELD_MAX_LENGTH.USER_AGENT_VALUE : FIELD_MAX_LENGTH.TRAFFIC_ENTRY_VALUE;
 
 export const Whitelist = () => {
   const bootstrap = readBootstrapPage<{
@@ -199,10 +204,10 @@ export const Whitelist = () => {
     setFormData({
       trafficSourceId: entry.trafficSourceId,
       type: entry.type,
-      value: entry.value,
-      name: entry.name || '',
-      reason: entry.reason || '',
-      campaignId: entry.campaignId || '',
+      value: clampInput(entry.value, getWhitelistValueMaxLength(entry.type)),
+      name: clampInput(entry.name || '', FIELD_MAX_LENGTH.NAME),
+      reason: clampInput(entry.reason || '', FIELD_MAX_LENGTH.REASON),
+      campaignId: clampInput(entry.campaignId || '', FIELD_MAX_LENGTH.CAMPAIGN_ID),
       ipMatchMode: entry.ipMatchMode || 'exact',
       uaMatchMode: entry.uaMatchMode || 'exact',
       syncToPlatform: entry.syncToPlatform !== false,
@@ -436,7 +441,9 @@ export const Whitelist = () => {
           >
             <option value="all">All Traffic Sources</option>
             {trafficSources.map(ts => (
-              <option key={ts.id} value={ts.id}>{ts.name}</option>
+              <option key={ts.id} value={ts.id} title={ts.name}>
+                {truncateLabel(ts.name, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
+              </option>
             ))}
           </select>
           <select
@@ -465,6 +472,7 @@ export const Whitelist = () => {
               key={ts.id}
               onClick={() => handleSync(ts.id)}
               disabled={syncing === ts.id}
+              title={`Sync ${ts.name}`}
               className="modal-btn-primary flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest disabled:opacity-50"
             >
               {syncing === ts.id ? (
@@ -472,7 +480,7 @@ export const Whitelist = () => {
               ) : (
                 <RefreshCw size={14} />
               )}
-              Sync {ts.name}
+              Sync {truncateLabel(ts.name, DISPLAY_MAX_LENGTH.BUTTON_LABEL)}
             </button>
           ))}
         </div>
@@ -501,10 +509,14 @@ export const Whitelist = () => {
                   className="border-t border-outline-variant/10 hover:bg-surface-container/50 transition-colors"
                 >
                   <td className="px-4 py-4">
-                    <div>
-                      <p className="font-bold text-primary">{entry.value}</p>
+                    <div className="min-w-0">
+                      <p className="font-bold text-primary truncate max-w-[220px]" title={entry.value}>
+                        {truncateLabel(entry.value, DISPLAY_MAX_LENGTH.TABLE_VALUE_TEXT)}
+                      </p>
                       {entry.name && (
-                        <p className="text-xs text-on-surface-variant">{entry.name}</p>
+                        <p className="text-xs text-on-surface-variant truncate max-w-[220px]" title={entry.name}>
+                          {truncateLabel(entry.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                        </p>
                       )}
                       {entry.type === 'ip' && entry.ipMatchMode && (
                         <p className="text-xs text-on-surface-variant/60">Mode: {entry.ipMatchMode}</p>
@@ -521,10 +533,14 @@ export const Whitelist = () => {
                     </span>
                   </td>
                   <td className="px-4 py-4">
-                    <span className="text-sm text-on-surface">{getTrafficSourceName(entry.trafficSourceId)}</span>
+                    <span className="text-sm text-on-surface inline-block max-w-[180px] truncate" title={getTrafficSourceName(entry.trafficSourceId)}>
+                      {truncateLabel(getTrafficSourceName(entry.trafficSourceId), DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                    </span>
                   </td>
                   <td className="px-4 py-4">
-                    <span className="text-sm text-on-surface-variant">{entry.reason || '-'}</span>
+                    <span className="text-sm text-on-surface-variant inline-block max-w-[220px] truncate" title={entry.reason || '-'}>
+                      {truncateLabel(entry.reason || '-', DISPLAY_MAX_LENGTH.TABLE_REASON_TEXT)}
+                    </span>
                   </td>
                   <td className="px-4 py-4">
                     <span className={cn(
@@ -659,7 +675,9 @@ export const Whitelist = () => {
                   >
                     <option value="">Select traffic source</option>
                     {trafficSources.map(ts => (
-                      <option key={ts.id} value={ts.id}>{ts.name}</option>
+                      <option key={ts.id} value={ts.id} title={ts.name}>
+                        {truncateLabel(ts.name, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
+                      </option>
                     ))}
                   </select>
                   {formErrors.trafficSourceId && (
@@ -674,7 +692,14 @@ export const Whitelist = () => {
                   </label>
                   <select
                     value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value as WhitelistType })}
+                    onChange={(e) => {
+                      const nextType = e.target.value as WhitelistType;
+                      setFormData({
+                        ...formData,
+                        type: nextType,
+                        value: clampInput(formData.value, getWhitelistValueMaxLength(nextType)),
+                      });
+                    }}
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
                     disabled={isEditMode}
                   >
@@ -692,10 +717,11 @@ export const Whitelist = () => {
                   <input
                     type="text"
                     value={formData.value}
-                    onChange={(e) => setFormData({ ...formData, value: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, value: clampInput(e.target.value, getWhitelistValueMaxLength(formData.type)) })}
                     placeholder={formData.type === 'ip' ? '192.168.1.1' : formData.type === 'user_agent' ? 'Mozilla/5.0...' : 'Enter value'}
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
                     disabled={isEditMode}
+                    maxLength={getWhitelistValueMaxLength(formData.type)}
                   />
                   {formErrors.value && (
                     <p className="text-xs text-error mt-1">{formErrors.value}</p>
@@ -797,9 +823,10 @@ export const Whitelist = () => {
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, name: clampInput(e.target.value, FIELD_MAX_LENGTH.NAME) })}
                     placeholder="Enter a descriptive name"
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                    maxLength={FIELD_MAX_LENGTH.NAME}
                   />
                 </div>
 
@@ -810,10 +837,11 @@ export const Whitelist = () => {
                   </label>
                   <textarea
                     value={formData.reason}
-                    onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, reason: clampInput(e.target.value, FIELD_MAX_LENGTH.REASON) })}
                     placeholder="Why is this being whitelisted?"
                     rows={3}
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none resize-none"
+                    maxLength={FIELD_MAX_LENGTH.REASON}
                   />
                 </div>
 
@@ -825,9 +853,10 @@ export const Whitelist = () => {
                   <input
                     type="text"
                     value={formData.campaignId}
-                    onChange={(e) => setFormData({ ...formData, campaignId: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, campaignId: clampInput(e.target.value, FIELD_MAX_LENGTH.CAMPAIGN_ID) })}
                     placeholder="Associated campaign ID"
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                    maxLength={FIELD_MAX_LENGTH.CAMPAIGN_ID}
                   />
                 </div>
 

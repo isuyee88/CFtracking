@@ -34,6 +34,8 @@ import {
   type FlowTargetOption,
   type FlowValidationResult,
 } from '../services/api';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 
 interface DestinationItem {
   id: string;
@@ -1287,7 +1289,10 @@ export function CampaignRoutingWorkbench({
               <Field label="Rule Name">
                 <input
                   value={ruleForm.name}
-                  onChange={(event) => setRuleForm((current) => ({ ...current, name: event.target.value }))}
+                  onChange={(event) =>
+                    setRuleForm((current) => ({ ...current, name: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_RULE_NAME) }))
+                  }
+                  maxLength={FIELD_MAX_LENGTH.ROUTING_RULE_NAME}
                   className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
                 />
               </Field>
@@ -1302,7 +1307,13 @@ export function CampaignRoutingWorkbench({
               <Field label="Description" className="md:col-span-2">
                 <input
                   value={ruleForm.description}
-                  onChange={(event) => setRuleForm((current) => ({ ...current, description: event.target.value }))}
+                  onChange={(event) =>
+                    setRuleForm((current) => ({
+                      ...current,
+                      description: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_RULE_DESCRIPTION),
+                    }))
+                  }
+                  maxLength={FIELD_MAX_LENGTH.ROUTING_RULE_DESCRIPTION}
                   className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
                 />
               </Field>
@@ -1350,7 +1361,10 @@ export function CampaignRoutingWorkbench({
               <Field label="Action Weight">
                 <input
                   value={ruleForm.weight}
-                  onChange={(event) => setRuleForm((current) => ({ ...current, weight: event.target.value }))}
+                  onChange={(event) =>
+                    setRuleForm((current) => ({ ...current, weight: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_TEST_VALUE) }))
+                  }
+                  maxLength={FIELD_MAX_LENGTH.ROUTING_TEST_VALUE}
                   placeholder="Optional"
                   className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
                 />
@@ -1367,8 +1381,8 @@ export function CampaignRoutingWorkbench({
                   >
                     <option value="">Select landing</option>
                     {landings.map((landing) => (
-                      <option key={landing.id} value={landing.id}>
-                        {landing.name}
+                      <option key={landing.id} value={landing.id} title={landing.name}>
+                        {truncateLabel(landing.name, DISPLAY_MAX_LENGTH.ROUTING_TARGET_OPTION)}
                       </option>
                     ))}
                   </select>
@@ -1386,8 +1400,8 @@ export function CampaignRoutingWorkbench({
                   >
                     <option value="">Select offer</option>
                     {offers.map((offer) => (
-                      <option key={offer.id} value={offer.id}>
-                        {offer.name}
+                      <option key={offer.id} value={offer.id} title={offer.name}>
+                        {truncateLabel(offer.name, DISPLAY_MAX_LENGTH.ROUTING_TARGET_OPTION)}
                       </option>
                     ))}
                   </select>
@@ -1399,9 +1413,13 @@ export function CampaignRoutingWorkbench({
                   <input
                     value={ruleForm.redirectUrl}
                     onChange={(event) =>
-                      setRuleForm((current) => ({ ...current, redirectUrl: event.target.value }))
+                      setRuleForm((current) => ({
+                        ...current,
+                        redirectUrl: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_REDIRECT_URL),
+                      }))
                     }
                     placeholder="https://fallback.example.com"
+                    maxLength={FIELD_MAX_LENGTH.ROUTING_REDIRECT_URL}
                     className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
                   />
                 </Field>
@@ -1412,9 +1430,13 @@ export function CampaignRoutingWorkbench({
                   <input
                     value={ruleForm.blockReason}
                     onChange={(event) =>
-                      setRuleForm((current) => ({ ...current, blockReason: event.target.value }))
+                      setRuleForm((current) => ({
+                        ...current,
+                        blockReason: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_BLOCK_REASON),
+                      }))
                     }
                     placeholder="Proxy traffic not allowed"
+                    maxLength={FIELD_MAX_LENGTH.ROUTING_BLOCK_REASON}
                     className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
                   />
                 </Field>
@@ -1460,25 +1482,25 @@ export function CampaignRoutingWorkbench({
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Field label="Source">
-              <input value={testForm.source} onChange={(event) => setTestForm((current) => ({ ...current, source: event.target.value }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+              <input value={testForm.source} maxLength={FIELD_MAX_LENGTH.ROUTING_TEST_VALUE} onChange={(event) => setTestForm((current) => ({ ...current, source: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_TEST_VALUE) }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
             </Field>
             <Field label="Medium">
-              <input value={testForm.medium} onChange={(event) => setTestForm((current) => ({ ...current, medium: event.target.value }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+              <input value={testForm.medium} maxLength={FIELD_MAX_LENGTH.ROUTING_TEST_VALUE} onChange={(event) => setTestForm((current) => ({ ...current, medium: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_TEST_VALUE) }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
             </Field>
             <Field label="Campaign">
-              <input value={testForm.campaign} onChange={(event) => setTestForm((current) => ({ ...current, campaign: event.target.value }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+              <input value={testForm.campaign} maxLength={FIELD_MAX_LENGTH.ROUTING_TEST_VALUE} onChange={(event) => setTestForm((current) => ({ ...current, campaign: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_TEST_VALUE) }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
             </Field>
             <Field label="Sub ID">
-              <input value={testForm.subId} onChange={(event) => setTestForm((current) => ({ ...current, subId: event.target.value }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+              <input value={testForm.subId} maxLength={FIELD_MAX_LENGTH.ROUTING_TEST_VALUE} onChange={(event) => setTestForm((current) => ({ ...current, subId: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_TEST_VALUE) }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
             </Field>
             <Field label="Click ID">
-              <input value={testForm.clickId} onChange={(event) => setTestForm((current) => ({ ...current, clickId: event.target.value }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+              <input value={testForm.clickId} maxLength={FIELD_MAX_LENGTH.ROUTING_TEST_VALUE} onChange={(event) => setTestForm((current) => ({ ...current, clickId: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_TEST_VALUE) }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
             </Field>
             <Field label="Visits Count">
               <input type="number" min="1" value={testForm.visitsCount} onChange={(event) => setTestForm((current) => ({ ...current, visitsCount: Number(event.target.value || 1) }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
             </Field>
             <Field label="Referrer" className="md:col-span-2 xl:col-span-3">
-              <input value={testForm.referrer} onChange={(event) => setTestForm((current) => ({ ...current, referrer: event.target.value }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+              <input value={testForm.referrer} maxLength={FIELD_MAX_LENGTH.ROUTING_TEST_REFERRER} onChange={(event) => setTestForm((current) => ({ ...current, referrer: clampInput(event.target.value, FIELD_MAX_LENGTH.ROUTING_TEST_REFERRER) }))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
             </Field>
           </div>
 

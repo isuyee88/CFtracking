@@ -42,6 +42,8 @@ import type { TrafficSource, ParameterTemplate, PostbackConfig } from '../types/
 import { getTemplateById } from '../data/trafficSourceTemplates';
 import { readBootstrapPage } from '../services/bootstrap';
 import { useLocation } from 'react-router-dom';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -508,13 +510,15 @@ export const TrafficSources = () => {
                       <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
                         <Globe size={20} className="text-primary" />
                       </div>
-                      <div>
-                        <h3 className="font-bold text-primary">{source.name}</h3>
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-primary truncate max-w-[180px]" title={source.name}>
+                          {truncateLabel(source.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                        </h3>
                         <div className="flex items-center gap-2 mt-1">
                           <p className="text-xs text-on-surface-variant">ID: {source.displayId || source.id}</p>
                           {source.templateId && (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded">
-                              {getTemplateName(source.templateId)}
+                            <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded max-w-[110px] truncate" title={getTemplateName(source.templateId)}>
+                              {truncateLabel(getTemplateName(source.templateId), DISPLAY_MAX_LENGTH.TAG_TEXT)}
                             </span>
                           )}
                         </div>

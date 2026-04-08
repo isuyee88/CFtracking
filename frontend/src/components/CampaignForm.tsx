@@ -15,12 +15,19 @@ import type { FilterConfig } from './filters';
 import { FlowDesigner, type FlowNode, type FlowConnection } from './FlowDesigner';
 import { fetchTrafficSources } from '../services/api';
 import type { TrafficSource } from '../types/trafficSource';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const CAMPAIGN_NAME_MAX_LENGTH = 64;
+const CAMPAIGN_NAME_MAX_LENGTH = FIELD_MAX_LENGTH.NAME;
+const CAMPAIGN_ALIAS_MAX_LENGTH = FIELD_MAX_LENGTH.CAMPAIGN_ALIAS;
+const CAMPAIGN_DOMAIN_MAX_LENGTH = FIELD_MAX_LENGTH.DOMAIN;
+const CAMPAIGN_GROUP_MAX_LENGTH = FIELD_MAX_LENGTH.GROUP;
+const CAMPAIGN_UNIQUE_PARAMETER_MAX_LENGTH = FIELD_MAX_LENGTH.UNIQUE_PARAMETER;
+const CAMPAIGN_NOTES_MAX_LENGTH = FIELD_MAX_LENGTH.NOTES;
 
 type UniquenessMethod = 'ip' | 'ip_ua' | 'cookie' | 'parameter' | 'none';
 
@@ -181,7 +188,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
 
   // 处理 name 变化，自动生成 alias
   const handleNameChange = (name: string) => {
-    const normalizedName = name.slice(0, CAMPAIGN_NAME_MAX_LENGTH);
+    const normalizedName = clampInput(name, CAMPAIGN_NAME_MAX_LENGTH);
     const alias = generateAlias(normalizedName);
     setFormData(prev => ({ ...prev, name: normalizedName, alias }));
   };
@@ -203,7 +210,24 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
   }, [isOpen]);
 
   const handleChange = (field: keyof CampaignFormData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    let nextValue = value;
+
+    if (typeof value === 'string') {
+      const maxLengthMap: Partial<Record<keyof CampaignFormData, number>> = {
+        alias: CAMPAIGN_ALIAS_MAX_LENGTH,
+        domain: CAMPAIGN_DOMAIN_MAX_LENGTH,
+        group: CAMPAIGN_GROUP_MAX_LENGTH,
+        uniquenessParameter: CAMPAIGN_UNIQUE_PARAMETER_MAX_LENGTH,
+        notes: CAMPAIGN_NOTES_MAX_LENGTH,
+      };
+
+      const maxLength = maxLengthMap[field];
+      if (maxLength) {
+        nextValue = clampInput(value, maxLength);
+      }
+    }
+
+    setFormData(prev => ({ ...prev, [field]: nextValue }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -304,6 +328,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     onChange={(e) => handleChange('alias', e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all font-mono"
                     placeholder="campaign-alias"
+                    maxLength={CAMPAIGN_ALIAS_MAX_LENGTH}
                     required
                   />
                 </div>
@@ -320,6 +345,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     onChange={(e) => handleChange('domain', e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                     placeholder="example.com"
+                    maxLength={CAMPAIGN_DOMAIN_MAX_LENGTH}
                     required
                   />
                 </div>
@@ -333,6 +359,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     onChange={(e) => handleChange('group', e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                     placeholder="Select or create group"
+                    maxLength={CAMPAIGN_GROUP_MAX_LENGTH}
                   />
                 </div>
               </div>
@@ -358,11 +385,14 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     {trafficSources.length === 0 ? (
                       <option disabled>No traffic sources available</option>
                     ) : (
-                      trafficSources.map(source => (
-                        <option key={source.id} value={source.id}>
-                          {source.name} ({source.type})
-                        </option>
-                      ))
+                      trafficSources.map(source => {
+                        const sourceLabel = `${source.name} (${source.type})`;
+                        return (
+                          <option key={source.id} value={source.id} title={sourceLabel}>
+                            {truncateLabel(sourceLabel, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
+                          </option>
+                        );
+                      })
                     )}
                   </select>
                   {trafficSources.length > 0 && (
@@ -467,6 +497,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                         onChange={(e) => handleChange('uniquenessParameter', e.target.value)}
                         className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                         placeholder="clickid"
+                        maxLength={CAMPAIGN_UNIQUE_PARAMETER_MAX_LENGTH}
                       />
                     </div>
                   )}
@@ -580,6 +611,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                   rows={10}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all resize-none"
                   placeholder="Add notes about this campaign..."
+                  maxLength={CAMPAIGN_NOTES_MAX_LENGTH}
                 />
               </div>
             </div>

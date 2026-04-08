@@ -55,6 +55,22 @@ const LazyDashboardPreferencesModal = lazy(() =>
   }))
 );
 
+const DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH = 42;
+
+function formatCampaignFilterLabel(name: string): string {
+  const normalized = String(name || '').trim();
+  if (!normalized) {
+    return '-';
+  }
+
+  const chars = Array.from(normalized);
+  if (chars.length <= DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH) {
+    return normalized;
+  }
+
+  return `${chars.slice(0, DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH - 1).join('')}…`;
+}
+
 function getDashboardEntityDrilldown(entityKey: string, row: Record<string, any>) {
   const rowId = row.id ? String(row.id) : '';
   const rowName = row.name ? String(row.name) : '';
@@ -1194,17 +1210,19 @@ export const Dashboard = () => {
                   selectedCampaign: event.target.value === 'all' ? null : event.target.value,
                 });
               }}
-              className="w-full rounded-sm border border-outline-variant/20 bg-surface-container-lowest px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none sm:w-auto"
+              className="w-full rounded-sm border border-outline-variant/20 bg-surface-container-lowest px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none sm:w-[320px] xl:w-[320px] xl:flex-none"
             >
               <option value="all">All Campaigns</option>
               {campaignOptions.map((campaign) => (
-                <option key={campaign.id} value={campaign.id}>
-                  {campaign.name}
+                <option key={campaign.id} value={campaign.id} title={campaign.name}>
+                  {formatCampaignFilterLabel(campaign.name)}
                 </option>
               ))}
               {state.selectedCampaign &&
               !campaignOptions.some((campaign) => campaign.id === state.selectedCampaign) ? (
-                <option value={state.selectedCampaign}>{`Campaign: ${state.selectedCampaign}`}</option>
+                <option value={state.selectedCampaign} title={state.selectedCampaign}>
+                  {formatCampaignFilterLabel(`Campaign: ${state.selectedCampaign}`)}
+                </option>
               ) : null}
             </select>
             
