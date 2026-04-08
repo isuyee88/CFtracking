@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="CF Tracking - real-time traffic tracking and analytics dashboard"
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <title>CF Tracking</title>
+    <style>
+      :root {
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-display: "Segoe UI", var(--font-sans);
+      }
+
+      @keyframes shell-shimmer {
+        0% {
+          background-position: -200% 0;
+        }
+
+        100% {
+          background-position: 200% 0;
+        }
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: var(--font-sans);
+        background: #f8fafc;
+      }
+
+      #root {
+        min-height: 100vh;
+      }
+
+      .app-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background:
+          radial-gradient(circle at top, rgba(94, 106, 210, 0.12), transparent 38%),
+          linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+        transition: opacity 180ms ease, visibility 180ms ease;
+      }
+
+      .app-boot.boot-hidden {
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      .boot-panel {
+        width: min(420px, 100%);
+        padding: 28px;
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
+        backdrop-filter: blur(16px);
+      }
+
+      .boot-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .boot-logo {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #5e6ad2 0%, #44ddc1 100%);
+      }
+
+      .boot-copy {
+        flex: 1;
+      }
+
+      .boot-title {
+        height: 16px;
+        width: 132px;
+        margin-bottom: 10px;
+      }
+
+      .boot-subtitle {
+        height: 10px;
+        width: 188px;
+      }
+
+      .boot-line {
+        background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+        background-size: 200% 100%;
+        animation: shell-shimmer 1.2s linear infinite;
+        border-radius: 999px;
+      }
+
+      .boot-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .boot-card {
+        min-height: 88px;
+        padding: 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+      }
+
+      .boot-card .boot-line:first-child {
+        width: 58%;
+        height: 10px;
+        margin-bottom: 12px;
+      }
+
+      .boot-card .boot-line:last-child {
+        width: 44%;
+        height: 24px;
+      }
+
+      .boot-chart {
+        height: 180px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.88);
+        padding: 16px;
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+      }
+
+      .boot-chart .boot-line:first-child {
+        width: 42%;
+        height: 10px;
+        margin-bottom: 16px;
+      }
+
+      .boot-chart .boot-line:last-child {
+        height: 128px;
+        border-radius: 14px;
+      }
+
+      @media (max-width: 640px) {
+        .boot-panel {
+          padding: 22px;
+          border-radius: 22px;
+        }
+
+        .boot-metrics {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-Bg2ki4ca.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/react-vendor-CDCYAkPt.js">
+    <link rel="modulepreload" crossorigin href="/assets/router-DrGCVQSR.js">
+    <link rel="modulepreload" crossorigin href="/assets/app-shell-CP9BP7e-.js">
+    <link rel="modulepreload" crossorigin href="/assets/app-contexts-wZWBy7ah.js">
+    <link rel="modulepreload" crossorigin href="/assets/filters-ui-CNctapx0.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-BFeR1ve8.css">
+  <script>window.__INITIAL_DATA__={"layer":"full","metrics":[{"key":"clicks","label":"Clicks","value":"12","isPositive":true,"format":"number"},{"key":"unique_clicks_campaign","label":"Unique clicks (campaign)","value":"12","isPositive":true,"format":"number"},{"key":"conversions","label":"Conversions","value":"0","isPositive":true,"format":"number"},{"key":"spend","label":"Cost","value":"$0.00","isPositive":false,"format":"currency"},{"key":"revenue_confirmed","label":"Revenue (confirmed)","value":"$0.00","isPositive":true,"format":"currency"},{"key":"profit_confirmed","label":"Profit/Loss (confirmed)","value":"$0.00","isPositive":true,"format":"currency"},{"key":"roi_confirmed","label":"ROI (confirmed)","value":"0.00%","isPositive":true,"format":"percentage"}],"chartData":[{"date":"2026-03-20","clicks":5,"conversions":0,"spend":0,"revenue":0,"impressions":0},{"date":"2026-03-21","clicks":7,"conversions":0,"spend":0,"revenue":0,"impressions":0}],"recentClicks":[{"event_id":"clk_1513f2be-5c63-4530-85e2-52cfa9a1839f","datetime":"2026-03-21T00:19:01.399Z","campaign":"8ca6631e-ef83-4977-a899-0b033e0169dc","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"https://cf-tracking.suyee88.workers.dev/","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36","visitor_code":"vst_42a1b09757f5914a8a4dc397e6305250"},{"event_id":"clk_71b65852-ca6a-4608-9687-bdaa0b8136c5","datetime":"2026-03-21T00:17:22.547Z","campaign":"8ca6631e-ef83-4977-a899-0b033e0169dc","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"https://cf-tracking.suyee88.workers.dev/","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36","visitor_code":"vst_af51766b4f040684891fc0216276d77a"},{"event_id":"clk_5a27527a-116f-499a-9550-92d38783226a","datetime":"2026-03-21T00:15:57.848Z","campaign":"c2","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36","visitor_code":"vst_60bad27d736376b9b756bde15b625d34"},{"event_id":"clk_14f17446-bcfa-4a72-bae9-51fdff725035","datetime":"2026-03-21T00:15:48.940Z","campaign":"c2","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36","visitor_code":"vst_45b4ff83246b7208d979016e1a8b402b"},{"event_id":"clk_bd684dd5-47be-4090-a3cf-306728cfb9d4","datetime":"2026-03-21T00:15:44.972Z","campaign":"c2","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36","visitor_code":"vst_65423c2a0dbe9553bd21af3c4c7eab0a"},{"event_id":"clk_5c833fee-fd1f-4d63-86e3-1ebbf5c00345","datetime":"2026-03-21T00:12:12.867Z","campaign":"c2","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36","visitor_code":"vst_607d7e52dff468d34275faf01583dc7d"},{"event_id":"clk_b24d6746-8aa7-4ef4-80db-deae7696c8e6","datetime":"2026-03-21T00:11:21.570Z","campaign":"c3","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36","visitor_code":"vst_c3ca0c5605fe65e03affaedc582c765a"},{"event_id":"clk_1df80d1f-9255-4815-9cd8-0ae012210b3d","datetime":"2026-03-20T23:48:31.653Z","campaign":"c3","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36","visitor_code":"vst_fa84ef335f8366c5a0a6a5d914a12b0d"},{"event_id":"clk_ffbb9131-d586-4608-8a7e-368764422402","datetime":"2026-03-20T23:46:21.138Z","campaign":"c3","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36","visitor_code":"vst_dcd83b1583b35069f062a8a812be9af0"},{"event_id":"clk_3ebf927b-c5f7-4042-8479-c6af3e9b0bf0","datetime":"2026-03-20T23:46:20.300Z","campaign":"c3","stream":"","landing":"","offer":"","source":"","ip":"154.19.47.140","country":"SG","region":"","city":"Singapore","isp":"CYBERVERSE LLC","operator":"","device_type":"desktop","device_model":"","os":"Windows","os_version":"","browser":"Chrome","browser_version":"","os_icon":"","browser_icon":"","connection_type":"","proxy":"No","creative_id":"","external_id":"","ad_campaign_id":"","sub_id":"","sub1":"","sub2":"","sub3":"","sub4":"","sub5":"","referrer":"","referrer_domain":"","search_engine":"","keyword":"","destination":"","cost":"$0.00","bot":"No","unique_stream":"Yes","unique_campaign":"Yes","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36","visitor_code":"vst_3614640d787f856caa6685309e6cb98d"}],"entityData":{"campaigns":[{"name":"c3","clicks":6,"impressions":0,"conversions":0,"spend":0,"revenue":0,"unique_visitors":0},{"name":"c2","clicks":4,"impressions":0,"conversions":0,"spend":0,"revenue":0,"unique_visitors":0},{"name":"8ca6631e-ef83-4977-a899-0b033e0169dc","clicks":2,"impressions":0,"conversions":0,"spend":0,"revenue":0,"unique_visitors":0}],"landings":[],"offers":[],"sources":[{"name":"c3","clicks":6,"impressions":0,"conversions":0,"spend":0,"revenue":0,"unique_visitors":0},{"name":"c2","clicks":4,"impressions":0,"conversions":0,"spend":0,"revenue":0,"unique_visitors":0},{"name":"8ca6631e-ef83-4977-a899-0b033e0169dc","clicks":2,"impressions":0,"conversions":0,"spend":0,"revenue":0,"unique_visitors":0}]},"dataSource":"D1","queryTime":"2026-04-05T15:12:40.173Z","scope":{"page":"dashboard","range":"last30days","from":"2026-03-07","to":"2026-04-05","timezone":"UTC","metrics":["clicks","unique_clicks_campaign","conversions","cost","revenue_confirmed","profit_confirmed","roi_confirmed"],"entities":["campaigns","landings","offers","sources"],"recentColumns":["event_id","datetime","campaign","os_icon","browser_icon","ip","destination"]},"criticalEntities":["campaigns","landings"],"deferredEntities":["offers","sources"]};</script></head>
+  <body>
+    <div id="app-boot" class="app-boot" aria-hidden="true">
+      <div class="boot-panel">
+        <div class="boot-brand">
+          <div class="boot-logo"></div>
+          <div class="boot-copy">
+            <div class="boot-line boot-title"></div>
+            <div class="boot-line boot-subtitle"></div>
+          </div>
+        </div>
+        <div class="boot-metrics">
+          <div class="boot-card">
+            <div class="boot-line"></div>
+            <div class="boot-line"></div>
+          </div>
+          <div class="boot-card">
+            <div class="boot-line"></div>
+            <div class="boot-line"></div>
+          </div>
+        </div>
+        <div class="boot-chart">
+          <div class="boot-line"></div>
+          <div class="boot-line"></div>
+        </div>
+      </div>
+    </div>
+    <div id="root"></div>
+  <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"088fb7091c834f27a5d57bb4f3aea3cb","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9e797dfbaae5509a',t:'MTc3NTQwMTk1Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
+

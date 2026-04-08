@@ -34,6 +34,7 @@ import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 import { useToast } from '../components/Toast';
 import { readBootstrapPage } from '../services/bootstrap';
+import { useLocation } from 'react-router-dom';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -102,6 +103,7 @@ const LANDING_FIELDS: FormField[] = [
 
 export const Landings = () => {
   const toast = useToast();
+  const location = useLocation();
   const bootstrap = readBootstrapPage<{ landings?: LandingPage[] }>('landings');
   const hasBootstrap = Boolean(bootstrap);
   const [landings, setLandings] = useState<LandingPage[]>(Array.isArray(bootstrap?.data?.landings) ? bootstrap.data.landings : []);
@@ -114,7 +116,13 @@ export const Landings = () => {
   const [selectedLanding, setSelectedLanding] = useState<Partial<LandingPage> | undefined>(undefined);
   
   // Search and filter state
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    return new URLSearchParams(window.location.search).get('search') || '';
+  });
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
   
   // Date range state
@@ -136,54 +144,25 @@ export const Landings = () => {
 
   // Fetch landings from API
   useEffect(() => {
+    setSearchTerm(new URLSearchParams(location.search).get('search') || '');
+  }, [location.search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, filterValues]);
+
+  useEffect(() => {
     const loadLandings = async () => {
       try {
         if (!hasBootstrap && landings.length === 0) {
           setLoading(true);
         }
+        setError(null);
         const data = await fetchLandings();
         if (Array.isArray(data)) {
           setLandings(data);
         } else {
-          // Use mock data if API fails
-          setLandings([
-            {
-              id: 'lp1',
-              name: 'Landing Page A - Product Demo',
-              url: 'https://example.com/landing-a',
-              status: 'active',
-              group: 'Product',
-              campaignCount: 3,
-              clicks: 12450,
-              conversions: 623,
-              cr: 5.0,
-              updatedAt: '2024-01-15T10:30:00Z'
-            },
-            {
-              id: 'lp2',
-              name: 'Landing Page B - Lead Form',
-              url: 'https://example.com/landing-b',
-              status: 'active',
-              group: 'Lead Gen',
-              campaignCount: 2,
-              clicks: 8920,
-              conversions: 312,
-              cr: 3.5,
-              updatedAt: '2024-01-14T15:45:00Z'
-            },
-            {
-              id: 'lp3',
-              name: 'Landing Page C - Video Sales Letter',
-              url: 'https://example.com/landing-c',
-              status: 'paused',
-              group: 'VSL',
-              campaignCount: 1,
-              clicks: 5430,
-              conversions: 189,
-              cr: 3.5,
-              updatedAt: '2024-01-13T09:15:00Z'
-            }
-          ]);
+          setError('Failed to load landings');
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load landings');
@@ -225,31 +204,7 @@ export const Landings = () => {
       setIsFormOpen(false);
     } catch (err) {
       toast.error('Failed to save landing page', err instanceof Error ? err.message : 'Unknown error');
-      // For demo, add to local state
-      if (formMode === 'create') {
-        const newLanding: LandingPage = {
-          id: `lp${Date.now()}`,
-          name: formData.name,
-          url: formData.url,
-          status: formData.status || 'active',
-          group: formData.group || 'Default',
-          campaignCount: 0,
-          clicks: 0,
-          conversions: 0,
-          cr: 0,
-          updatedAt: new Date().toISOString()
-        };
-        setLandings(prev => [...prev, newLanding]);
-      } else {
-        setLandings(prev => 
-          prev.map(lp => 
-            lp.id === selectedLanding?.id 
-              ? { ...lp, ...formData, updatedAt: new Date().toISOString() }
-              : lp
-          )
-        );
-      }
-      setIsFormOpen(false);
+      return;
     }
   };
 
@@ -262,7 +217,6 @@ export const Landings = () => {
       toast.success('Landing page deleted successfully');
     } catch (err) {
       toast.error('Failed to delete landing page', err instanceof Error ? err.message : 'Unknown error');
-      setLandings(prev => prev.filter(lp => lp.id !== id));
     }
   };
 
@@ -443,6 +397,12 @@ export const Landings = () => {
           </button>
         </div>
       </div>
+
+      {error ? (
+        <div className="rounded-sm border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+          {error}
+        </div>
+      ) : null}
 
       {/* Toolbar */}
       <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   LayoutDashboard, 
   Zap, 
   Image, 
@@ -33,7 +33,10 @@ import {
   Shield,
   ThumbsUp,
   Target,
-  Home
+  Home,
+  FileDown,
+  Calculator,
+  Brain
 } from 'lucide-react';
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
@@ -125,13 +128,18 @@ export const Layout = () => {
   // 桌面端默认展开侧边栏，移动端不显示侧边栏（只用底部导航）
   const [isSidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
-      return window.innerWidth >= 1024; // lg breakpoint
+      return window.innerWidth >= 1280; // xl breakpoint
     }
     return true;
   });
   const location = useLocation();
   const navigate = useNavigate();
   const { isDarkMode, toggleDarkMode } = useDarkMode();
+
+  const canHoverPrefetch =
+    typeof window !== 'undefined' &&
+    window.innerWidth >= 1024 &&
+    window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 
   const prefetchRouteBootstrap = async (to: string) => {
     if (typeof window === 'undefined') {
@@ -158,17 +166,23 @@ export const Layout = () => {
 
       event.preventDefault();
       await prefetchRouteBootstrap(to);
+      if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+        setSidebarOpen(false);
+      }
       navigate(to);
     };
 
   const handlePrefetch = (to: string) => {
+    if (!canHoverPrefetch) {
+      return;
+    }
     void prefetchRouteBootstrap(to);
   };
 
   // 监听窗口大小变化，自动调整侧边栏状态（仅桌面端）
   useEffect(() => {
     const handleResize = () => {
-      const shouldBeOpen = window.innerWidth >= 1024;
+      const shouldBeOpen = window.innerWidth >= 1280;
       setSidebarOpen(shouldBeOpen);
     };
 
@@ -199,6 +213,8 @@ export const Layout = () => {
       title: "Report",
       items: [
         { icon: LineChart, label: "Trends", to: "/trends" },
+        { icon: BarChart3, label: "Reports", to: "/reports" },
+        { icon: FileDown, label: "Exported Reports", to: "/exported-reports" },
         { icon: MousePointerClick, label: "Click Log", to: "/audit" },
         { icon: CheckCircle, label: "Conversions", to: "/conversions" },
       ]
@@ -207,9 +223,11 @@ export const Layout = () => {
       title: "Tools",
       items: [
         { icon: Zap, label: "Autorules", to: "/rules" },
+        { icon: ShieldCheck, label: "Traffic Filter", to: "/traffic-filter" },
         { icon: Shield, label: "Blacklist", to: "/blacklist" },
         { icon: ThumbsUp, label: "Whitelist", to: "/whitelist" },
         { icon: Target, label: "Target", to: "/target" },
+        { icon: Calculator, label: "Custom Metrics", to: "/custom-metrics" },
       ]
     },
     {
@@ -223,6 +241,15 @@ export const Layout = () => {
 
   return (
     <div className="flex min-h-screen bg-canvas-inset selection:bg-accent-muted">
+      {isSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          className="fixed inset-0 z-40 bg-black/30 xl:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Desktop Sidebar only */}
       <aside
         className={cn(
@@ -233,7 +260,6 @@ export const Layout = () => {
         )}
         style={{ width: 256 }}
         aria-label="Main navigation"
-        role="navigation"
       >
         <div className="p-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
@@ -245,6 +271,14 @@ export const Layout = () => {
             </div>
             <h1 className="text-xl font-display font-bold tracking-tight text-fg-default">CFTracking</h1>
           </div>
+          <button
+            type="button"
+            className="rounded-md p-2 text-fg-muted transition-colors hover:bg-surface-container hover:text-fg-default xl:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close navigation"
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
         </div>
 
         {/* 优化：导航区域添加ARIA标签 */}
@@ -252,7 +286,7 @@ export const Layout = () => {
           {navSections.map((section) => (
             <div key={section.title} className="mb-6">
               <p 
-                className="px-4 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle mb-2"
+              className="px-4 text-[10px] font-semibold uppercase tracking-wider text-fg-muted mb-2"
                 aria-label={`${section.title} section`}
               >
                 {section.title}
@@ -284,14 +318,21 @@ export const Layout = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header - Stitch Design: No-Line 规则 */}
         <header 
           className="h-16 bg-surface-container-lowest dark:bg-surface-container flex items-center justify-between px-6" 
           role="banner"
         >
           <div className="flex items-center gap-4 flex-1 max-w-md">
-            {/* 移除移动端菜单按钮，只保留桌面端 */}
+            <button
+              type="button"
+              className="rounded-md p-2 text-fg-muted transition-colors hover:bg-surface-container hover:text-fg-default xl:hidden"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open navigation"
+            >
+              <Menu size={18} aria-hidden="true" />
+            </button>
             <Search size={18} className="text-fg-subtle" aria-hidden="true" />
             <input 
               type="text" 
@@ -333,7 +374,7 @@ export const Layout = () => {
             {/* 优化：用户信息 - 添加ARIA标签 */}
             <button 
               className="flex items-center gap-3 cursor-pointer group focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 rounded-md p-1"
-              aria-label="User menu"
+              aria-label="User Name Elite Partner user menu"
             >
               <div className="text-right">
                 <p className="text-sm font-semibold text-fg-default group-hover:text-accent-fg transition-colors">User Name</p>
@@ -357,43 +398,47 @@ export const Layout = () => {
         >
           <Outlet />
         </div>
-      </main>
+      </div>
 
       {/* Mobile Bottom Navigation - Scrollable */}
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <Link to="/" onClick={handleNavigation('/')} onMouseEnter={() => handlePrefetch('/')} onFocus={() => handlePrefetch('/')} className={cn("mobile-nav-item", (location.pathname === "/" || location.pathname === "") && "active")} title="Dashboard">
+        <Link to="/" onClick={handleNavigation('/')} className={cn("mobile-nav-item", (location.pathname === "/" || location.pathname === "") && "active")} title="Dashboard">
           <LayoutDashboard size={20} aria-hidden="true" />
           <span>Dashboard</span>
         </Link>
-        <Link to="/campaigns" onClick={handleNavigation('/campaigns')} onMouseEnter={() => handlePrefetch('/campaigns')} onFocus={() => handlePrefetch('/campaigns')} className={cn("mobile-nav-item", location.pathname === "/campaigns" && "active")} title="Campaigns">
+        <Link to="/campaigns" onClick={handleNavigation('/campaigns')} className={cn("mobile-nav-item", location.pathname === "/campaigns" && "active")} title="Campaigns">
           <Zap size={20} aria-hidden="true" />
           <span>Campaigns</span>
         </Link>
-        <Link to="/landings" onClick={handleNavigation('/landings')} onMouseEnter={() => handlePrefetch('/landings')} onFocus={() => handlePrefetch('/landings')} className={cn("mobile-nav-item", location.pathname === "/landings" && "active")} title="Landings">
+        <Link to="/landings" onClick={handleNavigation('/landings')} className={cn("mobile-nav-item", location.pathname === "/landings" && "active")} title="Landings">
           <Image size={20} aria-hidden="true" />
           <span>Landings</span>
         </Link>
-        <Link to="/offers" onClick={handleNavigation('/offers')} onMouseEnter={() => handlePrefetch('/offers')} onFocus={() => handlePrefetch('/offers')} className={cn("mobile-nav-item", location.pathname === "/offers" && "active")} title="Offers">
+        <Link to="/offers" onClick={handleNavigation('/offers')} className={cn("mobile-nav-item", location.pathname === "/offers" && "active")} title="Offers">
           <Gift size={20} aria-hidden="true" />
           <span>Offers</span>
         </Link>
-        <Link to="/traffic-sources" onClick={handleNavigation('/traffic-sources')} onMouseEnter={() => handlePrefetch('/traffic-sources')} onFocus={() => handlePrefetch('/traffic-sources')} className={cn("mobile-nav-item", location.pathname === "/traffic-sources" && "active")} title="Traffic Sources">
+        <Link to="/traffic-sources" onClick={handleNavigation('/traffic-sources')} className={cn("mobile-nav-item", location.pathname === "/traffic-sources" && "active")} title="Traffic Sources">
           <Globe size={20} aria-hidden="true" />
           <span>Sources</span>
         </Link>
-        <Link to="/trends" onClick={handleNavigation('/trends')} onMouseEnter={() => handlePrefetch('/trends')} onFocus={() => handlePrefetch('/trends')} className={cn("mobile-nav-item", location.pathname === "/trends" && "active")} title="Trends">
+        <Link to="/trends" onClick={handleNavigation('/trends')} className={cn("mobile-nav-item", location.pathname === "/trends" && "active")} title="Trends">
           <LineChart size={20} aria-hidden="true" />
           <span>Trends</span>
         </Link>
-        <Link to="/audit" onClick={handleNavigation('/audit')} onMouseEnter={() => handlePrefetch('/audit')} onFocus={() => handlePrefetch('/audit')} className={cn("mobile-nav-item", location.pathname === "/audit" && "active")} title="Click Log">
+        <Link to="/audit" onClick={handleNavigation('/audit')} className={cn("mobile-nav-item", location.pathname === "/audit" && "active")} title="Click Log">
           <MousePointerClick size={20} aria-hidden="true" />
           <span>Clicks</span>
         </Link>
-        <Link to="/rules" onClick={handleNavigation('/rules')} onMouseEnter={() => handlePrefetch('/rules')} onFocus={() => handlePrefetch('/rules')} className={cn("mobile-nav-item", location.pathname === "/rules" && "active")} title="Autorules">
+        <Link to="/rules" onClick={handleNavigation('/rules')} className={cn("mobile-nav-item", location.pathname === "/rules" && "active")} title="Autorules">
           <Shield size={20} aria-hidden="true" />
           <span>Rules</span>
         </Link>
-        <Link to="/settings" onClick={handleNavigation('/settings')} onMouseEnter={() => handlePrefetch('/settings')} onFocus={() => handlePrefetch('/settings')} className={cn("mobile-nav-item", location.pathname === "/settings" && "active")} title="Settings">
+        <Link to="/auto-optimization" onClick={handleNavigation('/auto-optimization')} className={cn("mobile-nav-item", location.pathname.startsWith("/auto-optimization") && "active")} title="Auto Optimization">
+          <Brain size={20} aria-hidden="true" />
+          <span>自动化</span>
+        </Link>
+        <Link to="/settings" onClick={handleNavigation('/settings')} className={cn("mobile-nav-item", location.pathname === "/settings" && "active")} title="Settings">
           <Settings size={20} aria-hidden="true" />
           <span>Settings</span>
         </Link>

@@ -8,6 +8,40 @@ import { getRawBootstrapData, loadBootstrapForLocation, normalizeRangeParam, rea
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
+/**
+ * 获取认证请求头（包含 JWT Token）
+ * @returns 包含 Authorization header 的对象
+ */
+function getAuthHeaders(): Record<string, string> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
+/**
+ * 带认证的 fetch 封装
+ * 自动附加 JWT Token 到请求头
+ */
+async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const authHeaders = getAuthHeaders();
+
+  return fetch(`${API_BASE_URL}${url}`, {
+    ...options,
+    headers: {
+      ...authHeaders,
+      ...(options.headers as Record<string, string>),
+    },
+  });
+}
+
 // 简单的内存缓存 - 用于减少重复请求
 interface ApiCacheEntry<T> {
   data: T;
@@ -441,6 +475,72 @@ function unwrapPayload<T>(payload: any): T {
   return payload as T;
 }
 
+function buildQueryString(params: Record<string, unknown>): string {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') {
+      return;
+    }
+
+    query.set(key, String(value));
+  });
+
+  const serialized = query.toString();
+  return serialized ? `?${serialized}` : '';
+}
+
+async function fetchListResult<T>(url: string): Promise<T[]> {
+  const response = await authenticatedFetch(url);
+  const payload = await handleRawJsonResponse<{
+    success?: boolean;
+    data?: T[];
+  }>(response);
+
+  const data = unwrapPayload<T[] | undefined>(payload);
+  return Array.isArray(data) ? data : [];
+}
+
+async function fetchPaginatedResult<T>(url: string): Promise<{
+  list: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}> {
+  const response = await authenticatedFetch(url);
+  const payload = await handleRawJsonResponse<{
+    success?: boolean;
+    data?: T[];
+    meta?: {
+      page?: number;
+      pageSize?: number;
+      total?: number;
+      totalPages?: number;
+    };
+  }>(response);
+
+  const list = Array.isArray(payload?.data) ? payload.data : [];
+  const page = Number(payload?.meta?.page || 1);
+  const pageSize = Number(payload?.meta?.pageSize || list.length || 20);
+  const total = Number(payload?.meta?.total || list.length || 0);
+  const totalPages = Number(payload?.meta?.totalPages || (pageSize > 0 ? Math.ceil(total / pageSize) : 0));
+
+  return {
+    list,
+    page,
+    pageSize,
+    total,
+    totalPages,
+  };
+}
+
+async function mutateJsonData<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const response = await authenticatedFetch(url, options);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<T>(payload);
+}
+
 function getDeviceId(): string {
   if (typeof window === 'undefined') {
     return 'server-device';
@@ -475,7 +575,7 @@ export async function fetchCampaigns() {
     return bootstrapCampaigns;
   }
 
-  return [];
+  return fetchListResult<any>('/api/campaigns?page=1&pageSize=100');
 }
 
 // 获取单个 Campaign
@@ -485,14 +585,20 @@ export async function fetchCampaign(id: string | number) {
     return campaignDetailBundle.data.campaign;
   }
 
-  return findBootstrapEntityById(['campaigns', 'domains', 'trends'], 'campaigns', id);
+  const bootstrapEntity = findBootstrapEntityById(['campaigns', 'domains', 'trends'], 'campaigns', id);
+  if (bootstrapEntity) {
+    return bootstrapEntity;
+  }
+
+  const response = await authenticatedFetch(`/api/campaigns/${id}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload(payload);
 }
 
 // 创建 Campaign
 export async function createCampaign(data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/campaigns`, {
+  const response = await authenticatedFetch('/api/campaigns', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -501,9 +607,8 @@ export async function createCampaign(data: any) {
 
 // 更新 Campaign
 export async function updateCampaign(id: string | number, data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}`, {
+  const response = await authenticatedFetch(`/api/campaigns/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -512,7 +617,7 @@ export async function updateCampaign(id: string | number, data: any) {
 
 // 删除 Campaign
 export async function deleteCampaign(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}`, {
+  const response = await authenticatedFetch(`/api/campaigns/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -529,11 +634,14 @@ export async function fetchCampaignStats(
     return campaignDetailBundle.data.stats;
   }
 
-  return null;
+  const query = buildQueryString(params);
+  const response = await authenticatedFetch(`/api/campaigns/${id}/stats${query}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload(payload);
 }
 
 export async function regenerateCampaignToken(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}/regenerate-token`, {
+  const response = await authenticatedFetch(`/api/campaigns/${id}/regenerate-token`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
@@ -572,17 +680,23 @@ export async function fetchOffers(withStats = true) {
     return bootstrapOffers;
   }
 
-  return [];
+  return fetchListResult<any>(`/api/offers?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`);
 }
 
 export async function fetchOffer(id: string | number) {
-  return findBootstrapEntityById(['offers', 'campaign-detail', 'campaigns'], 'offers', id);
+  const bootstrapEntity = findBootstrapEntityById(['offers', 'campaign-detail', 'campaigns'], 'offers', id);
+  if (bootstrapEntity) {
+    return bootstrapEntity;
+  }
+
+  const response = await authenticatedFetch(`/api/offers/${id}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload(payload);
 }
 
 export async function createOffer(data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/offers`, {
+  const response = await authenticatedFetch('/api/offers', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -590,9 +704,8 @@ export async function createOffer(data: any) {
 }
 
 export async function updateOffer(id: string | number, data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/offers/${id}`, {
+  const response = await authenticatedFetch(`/api/offers/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -600,7 +713,7 @@ export async function updateOffer(id: string | number, data: any) {
 }
 
 export async function deleteOffer(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/offers/${id}`, {
+  const response = await authenticatedFetch(`/api/offers/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -622,17 +735,29 @@ export async function fetchTrafficSources(withStats = true) {
     return bootstrapTrafficSources;
   }
 
-  return [];
+  return fetchListResult<any>(
+    `/api/traffic-sources?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`
+  );
 }
 
 export async function fetchTrafficSource(id: string | number) {
-  return findBootstrapEntityById(['traffic-sources', 'campaign-detail', 'campaigns'], 'trafficSources', id);
+  const bootstrapEntity = findBootstrapEntityById(
+    ['traffic-sources', 'campaign-detail', 'campaigns'],
+    'trafficSources',
+    id
+  );
+  if (bootstrapEntity) {
+    return bootstrapEntity;
+  }
+
+  const response = await authenticatedFetch(`/api/traffic-sources/${id}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload(payload);
 }
 
 export async function createTrafficSource(data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/traffic-sources`, {
+  const response = await authenticatedFetch('/api/traffic-sources', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -640,9 +765,8 @@ export async function createTrafficSource(data: any) {
 }
 
 export async function updateTrafficSource(id: string | number, data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/traffic-sources/${id}`, {
+  const response = await authenticatedFetch(`/api/traffic-sources/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -650,7 +774,7 @@ export async function updateTrafficSource(id: string | number, data: any) {
 }
 
 export async function deleteTrafficSource(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/traffic-sources/${id}`, {
+  const response = await authenticatedFetch(`/api/traffic-sources/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -663,9 +787,8 @@ export async function testTrafficSourceConnection(data: {
   apiSecret?: string;
   platformType?: string;
 }) {
-  const response = await fetch(`${API_BASE_URL}/api/traffic-sources/test-connection`, {
+  const response = await authenticatedFetch('/api/traffic-sources/test-connection', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -687,17 +810,25 @@ export async function fetchAffiliateNetworks(withStats = true) {
     return bootstrapNetworks;
   }
 
-  return [];
+  return fetchListResult<any>(
+    `/api/affiliate-networks?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`
+  );
 }
 
 export async function fetchAffiliateNetwork(id: string | number) {
-  return findBootstrapEntityById(['affiliate-networks', 'offers'], 'affiliateNetworks', id);
+  const bootstrapEntity = findBootstrapEntityById(['affiliate-networks', 'offers'], 'affiliateNetworks', id);
+  if (bootstrapEntity) {
+    return bootstrapEntity;
+  }
+
+  const response = await authenticatedFetch(`/api/affiliate-networks/${id}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload(payload);
 }
 
 export async function createAffiliateNetwork(data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/affiliate-networks`, {
+  const response = await authenticatedFetch('/api/affiliate-networks', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -705,9 +836,8 @@ export async function createAffiliateNetwork(data: any) {
 }
 
 export async function updateAffiliateNetwork(id: string | number, data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/affiliate-networks/${id}`, {
+  const response = await authenticatedFetch(`/api/affiliate-networks/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -715,7 +845,7 @@ export async function updateAffiliateNetwork(id: string | number, data: any) {
 }
 
 export async function deleteAffiliateNetwork(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/affiliate-networks/${id}`, {
+  const response = await authenticatedFetch(`/api/affiliate-networks/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -730,17 +860,23 @@ export async function fetchDomains(withStats = true) {
     return domainsBundle.data.domains;
   }
 
-  return [];
+  return fetchListResult<any>(`/api/domains?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`);
 }
 
 export async function fetchDomain(id: string | number) {
-  return findBootstrapEntityById(['domains'], 'domains', id);
+  const bootstrapEntity = findBootstrapEntityById(['domains'], 'domains', id);
+  if (bootstrapEntity) {
+    return bootstrapEntity;
+  }
+
+  const response = await authenticatedFetch(`/api/domains/${id}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload(payload);
 }
 
 export async function createDomain(data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/domains`, {
+  const response = await authenticatedFetch('/api/domains', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -748,9 +884,8 @@ export async function createDomain(data: any) {
 }
 
 export async function updateDomain(id: string | number, data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/domains/${id}`, {
+  const response = await authenticatedFetch(`/api/domains/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -758,7 +893,7 @@ export async function updateDomain(id: string | number, data: any) {
 }
 
 export async function deleteDomain(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/domains/${id}`, {
+  const response = await authenticatedFetch(`/api/domains/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -773,13 +908,12 @@ export async function fetchFlows(campaignId: string) {
     return campaignDetailBundle.data.flows;
   }
 
-  return [];
+  return fetchListResult<any>(`/api/flows/campaign/${campaignId}`);
 }
 
 export async function createFlow(data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/flows`, {
+  const response = await authenticatedFetch('/api/flows', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -787,9 +921,8 @@ export async function createFlow(data: any) {
 }
 
 export async function updateFlow(id: string | number, data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/flows/${id}`, {
+  const response = await authenticatedFetch(`/api/flows/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -797,7 +930,7 @@ export async function updateFlow(id: string | number, data: any) {
 }
 
 export async function deleteFlow(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/flows/${id}`, {
+  const response = await authenticatedFetch(`/api/flows/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -805,9 +938,8 @@ export async function deleteFlow(id: string | number) {
 }
 
 export async function addLandingPageToFlow(flowId: string, landingPageId: string, weight?: number) {
-  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/landing-pages`, {
+  const response = await authenticatedFetch(`/api/flows/${flowId}/landing-pages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ landingPageId, weight }),
   });
   const result = await handleResponse(response);
@@ -815,9 +947,8 @@ export async function addLandingPageToFlow(flowId: string, landingPageId: string
 }
 
 export async function addOfferToFlow(flowId: string, offerId: string, weight?: number) {
-  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/offers`, {
+  const response = await authenticatedFetch(`/api/flows/${flowId}/offers`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ offerId, weight }),
   });
   const result = await handleResponse(response);
@@ -991,7 +1122,9 @@ export async function fetchFlowSchema(flowId: string): Promise<FlowSchemaDocumen
     return bootstrapSchema;
   }
 
-  throw new Error(`Flow schema ${flowId} is not available in the current bootstrap payload`);
+  const response = await authenticatedFetch(`/api/flows/${flowId}/schema`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<FlowSchemaDocument>(payload);
 }
 
 export async function fetchFlowRules(flowId: string): Promise<FlowRuleDocument[]> {
@@ -1000,13 +1133,12 @@ export async function fetchFlowRules(flowId: string): Promise<FlowRuleDocument[]
     return bootstrapRules;
   }
 
-  return [];
+  return fetchListResult<FlowRuleDocument>(`/api/flows/${flowId}/rules`);
 }
 
 export async function createFlowRule(flowId: string, data: CreateFlowRuleDTO): Promise<FlowRuleDocument> {
-  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/rules`, {
+  const response = await authenticatedFetch(`/api/flows/${flowId}/rules`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1014,9 +1146,8 @@ export async function createFlowRule(flowId: string, data: CreateFlowRuleDTO): P
 }
 
 export async function updateFlowRule(ruleId: string, data: UpdateFlowRuleDTO): Promise<FlowRuleDocument> {
-  const response = await fetch(`${API_BASE_URL}/api/flows/rules/${ruleId}`, {
+  const response = await authenticatedFetch(`/api/flows/rules/${ruleId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1024,7 +1155,7 @@ export async function updateFlowRule(ruleId: string, data: UpdateFlowRuleDTO): P
 }
 
 export async function deleteFlowRule(ruleId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/flows/rules/${ruleId}`, {
+  const response = await authenticatedFetch(`/api/flows/rules/${ruleId}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -1035,9 +1166,8 @@ export async function testFlow(
   flowId: string,
   visitData: FlowValidationVisitData
 ): Promise<FlowValidationResult> {
-  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/test`, {
+  const response = await authenticatedFetch(`/api/flows/${flowId}/test`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ visitData }),
   });
   const result = await handleResponse(response);
@@ -1045,17 +1175,24 @@ export async function testFlow(
 }
 
 export async function fetchFlowFilterOperators(): Promise<FlowFilterOption[]> {
-  return FLOW_FILTER_OPERATORS;
+  try {
+    return await fetchListResult<FlowFilterOption>('/api/flows/filters/operators');
+  } catch {
+    return FLOW_FILTER_OPERATORS;
+  }
 }
 
 export async function fetchFlowFilterTargets(): Promise<FlowTargetOption[]> {
-  return FLOW_FILTER_TARGETS;
+  try {
+    return await fetchListResult<FlowTargetOption>('/api/flows/filters/targets');
+  } catch {
+    return FLOW_FILTER_TARGETS;
+  }
 }
 
 export async function equalizeCampaignFlows(campaignId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/flows/equalize`, {
+  const response = await authenticatedFetch('/api/flows/equalize', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ campaignId }),
   });
   const result = await handleResponse(response);
@@ -1063,7 +1200,7 @@ export async function equalizeCampaignFlows(campaignId: string) {
 }
 
 export async function cloneFlow(flowId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/clone`, {
+  const response = await authenticatedFetch(`/api/flows/${flowId}/clone`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
@@ -1121,7 +1258,11 @@ export async function fetchCampaignFlowStats(
     return campaignDetailBundle.data.flowStats as FlowStats[];
   }
 
-  return [];
+  const query = buildQueryString({
+    startDate: params.startDate,
+    endDate: params.endDate,
+  });
+  return fetchListResult<FlowStats>(`/api/flows/campaign/${campaignId}/stats${query}`);
 }
 
 export async function fetchFlowLogs(
@@ -1133,7 +1274,21 @@ export async function fetchFlowLogs(
     return bootstrapLogs;
   }
 
-  return { logs: [], total: 0, hasMore: false };
+  const query = buildQueryString({
+    limit: params.limit,
+    offset: params.offset,
+    startDate: params.startDate,
+    endDate: params.endDate,
+  });
+  const response = await authenticatedFetch(`/api/flows/${flowId}/logs${query}`);
+  const payload = await handleRawJsonResponse(response);
+  const result = unwrapPayload<Partial<FlowLogListResult>>(payload);
+
+  return {
+    logs: Array.isArray(result?.logs) ? result.logs : [],
+    total: Number(result?.total || 0),
+    hasMore: Boolean(result?.hasMore),
+  };
 }
 
 // ==================== Landings API ====================
@@ -1151,17 +1306,29 @@ export async function fetchLandings(withStats = true) {
     return bootstrapLandings;
   }
 
-  return [];
+  return fetchListResult<any>(
+    `/api/landing-pages?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`
+  );
 }
 
 export async function fetchLanding(id: string | number) {
-  return findBootstrapEntityById(['landings', 'campaign-detail', 'domains', 'campaigns'], 'landings', id);
+  const bootstrapEntity = findBootstrapEntityById(
+    ['landings', 'campaign-detail', 'domains', 'campaigns'],
+    'landings',
+    id
+  );
+  if (bootstrapEntity) {
+    return bootstrapEntity;
+  }
+
+  const response = await authenticatedFetch(`/api/landing-pages/${id}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload(payload);
 }
 
 export async function createLanding(data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/landing-pages`, {
+  const response = await authenticatedFetch('/api/landing-pages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1169,9 +1336,8 @@ export async function createLanding(data: any) {
 }
 
 export async function updateLanding(id: string | number, data: any) {
-  const response = await fetch(`${API_BASE_URL}/api/landing-pages/${id}`, {
+  const response = await authenticatedFetch(`/api/landing-pages/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1179,7 +1345,7 @@ export async function updateLanding(id: string | number, data: any) {
 }
 
 export async function deleteLanding(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/landing-pages/${id}`, {
+  const response = await authenticatedFetch(`/api/landing-pages/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -1220,11 +1386,24 @@ export async function fetchDashboardStats(timeRange: string = 'today', campaignI
     };
   }
 
+  const query = buildQueryString({
+    range: normalizedRange,
+    campaignId,
+  });
+  const response = await authenticatedFetch(`/api/analytics/dashboard${query}`);
+  const payload = await handleRawJsonResponse(response);
+  const result = unwrapPayload<{
+    metrics?: any[];
+    chartData?: any[];
+    dataSource?: 'DO' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT';
+    queryTime?: string;
+  }>(payload);
+
   return {
-    metrics: [],
-    chartData: [],
-    dataSource: 'CACHE',
-    queryTime: new Date().toISOString(),
+    metrics: Array.isArray(result?.metrics) ? result.metrics : [],
+    chartData: Array.isArray(result?.chartData) ? result.chartData : [],
+    dataSource: result?.dataSource || 'DEFAULT',
+    queryTime: result?.queryTime || new Date().toISOString(),
   };
 }
 
@@ -1255,7 +1434,18 @@ export async function fetchRecentClicks(
     return Array.isArray(refreshedBundle.recentClicks) ? refreshedBundle.recentClicks : [];
   }
 
-  return [];
+  const query = buildQueryString({
+    limit,
+    range: normalizedRange,
+    campaignId,
+  });
+  const response = await authenticatedFetch(`/api/analytics/recent-clicks${query}`);
+  const payload = await handleRawJsonResponse(response);
+  const result = unwrapPayload<{
+    list?: any[];
+  }>(payload);
+
+  return Array.isArray(result?.list) ? result.list : [];
 }
 
 // 获取实体统计数据
@@ -1306,7 +1496,15 @@ export async function fetchEntityStats(
     return bootstrapEntityStats;
   }
 
-  return [];
+  const query = buildQueryString({
+    type: entityType,
+    range: normalizedRange,
+    campaignId,
+  });
+  const response = await authenticatedFetch(`/api/analytics/entity-stats${query}`);
+  const payload = await handleRawJsonResponse(response);
+  const result = unwrapPayload<any[]>(payload);
+  return Array.isArray(result) ? result : [];
 }
 
 // ==================== Reports API ====================
@@ -1359,20 +1557,21 @@ export async function fetchReport(type: ReportType, params: ReportParams) {
 }
 
 export async function queryReport(params: ReportParams) {
-  const response = await fetch(`${API_BASE_URL}/api/analytics/reports/query`, {
+  const response = await authenticatedFetch('/api/analytics/reports/query', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
 
-  const result = await handleResponse(response);
-  return result.data?.data || result.data || [];
+  const result = await handleRawJsonResponse(response);
+  const payload = unwrapPayload<{
+    data?: any[];
+  }>(result);
+  return Array.isArray(payload?.data) ? payload.data : [];
 }
 
 export async function exportReport(params: ReportExportParams): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}/api/analytics/reports/export`, {
+  const response = await authenticatedFetch('/api/analytics/reports/export', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
 
@@ -1453,13 +1652,25 @@ export async function fetchClicks(params: ClickLogParams = {}): Promise<ClickLog
     };
   }
 
-  return {
-    list: [],
-    total: 0,
-    page: Number(params.page || 1),
-    pageSize: Number(params.pageSize || 20),
-    totalPages: 0,
-  };
+  const query = buildQueryString({
+    page: params.page || 1,
+    pageSize: params.pageSize || 20,
+    campaignId: params.campaignId,
+    startDate: params.startDate,
+    endDate: params.endDate,
+    country: params.country,
+    device: params.device,
+    browser: params.browser,
+    os: params.os,
+    ip: params.ip,
+    visitorId: params.visitorId,
+    offerId: params.offerId,
+    flowId: params.flowId,
+    isUnique: params.isUnique,
+    search: params.search,
+  });
+
+  return fetchPaginatedResult<any>(`/api/clicks${query}`);
 }
 
 export async function fetchClickStats(startDate: string, endDate: string, campaignId?: string): Promise<ClickStats> {
@@ -1476,12 +1687,14 @@ export async function fetchClickStats(startDate: string, endDate: string, campai
     return auditBundle.data.stats as ClickStats;
   }
 
-  return {
-    totalClicks: 0,
-    uniqueClicks: 0,
-    countries: 0,
-    deviceTypes: 0,
-  };
+  const query = buildQueryString({
+    startDate,
+    endDate,
+    campaignId,
+  });
+  const response = await authenticatedFetch(`/api/clicks/stats${query}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<ClickStats>(payload);
 }
 
 export async function fetchClickById(clickId: string) {
@@ -1531,6 +1744,7 @@ export interface ConversionLogItem {
   device?: string | null;
   browser?: string | null;
   source?: string | null;
+  visitorId?: string | null;
   subId1?: string | null;
   subId2?: string | null;
   subId3?: string | null;
@@ -1598,13 +1812,20 @@ export async function fetchConversions(params: ConversionLogParams = {}): Promis
     };
   }
 
-  return {
-    list: [],
-    total: 0,
-    page: Number(params.page || 1),
-    pageSize: Number(params.pageSize || 20),
-    totalPages: 0,
-  };
+  const query = buildQueryString({
+    page: params.page || 1,
+    pageSize: params.pageSize || 20,
+    campaignId: params.campaignId,
+    offerId: params.offerId,
+    startDate: params.startDate,
+    endDate: params.endDate,
+    status: params.status,
+    country: params.country,
+    device: params.device,
+    search: params.search,
+  });
+
+  return fetchPaginatedResult<ConversionLogItem>(`/api/conversions${query}`);
 }
 
 export async function fetchConversionStats(
@@ -1625,14 +1846,14 @@ export async function fetchConversionStats(
     return conversionsBundle.data.stats as ConversionStats;
   }
 
-  return {
-    totalConversions: 0,
-    approvedConversions: 0,
-    pendingConversions: 0,
-    rejectedConversions: 0,
-    totalRevenue: 0,
-    totalPayout: 0,
-  };
+  const query = buildQueryString({
+    startDate,
+    endDate,
+    campaignId,
+  });
+  const response = await authenticatedFetch(`/api/conversions/stats${query}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<ConversionStats>(payload);
 }
 
 export async function fetchConversionById(conversionId: string): Promise<ConversionLogItem> {
@@ -1651,9 +1872,8 @@ export async function updateConversionStatus(
   conversionId: string,
   status: 'approved' | 'pending' | 'rejected'
 ): Promise<{ updated: boolean; conversionId: string; status: string }> {
-  const response = await fetch(`${API_BASE_URL}/api/conversions/${conversionId}/status`, {
+  const response = await authenticatedFetch(`/api/conversions/${conversionId}/status`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status }),
   });
   const result = await handleResponse(response);
@@ -1717,6 +1937,23 @@ export async function fetchUserPreferences(userId: string): Promise<UserPreferen
     return bootstrapPreference;
   }
 
+  try {
+    const response = await authenticatedFetch(`/api/user-preferences/preferences/${userId}`);
+    const result = await handleRawJsonResponse<{
+      success: boolean;
+      data?: UserPreferenceDocument;
+    }>(response);
+
+    if (result?.data) {
+      return result.data;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message.toLowerCase() : '';
+    if (!message.includes('404') && !message.includes('not found')) {
+      throw err;
+    }
+  }
+
   return createDefaultUserPreferenceDocument(userId);
 }
 
@@ -1724,10 +1961,9 @@ export async function saveUserPreferences(
   userId: string,
   payload: SaveUserPreferencesPayload
 ): Promise<UserPreferenceDocument> {
-  const response = await fetch(`${API_BASE_URL}/api/user-preferences/preferences/${userId}`, {
+  const response = await authenticatedFetch(`/api/user-preferences/preferences/${userId}`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
       'X-Device-ID': getDeviceId(),
     },
     body: JSON.stringify(payload),
@@ -1833,7 +2069,19 @@ export async function fetchTrendsReport(filter: TrendsFilter = {}): Promise<Tren
     return (trendsBundle.data.report as TrendsReport | null) || createEmptyTrendsReport(filter);
   }
 
-  return createEmptyTrendsReport(filter);
+  const query = buildQueryString({
+    startDate: filter.startDate,
+    endDate: filter.endDate,
+    interval: filter.interval || 'day',
+    campaignId: filter.campaignId,
+  });
+  const response = await authenticatedFetch(`/api/analytics/trend-report${query}`);
+  const payload = await handleRawJsonResponse(response);
+  const result = unwrapPayload<{
+    data?: TrendsReport;
+  }>(payload);
+
+  return result?.data || createEmptyTrendsReport(filter);
 }
 
 export async function fetchTrendsCompare(params: {
@@ -1934,25 +2182,39 @@ export async function fetchRules(params: { page?: number; pageSize?: number; typ
     };
   }
 
+  const query = buildQueryString({
+    page: params.page ?? 1,
+    pageSize: params.pageSize ?? 200,
+    type: params.type,
+    status: params.status,
+  });
+  const result = await fetchPaginatedResult<Rule>(`/api/rules${query}`);
+
   return {
-    list: [],
-    meta: { page: 1, pageSize: 200, total: 0 },
+    list: result.list,
+    meta: {
+      page: result.page,
+      pageSize: result.pageSize,
+      total: result.total,
+      totalPages: result.totalPages,
+    },
   };
 }
 
 export async function fetchRuleById(id: string): Promise<Rule> {
   const rule = findBootstrapEntityById<Rule>(['rules'], 'rules', id);
-  if (!rule) {
-    throw new Error(`Rule ${id} is not available in the current bootstrap payload`);
+  if (rule) {
+    return rule;
   }
 
-  return rule;
+  const response = await authenticatedFetch(`/api/rules/${id}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<Rule>(payload);
 }
 
 export async function createRule(data: CreateRuleDTO): Promise<Rule> {
-  const response = await fetch(`${API_BASE_URL}/api/rules`, {
+  const response = await authenticatedFetch('/api/rules', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1960,9 +2222,8 @@ export async function createRule(data: CreateRuleDTO): Promise<Rule> {
 }
 
 export async function updateRule(id: string, data: UpdateRuleDTO): Promise<Rule> {
-  const response = await fetch(`${API_BASE_URL}/api/rules/${id}`, {
+  const response = await authenticatedFetch(`/api/rules/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1970,14 +2231,14 @@ export async function updateRule(id: string, data: UpdateRuleDTO): Promise<Rule>
 }
 
 export async function deleteRule(id: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/rules/${id}`, {
+  const response = await authenticatedFetch(`/api/rules/${id}`, {
     method: 'DELETE',
   });
   await handleResponse(response);
 }
 
 export async function enableRule(id: string): Promise<Rule> {
-  const response = await fetch(`${API_BASE_URL}/api/rules/${id}/enable`, {
+  const response = await authenticatedFetch(`/api/rules/${id}/enable`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
@@ -1985,7 +2246,7 @@ export async function enableRule(id: string): Promise<Rule> {
 }
 
 export async function disableRule(id: string): Promise<Rule> {
-  const response = await fetch(`${API_BASE_URL}/api/rules/${id}/disable`, {
+  const response = await authenticatedFetch(`/api/rules/${id}/disable`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
@@ -2022,35 +2283,37 @@ export async function fetchPlatforms(): Promise<Platform[]> {
     return platformsBundle.data.platforms as Platform[];
   }
 
-  return [];
+  return fetchListResult<Platform>('/api/platforms');
 }
 
 export async function fetchConfiguredPlatforms(): Promise<Platform[]> {
-  const platforms = await fetchPlatforms();
-  return platforms.filter((platform) => platform.configured);
+  return fetchListResult<Platform>('/api/platforms/configured');
 }
 
 export async function fetchPlatformById(platformId: string): Promise<Platform> {
-  const platforms = await fetchPlatforms();
-  const matched = platforms.find((platform) => platform.id === platformId);
-  if (matched) {
-    return matched;
+  const bootstrapPlatforms = readBootstrapPage<{ platforms?: Platform[] }>('platforms');
+  if (bootstrapPlatforms && Array.isArray(bootstrapPlatforms.data?.platforms)) {
+    const matched = bootstrapPlatforms.data.platforms.find((platform) => platform.id === platformId);
+    if (matched) {
+      return matched;
+    }
   }
 
-  throw new Error(`Platform ${platformId} is not available in the current bootstrap payload`);
+  const response = await authenticatedFetch(`/api/platforms/${platformId}`);
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<Platform>(payload);
 }
 
 export async function configurePlatform(platformId: string, config: Record<string, unknown>): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}/configure`, {
+  const response = await authenticatedFetch(`/api/platforms/${platformId}/configure`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
   await handleResponse(response);
 }
 
 export async function testPlatformConnection(platformId: string): Promise<{ platformId: string; connected: boolean }> {
-  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}/test`, {
+  const response = await authenticatedFetch(`/api/platforms/${platformId}/test`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
@@ -2058,9 +2321,8 @@ export async function testPlatformConnection(platformId: string): Promise<{ plat
 }
 
 export async function executePlatformAction(platformId: string, action: string, parameters: Record<string, unknown> = {}): Promise<unknown> {
-  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}/execute`, {
+  const response = await authenticatedFetch(`/api/platforms/${platformId}/execute`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, parameters }),
   });
   const result = await handleResponse(response);

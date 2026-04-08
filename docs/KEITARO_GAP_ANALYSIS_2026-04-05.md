@@ -834,6 +834,84 @@ Keitaro 在 Campaigns、Landings、Offers、Domains 等多页都有 groups 与 g
 4. 交付前收口
 - Cloudflare One 认证切换
 
+## 22. 本轮回顾（2026-04-06，缓存链路与文档回写）
+
+### 本轮目标
+- 收敛“静态壳 + bootstrap object”在真实生产环境下的读链路
+- 检查页面是否还存在前端 `GET /api/*` 读取
+- 回写当前与 Keitaro 对标的真实完成情况，避免旧结论继续污染下一轮判断
+
+### 实际完成
+
+1. 管理页 bootstrap 重定向风暴已修复
+- 原问题是 admin bootstrap 的 scope/hash 计算混入了 `__mode`、`__version` 这类对象读取临时参数
+- 结果导致 `campaigns / trends / audit / conversions / settings` 的 object 请求不断重算 hash，形成多次重定向
+- 现已在前后端统一排除这些瞬时参数，管理页恢复为稳定的两段读取：
+  - current manifest
+  - object payload
+
+2. 线上自动化复核结果已更新
+- 已重新用浏览器自动化检查：
+  - `/campaigns?range=yesterday`
+  - `/campaigns?range=last30days`
+  - `/trends`
+  - `/audit`
+  - `/conversions`
+  - `/settings`
+- 这些页面当前首屏均未再出现前端 `GET /api/*` 读请求
+- 请求形态已收敛为 bootstrap GET + SSE
+
+3. 生产环境元数据暴露问题继续确认已收口
+- `/api/deployment/info` 在生产环境下只保留最小化信息
+- 生产响应头中不再暴露 worker 版本与部署调试头
+- 这项风险已从“待修复”转为“已处理并线上验证”
+
+4. 文档缓存链路继续推进
+- HTML shell 当前已确认：
+  - `CF-Cache-Status: HIT`
+  - `Server-Timing` 正常返回
+  - 文档请求已脱离运行时 HTML 注入模型
+- bootstrap current 已实测支持 `ETag + If-None-Match -> 304`
+- HTML shell 现已在线上稳定返回：
+  - 强 `ETag`
+  - `Last-Modified`
+- 文档壳缓存重验证链路已从“待确认”提升为“已验证通过”
+
+### 与 Keitaro 对标后的变化
+- 旧结论中“Settings hydration 仍依赖前端 GET”的判断已不再成立，需要从主分析结论中降级或移除
+- 旧结论中“管理页缓存链路尚不稳定”的判断已明显改善，列表型页面基本完成架构切换
+- 当前与 Keitaro 的差距，进一步从“主读链路未成型”收敛为：
+  - Campaign Detail 深层工作流仍需继续做 server-bootstrap-only 收口
+  - Platforms 运维动作可见性与可操作性仍不足
+  - Landing / Offer hosted mode 仍未启动
+  - Domains 仍缺少更真实的 Cloudflare 在线校验闭环
+
+### 当前阶段完成度更新
+
+#### 第一阶段：从“管理台”升级为“可运行 tracker 控制台”
+- Dashboard / Campaigns / Trends / Audit / Conversions / Settings：
+  - 页面级 bootstrap 读模型已基本成型
+- Campaign Routing / Flow Editor：
+  - 继续保持高完成度
+- CampaignDetail 全链路：
+  - 仍是下一阶段最重要的主链路收口点
+- Platforms / Hosted assets / Domains 实时治理：
+  - 仍是 Keitaro 对标中的主要外围缺口
+
+### 下一阶段任务
+
+1. 收口 `CampaignDetail` 读链路
+- 保证 `General / Routing / Tracking / Parameters / Postback / Notes` 全部优先走 server bootstrap
+- 清理残留前端 GET fallback
+
+2. 继续扩展页面级验证覆盖
+- 把同样的缓存验证标准继续扩展到 `CampaignDetail` 及更深工作流页面
+- 验证更多页面切换、时间切换、SSE 更新后的缓存替换行为
+
+3. 更新生产审计报告
+- 把已经失效的旧 findings 降级或标注为已修复
+- 保证后续测试与对标结论建立在最新线上现实之上
+
 ## 20. 本轮迭代回顾（2026-04-05 第七轮补强）
 
 ### 本轮目标
@@ -905,3 +983,108 @@ Keitaro 在 Campaigns、Landings、Offers、Domains 等多页都有 groups 与 g
 
 4. 交付前收口
 - Cloudflare One 认证切换
+## 22. Keitaro Alignment Addendum (2026-04-06, Production Chain Validation)
+
+This addendum records the latest production validation against the Keitaro-aligned tracker workflow.
+
+Validation artifacts:
+- `output/playwright/prod-chain-2026-04-06T10-11-07-248Z/summary.json`
+- `output/playwright/prod-chain-2026-04-06T10-11-07-248Z/manifest-recheck.json`
+- `output/playwright/prod-chain-2026-04-06T10-11-07-248Z/tracking-chain.json`
+- `output/playwright/prod-chain-2026-04-06T10-11-07-248Z/tracking-sse-check.json`
+- `output/playwright/prod-chain-2026-04-06T10-11-07-248Z/conversion-manifest-check.json`
+
+### What Is Now Confirmed
+
+1. Admin mutation flows are materially stronger than the earlier benchmark state.
+- Settings writes refresh their page bootstrap and emit SSE.
+- Campaign admin updates refresh the campaigns bootstrap and emit SSE.
+- This closes part of the earlier gap where Keitaro-like admin screens lacked a reliable production refresh loop.
+
+2. Cache envelope behavior is now observable and production-grade on the tested admin flows.
+- settings manifest tested at `s-maxage=300`
+- campaigns manifest tested at `s-maxage=60`
+- manifest `ETag + If-None-Match` behaved correctly when the manifest actually changed
+
+3. Browser automation for the tested flows produced zero console errors.
+
+### Remaining High-Value Gaps Versus Keitaro
+
+1. Redirect entry behavior is still below Keitaro tracker expectations.
+- direct alias route on the primary domain still returns the SPA shell:
+  - `GET /pw-test-1775182453486 -> 200 text/html`
+- Keitaro-style expectation:
+  - alias/domain entry should resolve into the tracking pipeline immediately
+
+2. Resolved flow execution still does not produce a correct redirect target.
+- `GET /api/tracking/click/pw-test-1775182453486?... -> 302`
+- observed `Location: about:blank`
+- This remains a blocker for Keitaro-grade flow execution fidelity.
+
+3. Click recording exists, but redirect assembly is still incorrect.
+- POST click tracking successfully writes a click record and binds `flowId/offerId`
+- the returned `redirectUrl` still matched the submitted referer instead of the target offer/landing destination
+- This means the write plane is ahead of the redirect plane.
+
+4. Conversion success is not yet connected to the reporting plane.
+- postback success returns a `conversionId`
+- conversion log lookup by click id returns empty
+- conversion stats remain zero after success
+- Against Keitaro, this is still a major gap because tracker success must immediately feed reports/auditability
+
+5. Tracking writes are still outside the realtime refresh loop.
+- live SSE probe stayed unchanged after:
+  - successful tracking click
+  - successful conversion postback
+- conversions bootstrap manifest remained `304` after successful conversion postback
+- This indicates `/api/tracking/*` mutations are still not participating in the same cache/SSE refresh chain used by admin writes
+
+6. Settings mutation payload mapping still leaks a logical mismatch.
+- observed SSE `data-changed` payload:
+  - `entity = user-preferences`
+  - `entityId = preferences`
+- For a Keitaro-like operational model, this should resolve to the real logical entity/user scope rather than the route segment name
+
+7. Campaign invalidation fan-out is broader than the actual payload delta.
+- name-only campaign mutation invalidated dashboard/trends/audit/conversions bootstrap keys
+- dashboard manifest still returned `304`
+- This is not a correctness break, but it is still below an ideal production tracker control-plane efficiency level
+
+### Updated Progress View
+
+#### Stronger Than Before
+- Admin page bootstrap-only read path
+- Settings write -> cache refresh -> SSE
+- Campaign admin write -> cache refresh -> SSE
+
+#### Still Behind Keitaro
+- entry redirect correctness
+- final redirect target resolution
+- conversion persistence into reports/logs
+- tracking-write-driven cache invalidation and SSE
+- campaign detail deep workflow end-to-end production verification
+
+### Recommended Next Phase
+
+1. Fix tracker entry and redirect correctness first.
+- primary-domain alias should dispatch into tracking
+- resolved flow should never redirect to `about:blank`
+- POST click redirect payload should return the actual execution destination
+
+2. Connect conversion success to reports/logs/bootstrap refresh.
+- persist conversion rows
+- update conversion stats
+- invalidate and rebuild conversions/report caches
+- publish SSE for affected report pages
+
+3. Bring `/api/tracking/*` into the same refresh contract as admin mutations.
+- clicks
+- conversions
+- any downstream report-affecting tracking mutation
+
+4. Re-run the Keitaro-aligned production checklist after those fixes.
+- redirect chain
+- click record
+- conversion record
+- reports visibility
+- SSE/cache propagation

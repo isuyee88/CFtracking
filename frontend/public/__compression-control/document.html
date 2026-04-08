@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Compression Control Document</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, system-ui, sans-serif;
+        background: #f4f7fb;
+        color: #10233f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 40px 20px 64px;
+        background:
+          radial-gradient(circle at top left, rgba(54, 102, 255, 0.16), transparent 28rem),
+          linear-gradient(180deg, #f8fbff 0%, #eef3fb 100%);
+      }
+
+      main {
+        width: min(980px, 100%);
+        margin: 0 auto;
+        padding: 32px;
+        border-radius: 28px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 28px 64px rgba(15, 23, 42, 0.08);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.2rem, 4vw, 3.4rem);
+        line-height: 0.98;
+        letter-spacing: -0.05em;
+      }
+
+      p {
+        line-height: 1.72;
+        color: #42526b;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .card {
+        padding: 18px;
+        border-radius: 20px;
+        background: #f7faff;
+        border: 1px solid #dde7f5;
+      }
+
+      .card h2 {
+        margin: 0 0 12px;
+        font-size: 1rem;
+      }
+
+      .copy {
+        margin-top: 28px;
+        display: grid;
+        gap: 14px;
+      }
+
+      code {
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: #e9f0ff;
+      }
+
+      @media (max-width: 768px) {
+        main {
+          padding: 22px;
+          border-radius: 22px;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Compression Control Document</h1>
+      <p>
+        This file is intentionally text heavy so the CDN compression path can be tested against a direct
+        static asset response without Worker mutation, without bootstrap injection, and without route-level
+        application code.
+      </p>
+      <div class="grid">
+        <section class="card">
+          <h2>Control Group</h2>
+          <p>Served as a plain static asset from the asset pipeline to measure native edge behavior.</p>
+        </section>
+        <section class="card">
+          <h2>Header Check</h2>
+          <p>Inspect <code>content-encoding</code>, <code>etag</code>, and <code>cf-cache-status</code>.</p>
+        </section>
+        <section class="card">
+          <h2>Body Check</h2>
+          <p>Ensure the browser can parse the document normally and that compression does not corrupt bytes.</p>
+        </section>
+      </div>
+
+      <div class="copy">
+        <p>
+          Compression experiments should separate the delivery path from the payload type. A document that is
+          text only, cacheable, and stable gives a clean baseline for comparing direct assets, Worker proxying,
+          manual precompressed variants, and runtime generated responses.
+        </p>
+        <p>
+          The production application already compresses JavaScript, CSS, bootstrap JSON, and SSE successfully.
+          This page exists only to isolate why some document-like responses behave differently under the current
+          Cloudflare configuration.
+        </p>
+        <p>
+          When testing, request this file with <code>Accept-Encoding: zstd, br, gzip</code> and compare it to
+          the Worker demo routes under <code>/__compression-demo/</code>. The response size is large enough to
+          make compression visible while staying small enough to inspect quickly during repeated debugging runs.
+        </p>
+        <p>
+          Repeating this paragraph a few times keeps the payload realistic and text-dense. Edge caching, browser
+          caching, and conditional requests should all be easy to observe on this response. Repeating this
+          paragraph a few times keeps the payload realistic and text-dense. Edge caching, browser caching, and
+          conditional requests should all be easy to observe on this response.
+        </p>
+        <p>
+          Repeating this paragraph a few times keeps the payload realistic and text-dense. Edge caching, browser
+          caching, and conditional requests should all be easy to observe on this response. Repeating this
+          paragraph a few times keeps the payload realistic and text-dense. Edge caching, browser caching, and
+          conditional requests should all be easy to observe on this response.
+        </p>
+      </div>
+    </main>
+  </body>
+</html>

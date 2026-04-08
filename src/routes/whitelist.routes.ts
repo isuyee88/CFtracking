@@ -9,6 +9,135 @@ import { WhitelistService } from '@/services/whitelist/whitelist.service';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
+import { validateStringField, getSafeErrorMessage } from '@/utils/validation';
+import type { CreateWhitelistDTO, UpdateWhitelistDTO, BatchWhitelistDTO } from '@/types/whitelist';
+
+/**
+ * 验证白名单创建数据
+ */
+function validateCreateWhitelistData(data: Record<string, unknown>): { valid: boolean; data?: CreateWhitelistDTO; error?: string } {
+  // 验证名称（可选）
+  let name: string | undefined;
+  if (data.name !== undefined && data.name !== null) {
+    const nameResult = validateStringField(data.name, '名称', {
+      required: false,
+      maxLength: 200,
+      sanitize: true,
+    });
+    if (!nameResult.valid) {
+      return { valid: false, error: nameResult.error };
+    }
+    name = nameResult.value;
+  }
+
+  // 验证原因（可选）
+  let reason: string | undefined;
+  if (data.reason !== undefined && data.reason !== null) {
+    const reasonResult = validateStringField(data.reason, '原因', {
+      required: false,
+      maxLength: 500,
+      sanitize: true,
+    });
+    if (!reasonResult.valid) {
+      return { valid: false, error: reasonResult.error };
+    }
+    reason = reasonResult.value;
+  }
+
+  // 构建验证后的数据
+  const validatedData: CreateWhitelistDTO = {
+    trafficSourceId: data.trafficSourceId as string,
+    type: data.type as CreateWhitelistDTO['type'],
+    value: data.value as string,
+  };
+
+  if (name) validatedData.name = name;
+  if (reason) validatedData.reason = reason;
+  if (data.campaignId) validatedData.campaignId = data.campaignId as string;
+  if (data.ipMatchMode) validatedData.ipMatchMode = data.ipMatchMode as CreateWhitelistDTO['ipMatchMode'];
+  if (data.uaMatchMode) validatedData.uaMatchMode = data.uaMatchMode as CreateWhitelistDTO['uaMatchMode'];
+  if (data.syncToPlatform !== undefined) validatedData.syncToPlatform = data.syncToPlatform as boolean;
+
+  return { valid: true, data: validatedData };
+}
+
+/**
+ * 验证白名单更新数据
+ */
+function validateUpdateWhitelistData(data: Record<string, unknown>): { valid: boolean; data?: UpdateWhitelistDTO; error?: string } {
+  const validatedData: UpdateWhitelistDTO = {};
+
+  // 验证名称（可选）
+  if (data.name !== undefined && data.name !== null) {
+    const nameResult = validateStringField(data.name, '名称', {
+      required: false,
+      maxLength: 200,
+      sanitize: true,
+    });
+    if (!nameResult.valid) {
+      return { valid: false, error: nameResult.error };
+    }
+    validatedData.name = nameResult.value;
+  }
+
+  // 验证原因（可选）
+  if (data.reason !== undefined && data.reason !== null) {
+    const reasonResult = validateStringField(data.reason, '原因', {
+      required: false,
+      maxLength: 500,
+      sanitize: true,
+    });
+    if (!reasonResult.valid) {
+      return { valid: false, error: reasonResult.error };
+    }
+    validatedData.reason = reasonResult.value;
+  }
+
+  if (data.status) validatedData.status = data.status as UpdateWhitelistDTO['status'];
+  if (data.ipMatchMode) validatedData.ipMatchMode = data.ipMatchMode as UpdateWhitelistDTO['ipMatchMode'];
+  if (data.uaMatchMode) validatedData.uaMatchMode = data.uaMatchMode as UpdateWhitelistDTO['uaMatchMode'];
+  if (data.syncToPlatform !== undefined) validatedData.syncToPlatform = data.syncToPlatform as boolean;
+
+  return { valid: true, data: validatedData };
+}
+
+/**
+ * 验证批量白名单数据
+ */
+function validateBatchWhitelistData(data: Record<string, unknown>): { valid: boolean; data?: BatchWhitelistDTO; error?: string } {
+  const validatedData: BatchWhitelistDTO = {
+    trafficSourceId: data.trafficSourceId as string,
+    type: data.type as BatchWhitelistDTO['type'],
+    items: (data.items as Array<Record<string, unknown>>).map(item => {
+      const validatedItem: BatchWhitelistDTO['items'][0] = {
+        value: item.value as string,
+      };
+      
+      if (item.name) {
+        const nameResult = validateStringField(item.name, '名称', { required: false, maxLength: 200, sanitize: true });
+        if (nameResult.valid && nameResult.value) {
+          validatedItem.name = nameResult.value;
+        }
+      }
+      
+      if (item.reason) {
+        const reasonResult = validateStringField(item.reason, '原因', { required: false, maxLength: 500, sanitize: true });
+        if (reasonResult.valid && reasonResult.value) {
+          validatedItem.reason = reasonResult.value;
+        }
+      }
+      
+      if (item.campaignId) validatedItem.campaignId = item.campaignId as string;
+      if (item.ipMatchMode) validatedItem.ipMatchMode = item.ipMatchMode as BatchWhitelistDTO['items'][0]['ipMatchMode'];
+      if (item.uaMatchMode) validatedItem.uaMatchMode = item.uaMatchMode as BatchWhitelistDTO['items'][0]['uaMatchMode'];
+      if (item.syncToPlatform !== undefined) validatedItem.syncToPlatform = item.syncToPlatform as boolean;
+      
+      return validatedItem;
+    }),
+  };
+
+  return { valid: true, data: validatedData };
+}
 
 export function createWhitelistRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -40,14 +169,23 @@ export function createWhitelistRouter(): Hono<{ Bindings: Env }> {
   // 创建单个白名单条目
   router.post('/', async (c) => {
     const env = c.env;
-    const body = await c.req.json();
+    const rawData = await c.req.json();
 
     try {
-      const entry = await service(env).create(body);
+      // 输入验证
+      const validation = validateCreateWhitelistData(rawData);
+      if (!validation.valid) {
+        return c.json(
+          error(validation.error || '输入验证失败', ERROR_CODES.VALIDATION),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+
+      const entry = await service(env).create(validation.data!);
       return c.json(success(entry), HTTP_STATUS.CREATED);
     } catch (err) {
       return c.json(
-        error(err instanceof Error ? err.message : 'Failed to create whitelist entry', ERROR_CODES.INTERNAL_ERROR),
+        error(getSafeErrorMessage(err), ERROR_CODES.VALIDATION),
         HTTP_STATUS.BAD_REQUEST
       );
     }
@@ -73,14 +211,23 @@ export function createWhitelistRouter(): Hono<{ Bindings: Env }> {
   router.put('/:id', async (c) => {
     const env = c.env;
     const id = c.req.param('id');
-    const body = await c.req.json();
+    const rawData = await c.req.json();
 
     try {
-      const entry = await service(env).update(id, body);
+      // 输入验证
+      const validation = validateUpdateWhitelistData(rawData);
+      if (!validation.valid) {
+        return c.json(
+          error(validation.error || '输入验证失败', ERROR_CODES.VALIDATION),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+
+      const entry = await service(env).update(id, validation.data!);
       return c.json(success(entry));
     } catch (err) {
       return c.json(
-        error(err instanceof Error ? err.message : 'Failed to update whitelist entry', ERROR_CODES.INTERNAL_ERROR),
+        error(getSafeErrorMessage(err), ERROR_CODES.VALIDATION),
         HTTP_STATUS.BAD_REQUEST
       );
     }
@@ -89,14 +236,23 @@ export function createWhitelistRouter(): Hono<{ Bindings: Env }> {
   // 批量添加白名单
   router.post('/batch', async (c) => {
     const env = c.env;
-    const body = await c.req.json();
+    const rawData = await c.req.json();
 
     try {
-      const entries = await service(env).batchAdd(body);
+      // 输入验证
+      const validation = validateBatchWhitelistData(rawData);
+      if (!validation.valid) {
+        return c.json(
+          error(validation.error || '输入验证失败', ERROR_CODES.VALIDATION),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+
+      const entries = await service(env).batchAdd(validation.data!);
       return c.json(success(entries), HTTP_STATUS.CREATED);
     } catch (err) {
       return c.json(
-        error(err instanceof Error ? err.message : 'Failed to add to whitelist', ERROR_CODES.INTERNAL_ERROR),
+        error(getSafeErrorMessage(err), ERROR_CODES.VALIDATION),
         HTTP_STATUS.BAD_REQUEST
       );
     }
@@ -105,14 +261,32 @@ export function createWhitelistRouter(): Hono<{ Bindings: Env }> {
   // 从报告候选项目批量添加白名单
   router.post('/batch-from-candidates', async (c) => {
     const env = c.env;
-    const { trafficSourceId, candidates, reason } = await c.req.json();
+    const rawData = await c.req.json();
+    const { trafficSourceId, candidates, reason } = rawData;
 
     try {
-      const entries = await service(env).batchAddFromCandidates(trafficSourceId, candidates, reason);
+      // 输入验证
+      let validatedReason: string | undefined;
+      if (reason !== undefined && reason !== null) {
+        const reasonResult = validateStringField(reason, '原因', {
+          required: false,
+          maxLength: 500,
+          sanitize: true,
+        });
+        if (!reasonResult.valid) {
+          return c.json(
+            error(reasonResult.error || '输入验证失败', ERROR_CODES.VALIDATION),
+            HTTP_STATUS.BAD_REQUEST
+          );
+        }
+        validatedReason = reasonResult.value;
+      }
+
+      const entries = await service(env).batchAddFromCandidates(trafficSourceId, candidates, validatedReason);
       return c.json(success(entries), HTTP_STATUS.CREATED);
     } catch (err) {
       return c.json(
-        error(err instanceof Error ? err.message : 'Failed to add candidates to whitelist', ERROR_CODES.INTERNAL_ERROR),
+        error(getSafeErrorMessage(err), ERROR_CODES.VALIDATION),
         HTTP_STATUS.BAD_REQUEST
       );
     }

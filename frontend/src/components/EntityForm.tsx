@@ -180,6 +180,97 @@ export const EntityForm: React.FC<EntityFormProps> = ({
         );
 
       case 'multiselect':
+        // 如果有预定义选项，使用下拉选择模式
+        if (field.options && field.options.length > 0) {
+          const selectedValues = value || [];
+          const availableOptions = field.options.filter(opt => !selectedValues.includes(opt.value));
+          
+          return (
+            <div className="space-y-2">
+              {/* 已选择的项 */}
+              <div className="flex flex-wrap gap-2">
+                {selectedValues.map((item: string, idx: number) => {
+                  const option = field.options?.find(o => o.value === item);
+                  return (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary text-sm rounded-sm"
+                    >
+                      {option?.label || item}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newValue = selectedValues.filter((_: any, i: number) => i !== idx);
+                          handleChange(field.name, newValue);
+                        }}
+                        className="text-on-surface-variant hover:text-error ml-1"
+                      >
+                        <X size={14} />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+              
+              {/* 下拉选择框 */}
+              {availableOptions.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleChange(field.name, [...selectedValues, e.target.value]);
+                      e.target.value = '';
+                    }
+                  }}
+                  className={baseInputClass}
+                >
+                  <option value="">Select {field.label}...</option>
+                  {availableOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              
+              {/* 搜索/过滤输入框 */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder={field.placeholder || "Search or add custom value..."}
+                  className={cn(baseInputClass, "flex-1")}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const input = e.target as HTMLInputElement;
+                      const inputValue = input.value.trim();
+                      if (inputValue && !selectedValues.includes(inputValue)) {
+                        handleChange(field.name, [...selectedValues, inputValue]);
+                        input.value = '';
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
+                    const inputValue = input.value.trim();
+                    if (inputValue && !selectedValues.includes(inputValue)) {
+                      handleChange(field.name, [...selectedValues, inputValue]);
+                      input.value = '';
+                    }
+                  }}
+                  className="px-4 py-3 bg-surface-container text-primary hover:bg-surface-container-high rounded-sm transition-colors"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+            </div>
+          );
+        }
+        
+        // 没有预定义选项时，使用手动输入模式
         return (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">

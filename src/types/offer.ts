@@ -18,6 +18,15 @@ export type PayoutType = 'fixed' | 'revshare' | 'cpa';
  */
 export type RedirectType = 'http' | 'meta' | 'js' | 'js_blank' | 'double' | 'remote';
 
+/**
+ * Action 类型
+ * - local: 本地处理
+ * - redirect: 重定向
+ * - preload: 预加载
+ * - action: 动作执行
+ */
+export type ActionType = 'local' | 'redirect' | 'preload' | 'action';
+
 export interface Offer {
   id: string;
   displayId?: string;
@@ -27,6 +36,8 @@ export interface Offer {
   currency: string;
   payoutType: PayoutType;
   redirectType: RedirectType;
+  actionType: ActionType;
+  countries: string[];
   network: string;
   group: string;
   status: OfferStatus;
@@ -41,6 +52,8 @@ export interface CreateOfferDTO {
   currency?: string;
   payoutType?: PayoutType;
   redirectType?: RedirectType;
+  actionType?: ActionType;
+  countries?: string[];
   network?: string;
   group?: string;
 }
@@ -52,6 +65,8 @@ export interface UpdateOfferDTO {
   currency?: string;
   payoutType?: PayoutType;
   redirectType?: RedirectType;
+  actionType?: ActionType;
+  countries?: string[];
   network?: string;
   group?: string;
   status?: OfferStatus;

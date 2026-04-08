@@ -35,12 +35,12 @@ function isLocalPreviewHost() {
 
 function hideBootScreen() {
   const bootScreen = document.getElementById('app-boot')
-  if (!bootScreen) {
+  if (!bootScreen || bootScreen.classList.contains('boot-hidden')) {
     return
   }
 
   bootScreen.classList.add('boot-hidden')
-  window.setTimeout(() => bootScreen.remove(), 240)
+  window.setTimeout(() => bootScreen.remove(), 180)
 }
 
 async function purgeLegacyServiceWorkers() {
@@ -79,12 +79,6 @@ async function startApp() {
   if (injectedInitialData !== undefined) {
     setPageBootstrapData(injectedInitialData)
     delete window.__INITIAL_DATA__
-  } else {
-    try {
-      await loadBootstrapForLocation()
-    } catch (error) {
-      console.warn('[Bootstrap] Initial preload failed', error)
-    }
   }
 
   const initialData = getRawBootstrapData()
@@ -93,14 +87,16 @@ async function startApp() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ToastProvider>
-        <App initialData={initialData} />
+        <App initialData={initialData} onReady={hideBootScreen} />
       </ToastProvider>
     </StrictMode>,
   )
 
-  requestAnimationFrame(() => {
-    requestAnimationFrame(hideBootScreen)
-  })
+  if (injectedInitialData === undefined) {
+    void loadBootstrapForLocation().catch((error) => {
+      console.warn('[Bootstrap] Initial preload failed', error)
+    })
+  }
 
   void purgeLegacyServiceWorkers()
 }

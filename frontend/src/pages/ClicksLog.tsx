@@ -418,6 +418,7 @@ export const ClicksLog = () => {
                   <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider"></th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Time</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Campaign</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Visitor ID</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">IP</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Country</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Device</th>
@@ -443,6 +444,9 @@ export const ClicksLog = () => {
                         </td>
                         <td className="px-4 py-3 text-sm text-fg-default">{formatTimestamp(click.timestamp)}</td>
                         <td className="px-4 py-3 text-sm text-fg-default">{click.campaignId}</td>
+                        <td className="px-4 py-3 text-sm font-mono text-fg-default" title={click.visitorId}>
+                          {click.visitorId ? `${click.visitorId.substring(0, 12)}...` : '-'}
+                        </td>
                         <td className="px-4 py-3 text-sm font-mono text-fg-default">{click.ip}</td>
                         <td className="px-4 py-3 text-sm text-fg-default">{click.country || '-'}</td>
                         <td className="px-4 py-3 text-sm text-fg-default">
@@ -464,7 +468,7 @@ export const ClicksLog = () => {
                       </tr>
                       {expandedRows.includes(click.clickId) && (
                         <tr className="bg-surface-container">
-                          <td colSpan={9} className="px-4 py-4">
+                          <td colSpan={10} className="px-4 py-4">
                             <div className="space-y-4">
                               {/* Basic Info */}
                               <div>
@@ -564,7 +568,7 @@ export const ClicksLog = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={9} className="text-center py-12">
+                    <td colSpan={10} className="text-center py-12">
                       <History size={48} className="mx-auto text-fg-muted mb-4" />
                       <p className="text-fg-muted">No clicks found matching your criteria</p>
                     </td>

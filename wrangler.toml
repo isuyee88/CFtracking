@@ -10,7 +10,15 @@ CACHE_TTL = "21600"
 ENABLED_REGIONS = "HK,CN"
 REALTIME_ENABLED = true
 SSE_ENABLED = true
-CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
+AUTH_MODE = "strict"
+# 管理员用户名（非敏感信息）
+ADMIN_USERNAME = "admin"
+# ⚠️ 安全配置：敏感信息已迁移到 Cloudflare Secrets
+# 以下变量已通过 `wrangler secret put` 设置：
+# - JWT_SECRET: JWT 签名密钥
+# - ADMIN_PASSWORD_HASH: 管理员密码哈希
+# - CF_ACCOUNT_ID: Cloudflare 账户 ID
+# 生产环境必须启用认证，禁止绕过
 
 [[queues.producers]]
 queue = "cache-refresh-queue"
@@ -30,6 +38,14 @@ migrations_dir = "schema/migrations"
 [[kv_namespaces]]
 binding = "UNIQUENESS_KV"
 id = "7cdc9c88e1964bff954835d91f98bd74"
+
+# ⚠️ POSTBACK_KV 已废弃，迁移到D1数据库 (postback_idempotency表)
+# 原因: 免费账户KV写入限制1000次/天，无法满足生产需求
+# 迁移日期: 2026-04-07
+# 如需回滚，取消下方注释即可
+# [[kv_namespaces]]
+# binding = "POSTBACK_KV"
+# id = "0a7b2bfb5b6042c4adccc7b689eee0c4"
 
 [durable_objects]
 [[durable_objects.bindings]]
@@ -121,7 +137,7 @@ directory = "./frontend/dist"
 binding = "ASSETS"
 html_handling = "none"
 not_found_handling = "single-page-application"
-run_worker_first = ["/", "/dashboard", "/campaigns", "/campaigns/*", "/landings", "/l", "/offers", "/traffic-sources", "/affiliate-networks", "/domains", "/platforms", "/rules", "/trends", "/reports", "/audit", "/conversions", "/blacklist", "/whitelist", "/target", "/settings", "/help", "/api/*", "/events/*", "/health", "/sw.js", "/__bootstrap/*", "/__bootstrap-object/*"]
+run_worker_first = ["/api/*", "/events/*", "/health", "/sw.js", "/assets/*", "/__bootstrap/*", "/__bootstrap-object/*", "/__compression-demo/*"]
 
 [version_metadata]
 binding = "CF_VERSION_METADATA"

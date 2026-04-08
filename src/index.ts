@@ -15,6 +15,17 @@ import { logger } from 'hono/logger';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
+
+// 定义 Hono 应用的变量类型
+type Variables = {
+  user?: {
+    userId: string;
+    email: string;
+    exp: number;
+  };
+};
+
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 import {
   SessionDurableObject,
   CounterDurableObject,
@@ -48,7 +59,6 @@ export {
   StatsActor,
 };
 
-const app = new Hono<{ Bindings: Env }>();
 const LEGACY_SW_CLEANUP_SCRIPT = `
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -103,13 +113,298 @@ function applyHtmlCacheHeaders(headers: Headers, policy: HtmlCachePolicy) {
   );
 }
 
+function toStrongETag(weakEtag: string): string {
+  return `"${weakEtag.replace(/^W\/"/, '').replace(/"$/, '')}"`;
+}
+
+const PRECOMPRESSED_RESPONSE_TYPES = new Map<string, string>([
+  ['.js', 'text/javascript; charset=UTF-8'],
+  ['.css', 'text/css; charset=UTF-8'],
+  ['.html', 'text/html; charset=UTF-8'],
+  ['.svg', 'image/svg+xml'],
+  ['.json', 'application/json; charset=UTF-8'],
+  ['.txt', 'text/plain; charset=UTF-8'],
+]);
+
+const COMPRESSION_DEMO_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Compression Runtime Demo</title>
+    <style>
+      :root { font-family: Inter, system-ui, sans-serif; color-scheme: light; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 40px 20px 64px;
+        background: linear-gradient(180deg, #f8fbff 0%, #edf3fb 100%);
+        color: #132238;
+      }
+      main {
+        width: min(960px, 100%);
+        margin: 0 auto;
+        padding: 30px;
+        border-radius: 28px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+      }
+      h1 { margin: 0; font-size: clamp(2.2rem, 4vw, 3.2rem); letter-spacing: -0.05em; line-height: 0.98; }
+      p { line-height: 1.72; color: #44546d; }
+      .badge {
+        display: inline-flex;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #e9f0ff;
+        color: #2a4682;
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="badge">Worker runtime response</span>
+      <h1>Compression runtime demo</h1>
+      <p>
+        This response is generated directly inside the Worker so it can be compared against native static
+        assets and manual precompressed variants under the same Cloudflare zone and cache settings.
+      </p>
+      <p>
+        If this runtime document compresses while the direct static document does not, the problem is likely
+        tied to asset delivery or single page application fallback behavior rather than Cloudflare compression
+        being disabled globally.
+      </p>
+      <p>
+        If this runtime document also fails to compress, the issue likely sits higher in the request path such
+        as response headers, zone rules, or another transformation that prevents document compression.
+      </p>
+      <p>
+        Repeating the same diagnostic narrative keeps the payload text-heavy enough for compression checks while
+        remaining human-readable during debugging. Repeating the same diagnostic narrative keeps the payload
+        text-heavy enough for compression checks while remaining human-readable during debugging.
+      </p>
+      <p>
+        Repeating the same diagnostic narrative keeps the payload text-heavy enough for compression checks while
+        remaining human-readable during debugging. Repeating the same diagnostic narrative keeps the payload
+        text-heavy enough for compression checks while remaining human-readable during debugging.
+      </p>
+    </main>
+  </body>
+</html>`;
+
+function getPreferredAssetEncoding(acceptEncodingHeader: string | null) {
+  const value = (acceptEncodingHeader || '').toLowerCase();
+
+  if (value.includes('br')) {
+    return {
+      extension: 'br',
+      contentEncoding: 'br',
+    };
+  }
+
+  if (value.includes('gzip')) {
+    return {
+      extension: 'gz',
+      contentEncoding: 'gzip',
+    };
+  }
+
+  return null;
+}
+
+function getPrecompressedAssetContentType(pathname: string) {
+  for (const [extension, contentType] of PRECOMPRESSED_RESPONSE_TYPES.entries()) {
+    if (pathname.endsWith(extension)) {
+      return contentType;
+    }
+  }
+
+  return null;
+}
+
+function isPrecompressedAssetRequest(request: Request, pathname: string) {
+  if (!pathname.startsWith('/assets/')) {
+    return false;
+  }
+
+  if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) {
+    return false;
+  }
+
+  if (request.headers.has('Range')) {
+    return false;
+  }
+
+  return getPrecompressedAssetContentType(pathname) !== null;
+}
+
+async function servePrecompressedAsset(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const contentType = getPrecompressedAssetContentType(url.pathname);
+
+  if (!contentType) {
+    return env.ASSETS.fetch(request);
+  }
+
+  return servePrecompressedStaticAsset(request, env, url.pathname, contentType);
+}
+
+async function servePrecompressedStaticAsset(
+  request: Request,
+  env: Env,
+  assetPath: string,
+  contentType: string,
+): Promise<Response> {
+  const preferredEncoding = getPreferredAssetEncoding(request.headers.get('Accept-Encoding'));
+  const assetUrl = new URL(request.url);
+  assetUrl.pathname = assetPath;
+
+  if (!preferredEncoding) {
+    return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
+  }
+
+  const variantUrl = new URL(assetUrl.toString());
+  variantUrl.pathname = `${assetPath}.${preferredEncoding.extension}`;
+
+  const variantResponse = await env.ASSETS.fetch(new Request(variantUrl.toString(), request));
+  if (!variantResponse.ok) {
+    return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
+  }
+
+  const headers = new Headers(variantResponse.headers);
+  const existingCacheControl = headers.get('Cache-Control');
+  headers.set('Content-Type', contentType);
+  headers.set('Content-Encoding', preferredEncoding.contentEncoding);
+  headers.set('Vary', 'Accept-Encoding');
+  if (existingCacheControl && !existingCacheControl.includes('no-transform')) {
+    headers.set('Cache-Control', `${existingCacheControl}, no-transform`);
+  }
+  headers.delete('Content-Length');
+
+  return new Response(variantResponse.body, {
+    encodeBody: 'manual',
+    status: variantResponse.status,
+    headers,
+  });
+}
+
+async function serveCompressionDemo(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+
+  if (url.pathname === '/__compression-demo/proxy-document') {
+    const targetUrl = new URL('/__compression-control/document.html', url.origin);
+    return env.ASSETS.fetch(new Request(targetUrl.toString(), request));
+  }
+
+  if (url.pathname === '/__compression-demo/precompressed-document') {
+    return servePrecompressedStaticAsset(
+      request,
+      env,
+      '/__compression-control/document.html',
+      'text/html; charset=UTF-8',
+    );
+  }
+
+  if (url.pathname === '/__compression-demo/precompressed-svg') {
+    return servePrecompressedStaticAsset(request, env, '/__compression-control/vector.svg', 'image/svg+xml');
+  }
+
+  if (url.pathname === '/__compression-demo/runtime-document') {
+    return new Response(COMPRESSION_DEMO_HTML, {
+      headers: {
+        'Content-Type': 'text/html; charset=UTF-8',
+        'Cache-Control': 'public, max-age=0, must-revalidate',
+        'CDN-Cache-Control': 'public, s-maxage=120, stale-while-revalidate=60',
+        'Cloudflare-CDN-Cache-Control': 'public, s-maxage=120, stale-while-revalidate=60',
+      },
+    });
+  }
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      routes: {
+        controlDocument: '/__compression-control/document.html',
+        controlSvg: '/__compression-control/vector.svg',
+        proxyDocument: '/__compression-demo/proxy-document',
+        precompressedDocument: '/__compression-demo/precompressed-document',
+        precompressedSvg: '/__compression-demo/precompressed-svg',
+        runtimeDocument: '/__compression-demo/runtime-document',
+      },
+    }),
+    {
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Cache-Control': 'no-store',
+      },
+    },
+  );
+}
+
 app.use('*', logger());
+
+// 调试：打印 Cloudflare cf 对象的所有字段，用于研究日志中的 fingerprint 字段
+app.use('/api/tracking/*', async (c, next) => {
+  const cf = c.req.raw.cf;
+  if (cf) {
+    console.log('[DEBUG CF OBJECT] ====================');
+    console.log('[DEBUG] Full cf object keys:', Object.keys(cf));
+    console.log('[DEBUG] cf.botManagement:', JSON.stringify(cf.botManagement || null));
+    console.log('[DEBUG] cf.tlsClientCiphersSha1:', cf.tlsClientCiphersSha1);
+    console.log('[DEBUG] cf.tlsClientExtensionsSha1:', cf.tlsClientExtensionsSha1);
+    console.log('[DEBUG] cf.tlsVersion:', cf.tlsVersion);
+    console.log('[DEBUG] cf.tlsCipher:', cf.tlsCipher);
+    console.log('[DEBUG] cf.asn:', cf.asn);
+    console.log('[DEBUG] cf.asOrganization:', cf.asOrganization);
+    console.log('[DEBUG] cf.country:', cf.country);
+    console.log('[DEBUG] cf.city:', cf.city);
+    console.log('[DEBUG] cf.connectingIP:', cf.connectingIP);
+    console.log('[DEBUG] cf.clientTrustScore:', cf.clientTrustScore);
+    console.log('[DEBUG] cf.isEUCountry:', cf.isEUCountry);
+    // 打印所有嵌套对象
+    for (const key of Object.keys(cf)) {
+      const value = (cf as Record<string, unknown>)[key];
+      if (typeof value === 'object' && value !== null) {
+        console.log(`[DEBUG] cf.${key}:`, JSON.stringify(value));
+      }
+    }
+    console.log('[DEBUG CF OBJECT] ====================');
+  }
+  await next();
+});
+
+// CORS 配置 - 限制允许的域名
+const ALLOWED_ORIGINS = [
+  'https://cf-tracking.suyee88.workers.dev',
+  'https://cf-tracking.pages.dev',
+  'http://localhost:12342',
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
 app.use(
   '*',
   cors({
-    origin: '*',
+    origin: (origin) => {
+      // 允许无 origin 的请求（如移动应用、Postman 等）
+      if (!origin) return '*';
+      // 检查是否在允许列表中
+      if (ALLOWED_ORIGINS.includes(origin)) {
+        return origin;
+      }
+      // 生产环境检查主域名
+      if (origin.endsWith('.suyee88.workers.dev') || origin.endsWith('.pages.dev')) {
+        return origin;
+      }
+      // 拒绝其他来源
+      return null;
+    },
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposeHeaders: ['X-Total-Count', 'X-Page', 'X-Page-Size'],
+    credentials: true,
+    maxAge: 86400,
   })
 );
 
@@ -125,6 +420,166 @@ app.use('*', async (c, next) => {
     c.header('X-Cloudflare-Worker-Tag', env.CF_VERSION_METADATA.tag || 'latest');
     c.header('X-Cloudflare-Worker-Timestamp', env.CF_VERSION_METADATA.timestamp);
     c.header('X-Deployment-Environment', env.ENVIRONMENT);
+  }
+});
+
+// API 认证保护 - 排除公开端点
+// 注意：跟踪链接和转化 postback 必须公开，否则联盟营销无法正常工作
+const PUBLIC_PATHS = [
+  '/health',
+  '/sw.js',
+  '/__bootstrap',
+  '/__bootstrap-object',
+  '/api/tracking/script',
+  '/api/tracking/kclient',
+  '/api/tracking/click',
+  '/api/tracking/conversion',
+  '/api/auth/login',
+  '/api/webhook',
+];
+
+type AuthMode = 'strict' | 'bypass';
+
+let bypassEnabledLogPrinted = false;
+let bypassBlockedLogPrinted = false;
+
+function isTruthyEnvValue(value: string | boolean | undefined): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized);
+}
+
+function resolveAuthMode(env: Env): AuthMode {
+  const mode = typeof env.AUTH_MODE === 'string' ? env.AUTH_MODE.trim().toLowerCase() : '';
+  const bypassRequested = mode === 'bypass' || isTruthyEnvValue(env.BYPASS_AUTH);
+
+  if (bypassRequested && env.ENVIRONMENT === 'production') {
+    if (!bypassBlockedLogPrinted) {
+      console.warn('[Auth] bypass mode requested in production, forcing strict mode.');
+      bypassBlockedLogPrinted = true;
+    }
+    return 'strict';
+  }
+
+  if (bypassRequested) {
+    if (!bypassEnabledLogPrinted) {
+      console.warn('[Auth] bypass mode enabled for development/testing.');
+      bypassEnabledLogPrinted = true;
+    }
+    return 'bypass';
+  }
+
+  return 'strict';
+}
+
+app.use('/api/*', async (c, next) => {
+  const path = c.req.path;
+  
+  // 检查是否是公开路径
+  const isPublicPath = PUBLIC_PATHS.some(publicPath => path.startsWith(publicPath));
+
+  if (isPublicPath) {
+    return next();
+  }
+
+  const authMode = resolveAuthMode(c.env);
+  if (authMode === 'bypass') {
+    c.set('user', {
+      userId: 'dev-bypass-user',
+      email: 'dev-bypass@example.local',
+      exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+    });
+    return next();
+  }
+
+  // ⚠️ 安全增强：移除 BYPASS_AUTH 绕过逻辑
+  // 生产环境强制要求所有 API 必须通过认证
+  // 开发环境可通过 wrangler dev 的本地环境变量临时启用（不推荐）
+  // const bypassAuth = c.env.BYPASS_AUTH === 'true' || c.env.BYPASS_AUTH === true;
+  // if (bypassAuth) {
+  //   console.warn('⚠️ [SECURITY] BYPASS_AUTH 已启用 - 生产环境禁止使用此模式');
+  //   c.set('user', { userId: 'test-user', email: 'test@example.com', exp: Date.now() / 1000 + 3600 });
+  //   return next();
+  // }
+
+  // 强制应用认证中间件（不可绕过）
+  const authHeader = c.req.header('Authorization');
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    c.status(401);
+    return c.json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' });
+  }
+  
+  const token = authHeader.substring(7);
+  const secret = c.env.JWT_SECRET;
+  
+  // 验证 JWT
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      c.status(401);
+      return c.json({ success: false, error: 'Invalid token format', code: 'UNAUTHORIZED' });
+    }
+    
+    const [headerB64, payloadB64, signatureB64] = parts;
+    
+    // 确保 JWT 部分存在
+    if (!payloadB64 || !signatureB64) {
+      c.status(401);
+      return c.json({ success: false, error: 'Invalid token structure', code: 'UNAUTHORIZED' });
+    }
+    
+    const payloadJson = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(payloadJson);
+    
+    // 检查过期时间
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      c.status(401);
+      return c.json({ success: false, error: 'Token expired', code: 'UNAUTHORIZED' });
+    }
+    
+    // 验证签名 (使用 Web Crypto API)
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const signingKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    
+    // Base64URL 解码签名
+    const base64 = signatureB64.replace(/-/g, '+').replace(/_/g, '/');
+    const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+    const binaryString = atob(base64 + padding);
+    const signature = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      signature[i] = binaryString.charCodeAt(i);
+    }
+    
+    const data = encoder.encode(`${headerB64}.${payloadB64}`);
+    const isValid = await crypto.subtle.verify('HMAC', signingKey, signature, data);
+    
+    if (!isValid) {
+      c.status(401);
+      return c.json({ success: false, error: 'Invalid token signature', code: 'UNAUTHORIZED' });
+    }
+    
+    // 设置用户信息到上下文
+    c.set('user', payload as { userId: string; email: string; exp: number });
+    return next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    c.status(401);
+    return c.json({ success: false, error: 'Authentication failed', code: 'UNAUTHORIZED' });
   }
 });
 
@@ -231,7 +686,9 @@ app.get('/api/deployment/info', (c) => {
 
 import { createCampaignRouter } from '@/services/campaign/campaign.routes';
 import { createFlowRouter } from '@/services/flow/flow.routes';
+import { createMultiOfferRouter } from '@/services/flow/multi-offer.routes';
 import { createLandingPageRouter } from '@/services/landingPage/lp.routes';
+import { createLPPreloadRouter } from '@/services/landingPage/lp.preload.routes';
 import { createOfferRouter } from '@/services/offer/offer.routes';
 import { createTrafficSourceRouter } from '@/services/trafficSource/trafficSource.routes';
 import { createAffiliateNetworkRouter } from '@/services/affiliateNetwork/affiliateNetwork.routes';
@@ -247,10 +704,30 @@ import { createTrendsRouter } from '@/services/trends/trends.routes';
 import { createBlacklistRouter } from '@/routes/blacklist.routes';
 import { createWhitelistRouter } from '@/routes/whitelist.routes';
 import { createDomainRouter } from '@/services/domain/domain.routes';
+import { createDomainValidationRouter } from '@/services/domain/domain.validation.routes';
+import { createLogExplorerRouter } from '@/services/logExplorer/logExplorer.routes';
 import { userPreferenceRoutes } from '@/services/user-preferences/user-preferences.routes';
 import { createMigrationRouter } from '@/services/migration/migration.routes';
+import exportTaskRoutes from '@/services/exportTask/exportTask.routes';
+import customMetricRoutes from '@/services/customMetric/customMetric.routes';
+import { registerAntiFraudEnhancedRoutes } from '@/routes/antiFraudEnhanced.routes';
+import { registerCampaignGroupRoutes } from '@/services/campaignGroup/campaignGroup.routes';
+import { registerOfferPayoutRoutes } from '@/services/offer/offerPayout.routes';
+import { registerParamMappingRoutes } from '@/services/trafficSource/paramMapping.routes';
+import { registerFlowRuleRoutes } from '@/services/flow/flowRule.routes';
+import { registerReportRoutes } from '@/services/analytics/report.routes';
 import { createCacheUpdateRoutes } from '@/services/cache/cache-update-service';
 import { createSSECacheNotification } from '@/services/cache/sse-cache-notification';
+// Phase 1: 自动化优化系统路由
+import roiRoutes from '@/services/auto-optimization/roi.routes';
+import autoRulesRoutes from '@/services/auto-optimization/rules.routes';
+import operationsRoutes from '@/services/auto-optimization/operations.routes';
+import approvalRoutes from '@/services/auto-optimization/approval.routes';
+import authRoutes from '@/routes/auth.routes';
+import postbackRoutes from '@/routes/postback.routes';
+import postbackInboundRoutes from '@/routes/postback-inbound.routes';
+import proxyDetectionRoutes from '@/routes/proxyDetection.routes';
+import trafficFilterRoutes from '@/routes/trafficFilter.routes';
 import {
   serveAdminPageBootstrap,
   serveAdminPageBootstrapObject,
@@ -411,7 +888,9 @@ app.use('/api/*', async (c, next) => {
 
 app.route('/api/campaigns', createCampaignRouter());
 app.route('/api/flows', createFlowRouter());
+app.route('/api/multi-offers', createMultiOfferRouter());
 app.route('/api/landing-pages', createLandingPageRouter());
+app.route('/api/lp-preload', createLPPreloadRouter());
 app.route('/api/offers', createOfferRouter());
 app.route('/api/traffic-sources', createTrafficSourceRouter());
 app.route('/api/affiliate-networks', createAffiliateNetworkRouter());
@@ -427,8 +906,35 @@ app.route('/api/trends', createTrendsRouter());
 app.route('/api/blacklist', createBlacklistRouter());
 app.route('/api/whitelist', createWhitelistRouter());
 app.route('/api/domains', createDomainRouter());
+app.route('/api/domain-validation', createDomainValidationRouter());
+app.route('/api/log-explorer', createLogExplorerRouter());
 app.route('/api/user-preferences', userPreferenceRoutes);
 app.route('/api/migration', createMigrationRouter());
+app.route('/api/export-tasks', exportTaskRoutes);
+app.route('/api/custom-metrics', customMetricRoutes);
+app.route('/api/anti-fraud', registerAntiFraudEnhancedRoutes());
+app.route('/api/campaign-groups', registerCampaignGroupRoutes());
+app.route('/api/offer-payout', registerOfferPayoutRoutes());
+app.route('/api/param-mapping', registerParamMappingRoutes());
+app.route('/api/flow-rules', registerFlowRuleRoutes());
+app.route('/api/reports', registerReportRoutes());
+app.route('/api/proxy-detection', proxyDetectionRoutes);
+app.route('/api/traffic-filter', trafficFilterRoutes);
+
+// Phase 1: 自动化优化系统API路由
+app.route('/api/auto-optimization', roiRoutes);
+app.route('/api/auto-optimization', autoRulesRoutes);
+app.route('/api/auto-optimization', operationsRoutes);
+app.route('/api/auto-optimization', approvalRoutes);
+
+// 认证路由（必须在认证中间件之前注册，因为登录接口不需要认证）
+app.route('/api/auth', authRoutes);
+
+// Postback管理路由 (历史查询、统计、重试等)
+app.route('/api/postbacks', postbackRoutes);
+
+// S2S Inbound Postback接收路由 (外部平台回传)
+app.route('/api/webhook', postbackInboundRoutes);
 
 // 缓存更新API (延迟初始化)
 app.get('/api/cache-update', async (c) => {
@@ -510,12 +1016,14 @@ async function serveSpaShellHtml(request: Request, env: Env): Promise<Response> 
     },
     `spa-shell-${workerVersion.namespace}`
   );
+  const strongEtag = toStrongETag(etag);
   const etagDuration = durationMs(etagStartedAt);
   const headers = new Headers(assetResponse.headers);
 
   headers.set('Content-Type', 'text/html; charset=UTF-8');
   applyHtmlCacheHeaders(headers, cachePolicy);
-  headers.set('ETag', etag);
+  headers.set('ETag', strongEtag);
+  headers.set('Last-Modified', new Date(workerVersion.timestamp).toUTCString());
   headers.set('Timing-Allow-Origin', '*');
   headers.set('Vary', 'Accept-Encoding');
 
@@ -526,7 +1034,7 @@ async function serveSpaShellHtml(request: Request, env: Env): Promise<Response> 
     { name: 'ttl', desc: `edge=${cachePolicy.edgeMaxAge};swr=${cachePolicy.staleWhileRevalidate}` },
   ];
 
-  if (ETagGenerator.matches(request.headers.get('If-None-Match'), etag)) {
+  if (ETagGenerator.matches(request.headers.get('If-None-Match'), strongEtag)) {
     appendServerTiming(headers, [
       ...metrics,
       { name: 'reval', desc: '304' },
@@ -568,6 +1076,14 @@ export default {
     // 处理 API 请求（包括 /api/* 和 /health）
     if (isAppControlRequest(url.pathname)) {
       return app.fetch(request, env, ctx);
+    }
+
+    if (isPrecompressedAssetRequest(request, url.pathname)) {
+      return servePrecompressedAsset(request, env);
+    }
+
+    if (url.pathname.startsWith('/__compression-demo/')) {
+      return serveCompressionDemo(request, env);
     }
 
     if (isHtmlPageRequest(request, url.pathname)) {

@@ -20,6 +20,8 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const CAMPAIGN_NAME_MAX_LENGTH = 64;
+
 type UniquenessMethod = 'ip' | 'ip_ua' | 'cookie' | 'parameter' | 'none';
 
 interface CampaignFormData {
@@ -179,8 +181,9 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
 
   // 处理 name 变化，自动生成 alias
   const handleNameChange = (name: string) => {
-    const alias = generateAlias(name);
-    setFormData(prev => ({ ...prev, name, alias }));
+    const normalizedName = name.slice(0, CAMPAIGN_NAME_MAX_LENGTH);
+    const alias = generateAlias(normalizedName);
+    setFormData(prev => ({ ...prev, name: normalizedName, alias }));
   };
 
   useEffect(() => {
@@ -284,8 +287,12 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     onChange={(e) => handleNameChange(e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                     placeholder="Enter campaign name"
+                    maxLength={CAMPAIGN_NAME_MAX_LENGTH}
                     required
                   />
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    {formData.name.length}/{CAMPAIGN_NAME_MAX_LENGTH}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">

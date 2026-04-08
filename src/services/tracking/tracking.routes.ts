@@ -68,11 +68,19 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
     const browser = detectBrowser(userAgent);
     const os = detectOS(userAgent);
 
-    const subId1 = c.req.query('sub1') || c.req.query('subid1');
-    const subId2 = c.req.query('sub2') || c.req.query('subid2');
-    const subId3 = c.req.query('sub3') || c.req.query('subid3');
-    const subId4 = c.req.query('sub4') || c.req.query('subid4');
-    const subId5 = c.req.query('sub5') || c.req.query('subid5');
+    // 动态解析所有 Sub ID 参数 (支持1-30个, 兼容多种命名格式: sub1/subid1/sub_id_1)
+    const subIds: Record<string, string | undefined> = {};
+    for (let i = 1; i <= 30; i++) {
+      // 支持多种参数命名格式
+      const value = c.req.query(`sub${i}`) ||
+                   c.req.query(`subid${i}`) ||
+                   c.req.query(`sub_id_${i}`) ||
+                   undefined;
+      if (value) {
+        subIds[`subId${i}`] = value;
+      }
+    }
+
     const cost = c.req.query('cost') ? parseFloat(c.req.query('cost')!) : undefined;
 
     // 解析去重参数
@@ -100,11 +108,8 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
         device,
         browser,
         os,
-        subId1,
-        subId2,
-        subId3,
-        subId4,
-        subId5,
+        // 动态展开所有 Sub ID 参数 (1-30)
+        ...subIds,
         cost,
         uniquenessMethod,
         uniquenessParameter,
@@ -203,9 +208,8 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
         device: body.device,
         browser: body.browser,
         os: body.os,
-        subId1: body.subId1,
-        subId2: body.subId2,
-        subId3: body.subId3,
+        // 动态展开所有 Sub ID 参数 (1-30, 从请求体中读取)
+        ...extractSubIdsFromBody(body),
         cost: body.cost,
         uniquenessMethod: body.uniquenessMethod,
         uniquenessParameter: body.uniquenessParameter,
@@ -324,4 +328,26 @@ function detectOS(userAgent: string): string {
   if (/android/i.test(ua)) return 'Android';
   if (/ios|iphone|ipad/i.test(ua)) return 'iOS';
   return 'Unknown';
+}
+
+/**
+ * 从POST请求体中提取所有Sub ID参数 (支持1-30个)
+ * @param body POST请求体
+ * @returns 包含subId1-subId30的记录对象
+ */
+function extractSubIdsFromBody(body: Record<string, unknown>): Record<string, string | undefined> {
+  const subIds: Record<string, string | undefined> = {};
+
+  for (let i = 1; i <= 30; i++) {
+    // 支持多种字段命名格式
+    const value = body[`subId${i}`] ||
+                 body[`subid${i}`] ||
+                 body[`sub_id_${i}`] ||
+                 body[`sub${i}`];
+    if (value && typeof value === 'string') {
+      subIds[`subId${i}`] = value;
+    }
+  }
+
+  return subIds;
 }

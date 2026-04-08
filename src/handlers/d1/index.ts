@@ -16,6 +16,7 @@ import { ConversionRepository } from './conversion.repo';
 import { BlacklistRepository } from './blacklist.repo';
 import { WhitelistRepository } from './whitelist.repo';
 import { DomainRepository } from './domain.repo';
+import { MultiOfferRepository } from './multi-offer.repo';
 
 export type { D1Database } from '@cloudflare/workers-types';
 
@@ -31,6 +32,7 @@ export interface D1Repositories {
   blacklist: BlacklistRepository;
   whitelist: WhitelistRepository;
   domain: DomainRepository;
+  multiOffer: MultiOfferRepository;
 }
 
 export function getD1Connection(env: Env): D1Database {
@@ -50,6 +52,7 @@ export function createRepositories(db: D1Database): D1Repositories {
     blacklist: new BlacklistRepository(db),
     whitelist: new WhitelistRepository(db),
     domain: new DomainRepository(db),
+    multiOffer: new MultiOfferRepository(db),
   };
 }
 
@@ -64,4 +67,5 @@ export { ConversionRepository } from './conversion.repo';
 export { BlacklistRepository } from './blacklist.repo';
 export { WhitelistRepository } from './whitelist.repo';
 export { DomainRepository } from './domain.repo';
+export { MultiOfferRepository } from './multi-offer.repo';
 

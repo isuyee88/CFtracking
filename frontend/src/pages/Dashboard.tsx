@@ -8,7 +8,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, Settings, X, Sun, Moon } from 'lucide-react';
+import { RefreshCw, Settings, Sun, Moon } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -16,6 +16,7 @@ import {
   ChartWrapper,
   LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer
 } from '../components/ChartWrapper';
+import { DeferredSection } from '../components/DeferredSection';
 import { QuickDateRangePicker } from '../components/DateRangePicker';
 import { useDashboardURLState } from '../hooks/useURLState';
 import type { VirtualTableColumn } from '../components/VirtualTableEnhanced';
@@ -25,6 +26,7 @@ import {
   fetchDashboardStats,
   fetchRecentClicks,
   fetchEntityStats,
+  fetchCampaigns,
   invalidateApiCache,
 } from '../services/api';
 import {
@@ -46,6 +48,33 @@ const LazyVirtualTableEnhanced = lazy(() =>
     default: module.VirtualTableEnhanced,
   }))
 );
+
+const LazyDashboardPreferencesModal = lazy(() =>
+  import('../components/dashboard/DashboardPreferencesModal').then((module) => ({
+    default: module.DashboardPreferencesModal,
+  }))
+);
+
+function getDashboardEntityDrilldown(entityKey: string, row: Record<string, any>) {
+  const rowId = row.id ? String(row.id) : '';
+  const rowName = row.name ? String(row.name) : '';
+  const search = rowName ? `?search=${encodeURIComponent(rowName)}` : '';
+
+  switch (entityKey) {
+    case 'campaigns':
+      return rowId ? `/campaigns/${rowId}` : '/campaigns';
+    case 'offers':
+      return `/offers${search}`;
+    case 'landings':
+      return `/landings${search}`;
+    case 'sources':
+      return `/traffic-sources${search}`;
+    case 'affiliates':
+      return `/affiliate-networks${search}`;
+    default:
+      return null;
+  }
+}
 
 // 自动检测昼夜模式的 Hook
 function useAutoDarkMode() {
@@ -524,15 +553,6 @@ function getRecentClicksSorter(key: string) {
 // ==================== 数据生成函数 ====================
 
 // 加载状态组件
-const LoadingSpinner = ({ size = 24 }: { size?: number }) => (
-  <div className="flex items-center justify-center" aria-hidden="true">
-    <div
-      className="animate-spin rounded-full border-t-2 border-b-2 border-primary"
-      style={{ width: size, height: size }}
-    />
-  </div>
-);
-
 // 错误提示组件
 const ErrorMessage = ({ message }: { message: string }) => (
   <div className="text-red-500 text-sm p-4 bg-red-50 rounded-lg">
@@ -540,12 +560,33 @@ const ErrorMessage = ({ message }: { message: string }) => (
   </div>
 );
 
-const TableSkeleton = ({ height, message = 'Loading table...' }: { height: number; message?: string }) => (
+const TableSkeleton = ({ height }: { height: number }) => (
   <div
-    className="flex items-center justify-center rounded-md border border-outline-variant/20 bg-surface-container-low text-sm text-on-surface-variant"
+    className="rounded-md border border-outline-variant/20 bg-surface-container-low p-4"
     style={{ height }}
+    aria-hidden="true"
   >
-    {message}
+    <div className="flex h-full flex-col gap-3">
+      <div className="h-4 w-36 rounded-full bg-surface-container" />
+      <div className="grid gap-2">
+        {Array.from({ length: Math.max(4, Math.floor(height / 72)) }).map((_, index) => (
+          <div key={index} className="h-11 rounded-md bg-surface-container" />
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+const EntityTablesSkeleton = ({ count }: { count: number }) => (
+  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2" aria-hidden="true">
+    {Array.from({ length: count }).map((_, index) => (
+      <div key={index} className="section-card overflow-hidden">
+        <div className="section-header">
+          <div className="h-5 w-32 rounded-full bg-surface-container" />
+        </div>
+        <TableSkeleton height={300} />
+      </div>
+    ))}
   </div>
 );
 
@@ -799,6 +840,7 @@ export const Dashboard = () => {
   const [chartData, setChartData] = useState<any[]>(initialSnapshot?.chartData || []);
   const [recentClicks, setRecentClicks] = useState<any[]>(initialSnapshot?.recentClicks || []);
   const [entityData, setEntityData] = useState<Record<string, any[]>>(initialSnapshot?.entityData || {});
+  const [campaignOptions, setCampaignOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
@@ -817,6 +859,36 @@ export const Dashboard = () => {
     recentClicks: '',
     entities: ''
   });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCampaignOptions = async () => {
+      try {
+        const campaigns = await fetchCampaigns();
+        if (!isMounted || !Array.isArray(campaigns)) {
+          return;
+        }
+
+        setCampaignOptions(
+          campaigns
+            .filter((campaign) => campaign && campaign.id && campaign.name)
+            .map((campaign) => ({
+              id: String(campaign.id),
+              name: String(campaign.name),
+            }))
+        );
+      } catch (error) {
+        console.error('[Dashboard] Failed to load campaign options:', error);
+      }
+    };
+
+    void loadCampaignOptions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
   // 初始数据已加载标记
   const initialDataLoaded = useRef(
@@ -1060,13 +1132,19 @@ export const Dashboard = () => {
   
   return (
     <div className="min-h-full bg-canvas-inset dark:bg-surface">
-      {/* Preferences Modal */}
-      <PreferencesModal 
-        isOpen={showPreferences}
-        onClose={() => setShowPreferences(false)}
-        config={config}
-        onConfigChange={handleConfigChange}
-      />
+      {showPreferences ? (
+        <Suspense fallback={null}>
+          <LazyDashboardPreferencesModal
+            isOpen={showPreferences}
+            onClose={() => setShowPreferences(false)}
+            config={config}
+            onConfigChange={handleConfigChange}
+            metricsCatalog={ALL_METRICS}
+            entityConfigs={ENTITY_CONFIGS}
+            recentClicksColumnsCatalog={RECENT_CLICKS_COLUMNS}
+          />
+        </Suspense>
+      ) : null}
       
       {/* Header */}
       <div className="bg-surface-container-lowest dark:bg-surface-container px-6 py-4">
@@ -1078,8 +1156,8 @@ export const Dashboard = () => {
               <div className={cn(
                 "flex items-center gap-1.5 px-2 py-1 rounded-sm text-xs font-medium transition-colors",
                 isDarkMode 
-                  ? "bg-primary/10 text-primary" 
-                  : "bg-secondary/10 text-secondary"
+                  ? "bg-accent-muted text-accent-fg" 
+                  : "bg-accent-muted text-accent-fg"
               )}>
                 {isDarkMode ? <Moon size={12} /> : <Sun size={12} />}
                 {isDarkMode ? 'Night Mode' : 'Day Mode'}
@@ -1091,7 +1169,14 @@ export const Dashboard = () => {
               <span className="leading-5">Real-time tracking overview</span>
               <span>Updated {formatTime(lastUpdated)}</span>
               <span>Local {formatTime(currentTime)}</span>
-              <span className={cn(isRealtimeConnected ? 'text-success-fg' : 'text-warning-fg')}>
+              <span
+                className={cn(
+                  'rounded-full px-2 py-0.5 text-[12px] font-semibold',
+                  isRealtimeConnected
+                    ? 'bg-success-fg/12 text-success-fg'
+                    : 'bg-amber-100 text-amber-800'
+                )}
+              >
                 {isRealtimeConnected ? 'Edge sync live' : 'Realtime reconnecting'}
               </span>
               <DataSourceInfo dataSource={dataSource} queryTime={queryTime || undefined} />
@@ -1099,7 +1184,7 @@ export const Dashboard = () => {
             <DataSourceWarning dataSource={dataSource} className="mt-1" />
           </div>
           
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
             {/* Campaign 选择 */}
             <select
               aria-label="Select campaign scope"
@@ -1112,13 +1197,19 @@ export const Dashboard = () => {
               className="w-full rounded-sm border border-outline-variant/20 bg-surface-container-lowest px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none sm:w-auto"
             >
               <option value="all">All Campaigns</option>
-              {state.selectedCampaign ? (
+              {campaignOptions.map((campaign) => (
+                <option key={campaign.id} value={campaign.id}>
+                  {campaign.name}
+                </option>
+              ))}
+              {state.selectedCampaign &&
+              !campaignOptions.some((campaign) => campaign.id === state.selectedCampaign) ? (
                 <option value={state.selectedCampaign}>{`Campaign: ${state.selectedCampaign}`}</option>
               ) : null}
             </select>
             
             {/* 时间范围 - 使用新的日期选择器组件 */}
-            <div className="w-full sm:w-[320px]">
+            <div className="w-full xl:w-[440px] xl:flex-none">
               <QuickDateRangePicker
                 value={state.range?.interval || 'today'}
                 onChange={(preset, range) => {
@@ -1138,7 +1229,7 @@ export const Dashboard = () => {
             </div>
             
             {/* 刷新按钮 */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4 xl:ml-6 xl:flex-none xl:shrink-0">
               <button
                 onClick={() => {
                   invalidateBootstrap((bootstrap) => bootstrap?.scope?.page === 'dashboard');
@@ -1150,8 +1241,8 @@ export const Dashboard = () => {
                 aria-label="Refresh dashboard data"
                 title="Refresh dashboard data"
                 className={cn(
-                  "rounded-sm border border-outline-variant/20 p-2 transition-colors hover:bg-surface-container",
-                  isRefreshing && "animate-spin"
+                  "min-h-11 min-w-11 rounded-sm border border-outline-variant/20 p-2.5 transition-colors hover:bg-surface-container",
+                  isRefreshing && "opacity-70"
                 )}
               >
                 <RefreshCw size={18} className="text-on-surface-variant" />
@@ -1162,7 +1253,7 @@ export const Dashboard = () => {
                 onClick={() => setShowPreferences(true)}
                 aria-label="Open dashboard preferences"
                 title="Open dashboard preferences"
-                className="rounded-sm border border-outline-variant/20 p-2 transition-colors hover:bg-surface-container"
+                className="min-h-11 min-w-11 rounded-sm border border-outline-variant/20 p-2.5 transition-colors hover:bg-surface-container"
               >
                 <Settings size={18} className="text-on-surface-variant" />
               </button>
@@ -1182,13 +1273,12 @@ export const Dashboard = () => {
                   <div 
                     key={index} 
                     className={cn("metric-card metric-card-hover", style.gradient)}
+                    aria-hidden="true"
                   >
                     <div className={cn("metric-card-accent", style.accent)} />
-                    <p className="metric-label">Loading...</p>
-                    <p className="metric-value">
-                      <LoadingSpinner size={20} />
-                    </p>
-                    <p className="metric-trend">--</p>
+                    <div className="metric-label h-4 w-24 rounded-full bg-surface-container" />
+                    <div className="mt-4 h-8 w-20 rounded-full bg-surface-container" />
+                    <div className="mt-3 h-3 w-12 rounded-full bg-surface-container" />
                   </div>
                 );
               })
@@ -1268,7 +1358,7 @@ export const Dashboard = () => {
             </div>
           </div>
           <ChartWrapper height={300}>
-            <Suspense fallback={<div className="h-full flex items-center justify-center text-on-surface-variant">Loading chart...</div>}>
+            <Suspense fallback={null}>
               <LazyResponsiveContainer width="100%" height={300} debounce={50}>
                 <LazyAreaChart data={chartData}>
                 <defs>
@@ -1356,10 +1446,14 @@ export const Dashboard = () => {
         
         {/* Entity Tables - 使用虚拟滚动 */}
         {config.entities.length > 0 && (
-          <div
-            className="grid grid-cols-1 lg:grid-cols-2 gap-6"
-            style={{ contentVisibility: 'auto', containIntrinsicSize: '900px' }}
+          <DeferredSection
+            minHeight={900}
+            fallback={<EntityTablesSkeleton count={Math.max(config.entities.length, 2)} />}
           >
+            <div
+              className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+              style={{ contentVisibility: 'auto', containIntrinsicSize: '900px' }}
+            >
             {config.entities.map(entityKey => {
               const entityConfig = ENTITY_CONFIGS[entityKey as keyof typeof ENTITY_CONFIGS];
               const data = entityData[entityKey] || [];
@@ -1384,9 +1478,15 @@ export const Dashboard = () => {
                   showSorter: true,
                   render: (value: any, row: any) => {
                     if (col.key === 'name') {
+                      const drilldownPath = getDashboardEntityDrilldown(entityKey, row);
+
+                      if (!drilldownPath) {
+                        return <span className="font-semibold text-high-contrast">{value}</span>;
+                      }
+
                       return (
                         <Link 
-                          to={`/${entityKey}/${row.id}`}
+                          to={drilldownPath}
                           className="font-semibold text-high-contrast hover:text-secondary transition-colors cursor-pointer link-primary"
                         >
                           {value}
@@ -1417,15 +1517,29 @@ export const Dashboard = () => {
                 </div>
               );
             })}
-          </div>
+            </div>
+          </DeferredSection>
         )}
         
         {/* Recent Clicks - 新样式 */}
         {config.recentClicksColumns.length > 0 && (
-          <div
-            className="section-card overflow-hidden"
-            style={{ contentVisibility: 'auto', containIntrinsicSize: '560px' }}
+          <DeferredSection
+            minHeight={560}
+            fallback={
+              <div className="section-card overflow-hidden">
+                <div className="section-header flex items-center justify-between">
+                  <h2 className="font-display font-semibold text-on-surface">Recent Clicks</h2>
+                </div>
+                <div className="p-4">
+                  <TableSkeleton height={400} />
+                </div>
+              </div>
+            }
           >
+            <div
+              className="section-card overflow-hidden"
+              style={{ contentVisibility: 'auto', containIntrinsicSize: '560px' }}
+            >
             <div className="section-header flex items-center justify-between">
               <h2 className="font-display font-semibold text-on-surface">Recent Clicks</h2>
               <button
@@ -1444,21 +1558,21 @@ export const Dashboard = () => {
               >
                 <RefreshCw 
                   size={14} 
-                  className={cn(loading.recentClicks && "animate-spin")}
+                  className={cn(loading.recentClicks && "opacity-70")}
                 />
                 <span>Refresh</span>
               </button>
             </div>
             {loading.recentClicks ? (
-              <div className="p-8 flex items-center justify-center">
-                <LoadingSpinner size={40} />
+              <div className="p-4">
+                <TableSkeleton height={400} />
               </div>
             ) : errors.recentClicks ? (
               <div className="p-4">
                 <ErrorMessage message={errors.recentClicks} />
               </div>
             ) : (
-              <Suspense fallback={<TableSkeleton height={400} message="Loading recent clicks..." />}>
+              <Suspense fallback={<TableSkeleton height={400} />}>
                 <LazyVirtualTableEnhanced
                 tableId="dashboard-recent-clicks"
                 columns={config.recentClicksColumns.map(key => {
@@ -1525,7 +1639,8 @@ export const Dashboard = () => {
                 />
               </Suspense>
             )}
-          </div>
+            </div>
+          </DeferredSection>
         )}
       </div>
     </div>

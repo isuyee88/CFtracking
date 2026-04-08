@@ -64,6 +64,7 @@ export class FlowActionService {
 
   /**
    * 执行重定向动作
+   * P0-002 修复: 无有效 URL 时返回 traffic-loss 而不是 about:blank
    */
   private executeRedirect(
     config: FlowActionConfig,
@@ -71,13 +72,20 @@ export class FlowActionService {
   ): FlowActionResult {
     let redirectUrl = config.redirectUrl || '';
 
-    // 如果没有配置 URL，使用默认行为
+    // 如果没有配置 URL，检查是否有其他目标
     if (!redirectUrl) {
-      redirectUrl = this.buildDefaultRedirectUrl(request);
+      console.warn('[FlowActionService] No redirectUrl configured, falling back to traffic_loss');
+      return this.executeTrafficLoss();
     }
 
     // 替换 URL 中的参数占位符
     redirectUrl = this.replaceUrlParams(redirectUrl, request);
+
+    // 如果替换后 URL 为空，返回 traffic-loss
+    if (!redirectUrl || redirectUrl === 'about:blank') {
+      console.warn('[FlowActionService] Invalid redirectUrl after param replacement, falling back to traffic_loss');
+      return this.executeTrafficLoss();
+    }
 
     return {
       actionType: 'redirect',
@@ -347,29 +355,16 @@ export class FlowActionService {
   }
 
   /**
-   * 构建默认重定向 URL
-   */
-  private buildDefaultRedirectUrl(request: ClickRequest): string {
-    // 默认重定向到原始 URL 或空白页
-    return request.referer || 'about:blank';
-  }
-
-  /**
    * 替换 URL 中的参数占位符
-   * 支持 {clickid}, {campaign}, {subid1} 等格式
+   * 支持 {clickid}, {campaign}, {subid1}-{subid30} 等格式
    */
   private replaceUrlParams(url: string, request: ClickRequest): string {
     const params = request.urlParams || new URLSearchParams();
-    
+
     // 基础参数替换
     const replacements: Record<string, string> = {
       '{campaign}': request.campaignId || '',
       '{campaign_id}': request.campaignId || '',
-      '{subid1}': request.subId1 || '',
-      '{subid2}': request.subId2 || '',
-      '{subid3}': request.subId3 || '',
-      '{subid4}': request.subId4 || '',
-      '{subid5}': request.subId5 || '',
       '{referer}': request.referer || '',
       '{ip}': request.ip || '',
       '{country}': request.country || '',
@@ -379,6 +374,13 @@ export class FlowActionService {
       '{os}': request.os || '',
       '{useragent}': request.userAgent || '',
     };
+
+    // 动态添加所有 Sub ID 参数 (支持1-30个)
+    for (let i = 1; i <= 30; i++) {
+      const subIdValue = request[`subId${i}` as keyof ClickRequest] as string | undefined;
+      replacements[`{subid${i}}`] = subIdValue || '';
+      replacements[`{sub_id_${i}}`] = subIdValue || '';
+    }
 
     // 添加 URL 参数中的所有值
     params.forEach((value, key) => {

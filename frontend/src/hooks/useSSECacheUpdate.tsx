@@ -40,7 +40,16 @@ export function useSSECacheUpdate(
   const [isConnected, setIsConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<SSEEvent | null>(null);
 
+  const isLocalPreview =
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
   const connect = () => {
+    if (isLocalPreview) {
+      setIsConnected(false);
+      return;
+    }
+
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -107,17 +116,24 @@ export function useSSECacheUpdate(
   };
 
   const reconnect = () => {
+    if (isLocalPreview) {
+      return;
+    }
     disconnect();
     connect();
   };
 
   useEffect(() => {
+    if (isLocalPreview) {
+      return;
+    }
+
     connect();
 
     return () => {
       disconnect();
     };
-  }, [userId, autoReconnect, reconnectInterval, onConnectionChange, onError, onEvent]);
+  }, [autoReconnect, isLocalPreview, onConnectionChange, onError, onEvent, reconnectInterval, userId]);
 
   return {
     isConnected,

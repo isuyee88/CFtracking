@@ -31,6 +31,8 @@ export class PlatformManager {
       throw new Error(`Platform ${platformId} not found`);
     }
 
+    adapter.configure(config);
+
     if (!adapter.validateConfig()) {
       throw new Error(`Invalid configuration for platform ${platformId}`);
     }

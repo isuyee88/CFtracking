@@ -2,6 +2,9 @@ import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
+
+const buildId = (process.env.CFTRACK_BUILD_ID || Date.now().toString(36)).toLowerCase();
 
 export default defineConfig({
   plugins: [
@@ -9,6 +12,78 @@ export default defineConfig({
       include: '**/*.tsx',
     }),
     tailwindcss(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg', 'pwa-192x192.svg', 'pwa-512x512.svg', 'robots.txt'],
+      manifest: {
+        name: 'CF Tracking',
+        short_name: 'CF Tracking',
+        description: 'Real-time traffic tracking and analytics dashboard',
+        theme_color: '#ffffff',
+        background_color: '#ffffff',
+        display: 'standalone',
+        icons: [
+          {
+            src: 'pwa-192x192.svg',
+            sizes: '192x192',
+            type: 'image/svg+xml',
+          },
+          {
+            src: 'pwa-512x512.svg',
+            sizes: '512x512',
+            type: 'image/svg+xml',
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gstatic-fonts-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /\/api\//,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-cache',
+              networkTimeoutSeconds: 10,
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 5, // 5 minutes
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+        ],
+      },
+    }),
   ],
   resolve: {
     alias: {
@@ -41,9 +116,9 @@ export default defineConfig({
         propertyReadSideEffects: false,
       },
       output: {
-        entryFileNames: 'assets/[name]-[hash].js',
-        chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]',
+        entryFileNames: `assets/[name]-${buildId}-[hash].js`,
+        chunkFileNames: `assets/[name]-${buildId}-[hash].js`,
+        assetFileNames: `assets/[name]-${buildId}-[hash][extname]`,
         manualChunks: (id) => {
           if (
             id.includes('src/contexts/InitialDataContext.tsx') ||
@@ -72,11 +147,12 @@ export default defineConfig({
 
           if (
             id.includes('src/components/ChartWrapper.tsx') ||
-            id.includes('src\\components\\ChartWrapper.tsx') ||
-            id.includes('src/components/DataSourceBadge.tsx') ||
-            id.includes('src\\components\\DataSourceBadge.tsx') ||
-            id.includes('src/components/BrandIcon.tsx') ||
-            id.includes('src\\components\\BrandIcon.tsx') ||
+            id.includes('src\\components\\ChartWrapper.tsx')
+          ) {
+            return 'charts-ui';
+          }
+
+          if (
             id.includes('src/components/VirtualTable.tsx') ||
             id.includes('src\\components\\VirtualTable.tsx') ||
             id.includes('src/components/VirtualTableEnhanced.tsx') ||
@@ -84,7 +160,16 @@ export default defineConfig({
             id.includes('src/hooks/useTableScroll.ts') ||
             id.includes('src\\hooks\\useTableScroll.ts')
           ) {
-            return 'dashboard-ui';
+            return 'table-ui';
+          }
+
+          if (
+            id.includes('src/components/BrandIcon.tsx') ||
+            id.includes('src\\components\\BrandIcon.tsx') ||
+            id.includes('src/components/dashboard/DashboardRecentClicksSection.tsx') ||
+            id.includes('src\\components\\dashboard\\DashboardRecentClicksSection.tsx')
+          ) {
+            return 'recent-clicks-ui';
           }
 
           if (
@@ -129,7 +214,7 @@ export default defineConfig({
           }
 
           if (id.includes('node_modules/lucide-react/')) {
-            return null;
+            return 'lucide-icons';
           }
 
           if (
@@ -174,12 +259,6 @@ export default defineConfig({
             return null;
           }
 
-          if (id.includes('/src/pages/') || id.includes('\\src\\pages\\')) {
-            const normalizedId = id.replace(/\\/g, '/');
-            const page = normalizedId.split('/src/pages/')[1]?.split('/')[0];
-            return page ? `page-${page}` : null;
-          }
-
           return null;
         },
       },
@@ -199,10 +278,10 @@ export default defineConfig({
       'react-dom',
       'react-router-dom',
       'react-is',
-      'es-toolkit',
-      'es-toolkit/compat',
+      'lodash',
+      'lodash/get',
     ],
-    exclude: ['antd', 'recharts', 'motion', 'lucide-react'],
+    exclude: ['antd', 'motion', 'lucide-react'],
     esbuildOptions: {
       packages: 'external',
     },

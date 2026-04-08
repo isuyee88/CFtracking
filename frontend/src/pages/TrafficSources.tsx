@@ -41,6 +41,7 @@ import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import type { TrafficSource, ParameterTemplate, PostbackConfig } from '../types/trafficSource';
 import { getTemplateById } from '../data/trafficSourceTemplates';
 import { readBootstrapPage } from '../services/bootstrap';
+import { useLocation } from 'react-router-dom';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -70,6 +71,7 @@ const getTemplateName = (templateId?: string): string => {
 
 export const TrafficSources = () => {
   const toast = useToast();
+  const location = useLocation();
   const bootstrap = readBootstrapPage<{ trafficSources?: TrafficSource[] }>('traffic-sources');
   const hasBootstrap = Boolean(bootstrap);
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>(
@@ -84,7 +86,13 @@ export const TrafficSources = () => {
   const [selectedSource, setSelectedSource] = useState<Partial<TrafficSource> | undefined>(undefined);
   
   // Search and filter state
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    return new URLSearchParams(window.location.search).get('search') || '';
+  });
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
   const [filterType, setFilterType] = useState<string>('All');
   
@@ -103,90 +111,25 @@ export const TrafficSources = () => {
 
   // Fetch traffic sources from API
   useEffect(() => {
+    setSearchTerm(new URLSearchParams(location.search).get('search') || '');
+  }, [location.search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, filterType]);
+
+  useEffect(() => {
     const loadTrafficSources = async () => {
       try {
         if (!hasBootstrap && trafficSources.length === 0) {
           setLoading(true);
         }
+        setError(null);
         const data = await fetchTrafficSources();
         if (Array.isArray(data)) {
           setTrafficSources(data);
         } else {
-          // Use mock data if API fails
-          setTrafficSources([
-            {
-              id: 'ts1',
-              name: 'Facebook Ads',
-              type: 'social',
-              status: 'active',
-              postbackUrl: 'https://facebook.com/postback',
-              costModel: 'cpc',
-              costValue: 0.5,
-              currency: 'USD',
-              campaignCount: 5,
-              clicks: 45200,
-              conversions: 1240,
-              revenue: 45200.00,
-              cost: 32750.00,
-              profit: 12450.00,
-              roi: 38.0,
-              updatedAt: '2024-01-15T10:30:00Z'
-            },
-            {
-              id: 'ts2',
-              name: 'Google Ads',
-              type: 'search',
-              status: 'active',
-              postbackUrl: 'https://google.com/postback',
-              costModel: 'cpc',
-              costValue: 1.2,
-              currency: 'USD',
-              campaignCount: 3,
-              clicks: 38500,
-              conversions: 980,
-              revenue: 38500.00,
-              cost: 28700.00,
-              profit: 9800.00,
-              roi: 34.0,
-              updatedAt: '2024-01-14T15:45:00Z'
-            },
-            {
-              id: 'ts3',
-              name: 'TikTok Ads',
-              type: 'social',
-              status: 'paused',
-              postbackUrl: 'https://tiktok.com/postback',
-              costModel: 'cpm',
-              costValue: 5.0,
-              currency: 'USD',
-              campaignCount: 2,
-              clicks: 22100,
-              conversions: 310,
-              revenue: 22100.00,
-              cost: 19000.00,
-              profit: 3100.00,
-              roi: 16.0,
-              updatedAt: '2024-01-13T09:15:00Z'
-            },
-            {
-              id: 'ts4',
-              name: 'Taboola Native',
-              type: 'native',
-              status: 'active',
-              postbackUrl: 'https://taboola.com/postback',
-              costModel: 'cpc',
-              costValue: 0.3,
-              currency: 'USD',
-              campaignCount: 1,
-              clicks: 15600,
-              conversions: 210,
-              revenue: 15600.00,
-              cost: 15750.00,
-              profit: -150.00,
-              roi: -1.0,
-              updatedAt: '2024-01-12T16:20:00Z'
-            }
-          ]);
+          setError('Failed to load traffic sources');
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load traffic sources');
@@ -262,38 +205,7 @@ export const TrafficSources = () => {
       setIsFormOpen(false);
     } catch (err) {
       toast.error('Failed to save traffic source', err instanceof Error ? err.message : 'Unknown error');
-      // For demo, add to local state with apiConfig preserved
-      if (formMode === 'create') {
-        const newSource: TrafficSource = {
-          id: `ts${Date.now()}`,
-          name: submitData.name,
-          type: submitData.type || 'other',
-          status: submitData.status || 'active',
-          postbackUrl: submitData.postbackUrl || '',
-          costModel: submitData.costModel || 'cpc',
-          costValue: parseFloat(submitData.costValue) || 0,
-          currency: submitData.currency || 'USD',
-          apiConfig: submitData.apiConfig,
-          campaignCount: 0,
-          clicks: 0,
-          conversions: 0,
-          revenue: 0,
-          cost: 0,
-          profit: 0,
-          roi: 0,
-          updatedAt: new Date().toISOString()
-        };
-        setTrafficSources(prev => [...prev, newSource]);
-      } else {
-        setTrafficSources(prev => 
-          prev.map(s => 
-            s.id === selectedSource?.id 
-              ? { ...s, ...submitData, updatedAt: new Date().toISOString() }
-              : s
-          )
-        );
-      }
-      setIsFormOpen(false);
+      return;
     }
   };
 
@@ -306,7 +218,6 @@ export const TrafficSources = () => {
       toast.success('Traffic source deleted successfully');
     } catch (err) {
       toast.error('Failed to delete traffic source', err instanceof Error ? err.message : 'Unknown error');
-      setTrafficSources(prev => prev.filter(s => s.id !== id));
     }
   };
 
@@ -461,6 +372,12 @@ export const TrafficSources = () => {
           </button>
         </div>
       </div>
+
+      {error ? (
+        <div className="rounded-sm border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+          {error}
+        </div>
+      ) : null}
 
       {/* Toolbar */}
       <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">

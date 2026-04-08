@@ -18,9 +18,20 @@ export class OfferRepository extends BaseRepository<Offer> {
   }
 
   protected transform(row: Record<string, unknown>): Offer {
+    let countries: string[] = [];
+    if (row.countries) {
+      try {
+        countries = typeof row.countries === 'string' 
+          ? JSON.parse(row.countries) 
+          : (row.countries as string[]);
+      } catch {
+        countries = [];
+      }
+    }
     return {
       ...row,
       id: row.displayId || row.id,
+      countries,
     } as Offer;
   }
 
@@ -99,8 +110,8 @@ export class OfferRepository extends BaseRepository<Offer> {
 
     await this.db
       .prepare(`
-        INSERT INTO offers (id, displayId, name, url, payout, currency, payoutType, redirectType, network, "group", status, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO offers (id, displayId, name, url, payout, currency, payoutType, redirectType, actionType, countries, network, "group", status, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         displayId, 
@@ -111,6 +122,8 @@ export class OfferRepository extends BaseRepository<Offer> {
         data.currency || 'USD',
         data.payoutType || 'fixed',
         data.redirectType || 'http',
+        data.actionType || 'local',
+        JSON.stringify(data.countries || []),
         data.network || '',
         data.group || '',
         'active', 
@@ -136,6 +149,8 @@ export class OfferRepository extends BaseRepository<Offer> {
     if (data.currency !== undefined) { fields.push('currency = ?'); values.push(data.currency); }
     if (data.payoutType !== undefined) { fields.push('payoutType = ?'); values.push(data.payoutType); }
     if (data.redirectType !== undefined) { fields.push('redirectType = ?'); values.push(data.redirectType); }
+    if (data.actionType !== undefined) { fields.push('actionType = ?'); values.push(data.actionType); }
+    if (data.countries !== undefined) { fields.push('countries = ?'); values.push(JSON.stringify(data.countries)); }
     if (data.network !== undefined) { fields.push('network = ?'); values.push(data.network); }
     if (data.group !== undefined) { fields.push('"group" = ?'); values.push(data.group); }
     if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }

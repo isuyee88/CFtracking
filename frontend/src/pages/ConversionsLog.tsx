@@ -361,6 +361,7 @@ export default function ConversionsLog() {
                         <td colSpan={7} className="px-4 py-4">
                           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                             <Detail label="Click ID" value={row.clickId} mono />
+                            <Detail label="Visitor ID" value={row.visitorId || '-'} mono />
                             <Detail label="Offer ID" value={row.offerId} mono />
                             <Detail label="Country" value={row.country || '-'} />
                             <Detail label="Device" value={row.device || '-'} />
@@ -368,6 +369,7 @@ export default function ConversionsLog() {
                             <Detail label="Source" value={row.source || '-'} />
                             <Detail label="Sub ID 1" value={row.subId1 || '-'} mono />
                             <Detail label="Sub ID 2" value={row.subId2 || '-'} mono />
+                            <Detail label="Sub ID 3" value={row.subId3 || '-'} mono />
                           </div>
                           <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                             <div className="text-sm text-on-surface-variant">

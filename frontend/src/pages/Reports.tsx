@@ -23,6 +23,8 @@ import {
   type ReportMetric,
   type ReportType,
 } from '../services/api';
+import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
+import type { VirtualTableColumn } from '../components/VirtualTable';
 
 interface BuilderConfig {
   reportType: ReportType;
@@ -223,6 +225,29 @@ function getColumnLabel(key: string) {
   return key;
 }
 
+function isMetricColumn(key: string) {
+  return METRIC_OPTIONS.some((option) => option.value === key);
+}
+
+function compareReportValues(a: unknown, b: unknown) {
+  const aNumber = Number(a);
+  const bNumber = Number(b);
+
+  if (Number.isFinite(aNumber) && Number.isFinite(bNumber)) {
+    return aNumber - bNumber;
+  }
+
+  return String(a ?? '').localeCompare(String(b ?? ''), 'en-US', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+function getReportRowKey(row: ReportRow, index: number, columns: string[]) {
+  const signature = columns.map((column) => String(row[column] ?? '')).join('|');
+  return `${index}-${signature}`;
+}
+
 function readSavedViews(): SavedView[] {
   if (typeof window === 'undefined') {
     return [];
@@ -272,6 +297,7 @@ export default function Reports() {
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [viewName, setViewName] = useState('');
   const [activeTemplateId, setActiveTemplateId] = useState<string>('traffic-command');
+  const deferredSearchQuery = React.useDeferredValue(searchQuery);
 
   useEffect(() => {
     setSavedViews(readSavedViews());
@@ -323,7 +349,7 @@ export default function Reports() {
   }, []);
 
   const filteredRows = useMemo(() => {
-    const lowered = searchQuery.trim().toLowerCase();
+    const lowered = deferredSearchQuery.trim().toLowerCase();
     if (!lowered) {
       return rows;
     }
@@ -331,7 +357,7 @@ export default function Reports() {
     return rows.filter((row) =>
       Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(lowered))
     );
-  }, [rows, searchQuery]);
+  }, [deferredSearchQuery, rows]);
 
   const visibleColumns = useMemo(() => {
     if (appliedConfig.groupBy.length === 0) {
@@ -340,6 +366,28 @@ export default function Reports() {
 
     return [...appliedConfig.groupBy, ...appliedConfig.metrics];
   }, [appliedConfig.groupBy, appliedConfig.metrics]);
+
+  const resultColumns = useMemo<VirtualTableColumn<ReportRow>[]>(() => (
+    visibleColumns.map((column) => {
+      const metricColumn = isMetricColumn(column);
+
+      return {
+        key: column,
+        label: getColumnLabel(column),
+        dataIndex: column,
+        width: metricColumn ? 156 : 196,
+        align: metricColumn ? 'right' : 'left',
+        sorter: (left, right) => compareReportValues(left[column], right[column]),
+        showFilter: false,
+        render: (value) => formatCellValue(column, value),
+        className: metricColumn ? 'font-mono' : undefined,
+      };
+    })
+  ), [visibleColumns]);
+
+  const reportTableHeight = useMemo(() => (
+    Math.min(Math.max(filteredRows.length, 6) * 48 + 48, 640)
+  ), [filteredRows.length]);
 
   const summaryCards = useMemo(() => {
     const candidates = appliedConfig.metrics.slice(0, 4);
@@ -806,58 +854,18 @@ export default function Reports() {
 
       {error && <div className="mb-4 rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>}
 
-      <div className="overflow-hidden rounded-sm border border-outline-variant bg-surface">
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left">
-            <thead>
-              <tr className="border-b border-outline-variant bg-surface-container">
-                {visibleColumns.map((column) => (
-                  <th
-                    key={column}
-                    className={cn(
-                      'px-4 py-3 text-xs font-bold uppercase tracking-widest text-on-surface-variant',
-                      METRIC_OPTIONS.some((option) => option.value === column) && 'text-right'
-                    )}
-                  >
-                    {getColumnLabel(column)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-sm text-on-surface-variant">
-                    Running report...
-                  </td>
-                </tr>
-              ) : filteredRows.length === 0 ? (
-                <tr>
-                  <td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-sm text-on-surface-variant">
-                    No rows matched the current query.
-                  </td>
-                </tr>
-              ) : (
-                filteredRows.map((row, index) => (
-                  <tr key={`${index}-${visibleColumns.map((column) => row[column]).join('-')}`} className="border-b border-outline-variant/10 hover:bg-surface-container/40">
-                    {visibleColumns.map((column) => (
-                      <td
-                        key={column}
-                        className={cn(
-                          'px-4 py-3 text-sm text-on-surface',
-                          METRIC_OPTIONS.some((option) => option.value === column) && 'text-right font-mono'
-                        )}
-                      >
-                        {formatCellValue(column, row[column])}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <VirtualTableEnhanced
+        tableId="report-builder-results"
+        columns={resultColumns}
+        data={filteredRows}
+        loading={loading}
+        rowHeight={48}
+        height={reportTableHeight}
+        overscan={10}
+        emptyMessage={searchQuery.trim() ? 'No rows matched the current query.' : 'Run a report to see results.'}
+        getRowId={(row, index) => getReportRowKey(row, index, visibleColumns)}
+        className="overflow-x-auto rounded-sm border border-outline-variant bg-surface"
+      />
     </div>
   );
 }

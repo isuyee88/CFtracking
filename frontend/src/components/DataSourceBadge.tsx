@@ -14,30 +14,30 @@ const dataSourceConfig = {
     label: 'Durable Objects',
     description: 'Data source: Durable Objects (real-time)',
     icon: Zap,
-    bgColor: 'bg-blue-500/10',
-    textColor: 'text-blue-500',
-    borderColor: 'border-blue-500/20',
-    dotColor: 'bg-blue-500',
+    bgColor: 'bg-blue-100',
+    textColor: 'text-blue-800',
+    borderColor: 'border-blue-200',
+    dotColor: 'bg-blue-700',
     infoText: 'Durable Objects real-time data',
   },
   D1: {
     label: 'D1 Database',
     description: 'Data source: D1 database (archived)',
     icon: Database,
-    bgColor: 'bg-amber-500/10',
-    textColor: 'text-amber-500',
-    borderColor: 'border-amber-500/20',
-    dotColor: 'bg-amber-500',
+    bgColor: 'bg-amber-100',
+    textColor: 'text-amber-800',
+    borderColor: 'border-amber-200',
+    dotColor: 'bg-amber-700',
     infoText: 'D1 archived data',
   },
   MIXED: {
     label: 'Mixed',
     description: 'Data source: mixed (DO + D1)',
     icon: Clock,
-    bgColor: 'bg-purple-500/10',
-    textColor: 'text-purple-500',
-    borderColor: 'border-purple-500/20',
-    dotColor: 'bg-purple-500',
+    bgColor: 'bg-violet-100',
+    textColor: 'text-violet-800',
+    borderColor: 'border-violet-200',
+    dotColor: 'bg-violet-700',
     infoText: 'Mixed time-range query',
   },
 } as const;
@@ -77,7 +77,7 @@ export const DataSourceBadge: React.FC<DataSourceBadgeProps> = ({
       <span className={cn('relative flex h-2 w-2')}>
         <span
           className={cn(
-            'absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping',
+            'absolute inline-flex h-full w-full rounded-full opacity-35',
             config.dotColor
           )}
         />
@@ -111,7 +111,7 @@ export const DataSourceInfo: React.FC<DataSourceInfoProps> = ({
         <DataSourceBadge dataSource={dataSource} size="sm" />
         <span className="text-xs text-on-surface-variant">{config.infoText}</span>
       </div>
-      <span className="text-xs tabular-nums text-on-surface-variant/70">Query time: {formattedQueryTime}</span>
+      <span className="text-xs tabular-nums text-on-surface-variant">Query time: {formattedQueryTime}</span>
     </div>
   );
 };

@@ -37,12 +37,15 @@ import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 import { useToast } from '../components/Toast';
 import { readBootstrapPage } from '../services/bootstrap';
+import { COUNTRIES, getCountryLabel } from '../data/countries';
+import { useLocation } from 'react-router-dom';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 type RedirectType = 'http' | 'meta' | 'js' | 'js_blank' | 'double' | 'remote';
+type ActionType = 'local' | 'redirect' | 'preload' | 'action';
 
 interface Offer {
   id: string;
@@ -52,6 +55,8 @@ interface Offer {
   payout: number;
   payoutType: 'fixed' | 'revshare' | 'cpa';
   redirectType: RedirectType;
+  actionType: ActionType;
+  countries: string[];
   currency: string;
   status: 'active' | 'paused' | 'deleted';
   network: string;
@@ -121,6 +126,25 @@ const OFFER_FIELDS: FormField[] = [
     ]
   },
   {
+    name: 'actionType',
+    label: 'Action Type',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'local', label: 'Local' },
+      { value: 'redirect', label: 'Redirect' },
+      { value: 'preload', label: 'Preload' },
+      { value: 'action', label: 'Action' }
+    ]
+  },
+  {
+    name: 'countries',
+    label: 'Countries',
+    type: 'multiselect',
+    options: COUNTRIES,
+    description: 'Select target countries for this offer'
+  },
+  {
     name: 'network',
     label: 'Affiliate Network',
     type: 'select'
@@ -151,6 +175,7 @@ const OFFER_FIELDS: FormField[] = [
 
 export const Offers = () => {
   const toast = useToast();
+  const location = useLocation();
   const bootstrap = readBootstrapPage<{ offers?: Offer[]; affiliateNetworks?: Array<{ id: string; name: string }> }>('offers');
   const hasBootstrap = Boolean(bootstrap);
   const [offers, setOffers] = useState<Offer[]>(Array.isArray(bootstrap?.data?.offers) ? bootstrap.data.offers : []);
@@ -163,7 +188,13 @@ export const Offers = () => {
   const [selectedOffer, setSelectedOffer] = useState<Partial<Offer> | undefined>(undefined);
   
   // Search and filter state
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    return new URLSearchParams(window.location.search).get('search') || '';
+  });
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
   
   // Pagination state
@@ -192,6 +223,14 @@ export const Offers = () => {
 
   // Fetch affiliate networks for dropdown
   useEffect(() => {
+    setSearchTerm(new URLSearchParams(location.search).get('search') || '');
+  }, [location.search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, filterValues]);
+
+  useEffect(() => {
     if (affiliateNetworks.length > 0) {
       return;
     }
@@ -216,67 +255,12 @@ export const Offers = () => {
         if (!hasBootstrap && offers.length === 0) {
           setLoading(true);
         }
+        setError(null);
         const data = await fetchOffers();
         if (Array.isArray(data)) {
           setOffers(data);
         } else {
-          // Use mock data if API fails
-          setOffers([
-            {
-              id: 'offer1',
-              name: 'Weight Loss Supplement - Free Trial',
-              url: 'https://example.com/weight-loss-offer',
-              payout: 45.00,
-              payoutType: 'fixed',
-              currency: 'USD',
-              status: 'active',
-              network: 'OddBytes',
-              group: 'Health',
-              campaignCount: 2,
-              clicks: 12450,
-              conversions: 623,
-              revenue: 28035.00,
-              epc: 2.25,
-              cr: 5.0,
-              updatedAt: '2024-01-15T10:30:00Z'
-            },
-            {
-              id: 'offer2',
-              name: 'Make Money Online Course',
-              url: 'https://example.com/mmo-course',
-              payout: 97.00,
-              payoutType: 'fixed',
-              currency: 'USD',
-              status: 'active',
-              network: 'PropellerAds',
-              group: 'Education',
-              campaignCount: 3,
-              clicks: 8920,
-              conversions: 312,
-              revenue: 30264.00,
-              epc: 3.39,
-              cr: 3.5,
-              updatedAt: '2024-01-14T15:45:00Z'
-            },
-            {
-              id: 'offer3',
-              name: 'Dating Site Premium Membership',
-              url: 'https://example.com/dating-premium',
-              payout: 25.00,
-              payoutType: 'cpa',
-              currency: 'USD',
-              status: 'paused',
-              network: 'AdCash',
-              group: 'Dating',
-              campaignCount: 1,
-              clicks: 5430,
-              conversions: 189,
-              revenue: 4725.00,
-              epc: 0.87,
-              cr: 3.5,
-              updatedAt: '2024-01-13T09:15:00Z'
-            }
-          ]);
+          setError('Failed to load offers');
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load offers');
@@ -318,38 +302,7 @@ export const Offers = () => {
       setIsFormOpen(false);
     } catch (err) {
       toast.error('Failed to save offer', err instanceof Error ? err.message : 'Unknown error');
-      // For demo, add to local state
-      if (formMode === 'create') {
-        const newOffer: Offer = {
-          id: `offer${Date.now()}`,
-          name: formData.name,
-          url: formData.url,
-          payout: parseFloat(formData.payout) || 0,
-          payoutType: formData.payoutType || 'fixed',
-          redirectType: formData.redirectType || 'http',
-          currency: 'USD',
-          status: formData.status || 'active',
-          network: formData.network || 'Default',
-          group: formData.group || 'Default',
-          campaignCount: 0,
-          clicks: 0,
-          conversions: 0,
-          revenue: 0,
-          epc: 0,
-          cr: 0,
-          updatedAt: new Date().toISOString()
-        };
-        setOffers(prev => [...prev, newOffer]);
-      } else {
-        setOffers(prev => 
-          prev.map(o => 
-            o.id === selectedOffer?.id 
-              ? { ...o, ...formData, updatedAt: new Date().toISOString() }
-              : o
-          )
-        );
-      }
-      setIsFormOpen(false);
+      return;
     }
   };
 
@@ -362,7 +315,6 @@ export const Offers = () => {
       toast.success('Offer deleted successfully');
     } catch (err) {
       toast.error('Failed to delete offer', err instanceof Error ? err.message : 'Unknown error');
-      setOffers(prev => prev.filter(o => o.id !== id));
     }
   };
 
@@ -567,6 +519,12 @@ export const Offers = () => {
         </div>
       </div>
 
+      {error ? (
+        <div className="rounded-sm border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+          {error}
+        </div>
+      ) : null}
+
       {/* Toolbar */}
       <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-2">
@@ -733,7 +691,6 @@ export const Offers = () => {
               key: 'payout',
               label: 'Payout',
               width: '120px',
-              // 排序配置
               sorter: (a, b) => a.payout - b.payout,
               showSorter: true,
               render: (_, row) => (
@@ -742,6 +699,64 @@ export const Offers = () => {
                   <span className="text-[10px] text-on-surface-variant uppercase">{row.payoutType}</span>
                 </div>
               ),
+            },
+            {
+              key: 'actionType',
+              label: 'Action Type',
+              width: '100px',
+              filters: [
+                { text: 'Local', value: 'local' },
+                { text: 'Redirect', value: 'redirect' },
+                { text: 'Preload', value: 'preload' },
+                { text: 'Action', value: 'action' },
+              ],
+              onFilter: (value, record) => record.actionType === value,
+              sorter: (a, b) => (a.actionType || 'local').localeCompare(b.actionType || 'local'),
+              showSorter: true,
+              showFilter: true,
+              render: (_, row) => (
+                <span className={cn(
+                  "px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm",
+                  row.actionType === 'local' ? "bg-blue-100 text-blue-700" :
+                  row.actionType === 'redirect' ? "bg-green-100 text-green-700" :
+                  row.actionType === 'preload' ? "bg-purple-100 text-purple-700" :
+                  "bg-orange-100 text-orange-700"
+                )}>
+                  {row.actionType || 'local'}
+                </span>
+              ),
+            },
+            {
+              key: 'countries',
+              label: 'Countries',
+              width: '150px',
+              render: (_, row) => {
+                const countries = row.countries || [];
+                if (countries.length === 0) {
+                  return <span className="text-xs text-on-surface-variant">All</span>;
+                }
+                if (countries.length <= 3) {
+                  return (
+                    <div className="flex flex-wrap gap-1">
+                      {countries.map(code => (
+                        <span key={code} className="px-1.5 py-0.5 bg-surface-container text-[10px] font-medium text-on-surface-variant rounded">
+                          {code}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="flex items-center gap-1">
+                    <span className="px-1.5 py-0.5 bg-surface-container text-[10px] font-medium text-on-surface-variant rounded">
+                      {countries[0]}
+                    </span>
+                    <span className="text-[10px] text-on-surface-variant">
+                      +{countries.length - 1} more
+                    </span>
+                  </div>
+                );
+              },
             },
             {
               key: 'network',

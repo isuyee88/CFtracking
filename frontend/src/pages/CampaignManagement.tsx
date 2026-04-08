@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { fetchCampaigns, createCampaign, updateCampaign, deleteCampaign, fetchEntityStats } from '../services/api';
+import { fetchCampaigns, fetchCampaign, createCampaign, updateCampaign, deleteCampaign, fetchEntityStats } from '../services/api';
 import { CampaignForm } from '../components/CampaignForm';
 import { ExportButton } from '../components/ExportButton';
 import { formatCampaignForExport } from '../utils/export';
@@ -79,6 +79,26 @@ function getCurrentRangePreset(fallback: string): string {
   }
 
   return normalizeRangeParam(new URLSearchParams(window.location.search).get('range') || fallback);
+}
+
+const CAMPAIGN_ROW_HEIGHT = 72;
+const CAMPAIGN_HEADER_HEIGHT = 72;
+const CAMPAIGN_NAME_DISPLAY_LIMIT = 28;
+
+function getCampaignTableHeight(rowCount: number): number {
+  if (rowCount <= 0) {
+    return 280;
+  }
+
+  // +2 补偿容器边框，避免出现 1-2px 的纵向滚动条
+  return CAMPAIGN_HEADER_HEIGHT + rowCount * CAMPAIGN_ROW_HEIGHT + 2;
+}
+
+function truncateCampaignName(name: string): string {
+  if (name.length <= CAMPAIGN_NAME_DISPLAY_LIMIT) {
+    return name;
+  }
+  return `${name.slice(0, CAMPAIGN_NAME_DISPLAY_LIMIT - 1)}…`;
 }
 
 // Backend Campaign data structure
@@ -149,6 +169,30 @@ const transformCampaign = (backend: BackendCampaign, stats?: CampaignStats): Cam
   cr: stats?.clicks ? `${(((stats?.conversions || 0) / stats.clicks) * 100).toFixed(1)}%` : '0%'
 });
 
+function mapBackendCampaignToFormData(campaign: BackendCampaign | Record<string, any>) {
+  return {
+    id: campaign.id,
+    name: campaign.name || '',
+    alias: campaign.alias || '',
+    domain: campaign.domain || '',
+    group: campaign.group || '',
+    trafficSource: campaign.trafficSource || '',
+    flowRotation: campaign.flowRotation || 'weight',
+    costModel: campaign.costModel || 'cpc',
+    costValue: Number(campaign.costValue || 0),
+    currency: campaign.currency || 'USD',
+    uniquenessMethod: campaign.uniquenessMethod || 'none',
+    uniquenessParameter: campaign.uniquenessParameter || '',
+    uniquenessTTL: Number(campaign.uniquenessTTL || 86400),
+    visitorBinding: campaign.visitorBinding || 'none',
+    status: campaign.status || 'active',
+    notes: campaign.notes || '',
+    flows: Array.isArray(campaign.flows) ? campaign.flows : [],
+    connections: Array.isArray(campaign.connections) ? campaign.connections : [],
+    filterConfig: campaign.filterConfig,
+  };
+}
+
 function mapBootstrapCampaigns(bundle: {
   data?: {
     campaigns?: BackendCampaign[];
@@ -193,7 +237,7 @@ export const CampaignManagement = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>(initialBootstrapCampaigns);
   const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => new URLSearchParams(location.search).get('search') || '');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
   
   // Date range state
@@ -205,11 +249,11 @@ export const CampaignManagement = () => {
   // Form modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
-  const [selectedCampaign, setSelectedCampaign] = useState<Partial<Campaign> | undefined>(undefined);
+  const [selectedCampaign, setSelectedCampaign] = useState<Record<string, any> | undefined>(undefined);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [itemsPerPage] = useState(25);
   
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -292,6 +336,14 @@ export const CampaignManagement = () => {
     loadCampaignsWithStats();
   }, [loadCampaignsWithStats]);
 
+  useEffect(() => {
+    setSearchTerm(new URLSearchParams(location.search).get('search') || '');
+  }, [location.search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, groupByStates]);
+
   const handleCampaignClick = (id: string) => {
     navigate(`/campaigns/${id}`);
   };
@@ -302,9 +354,17 @@ export const CampaignManagement = () => {
     setIsFormOpen(true);
   };
   
-  const handleEditCampaign = (campaign: Campaign) => {
+  const handleEditCampaign = async (campaign: Campaign) => {
     setFormMode('edit');
-    setSelectedCampaign(campaign);
+
+    try {
+      const fullCampaign = await fetchCampaign(campaign.id);
+      setSelectedCampaign(mapBackendCampaignToFormData(fullCampaign));
+    } catch (err) {
+      toast.error('Failed to load campaign', err instanceof Error ? err.message : 'Unknown error');
+      return;
+    }
+
     setIsFormOpen(true);
   };
   
@@ -318,11 +378,20 @@ export const CampaignManagement = () => {
           setCampaigns(prev => [...prev, newCampaign]);
           toast.success('Campaign Created', `Campaign "${formData.name}" has been created successfully.`);
         }
+      } else if (selectedCampaign?.id) {
+        const campaign = await updateCampaign(selectedCampaign.id, formData);
+        if (campaign && campaign.id) {
+          await loadCampaignsWithStats();
+          toast.success('Campaign Updated', `Campaign "${formData.name}" has been updated successfully.`);
+        }
       }
       setIsFormOpen(false);
     } catch (err) {
       console.error('Failed to save campaign:', err);
-      toast.error('Failed to Create Campaign', err instanceof Error ? err.message : 'Please check your input and try again.');
+      toast.error(
+        formMode === 'create' ? 'Failed to Create Campaign' : 'Failed to Update Campaign',
+        err instanceof Error ? err.message : 'Please check your input and try again.'
+      );
     }
   };
   
@@ -411,6 +480,9 @@ export const CampaignManagement = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  // 让每页数据完整展示，避免表格内部出现向下滚动条
+  const tableHeight = getCampaignTableHeight(paginatedCampaigns.length);
 
   if (loading) {
     return (
@@ -582,6 +654,7 @@ export const CampaignManagement = () => {
       <div className="card overflow-hidden">
         <VirtualTableEnhanced
           tableId="campaigns"
+          className="overflow-y-hidden"
           columns={[
             {
               key: 'select',
@@ -612,8 +685,9 @@ export const CampaignManagement = () => {
                     <button 
                       onClick={() => handleCampaignClick(row.id)}
                       className="font-bold text-high-contrast hover:text-secondary cursor-pointer link-primary"
+                      title={row.name}
                     >
-                      {row.name}
+                      {truncateCampaignName(row.name)}
                     </button>
                     <p className="text-xs text-medium-contrast">ID: {row.displayId || row.id}</p>
                   </div>
@@ -773,13 +847,41 @@ export const CampaignManagement = () => {
             },
           ]}
           data={paginatedCampaigns}
-          rowHeight={72}
-          height={400}
+          rowHeight={CAMPAIGN_ROW_HEIGHT}
+          height={tableHeight}
           overscan={5}
           selectable={false}
           emptyMessage="No campaigns found"
         />
       </div>
+
+      {totalPages > 1 ? (
+        <div className="flex items-center justify-between rounded-sm border border-outline-variant/20 bg-surface-container-lowest px-4 py-3">
+          <div className="text-sm text-on-surface-variant">
+            Page {currentPage} of {totalPages}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage === 1}
+              className="flex items-center gap-2 rounded-sm border border-outline-variant/20 px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ChevronLeft size={16} />
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={currentPage === totalPages}
+              className="flex items-center gap-2 rounded-sm border border-outline-variant/20 px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

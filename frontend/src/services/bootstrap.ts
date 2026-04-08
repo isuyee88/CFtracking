@@ -118,6 +118,10 @@ const ADMIN_PAGE_MAP: Record<string, AdminPageKey> = {
   '/target': 'target',
 };
 
+function isLocalStaticPreviewHost() {
+  return typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+}
+
 export function normalizeRangeParam(value: string | null | undefined): string {
   switch ((value || '').trim()) {
     case '7days':
@@ -436,6 +440,10 @@ export async function loadBootstrapForLocation(options: {
 } = {}): Promise<PageBootstrapEnvelope | null> {
   if (typeof window === 'undefined') {
     return null;
+  }
+
+  if (isLocalStaticPreviewHost()) {
+    return currentBootstrap;
   }
 
   const targetUrl =
