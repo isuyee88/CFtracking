@@ -18,7 +18,6 @@ import {
   ExternalLink,
   Play,
   Pause,
-  Copy,
   Check,
   X,
   Loader2,
@@ -258,11 +257,12 @@ export const Offers = () => {
   useEffect(() => {
     const loadOffers = async () => {
       try {
-        if (!hasBootstrap && offers.length === 0) {
-          setLoading(true);
-        }
+        setLoading(true);
         setError(null);
-        const data = await fetchOffers();
+        const data = await fetchOffers(true, {
+          startDate: dateRange.from,
+          endDate: dateRange.to,
+        });
         if (Array.isArray(data)) {
           setOffers(data);
         } else {
@@ -276,7 +276,7 @@ export const Offers = () => {
     };
 
     loadOffers();
-  }, [hasBootstrap, offers.length]);
+  }, [dateRange.from, dateRange.to, hasBootstrap]);
 
   const handleCreateOffer = () => {
     setFormMode('create');
@@ -534,41 +534,43 @@ export const Offers = () => {
       {/* Toolbar */}
       <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          {selectedItems.size > 0 ? (
-            <>
-              <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
-              <button 
-                onClick={() => handleBulkAction('activate')}
-                className="btn-icon-create p-2 rounded transition-colors" 
-                title="Activate"
-              >
-                <Play size={18} />
-              </button>
-              <button 
-                onClick={() => handleBulkAction('pause')}
-                className="btn-icon-pause p-2 rounded transition-colors" 
-                title="Pause"
-              >
-                <Pause size={18} />
-              </button>
-              <button 
-                onClick={() => handleBulkAction('delete')}
-                className="btn-icon-delete p-2 rounded transition-colors" 
-                title="Delete"
-              >
-                <Trash2 size={18} />
-              </button>
-              <div className="h-6 w-px bg-outline-variant/20 mx-2" />
-            </>
-          ) : (
-            <>
-              <button className="btn-icon-create p-2 rounded transition-colors" title="Play"><Play size={18} /></button>
-              <button className="btn-icon-pause p-2 rounded transition-colors" title="Pause"><Pause size={18} /></button>
-              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors rounded" title="Copy"><Copy size={18} /></button>
-              <button className="btn-icon-delete p-2 rounded transition-colors" title="Delete"><Trash2 size={18} /></button>
-              <div className="h-6 w-px bg-outline-variant/20 mx-2" />
-            </>
+          {selectedItems.size > 0 && (
+            <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
           )}
+          <button 
+            onClick={() => handleBulkAction('activate')}
+            disabled={selectedItems.size === 0}
+            className={cn(
+              "btn-icon-create p-2 rounded transition-colors",
+              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
+            )}
+            title="Activate"
+          >
+            <Play size={18} />
+          </button>
+          <button 
+            onClick={() => handleBulkAction('pause')}
+            disabled={selectedItems.size === 0}
+            className={cn(
+              "btn-icon-pause p-2 rounded transition-colors",
+              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
+            )}
+            title="Pause"
+          >
+            <Pause size={18} />
+          </button>
+          <button 
+            onClick={() => handleBulkAction('delete')}
+            disabled={selectedItems.size === 0}
+            className={cn(
+              "btn-icon-delete p-2 rounded transition-colors",
+              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
+            )}
+            title="Delete"
+          >
+            <Trash2 size={18} />
+          </button>
+          <div className="h-6 w-px bg-outline-variant/20 mx-2" />
           <div className="relative flex-1 min-w-[300px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
             <input 

@@ -126,16 +126,33 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
   /**
    * 获取 Landing Page 统计数据 (clicks, conversions)
    */
-  async getStats(landingPageId: string): Promise<{ clicks: number; conversions: number }> {
+  async getStats(
+    landingPageId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<{ clicks: number; conversions: number }> {
+    let sql = `
+      SELECT 
+        COALESCE(SUM(clicks), 0) as clicks,
+        COALESCE(SUM(conversions), 0) as conversions
+      FROM trafficSummary
+      WHERE landingPageId = ?
+    `;
+    const params: unknown[] = [landingPageId];
+
+    if (startDate) {
+      sql += ' AND date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ' AND date <= ?';
+      params.push(endDate);
+    }
+
     const result = await this.db
-      .prepare(`
-        SELECT 
-          COALESCE(SUM(clicks), 0) as clicks,
-          COALESCE(SUM(conversions), 0) as conversions
-        FROM trafficSummary
-        WHERE landingPageId = ?
-      `)
-      .bind(landingPageId)
+      .prepare(sql)
+      .bind(...params)
       .first<{ clicks: number; conversions: number }>();
     return {
       clicks: result?.clicks || 0,

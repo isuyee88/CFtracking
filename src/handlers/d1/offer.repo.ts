@@ -213,17 +213,34 @@ export class OfferRepository extends BaseRepository<Offer> {
   /**
    * 获取 Offer 统计数据 (clicks, conversions, revenue)
    */
-  async getStats(offerId: string): Promise<{ clicks: number; conversions: number; revenue: number }> {
+  async getStats(
+    offerId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<{ clicks: number; conversions: number; revenue: number }> {
+    let sql = `
+      SELECT 
+        COALESCE(SUM(clicks), 0) as clicks,
+        COALESCE(SUM(conversions), 0) as conversions,
+        COALESCE(SUM(revenue), 0) as revenue
+      FROM trafficSummary
+      WHERE offerId = ?
+    `;
+    const params: unknown[] = [offerId];
+
+    if (startDate) {
+      sql += ' AND date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ' AND date <= ?';
+      params.push(endDate);
+    }
+
     const result = await this.db
-      .prepare(`
-        SELECT 
-          COALESCE(SUM(clicks), 0) as clicks,
-          COALESCE(SUM(conversions), 0) as conversions,
-          COALESCE(SUM(revenue), 0) as revenue
-        FROM trafficSummary
-        WHERE offerId = ?
-      `)
-      .bind(offerId)
+      .prepare(sql)
+      .bind(...params)
       .first<{ clicks: number; conversions: number; revenue: number }>();
     return {
       clicks: result?.clicks || 0,

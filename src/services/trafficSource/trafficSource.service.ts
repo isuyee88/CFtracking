@@ -90,7 +90,7 @@ export class TrafficSourceService {
   /**
    * 获取 Traffic Source 详情（包含统计数据）
    */
-  async getDetail(id: string): Promise<TrafficSource & { 
+  async getDetail(id: string, startDate?: string, endDate?: string): Promise<TrafficSource & { 
     campaignCount: number; 
     clicks: number; 
     conversions: number; 
@@ -102,7 +102,7 @@ export class TrafficSourceService {
     const ts = await this.getById(id);
     const [campaignCount, stats] = await Promise.all([
       this.repo.getCampaignCount(id),
-      this.repo.getStats(id),
+      this.repo.getStats(id, startDate, endDate),
     ]);
 
     const profit = stats.revenue - stats.cost;
@@ -123,7 +123,7 @@ export class TrafficSourceService {
   /**
    * 获取 Traffic Source 列表（包含统计数据）
    */
-  async getListWithStats(page = 1, pageSize = 20): Promise<{ 
+  async getListWithStats(page = 1, pageSize = 20, startDate?: string, endDate?: string): Promise<{ 
     list: (TrafficSource & { 
       campaignCount: number; 
       clicks: number; 
@@ -141,7 +141,7 @@ export class TrafficSourceService {
       list.map(async (ts) => {
         const [campaignCount, stats] = await Promise.all([
           this.repo.getCampaignCount(ts.id),
-          this.repo.getStats(ts.id),
+          this.repo.getStats(ts.id, startDate, endDate),
         ]);
         const profit = stats.revenue - stats.cost;
         const roi = stats.cost > 0 ? ((profit / stats.cost) * 100) : 0;

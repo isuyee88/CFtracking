@@ -99,11 +99,15 @@ export class OfferService {
   /**
    * 获取 Offer 详情（包含统计数据）
    */
-  async getDetail(id: string): Promise<Offer & { campaignCount: number; clicks: number; conversions: number; revenue: number; epc: number; cr: number }> {
+  async getDetail(
+    id: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<Offer & { campaignCount: number; clicks: number; conversions: number; revenue: number; epc: number; cr: number }> {
     const offer = await this.getById(id);
     const [campaignCount, stats] = await Promise.all([
       this.repo.getCampaignCount(id),
-      this.repo.getStats(id),
+      this.repo.getStats(id, startDate, endDate),
     ]);
 
     const epc = stats.clicks > 0 ? stats.revenue / stats.clicks : 0;
@@ -123,7 +127,7 @@ export class OfferService {
   /**
    * 获取 Offer 列表（包含统计数据）
    */
-  async getListWithStats(page = 1, pageSize = 20): Promise<{ 
+  async getListWithStats(page = 1, pageSize = 20, startDate?: string, endDate?: string): Promise<{ 
     list: (Offer & { campaignCount: number; clicks: number; conversions: number; revenue: number; epc: number; cr: number })[]; 
     total: number 
   }> {
@@ -133,7 +137,7 @@ export class OfferService {
       list.map(async (offer) => {
         const [campaignCount, stats] = await Promise.all([
           this.repo.getCampaignCount(offer.id),
-          this.repo.getStats(offer.id),
+          this.repo.getStats(offer.id, startDate, endDate),
         ]);
         const epc = stats.clicks > 0 ? stats.revenue / stats.clicks : 0;
         const cr = stats.clicks > 0 ? (stats.conversions / stats.clicks) * 100 : 0;

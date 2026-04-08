@@ -718,10 +718,23 @@ export async function fetchTrackingScript(campaignId: string, type: 'tracking' |
 
 // ==================== Offers API ====================
 
-export async function fetchOffers(withStats = true) {
+export async function fetchOffers(
+  withStats = true,
+  dateParams: { startDate?: string; endDate?: string } = {}
+) {
   const bootstrapOffers = readBootstrapValue<any[]>(
     ['offers', 'campaign-detail', 'campaigns'],
     (bundle) => {
+      if (
+        (dateParams.startDate || dateParams.endDate) &&
+        !matchesBootstrapScope(bundle.scope, {
+          startDate: dateParams.startDate,
+          endDate: dateParams.endDate,
+        })
+      ) {
+        return undefined;
+      }
+
       const offers = bundle.data?.offers;
       return Array.isArray(offers) ? offers : undefined;
     }
@@ -731,7 +744,14 @@ export async function fetchOffers(withStats = true) {
     return bootstrapOffers;
   }
 
-  return fetchListResult<any>(`/api/offers?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`);
+  const query = buildQueryString({
+    page: 1,
+    pageSize: 100,
+    withStats: withStats ? 'true' : 'false',
+    startDate: dateParams.startDate,
+    endDate: dateParams.endDate,
+  });
+  return fetchListResult<any>(`/api/offers${query}`);
 }
 
 export async function fetchOffer(id: string | number) {
@@ -773,10 +793,23 @@ export async function deleteOffer(id: string | number) {
 
 // ==================== Traffic Sources API ====================
 
-export async function fetchTrafficSources(withStats = true) {
+export async function fetchTrafficSources(
+  withStats = true,
+  dateParams: { startDate?: string; endDate?: string } = {}
+) {
   const bootstrapTrafficSources = readBootstrapValue<any[]>(
     ['traffic-sources', 'campaign-detail', 'campaigns'],
     (bundle) => {
+      if (
+        (dateParams.startDate || dateParams.endDate) &&
+        !matchesBootstrapScope(bundle.scope, {
+          startDate: dateParams.startDate,
+          endDate: dateParams.endDate,
+        })
+      ) {
+        return undefined;
+      }
+
       const trafficSources = bundle.data?.trafficSources;
       return Array.isArray(trafficSources) ? trafficSources : undefined;
     }
@@ -786,9 +819,14 @@ export async function fetchTrafficSources(withStats = true) {
     return bootstrapTrafficSources;
   }
 
-  return fetchListResult<any>(
-    `/api/traffic-sources?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`
-  );
+  const query = buildQueryString({
+    page: 1,
+    pageSize: 100,
+    withStats: withStats ? 'true' : 'false',
+    startDate: dateParams.startDate,
+    endDate: dateParams.endDate,
+  });
+  return fetchListResult<any>(`/api/traffic-sources${query}`);
 }
 
 export async function fetchTrafficSource(id: string | number) {
@@ -1344,10 +1382,23 @@ export async function fetchFlowLogs(
 
 // ==================== Landings API ====================
 
-export async function fetchLandings(withStats = true) {
+export async function fetchLandings(
+  withStats = true,
+  dateParams: { startDate?: string; endDate?: string } = {}
+) {
   const bootstrapLandings = readBootstrapValue<any[]>(
     ['landings', 'campaign-detail', 'domains', 'campaigns'],
     (bundle) => {
+      if (
+        (dateParams.startDate || dateParams.endDate) &&
+        !matchesBootstrapScope(bundle.scope, {
+          startDate: dateParams.startDate,
+          endDate: dateParams.endDate,
+        })
+      ) {
+        return undefined;
+      }
+
       const landings = bundle.data?.landings;
       return Array.isArray(landings) ? landings : undefined;
     }
@@ -1357,9 +1408,14 @@ export async function fetchLandings(withStats = true) {
     return bootstrapLandings;
   }
 
-  return fetchListResult<any>(
-    `/api/landing-pages?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`
-  );
+  const query = buildQueryString({
+    page: 1,
+    pageSize: 100,
+    withStats: withStats ? 'true' : 'false',
+    startDate: dateParams.startDate,
+    endDate: dateParams.endDate,
+  });
+  return fetchListResult<any>(`/api/landing-pages${query}`);
 }
 
 export async function fetchLanding(id: string | number) {

@@ -235,20 +235,37 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
   /**
    * 获取 Traffic Source 统计数据
    */
-  async getStats(trafficSourceId: string): Promise<{ clicks: number; conversions: number; revenue: number; cost: number }> {
+  async getStats(
+    trafficSourceId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<{ clicks: number; conversions: number; revenue: number; cost: number }> {
+    let sql = `
+      SELECT 
+        COALESCE(SUM(clicks), 0) as clicks,
+        COALESCE(SUM(conversions), 0) as conversions,
+        COALESCE(SUM(revenue), 0) as revenue,
+        COALESCE(SUM(spend), 0) as cost
+      FROM trafficSummary
+      WHERE campaignId IN (
+        SELECT id FROM campaigns WHERE trafficSource = ?
+      )
+    `;
+    const params: unknown[] = [trafficSourceId];
+
+    if (startDate) {
+      sql += ' AND date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ' AND date <= ?';
+      params.push(endDate);
+    }
+
     const result = await this.db
-      .prepare(`
-        SELECT 
-          COALESCE(SUM(clicks), 0) as clicks,
-          COALESCE(SUM(conversions), 0) as conversions,
-          COALESCE(SUM(revenue), 0) as revenue,
-          COALESCE(SUM(spend), 0) as cost
-        FROM trafficSummary
-        WHERE campaignId IN (
-          SELECT id FROM campaigns WHERE trafficSource = ?
-        )
-      `)
-      .bind(trafficSourceId)
+      .prepare(sql)
+      .bind(...params)
       .first<{ clicks: number; conversions: number; revenue: number; cost: number }>();
     return {
       clicks: result?.clicks || 0,

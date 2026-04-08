@@ -99,11 +99,15 @@ export class LandingPageService {
   /**
    * 获取 Landing Page 详情（包含统计数据）
    */
-  async getDetail(id: string): Promise<LandingPage & { campaignCount: number; clicks: number; conversions: number; cr: number }> {
+  async getDetail(
+    id: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<LandingPage & { campaignCount: number; clicks: number; conversions: number; cr: number }> {
     const lp = await this.getById(id);
     const [campaignCount, stats] = await Promise.all([
       this.repo.getCampaignCount(id),
-      this.repo.getStats(id),
+      this.repo.getStats(id, startDate, endDate),
     ]);
 
     const cr = stats.clicks > 0 ? (stats.conversions / stats.clicks) * 100 : 0;
@@ -120,7 +124,7 @@ export class LandingPageService {
   /**
    * 获取 Landing Page 列表（包含统计数据）
    */
-  async getListWithStats(page = 1, pageSize = 20): Promise<{ 
+  async getListWithStats(page = 1, pageSize = 20, startDate?: string, endDate?: string): Promise<{ 
     list: (LandingPage & { campaignCount: number; clicks: number; conversions: number; cr: number })[]; 
     total: number 
   }> {
@@ -130,7 +134,7 @@ export class LandingPageService {
       list.map(async (lp) => {
         const [campaignCount, stats] = await Promise.all([
           this.repo.getCampaignCount(lp.id),
-          this.repo.getStats(lp.id),
+          this.repo.getStats(lp.id, startDate, endDate),
         ]);
         const cr = stats.clicks > 0 ? (stats.conversions / stats.clicks) * 100 : 0;
         return {
