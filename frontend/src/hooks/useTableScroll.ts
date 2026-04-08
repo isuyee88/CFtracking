@@ -28,6 +28,22 @@ export function useTableScroll({
   const [isScrolledFromStart, setIsScrolledFromStart] = useState(false);
   const [showGestureHint, setShowGestureHint] = useState(false);
 
+  const safeGetSessionItem = useCallback((key: string): string | null => {
+    try {
+      return sessionStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const safeSetSessionItem = useCallback((key: string, value: string) => {
+    try {
+      sessionStorage.setItem(key, value);
+    } catch {
+      // Ignore storage write failures in restricted contexts.
+    }
+  }, []);
+
   const checkScroll = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -49,11 +65,11 @@ export function useTableScroll({
 
     // 检查是否需要显示手势提示（首次访问且有横向滚动）
     const hasHorizontalScroll = container.scrollWidth > container.clientWidth;
-    const hasSeenHint = sessionStorage.getItem('table-scroll-hint-seen');
+    const hasSeenHint = safeGetSessionItem('table-scroll-hint-seen');
     
     if (enableGestureHint && hasHorizontalScroll && !hasSeenHint) {
       setShowGestureHint(true);
-      sessionStorage.setItem('table-scroll-hint-seen', 'true');
+      safeSetSessionItem('table-scroll-hint-seen', 'true');
       
       // 在指定时间后移除提示
       setTimeout(() => {
@@ -77,7 +93,7 @@ export function useTableScroll({
       container.removeEventListener('scroll', checkScroll);
       resizeObserver.disconnect();
     };
-  }, [checkScroll, enableGestureHint, gestureHintDuration]);
+  }, [checkScroll, enableGestureHint, gestureHintDuration, safeGetSessionItem, safeSetSessionItem]);
 
   return {
     containerRef,

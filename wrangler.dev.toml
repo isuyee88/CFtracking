@@ -10,7 +10,7 @@ CACHE_TTL = "21600"
 ENABLED_REGIONS = "HK,CN"
 REALTIME_ENABLED = true
 SSE_ENABLED = true
-AUTH_MODE = "bypass"
+AUTH_MODE = "off"
 CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
 
 [[queues.producers]]

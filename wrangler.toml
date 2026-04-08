@@ -10,7 +10,7 @@ CACHE_TTL = "21600"
 ENABLED_REGIONS = "HK,CN"
 REALTIME_ENABLED = true
 SSE_ENABLED = true
-AUTH_MODE = "strict"
+AUTH_MODE = "on"
 # 管理员用户名（非敏感信息）
 ADMIN_USERNAME = "admin"
 # ⚠️ 安全配置：敏感信息已迁移到 Cloudflare Secrets

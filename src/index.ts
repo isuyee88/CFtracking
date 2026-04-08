@@ -435,13 +435,14 @@ const PUBLIC_PATHS = [
   '/api/tracking/click',
   '/api/tracking/conversion',
   '/api/auth/login',
+  '/api/auth/status',
   '/api/webhook',
 ];
 
-type AuthMode = 'strict' | 'bypass';
+type AuthMode = 'on' | 'off';
 
-let bypassEnabledLogPrinted = false;
-let bypassBlockedLogPrinted = false;
+let authOnLogPrinted = false;
+let authOffLogPrinted = false;
 
 function isTruthyEnvValue(value: string | boolean | undefined): boolean {
   if (typeof value === 'boolean') {
@@ -458,25 +459,28 @@ function isTruthyEnvValue(value: string | boolean | undefined): boolean {
 
 function resolveAuthMode(env: Env): AuthMode {
   const mode = typeof env.AUTH_MODE === 'string' ? env.AUTH_MODE.trim().toLowerCase() : '';
-  const bypassRequested = mode === 'bypass' || isTruthyEnvValue(env.BYPASS_AUTH);
 
-  if (bypassRequested && env.ENVIRONMENT === 'production') {
-    if (!bypassBlockedLogPrinted) {
-      console.warn('[Auth] bypass mode requested in production, forcing strict mode.');
-      bypassBlockedLogPrinted = true;
+  if (['off', 'bypass', 'disabled', 'disable', '0', 'false'].includes(mode) || isTruthyEnvValue(env.BYPASS_AUTH)) {
+    if (!authOffLogPrinted) {
+      console.warn('[Auth] authentication is OFF, all requests bypass auth middleware.');
+      authOffLogPrinted = true;
     }
-    return 'strict';
+    return 'off';
   }
 
-  if (bypassRequested) {
-    if (!bypassEnabledLogPrinted) {
-      console.warn('[Auth] bypass mode enabled for development/testing.');
-      bypassEnabledLogPrinted = true;
+  if (['on', 'strict', 'enabled', 'enable', '1', 'true', ''].includes(mode)) {
+    if (!authOnLogPrinted) {
+      console.log('[Auth] authentication is ON, unauthorized API requests will return 401.');
+      authOnLogPrinted = true;
     }
-    return 'bypass';
+    return 'on';
   }
 
-  return 'strict';
+  if (!authOnLogPrinted) {
+    console.warn(`[Auth] unknown AUTH_MODE "${mode}", fallback to ON mode.`);
+    authOnLogPrinted = true;
+  }
+  return 'on';
 }
 
 app.use('/api/*', async (c, next) => {
@@ -490,7 +494,7 @@ app.use('/api/*', async (c, next) => {
   }
 
   const authMode = resolveAuthMode(c.env);
-  if (authMode === 'bypass') {
+  if (authMode === 'off') {
     c.set('user', {
       userId: 'dev-bypass-user',
       email: 'dev-bypass@example.local',
@@ -581,6 +585,16 @@ app.use('/api/*', async (c, next) => {
     c.status(401);
     return c.json({ success: false, error: 'Authentication failed', code: 'UNAUTHORIZED' });
   }
+});
+
+app.get('/api/auth/status', (c) => {
+  const authMode = resolveAuthMode(c.env);
+  return c.json(
+    success({
+      enabled: authMode === 'on',
+      mode: authMode,
+    })
+  );
 });
 
 app.get('/health', (c) => {

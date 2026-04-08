@@ -13,7 +13,13 @@ const LOGGED_ENTRY_KEYS = new Set<string>();
 
 function isPerformanceDebugEnabled() {
   const params = new URLSearchParams(window.location.search);
-  return params.get('perf') === '1' || window.localStorage.getItem('cftracking:perf') === '1';
+  let storageFlag = false;
+  try {
+    storageFlag = window.localStorage.getItem('cftracking:perf') === '1';
+  } catch {
+    storageFlag = false;
+  }
+  return params.get('perf') === '1' || storageFlag;
 }
 
 function shouldLogEntry(entry: PerformanceEntry & { serverTiming?: PerformanceServerTiming[] }) {

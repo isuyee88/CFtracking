@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, Form, Input, message, Card, Divider, Typography, Alert } from 'antd';
 // 按需引入 Ant Design Icons，减少打包体积
 import GoogleOutlined from '@ant-design/icons/lib/icons/GoogleOutlined';
@@ -24,8 +24,47 @@ function isDevelopmentEnvironment(): boolean {
   );
 }
 
+function resolveRedirectPath(): string {
+  const searchParams = new URLSearchParams(window.location.search);
+  const redirect = searchParams.get('redirect') || '/dashboard';
+
+  if (!redirect.startsWith('/')) {
+    return '/dashboard';
+  }
+
+  if (redirect.startsWith('/login')) {
+    return '/dashboard';
+  }
+
+  return redirect;
+}
+
+function safeGetStorageItem(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetStorageItem(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage write failures in restricted contexts.
+  }
+}
+
 const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
+  const redirectPath = useMemo(() => resolveRedirectPath(), []);
+
+  useEffect(() => {
+    const token = safeGetStorageItem('token');
+    if (token) {
+      window.location.replace(redirectPath);
+    }
+  }, [redirectPath]);
 
   /**
    * 处理登录表单提交
@@ -62,14 +101,14 @@ const Login: React.FC = () => {
       }
 
       // 存储 Token 到 localStorage
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
+      safeSetStorageItem('token', token);
+      safeSetStorageItem('user', JSON.stringify(user));
 
       message.success('登录成功');
 
       // 延迟跳转，让用户看到成功提示
       setTimeout(() => {
-        window.location.assign('/dashboard');
+        window.location.assign(redirectPath);
       }, 500);
 
     } catch (error: any) {

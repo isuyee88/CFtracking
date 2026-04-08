@@ -37,6 +37,7 @@ const loadExportedReports = () => import('./pages/ExportedReports');
 const loadCustomMetrics = () => import('./pages/CustomMetrics');
 const loadTrafficFilter = () => import('./pages/TrafficFilter');
 const loadAutoOptimizationCenter = () => import('./pages/AutoOptimizationCenter');
+const loadLogin = () => import('./pages/Login');
 
 const Dashboard = lazy(loadDashboard);
 const CampaignManagement = lazy(loadCampaignManagement);
@@ -61,6 +62,7 @@ const ExportedReports = lazy(loadExportedReports);
 const CustomMetrics = lazy(loadCustomMetrics);
 const TrafficFilter = lazy(loadTrafficFilter);
 const AutoOptimizationCenter = lazy(loadAutoOptimizationCenter);
+const LoginPage = lazy(loadLogin);
 
 // 路由预加载映射
 const routePreloadMap: Record<string, () => Promise<any>> = {
@@ -187,6 +189,7 @@ export default function App({ initialData, onReady }: AppProps) {
         }}
       >
         <Routes>
+          <Route path="/login" element={renderPage(<LoginPage />)} />
           <Route path="/" element={<Layout />}>
             <Route index element={renderPage(<Dashboard />)} />
             <Route path="dashboard" element={renderPage(<Dashboard />)} />

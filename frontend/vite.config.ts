@@ -13,6 +13,7 @@ export default defineConfig({
     }),
     tailwindcss(),
     VitePWA({
+      injectRegister: false,
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'pwa-192x192.svg', 'pwa-512x512.svg', 'robots.txt'],
       manifest: {
@@ -187,15 +188,15 @@ export default defineConfig({
             return 'router';
           }
 
-          if (id.includes('node_modules/antd/')) {
-            return 'antd';
-          }
-
           if (
+            id.includes('node_modules/antd/') ||
             id.includes('node_modules/@ant-design/') ||
-            id.includes('node_modules/rc-util/')
+            id.includes('node_modules/@rc-component/') ||
+            id.includes('node_modules/rc-')
           ) {
-            return 'antd-icons';
+            // Keep Ant Design ecosystem in one chunk to avoid circular chunk graph
+            // (e.g. antd <-> @ant-design/icons runtime init order issues).
+            return 'antd';
           }
 
           if (id.includes('node_modules/recharts/')) {

@@ -12,11 +12,11 @@ export interface Env {
   SSE_ENABLED: boolean;
   CACHE_UPDATE_TOKEN: string;
   /**
-   * 认证模式开关:
-   * - strict: 强制 JWT 认证（默认）
-   * - bypass: 开发/测试环境绕过认证
+   * 认证开关:
+   * - on/strict: 启用认证
+   * - off/bypass: 关闭认证（绕过认证模块）
    */
-  AUTH_MODE?: 'strict' | 'bypass' | string;
+  AUTH_MODE?: 'on' | 'off' | 'strict' | 'bypass' | string;
   /** 兼容旧配置，建议使用 AUTH_MODE 代替 */
   BYPASS_AUTH?: string | boolean;
   

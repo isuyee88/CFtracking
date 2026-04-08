@@ -7,13 +7,58 @@
 import { getRawBootstrapData, loadBootstrapForLocation, normalizeRangeParam, readBootstrapPage } from './bootstrap';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+let authRedirectInProgress = false;
+
+function safeGetStorageItem(key: string): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeRemoveStorageItem(key: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore storage access failures in restricted contexts.
+  }
+}
+
+function redirectToLoginOnUnauthorized(response: Response): Response {
+  if (typeof window === 'undefined' || response.status !== 401) {
+    return response;
+  }
+
+  if (window.location.pathname === '/login' || authRedirectInProgress) {
+    return response;
+  }
+
+  authRedirectInProgress = true;
+  safeRemoveStorageItem('token');
+  safeRemoveStorageItem('user');
+
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const loginUrl = `/login?redirect=${encodeURIComponent(currentPath)}`;
+  window.location.assign(loginUrl);
+
+  return response;
+}
 
 /**
  * 获取认证请求头（包含 JWT Token）
  * @returns 包含 Authorization header 的对象
  */
 function getAuthHeaders(): Record<string, string> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const token = safeGetStorageItem('token');
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -33,13 +78,15 @@ function getAuthHeaders(): Record<string, string> {
 async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const authHeaders = getAuthHeaders();
 
-  return fetch(`${API_BASE_URL}${url}`, {
+  const response = await fetch(`${API_BASE_URL}${url}`, {
     ...options,
     headers: {
       ...authHeaders,
       ...(options.headers as Record<string, string>),
     },
   });
+
+  return redirectToLoginOnUnauthorized(response);
 }
 
 // 简单的内存缓存 - 用于减少重复请求
@@ -547,7 +594,7 @@ function getDeviceId(): string {
   }
 
   const storageKey = 'cf_device_id';
-  const existingId = window.localStorage.getItem(storageKey);
+  const existingId = safeGetStorageItem(storageKey);
   if (existingId) {
     return existingId;
   }
@@ -557,7 +604,11 @@ function getDeviceId(): string {
       ? window.crypto.randomUUID()
       : `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-  window.localStorage.setItem(storageKey, newId);
+  try {
+    window.localStorage.setItem(storageKey, newId);
+  } catch {
+    // Ignore storage write failures in restricted contexts.
+  }
   return newId;
 }
 

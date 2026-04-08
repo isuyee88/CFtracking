@@ -47,11 +47,27 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function safeGetStorageItem(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetStorageItem(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures in restricted contexts.
+  }
+}
+
 // 昼夜模式 Hook - Stitch Design: 添加过渡动画
 function useDarkMode() {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     // 从 localStorage 读取用户偏好，如果没有则根据时间自动判断
-    const saved = localStorage.getItem('dark-mode');
+    const saved = safeGetStorageItem('dark-mode');
     if (saved !== null) {
       return saved === 'true';
     }
@@ -62,7 +78,7 @@ function useDarkMode() {
 
   useEffect(() => {
     // 保存用户偏好到 localStorage
-    localStorage.setItem('dark-mode', isDarkMode.toString());
+    safeSetStorageItem('dark-mode', isDarkMode.toString());
     
     // 添加过渡动画类
     document.documentElement.classList.add('theme-transitioning');

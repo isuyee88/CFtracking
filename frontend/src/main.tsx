@@ -6,6 +6,16 @@ import { ToastProvider } from './components/Toast'
 import { getRawBootstrapData, loadBootstrapForLocation, setPageBootstrapData } from './services/bootstrap'
 import { initPerformanceDebug } from './services/performance-debug'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+
+function safeGetStorageItem(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
 declare global {
   interface Window {
     __INITIAL_DATA__?: any
@@ -45,35 +55,119 @@ function hideBootScreen() {
 
 async function purgeLegacyServiceWorkers() {
   if (!('serviceWorker' in navigator)) {
-    return
+    return false
   }
 
   if (!import.meta.env.PROD && !isLocalPreviewHost()) {
-    return
+    return false
   }
+
+  let didPurge = false
 
   try {
     const registrations = await navigator.serviceWorker.getRegistrations()
+    if (registrations.length > 0) {
+      didPurge = true
+    }
     await Promise.all(registrations.map((registration) => registration.unregister()))
   } catch (error) {
     console.warn('[PWA] Service worker cleanup failed', error)
   }
 
   if (!('caches' in window)) {
-    return
+    return didPurge
   }
 
   try {
     const cacheKeys = await caches.keys()
+    if (cacheKeys.length > 0) {
+      didPurge = true
+    }
     await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)))
   } catch (error) {
     console.warn('[PWA] Cache cleanup failed', error)
   }
+
+  return didPurge
+}
+
+function hasServiceWorkerResetMarker() {
+  const params = new URLSearchParams(window.location.search)
+  return params.has('__sw_reset')
+}
+
+function buildServiceWorkerResetUrl() {
+  const nextUrl = new URL(window.location.href)
+  const marker = Date.now().toString(36)
+  nextUrl.searchParams.set('__sw_reset', marker)
+  nextUrl.searchParams.set('__nocache', marker)
+  return nextUrl.toString()
+}
+
+async function readAuthStatus(): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/status`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      return true
+    }
+
+    const payload = await response.json().catch(() => null)
+    return Boolean(payload?.data?.enabled)
+  } catch (error) {
+    console.warn('[Auth] Failed to fetch auth status, fallback to auth ON mode.', error)
+    return true
+  }
+}
+
+async function enforceAuthBeforeAppStart(): Promise<boolean> {
+  if (typeof window === 'undefined') {
+    return true
+  }
+
+  if (window.location.pathname === '/login') {
+    return true
+  }
+
+  const token = safeGetStorageItem('token')
+  if (token) {
+    return true
+  }
+
+  const authEnabled = await readAuthStatus()
+  if (!authEnabled) {
+    return true
+  }
+
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  const loginUrl = `/login?redirect=${encodeURIComponent(currentPath)}`
+  window.location.replace(loginUrl)
+  return false
 }
 
 async function startApp() {
   migrateLegacyHashRoute()
-  initPerformanceDebug()
+  const didPurgeLegacySw = await purgeLegacyServiceWorkers()
+  if (didPurgeLegacySw && !hasServiceWorkerResetMarker()) {
+    window.location.replace(buildServiceWorkerResetUrl())
+    return
+  }
+
+  try {
+    initPerformanceDebug()
+  } catch (error) {
+    console.warn('[Perf] Performance debug init skipped in restricted context.', error)
+  }
+
+  const canContinue = await enforceAuthBeforeAppStart()
+  if (!canContinue) {
+    return
+  }
 
   const injectedInitialData = window.__INITIAL_DATA__
   if (injectedInitialData !== undefined) {
@@ -97,8 +191,6 @@ async function startApp() {
       console.warn('[Bootstrap] Initial preload failed', error)
     })
   }
-
-  void purgeLegacyServiceWorkers()
 }
 
 void startApp()
