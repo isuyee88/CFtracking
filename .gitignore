@@ -1,16 +1,98 @@
+# -----------------------------------------------------------------------------
+# Git Tracking Policy (runtime-first)
+# Keep runtime source/config in Git; ignore generated artifacts and local tooling
+# -----------------------------------------------------------------------------
+
 # Dependencies
 node_modules/
+frontend/node_modules/
 .pnp
 .pnp.js
 jspm_packages/
 
-# Production builds
-dist/
-build/
-wrangler-out/
+# Build outputs / deploy bundles
+/dist/
+/build/
+/wrangler-out/
+/dist-*/
+/frontend/dist/
+/frontend/output/
 
-# AI Agent directories (all 26+)
+# Test, benchmark and analysis artifacts
+/test-results/
+/performance-results/
+/analysis/
+/output/
+/.playwright-cli/
+/frontend/lighthouse-*/
+/frontend/playwright-screenshots/
+/frontend/.lighthouseci/
+
+# Generated reports / exports (root)
+/lighthouse-*.json
+/keitaro-*.json
+/output_*.html
+/report.html
+/report.json
+/test-*.png
+/verify-dashboard.png
+/wrangler-deploy-log.txt
+
+# Non-runtime research / snapshots
+/affiliate-pages/
+/image-processor/
+/keitaro-images/
+/keitaro-screenshots/
+/keitaro-screenshots-detailed/
+/spa-performance-test/
+/ssr-performance-test/
+/version_20_code/
+/trae-self-evolving/
+
+# Archives and temp bundles
+/*.zip
+/*.tgz
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage and caches
+coverage/
+*.lcov
+.nyc_output/
+*.tsbuildinfo
+.npm/
+.eslintcache
+
+# Wrangler local state
+.wrangler/
+wrangler.toml.bak
+
+# Environment variables / secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.dev.vars
+frontend/.env*
+!frontend/.env.example
+
+# AI agent / IDE tool directories (not required to run app)
 .adal/
+.agents/
 .augment/
 .bob/
 .claude/
@@ -40,63 +122,6 @@ wrangler-out/
 .windsurf/
 .zencoder/
 
-# Testing & analysis artifacts
-test-results/
-dist-test/
-analysis/
-output/
-.playwright-cli/
-*-im*
-kea*
-lighthouse-report.json
-keitaro-analysis-data.json
-keitaro-deep-analysis.json
-deployments.json
-version_20_script.json
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.dev.vars
-
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage
-coverage/
-*.lcov
-.nyc_output
-
-# TypeScript cache
-*.tsbuildinfo
-
-# npm cache
-.npm
-
-# eslint cache
-.eslintcache
-
-# Output of npm pack
-*.tgz
-
-# Wrangler
-.wrangler/
-wrangler.toml.bak
-
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -105,9 +130,21 @@ wrangler.toml.bak
 .Trashes
 Thumbs.db
 
-# Editor directories and files
-.vscode/
+# Editor / workspace files
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
 *~
+
+# -----------------------------------------------------------------------------
+# Runtime-critical paths (documented)
+# - src/**
+# - frontend/src/**
+# - frontend/public/**
+# - schema/**
+# - scripts/**
+# - wrangler.toml / wrangler.dev.toml
+# - package*.json / tsconfig / vite / vitest configs
+# -----------------------------------------------------------------------------
