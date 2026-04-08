@@ -9,6 +9,8 @@ import { getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
 import type { LandingPage, CreateLandingPageDTO, UpdateLandingPageDTO } from '@/types/landingPage';
 import { NotFoundError, DuplicateError } from '@/middleware/error';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
+import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldLength';
 
 export class LandingPageService {
   private repo: LandingPageRepository;
@@ -22,12 +24,13 @@ export class LandingPageService {
    * 创建 Landing Page
    */
   async create(data: CreateLandingPageDTO): Promise<LandingPage> {
-    const urlExists = await this.repo.urlExists(data.url);
+    const normalizedData = this.normalizeCreateInput(data);
+    const urlExists = await this.repo.urlExists(normalizedData.url);
     if (urlExists) {
-      throw new DuplicateError(`Landing Page with URL "${data.url}" already exists`);
+      throw new DuplicateError(`Landing Page with URL "${normalizedData.url}" already exists`);
     }
 
-    return this.repo.create(data);
+    return this.repo.create(normalizedData);
   }
 
   /**
@@ -64,19 +67,20 @@ export class LandingPageService {
    * 更新 Landing Page
    */
   async update(id: string, data: UpdateLandingPageDTO): Promise<LandingPage> {
+    const normalizedData = this.normalizeUpdateInput(data);
     const existing = await this.repo.findById(id);
     if (!existing) {
       throw new NotFoundError('Landing Page not found');
     }
 
-    if (data.url && data.url !== existing.url) {
-      const urlExists = await this.repo.urlExists(data.url, id);
+    if (normalizedData.url && normalizedData.url !== existing.url) {
+      const urlExists = await this.repo.urlExists(normalizedData.url, id);
       if (urlExists) {
-        throw new DuplicateError(`Landing Page with URL "${data.url}" already exists`);
+        throw new DuplicateError(`Landing Page with URL "${normalizedData.url}" already exists`);
       }
     }
 
-    const updated = await this.repo.update(id, data);
+    const updated = await this.repo.update(id, normalizedData);
     return updated!;
   }
 
@@ -140,5 +144,50 @@ export class LandingPageService {
     );
 
     return { list: listWithStats, total };
+  }
+
+  private normalizeCreateInput(data: CreateLandingPageDTO): CreateLandingPageDTO {
+    return {
+      ...data,
+      name: normalizeRequiredString(data.name as unknown, {
+        field: 'landingPage.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      }),
+      url: normalizeRequiredString(data.url as unknown, {
+        field: 'landingPage.url',
+        maxLength: FIELD_MAX_LENGTH.URL,
+      }),
+      group: normalizeOptionalString(data.group as unknown, {
+        field: 'landingPage.group',
+        maxLength: FIELD_MAX_LENGTH.GROUP,
+      }),
+    };
+  }
+
+  private normalizeUpdateInput(data: UpdateLandingPageDTO): UpdateLandingPageDTO {
+    const normalizedData: UpdateLandingPageDTO = { ...data };
+
+    if (data.name !== undefined) {
+      normalizedData.name = normalizeRequiredString(data.name as unknown, {
+        field: 'landingPage.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      });
+    }
+
+    if (data.url !== undefined) {
+      normalizedData.url = normalizeRequiredString(data.url as unknown, {
+        field: 'landingPage.url',
+        maxLength: FIELD_MAX_LENGTH.URL,
+      });
+    }
+
+    if (data.group !== undefined) {
+      normalizedData.group = normalizeOptionalString(data.group as unknown, {
+        field: 'landingPage.group',
+        maxLength: FIELD_MAX_LENGTH.GROUP,
+      });
+    }
+
+    return normalizedData;
   }
 }

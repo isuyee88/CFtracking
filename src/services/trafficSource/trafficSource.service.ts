@@ -7,8 +7,18 @@
 import { TrafficSourceRepository } from '@/handlers/d1/trafficSource.repo';
 import { getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
-import type { TrafficSource, CreateTrafficSourceDTO, UpdateTrafficSourceDTO } from '@/types/trafficSource';
-import { NotFoundError } from '@/middleware/error';
+import type {
+  TrafficSource,
+  CreateTrafficSourceDTO,
+  UpdateTrafficSourceDTO,
+  ParameterTemplate,
+  PostbackConfig,
+  TrafficSourceApiConfig,
+  ConversionStatus,
+} from '@/types/trafficSource';
+import { NotFoundError, ValidationError } from '@/middleware/error';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
+import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldLength';
 
 export class TrafficSourceService {
   private repo: TrafficSourceRepository;
@@ -22,7 +32,8 @@ export class TrafficSourceService {
    * 创建 Traffic Source
    */
   async create(data: CreateTrafficSourceDTO): Promise<TrafficSource> {
-    return this.repo.create(data);
+    const normalizedData = this.normalizeCreateInput(data);
+    return this.repo.create(normalizedData);
   }
 
   /**
@@ -54,12 +65,13 @@ export class TrafficSourceService {
    * 更新 Traffic Source
    */
   async update(id: string, data: UpdateTrafficSourceDTO): Promise<TrafficSource> {
+    const normalizedData = this.normalizeUpdateInput(data);
     const existing = await this.repo.findById(id);
     if (!existing) {
       throw new NotFoundError('Traffic Source not found');
     }
 
-    const updated = await this.repo.update(id, data);
+    const updated = await this.repo.update(id, normalizedData);
     return updated!;
   }
 
@@ -147,5 +159,223 @@ export class TrafficSourceService {
     );
 
     return { list: listWithStats, total };
+  }
+
+  private normalizeCreateInput(data: CreateTrafficSourceDTO): CreateTrafficSourceDTO {
+    const normalizedData: CreateTrafficSourceDTO = {
+      ...data,
+      name: normalizeRequiredString(data.name as unknown, {
+        field: 'trafficSource.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      }),
+      postbackUrl: normalizeOptionalString(data.postbackUrl as unknown, {
+        field: 'trafficSource.postbackUrl',
+        maxLength: FIELD_MAX_LENGTH.URL,
+      }),
+      templateId: normalizeOptionalString(data.templateId as unknown, {
+        field: 'trafficSource.templateId',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      }),
+    };
+
+    if (data.parameters !== undefined) {
+      normalizedData.parameters = this.normalizeParameters(data.parameters);
+    }
+
+    if (data.postbackConfig !== undefined) {
+      normalizedData.postbackConfig = this.normalizePostbackConfig(data.postbackConfig);
+    }
+
+    if (data.apiConfig !== undefined) {
+      normalizedData.apiConfig = this.normalizeApiConfig(data.apiConfig);
+    }
+
+    return normalizedData;
+  }
+
+  private normalizeUpdateInput(data: UpdateTrafficSourceDTO): UpdateTrafficSourceDTO {
+    const normalizedData: UpdateTrafficSourceDTO = { ...data };
+
+    if (data.name !== undefined) {
+      normalizedData.name = normalizeRequiredString(data.name as unknown, {
+        field: 'trafficSource.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      });
+    }
+
+    if (data.postbackUrl !== undefined) {
+      normalizedData.postbackUrl = normalizeOptionalString(data.postbackUrl as unknown, {
+        field: 'trafficSource.postbackUrl',
+        maxLength: FIELD_MAX_LENGTH.URL,
+      });
+    }
+
+    if (data.templateId !== undefined) {
+      normalizedData.templateId = normalizeOptionalString(data.templateId as unknown, {
+        field: 'trafficSource.templateId',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      });
+    }
+
+    if (data.parameters !== undefined) {
+      normalizedData.parameters = this.normalizeParameters(data.parameters);
+    }
+
+    if (data.postbackConfig !== undefined) {
+      normalizedData.postbackConfig = this.normalizePostbackConfig(data.postbackConfig);
+    }
+
+    if (data.apiConfig !== undefined) {
+      normalizedData.apiConfig = this.normalizeApiConfig(data.apiConfig);
+    }
+
+    return normalizedData;
+  }
+
+  private normalizeParameters(raw: CreateTrafficSourceDTO['parameters']): ParameterTemplate[] {
+    const parsedValue = this.parseJsonIfNeeded(raw, 'trafficSource.parameters');
+    if (!Array.isArray(parsedValue)) {
+      throw new ValidationError('trafficSource.parameters must be an array');
+    }
+
+    return parsedValue.map((entry, index) => {
+      if (!entry || typeof entry !== 'object') {
+        throw new ValidationError(`trafficSource.parameters[${index}] must be an object`);
+      }
+
+      const candidate = entry as Record<string, unknown>;
+      return {
+        alias: normalizeRequiredString(candidate.alias, {
+          field: `trafficSource.parameters[${index}].alias`,
+          maxLength: FIELD_MAX_LENGTH.PARAMETER_ALIAS,
+        }),
+        paramName: normalizeRequiredString(candidate.paramName, {
+          field: `trafficSource.parameters[${index}].paramName`,
+          maxLength: FIELD_MAX_LENGTH.PARAMETER_NAME,
+        }),
+        macro: normalizeRequiredString(candidate.macro, {
+          field: `trafficSource.parameters[${index}].macro`,
+          maxLength: FIELD_MAX_LENGTH.PARAMETER_VALUE,
+        }),
+      };
+    });
+  }
+
+  private normalizePostbackConfig(
+    raw: CreateTrafficSourceDTO['postbackConfig']
+  ): PostbackConfig {
+    const parsedValue = this.parseJsonIfNeeded(raw, 'trafficSource.postbackConfig');
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      throw new ValidationError('trafficSource.postbackConfig must be an object');
+    }
+
+    const candidate = parsedValue as Record<string, unknown>;
+    const sendOnlyStatuses = candidate.sendOnlyStatuses;
+    if (!Array.isArray(sendOnlyStatuses)) {
+      throw new ValidationError('trafficSource.postbackConfig.sendOnlyStatuses must be an array');
+    }
+
+    const normalizedStatuses = sendOnlyStatuses.map((status, index) =>
+      normalizeRequiredString(status, {
+        field: `trafficSource.postbackConfig.sendOnlyStatuses[${index}]`,
+        maxLength: 32,
+        trim: true,
+      })
+    ) as ConversionStatus[];
+
+    const normalizedConfig: PostbackConfig = {
+      url: normalizeRequiredString(candidate.url, {
+        field: 'trafficSource.postbackConfig.url',
+        maxLength: FIELD_MAX_LENGTH.URL,
+      }),
+      sendOnlyStatuses: normalizedStatuses,
+    };
+
+    if (candidate.customParams !== undefined) {
+      if (!candidate.customParams || typeof candidate.customParams !== 'object' || Array.isArray(candidate.customParams)) {
+        throw new ValidationError('trafficSource.postbackConfig.customParams must be an object');
+      }
+
+      const customParams: Record<string, string> = {};
+      for (const [key, value] of Object.entries(candidate.customParams as Record<string, unknown>)) {
+        const normalizedKey = normalizeRequiredString(key, {
+          field: 'trafficSource.postbackConfig.customParams.key',
+          maxLength: FIELD_MAX_LENGTH.PARAMETER_NAME,
+          trim: true,
+        });
+        const normalizedValue = normalizeRequiredString(value, {
+          field: `trafficSource.postbackConfig.customParams.${normalizedKey}`,
+          maxLength: FIELD_MAX_LENGTH.PARAMETER_VALUE,
+          trim: true,
+        });
+        customParams[normalizedKey] = normalizedValue;
+      }
+
+      normalizedConfig.customParams = customParams;
+    }
+
+    if (candidate.taboolaKey !== undefined) {
+      normalizedConfig.taboolaKey = normalizeOptionalString(candidate.taboolaKey, {
+        field: 'trafficSource.postbackConfig.taboolaKey',
+        maxLength: FIELD_MAX_LENGTH.API_KEY,
+      });
+    }
+
+    return normalizedConfig;
+  }
+
+  private normalizeApiConfig(raw: CreateTrafficSourceDTO['apiConfig']): TrafficSourceApiConfig {
+    const parsedValue = this.parseJsonIfNeeded(raw, 'trafficSource.apiConfig');
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      throw new ValidationError('trafficSource.apiConfig must be an object');
+    }
+
+    const candidate = parsedValue as Record<string, unknown>;
+    const enabledRaw = candidate.enabled;
+    if (enabledRaw !== undefined && typeof enabledRaw !== 'boolean') {
+      throw new ValidationError('trafficSource.apiConfig.enabled must be a boolean');
+    }
+    const enabled = enabledRaw === true;
+
+    const baseUrl = normalizeOptionalString(candidate.baseUrl, {
+      field: 'trafficSource.apiConfig.baseUrl',
+      maxLength: FIELD_MAX_LENGTH.URL,
+    });
+    const apiKey = normalizeOptionalString(candidate.apiKey, {
+      field: 'trafficSource.apiConfig.apiKey',
+      maxLength: FIELD_MAX_LENGTH.API_KEY,
+    });
+    const apiSecret = normalizeOptionalString(candidate.apiSecret, {
+      field: 'trafficSource.apiConfig.apiSecret',
+      maxLength: FIELD_MAX_LENGTH.API_SECRET,
+    });
+
+    if (enabled && (!baseUrl || !apiKey)) {
+      throw new ValidationError('trafficSource.apiConfig.baseUrl and apiKey are required when API is enabled');
+    }
+
+    const normalizedConfig: TrafficSourceApiConfig = {
+      enabled,
+      baseUrl: baseUrl || '',
+      apiKey: apiKey || '',
+    };
+
+    if (apiSecret !== undefined) {
+      normalizedConfig.apiSecret = apiSecret;
+    }
+
+    return normalizedConfig;
+  }
+
+  private parseJsonIfNeeded(value: unknown, field: string): unknown {
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    try {
+      return JSON.parse(value);
+    } catch {
+      throw new ValidationError(`${field} must be valid JSON`);
+    }
   }
 }

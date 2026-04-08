@@ -21,6 +21,8 @@ import type {
 } from '@/types/blacklist';
 import type { TrafficSourceApiConfig } from '@/types/trafficSource';
 import { NotFoundError, ValidationError } from '@/middleware/error';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
+import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldLength';
 
 export class BlacklistService {
   private blacklistRepo: BlacklistRepository;
@@ -47,7 +49,9 @@ export class BlacklistService {
    * 创建单个黑名单条目
    */
   async create(data: CreateBlacklistDTO): Promise<BlacklistEntry> {
-    const { trafficSourceId, type, value } = data;
+    const normalizedData = this.normalizeCreateInput(data);
+    data = normalizedData;
+    const { trafficSourceId, type, value } = normalizedData;
 
     const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
@@ -94,6 +98,8 @@ export class BlacklistService {
    * 更新黑名单条目
    */
   async update(id: string, data: UpdateBlacklistDTO): Promise<BlacklistEntry> {
+    const normalizedData = this.normalizeUpdateInput(data);
+    data = normalizedData;
     const entry = await this.blacklistRepo.findById(id);
     if (!entry) {
       throw new NotFoundError('Blacklist entry not found');
@@ -111,6 +117,8 @@ export class BlacklistService {
    * 批量添加黑名单
    */
   async batchAdd(data: BatchBlacklistDTO): Promise<BlacklistEntry[]> {
+    const normalizedData = this.normalizeBatchInput(data);
+    data = normalizedData;
     const { trafficSourceId, type, items } = data;
 
     const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
@@ -133,6 +141,12 @@ export class BlacklistService {
     candidates: BlacklistCandidate[],
     reason?: string
   ): Promise<BlacklistEntry[]> {
+    const normalizedReason = normalizeOptionalString(reason as unknown, {
+      field: 'blacklist.reason',
+      maxLength: FIELD_MAX_LENGTH.REASON,
+    });
+    reason = normalizedReason;
+
     const items = candidates.map((candidate) => ({
       value: candidate.value,
       name: candidate.name,
@@ -232,7 +246,7 @@ export class BlacklistService {
       };
     }
 
-    const apiConfig = JSON.parse(trafficSource.apiConfig) as TrafficSourceApiConfig;
+    const apiConfig = this.parseTrafficSourceApiConfig(trafficSource.apiConfig);
     if (!apiConfig.enabled) {
       return {
         success: false,
@@ -363,7 +377,7 @@ export class BlacklistService {
       return;
     }
 
-    const apiConfig = JSON.parse(trafficSource.apiConfig) as TrafficSourceApiConfig;
+    const apiConfig = this.parseTrafficSourceApiConfig(trafficSource.apiConfig);
     if (!apiConfig.enabled) {
       return;
     }
@@ -385,6 +399,13 @@ export class BlacklistService {
   /**
    * 获取黑名单统计
    */
+  private parseTrafficSourceApiConfig(config: TrafficSourceApiConfig | string): TrafficSourceApiConfig {
+    if (typeof config === 'string') {
+      return JSON.parse(config) as TrafficSourceApiConfig;
+    }
+    return config;
+  }
+
   async getStats(trafficSourceId: string): Promise<{
     total: number;
     active: number;
@@ -394,6 +415,99 @@ export class BlacklistService {
     const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
     return this.blacklistRepo.getStats(storageId);
+  }
+
+  private normalizeCreateInput(data: CreateBlacklistDTO): CreateBlacklistDTO {
+    const type = data.type as BlacklistType;
+    const valueMaxLength = this.getBlacklistValueMaxLength(type);
+
+    return {
+      ...data,
+      trafficSourceId: normalizeRequiredString(data.trafficSourceId as unknown, {
+        field: 'blacklist.trafficSourceId',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      }),
+      value: normalizeRequiredString(data.value as unknown, {
+        field: 'blacklist.value',
+        maxLength: valueMaxLength,
+      }),
+      name: normalizeOptionalString(data.name as unknown, {
+        field: 'blacklist.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      }),
+      reason: normalizeOptionalString(data.reason as unknown, {
+        field: 'blacklist.reason',
+        maxLength: FIELD_MAX_LENGTH.REASON,
+      }),
+      campaignId: normalizeOptionalString(data.campaignId as unknown, {
+        field: 'blacklist.campaignId',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      }),
+    };
+  }
+
+  private normalizeUpdateInput(data: UpdateBlacklistDTO): UpdateBlacklistDTO {
+    const normalizedData: UpdateBlacklistDTO = { ...data };
+
+    if (data.name !== undefined) {
+      normalizedData.name = normalizeOptionalString(data.name as unknown, {
+        field: 'blacklist.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      });
+    }
+
+    if (data.reason !== undefined) {
+      normalizedData.reason = normalizeOptionalString(data.reason as unknown, {
+        field: 'blacklist.reason',
+        maxLength: FIELD_MAX_LENGTH.REASON,
+      });
+    }
+
+    return normalizedData;
+  }
+
+  private normalizeBatchInput(data: BatchBlacklistDTO): BatchBlacklistDTO {
+    if (!Array.isArray(data.items)) {
+      throw new ValidationError('blacklist.items must be an array');
+    }
+
+    const normalizedTrafficSourceId = normalizeRequiredString(data.trafficSourceId as unknown, {
+      field: 'blacklist.trafficSourceId',
+      maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+    });
+    const type = data.type as BlacklistType;
+    const valueMaxLength = this.getBlacklistValueMaxLength(type);
+
+    return {
+      ...data,
+      trafficSourceId: normalizedTrafficSourceId,
+      items: data.items.map((item, index) => ({
+        ...item,
+        value: normalizeRequiredString(item.value as unknown, {
+          field: `blacklist.items[${index}].value`,
+          maxLength: valueMaxLength,
+        }),
+        name: normalizeOptionalString(item.name as unknown, {
+          field: `blacklist.items[${index}].name`,
+          maxLength: FIELD_MAX_LENGTH.NAME,
+        }),
+        reason: normalizeOptionalString(item.reason as unknown, {
+          field: `blacklist.items[${index}].reason`,
+          maxLength: FIELD_MAX_LENGTH.REASON,
+        }),
+        campaignId: normalizeOptionalString(item.campaignId as unknown, {
+          field: `blacklist.items[${index}].campaignId`,
+          maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+        }),
+      })),
+    };
+  }
+
+  private getBlacklistValueMaxLength(type: BlacklistType): number {
+    if (type === 'user_agent') {
+      return FIELD_MAX_LENGTH.USER_AGENT_VALUE;
+    }
+    return FIELD_MAX_LENGTH.TRAFFIC_ENTRY_VALUE;
   }
 
   /**
@@ -409,12 +523,18 @@ export class BlacklistService {
       throw new ValidationError('Value is required');
     }
 
+    const normalizedValue = value.trim();
+    const maxLength = this.getBlacklistValueMaxLength(type);
+    if (normalizedValue.length > maxLength) {
+      throw new ValidationError(`Blacklist value exceeds max length ${maxLength}`);
+    }
+
     switch (type) {
       case 'ip':
-        this.validateIpValue(value, ipMatchMode);
+        this.validateIpValue(normalizedValue, ipMatchMode);
         break;
       case 'user_agent':
-        this.validateUaValue(value, uaMatchMode);
+        this.validateUaValue(normalizedValue, uaMatchMode);
         break;
       case 'zone':
       case 'creative':
