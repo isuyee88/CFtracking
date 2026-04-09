@@ -133,6 +133,59 @@ export class FlowRepository extends BaseRepository<Flow> {
   }
 
   /**
+   * Flow 列表查询（支持分页 + 条件筛选）
+   */
+  async findList(
+    page = 1,
+    pageSize = 20,
+    campaignId?: string,
+    status?: string
+  ): Promise<{ list: Flow[]; total: number }> {
+    const whereParts: string[] = [];
+    const whereValues: unknown[] = [];
+
+    if (campaignId) {
+      whereParts.push('(campaignId = ? OR campaignId IN (SELECT id FROM campaigns WHERE displayId = ?))');
+      whereValues.push(campaignId, campaignId);
+    }
+
+    if (status) {
+      whereParts.push('status = ?');
+      whereValues.push(status);
+    }
+
+    const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
+    const offset = (page - 1) * pageSize;
+
+    const listResult = await this.db
+      .prepare(`
+        SELECT *
+        FROM flows
+        ${whereClause}
+        ORDER BY updatedAt DESC
+        LIMIT ? OFFSET ?
+      `)
+      .bind(...whereValues, pageSize, offset)
+      .all();
+
+    const countResult = await this.db
+      .prepare(`
+        SELECT COUNT(*) as total
+        FROM flows
+        ${whereClause}
+      `)
+      .bind(...whereValues)
+      .first();
+
+    const list = ((listResult.results as Record<string, unknown>[] | undefined) || []).map((row) =>
+      this.transform(row)
+    );
+    const total = Number(countResult?.total || 0);
+
+    return { list, total };
+  }
+
+  /**
    * 添加 Landing Page 到 Flow
    */
   async addLandingPage(flowId: string, landingPageId: string, weight = 100): Promise<FlowLandingPage> {

@@ -15,6 +15,7 @@ import { logger } from 'hono/logger';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
+import { AppError } from '@/middleware/error';
 
 // 定义 Hono 应用的变量类型
 type Variables = {
@@ -971,6 +972,10 @@ app.get('/events/cache', async (c) => {
 
 app.onError((err, c) => {
   console.error('Error:', err);
+  if (err instanceof AppError) {
+    return c.json(error(err.message, err.code, err.details), err.statusCode as any);
+  }
+
   return c.json(error(err.message, 'INTERNAL_ERROR'), HTTP_STATUS.INTERNAL_ERROR);
 });
 

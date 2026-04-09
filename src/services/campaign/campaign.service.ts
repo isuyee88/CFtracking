@@ -58,11 +58,11 @@ export class CampaignService {
    * 更新 Campaign
    */
   async update(id: string, data: UpdateCampaignDTO): Promise<Campaign> {
-    const normalizedData = this.normalizeUpdateInput(data);
     const existing = await this.repo.findById(id);
     if (!existing) {
       throw new NotFoundError('Campaign not found');
     }
+    const normalizedData = this.normalizeUpdateInput(data, existing);
 
     if (normalizedData.alias && normalizedData.alias !== existing.alias) {
       const aliasExists = await this.repo.aliasExists(normalizedData.alias, id);
@@ -201,49 +201,64 @@ export class CampaignService {
     };
   }
 
-  private normalizeUpdateInput(data: UpdateCampaignDTO): UpdateCampaignDTO {
+  private normalizeUpdateInput(data: UpdateCampaignDTO, existing: Campaign): UpdateCampaignDTO {
     const normalizedData: UpdateCampaignDTO = { ...data };
 
-    if (data.name !== undefined) {
+    if (data.name !== undefined && data.name !== existing.name) {
       normalizedData.name = normalizeRequiredString(data.name as unknown, {
         field: 'campaign.name',
         maxLength: FIELD_MAX_LENGTH.NAME,
       });
+    } else if (data.name !== undefined) {
+      delete normalizedData.name;
     }
 
-    if (data.alias !== undefined) {
+    if (data.alias !== undefined && data.alias !== existing.alias) {
       normalizedData.alias = normalizeRequiredString(data.alias as unknown, {
         field: 'campaign.alias',
         maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ALIAS,
       });
+    } else if (data.alias !== undefined) {
+      delete normalizedData.alias;
     }
 
-    if (data.domain !== undefined) {
+    if (data.domain !== undefined && data.domain !== existing.domain) {
       normalizedData.domain = normalizeRequiredString(data.domain as unknown, {
         field: 'campaign.domain',
         maxLength: FIELD_MAX_LENGTH.DOMAIN,
       });
+    } else if (data.domain !== undefined) {
+      delete normalizedData.domain;
     }
 
-    if (data.group !== undefined) {
+    if (data.group !== undefined && data.group !== existing.group) {
       normalizedData.group = normalizeOptionalString(data.group as unknown, {
         field: 'campaign.group',
         maxLength: FIELD_MAX_LENGTH.GROUP,
       });
+    } else if (data.group !== undefined) {
+      delete normalizedData.group;
     }
 
-    if (data.trafficSource !== undefined) {
+    if (data.trafficSource !== undefined && data.trafficSource !== existing.trafficSource) {
       normalizedData.trafficSource = normalizeOptionalString(data.trafficSource as unknown, {
         field: 'campaign.trafficSource',
         maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
       });
+    } else if (data.trafficSource !== undefined) {
+      delete normalizedData.trafficSource;
     }
 
-    if (data.uniquenessParameter !== undefined) {
+    if (
+      data.uniquenessParameter !== undefined &&
+      data.uniquenessParameter !== existing.uniquenessParameter
+    ) {
       normalizedData.uniquenessParameter = normalizeOptionalString(data.uniquenessParameter as unknown, {
         field: 'campaign.uniquenessParameter',
         maxLength: FIELD_MAX_LENGTH.UNIQUE_PARAMETER,
       });
+    } else if (data.uniquenessParameter !== undefined) {
+      delete normalizedData.uniquenessParameter;
     }
 
     return normalizedData;

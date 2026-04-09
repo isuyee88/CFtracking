@@ -28,6 +28,17 @@ export class FlowService {
     this.campaignRepo = new CampaignRepository(db);
   }
 
+  async getList(query: {
+    page?: number;
+    pageSize?: number;
+    campaignId?: string;
+    status?: string;
+  }): Promise<{ list: Flow[]; total: number }> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    return this.repo.findList(page, pageSize, query.campaignId, query.status);
+  }
+
   /**
    * 创建 Flow
    */

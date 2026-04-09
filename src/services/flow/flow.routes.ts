@@ -14,7 +14,7 @@ import { FlowService } from './flow.service';
 import { FlowLogService } from './flow.log.service';
 import { FlowValidator } from './flow.validator';
 import { success, error } from '@/utils/response';
-import { validateRequired } from '@/utils/validator';
+import { validatePagination, validateRequired } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
 import type { FlowStatus } from '@/types/flow';
@@ -22,6 +22,32 @@ import { getAvailableOperators, getAvailableTargets } from '@/utils/flow.filters
 
 export function createFlowRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
+
+  router.get('/', async (c) => {
+    const query = {
+      page: parseInt(c.req.query('page') || '1'),
+      pageSize: parseInt(c.req.query('pageSize') || '20'),
+      campaignId: c.req.query('campaignId') || undefined,
+      status: c.req.query('status') || undefined,
+    };
+
+    const { page, pageSize } = validatePagination(query.page, query.pageSize);
+    const service = new FlowService(c.env);
+    const result = await service.getList({
+      page,
+      pageSize,
+      campaignId: query.campaignId,
+      status: query.status,
+    });
+
+    return c.json(
+      success(result.list, {
+        page,
+        pageSize,
+        total: result.total,
+      })
+    );
+  });
 
   router.get('/campaign/:campaignId', async (c) => {
     const campaignId = c.req.param('campaignId');
