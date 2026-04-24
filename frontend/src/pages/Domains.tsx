@@ -449,8 +449,12 @@ export default function Domains() {
         width: 240,
         render: (_, domain) => (
           <div className="min-w-0">
-            <div className="font-medium text-fg-default truncate">{domain.hostname}</div>
-            <div className="text-xs text-fg-muted">{domain.displayId || domain.id}</div>
+            <div className="font-medium text-fg-default truncate" title={domain.hostname}>
+              {truncateLabel(domain.hostname, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+            </div>
+            <div className="text-xs text-fg-muted truncate" title={domain.displayId || domain.id}>
+              {truncateLabel(domain.displayId || domain.id, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+            </div>
           </div>
         ),
       },
@@ -487,7 +491,9 @@ export default function Domains() {
         render: (_, domain) => (
           <div className="min-w-0">
             <div className="text-sm text-fg-default">{domain.dnsProvider}</div>
-            <div className="text-xs text-fg-muted truncate">{domain.registrar || 'Registrar not set'}</div>
+            <div className="text-xs text-fg-muted truncate" title={domain.registrar || 'Registrar not set'}>
+              {truncateLabel(domain.registrar || 'Registrar not set', DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+            </div>
           </div>
         ),
       },

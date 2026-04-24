@@ -15,6 +15,8 @@ import {
   type CustomMetricType,
   type UpdateCustomMetricPayload,
 } from '@/services/api';
+import { FIELD_MAX_LENGTH } from '@/constants/fieldConstraints';
+import { clampInput, truncateLabel } from '@/utils/text';
 
 interface MetricVariable {
   name: string;
@@ -100,6 +102,14 @@ const INITIAL_PREVIEW_CONTEXT: Record<string, number> = {
   avg_fraud_score: 3.1,
   blacklist_rate: 4.8,
 };
+
+function renderLengthCounter(value: string | undefined, maxLength: number) {
+  return (
+    <p className="mt-1 text-right text-[11px] text-gray-500">
+      {(value || '').length}/{maxLength}
+    </p>
+  );
+}
 
 function normalizeOptionalString(value: string): string | undefined {
   const trimmed = value.trim();
@@ -283,6 +293,22 @@ export default function CustomMetrics() {
     });
   };
 
+  const handleFieldChange = (field: keyof MetricFormState, value: string) => {
+    const maxLengthMap: Partial<Record<keyof MetricFormState, number>> = {
+      name: FIELD_MAX_LENGTH.CUSTOM_METRIC_NAME,
+      displayName: FIELD_MAX_LENGTH.CUSTOM_METRIC_DISPLAY_NAME,
+      description: FIELD_MAX_LENGTH.CUSTOM_METRIC_DESCRIPTION,
+      prefix: FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX,
+      suffix: FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX,
+    };
+
+    const maxLength = maxLengthMap[field];
+    setFormData((prev) => ({
+      ...prev,
+      [field]: maxLength ? clampInput(value, maxLength) : value,
+    }));
+  };
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -326,8 +352,12 @@ export default function CustomMetrics() {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-gray-900">{metric.displayName}</h3>
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{metric.name}</span>
+                    <h3 className="max-w-full truncate font-semibold text-gray-900" title={metric.displayName}>
+                      {truncateLabel(metric.displayName, FIELD_MAX_LENGTH.CUSTOM_METRIC_DISPLAY_NAME)}
+                    </h3>
+                    <span className="max-w-full truncate rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600" title={metric.name}>
+                      {truncateLabel(metric.name, FIELD_MAX_LENGTH.CUSTOM_METRIC_NAME)}
+                    </span>
                     <span
                       className={`rounded px-2 py-0.5 text-xs ${
                         metric.status === 'active'
@@ -339,9 +369,15 @@ export default function CustomMetrics() {
                     </span>
                     <span className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{metric.type}</span>
                   </div>
-                  {metric.description && <p className="mt-1 text-sm text-gray-600">{metric.description}</p>}
+                  {metric.description && (
+                    <p className="mt-1 break-words text-sm text-gray-600" title={metric.description}>
+                      {truncateLabel(metric.description, FIELD_MAX_LENGTH.CUSTOM_METRIC_DESCRIPTION)}
+                    </p>
+                  )}
                   <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
-                    <span className="rounded bg-gray-50 px-2 py-1 font-mono">{metric.formula}</span>
+                    <span className="max-w-full break-all rounded bg-gray-50 px-2 py-1 font-mono" title={metric.formula}>
+                      {metric.formula}
+                    </span>
                     <span>Format: {metric.format}</span>
                     <span>Decimals: {metric.decimals}</span>
                   </div>
@@ -369,8 +405,8 @@ export default function CustomMetrics() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center">
+          <div className="my-8 max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 sm:my-0">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-semibold">{editingMetric ? 'Edit Metric' : 'Create Metric'}</h2>
               <button onClick={closeModal} className="text-gray-500 hover:text-gray-700">
@@ -379,33 +415,37 @@ export default function CustomMetrics() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Name (ID)</label>
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, name: event.target.value }))}
+                    onChange={(event) => handleFieldChange('name', event.target.value)}
                     className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g. traffic_quality_index"
                     disabled={Boolean(editingMetric)}
+                    maxLength={FIELD_MAX_LENGTH.CUSTOM_METRIC_NAME}
                     required
                   />
+                  {renderLengthCounter(formData.name, FIELD_MAX_LENGTH.CUSTOM_METRIC_NAME)}
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Display Name</label>
                   <input
                     type="text"
                     value={formData.displayName}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, displayName: event.target.value }))}
+                    onChange={(event) => handleFieldChange('displayName', event.target.value)}
                     className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g. Traffic Quality Index"
+                    maxLength={FIELD_MAX_LENGTH.CUSTOM_METRIC_DISPLAY_NAME}
                     required
                   />
+                  {renderLengthCounter(formData.displayName, FIELD_MAX_LENGTH.CUSTOM_METRIC_DISPLAY_NAME)}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Type</label>
                   <select
@@ -445,11 +485,13 @@ export default function CustomMetrics() {
                 <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
                 <textarea
                   value={formData.description}
-                  onChange={(event) => setFormData((prev) => ({ ...prev, description: event.target.value }))}
+                  onChange={(event) => handleFieldChange('description', event.target.value)}
                   className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
                   rows={2}
                   placeholder="What does this metric represent?"
+                  maxLength={FIELD_MAX_LENGTH.CUSTOM_METRIC_DESCRIPTION}
                 />
+                {renderLengthCounter(formData.description, FIELD_MAX_LENGTH.CUSTOM_METRIC_DESCRIPTION)}
               </div>
 
               <div>
@@ -488,7 +530,7 @@ export default function CustomMetrics() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Data Type</label>
                   <select
@@ -537,21 +579,27 @@ export default function CustomMetrics() {
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Prefix / Suffix</label>
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={formData.prefix}
-                      onChange={(event) => setFormData((prev) => ({ ...prev, prefix: event.target.value }))}
-                      className="w-full rounded-lg border px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                      placeholder="$"
-                    />
-                    <input
-                      type="text"
-                      value={formData.suffix}
-                      onChange={(event) => setFormData((prev) => ({ ...prev, suffix: event.target.value }))}
-                      className="w-full rounded-lg border px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                      placeholder="%"
-                    />
-                  </div>
+                      <input
+                        type="text"
+                        value={formData.prefix}
+                        onChange={(event) => handleFieldChange('prefix', event.target.value)}
+                        className="w-full rounded-lg border px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                        placeholder="$"
+                        maxLength={FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX}
+                      />
+                      <input
+                        type="text"
+                        value={formData.suffix}
+                        onChange={(event) => handleFieldChange('suffix', event.target.value)}
+                        className="w-full rounded-lg border px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                        placeholder="%"
+                        maxLength={FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {renderLengthCounter(formData.prefix, FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX)}
+                      {renderLengthCounter(formData.suffix, FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX)}
+                    </div>
                 </div>
               </div>
 
@@ -562,7 +610,7 @@ export default function CustomMetrics() {
                     Calculate Preview
                   </button>
                 </div>
-                <div className="mb-2 grid grid-cols-4 gap-2">
+                <div className="mb-2 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
                   {Object.entries(previewContext).map(([key, value]) => (
                     <div key={key}>
                       <label className="text-xs text-gray-500">{key}</label>
@@ -581,7 +629,7 @@ export default function CustomMetrics() {
                   ))}
                 </div>
                 {previewResult && (
-                  <div className="flex items-center gap-2 rounded border border-green-200 bg-green-50 p-3">
+                    <div className="flex flex-wrap items-center gap-2 rounded border border-green-200 bg-green-50 p-3">
                     <Check className="h-5 w-5 text-green-600" />
                     <span className="font-mono text-green-800">
                       Result: {previewResult.formatted} ({previewResult.value})
@@ -590,7 +638,7 @@ export default function CustomMetrics() {
                 )}
               </div>
 
-              <div className="flex justify-end gap-3 border-t pt-4">
+              <div className="flex flex-wrap justify-end gap-3 border-t pt-4">
                 <button type="button" onClick={closeModal} className="rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100">
                   Cancel
                 </button>

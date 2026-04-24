@@ -128,8 +128,9 @@ export interface ClickData {
   // Realtime autorule decision fields
   ruleMatched?: number;
   ruleBlocked?: number;
+  governanceAction?: 'allow' | 'block' | 'challenge' | 'redirect' | null;
   matchedRuleId?: string | null;
-  matchedRuleLayer?: 'flow' | 'campaign' | 'whitelist' | 'blacklist' | null;
+  matchedRuleLayer?: 'flow' | 'campaign' | 'traffic_source' | 'global' | 'whitelist' | 'blacklist' | null;
   matchedRuleReason?: string | null;
 }
 

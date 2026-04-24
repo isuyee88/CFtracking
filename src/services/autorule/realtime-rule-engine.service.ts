@@ -1,12 +1,13 @@
 /**
  * @fileoverview Realtime autorule engine
- * @description Evaluate campaign/flow-bound autorules in click ingress path.
+ * @description Evaluate layered autorules in click ingress path.
  * @module services/autorule/realtime-rule-engine.service
  */
 
-import { AutoruleBindingRepository, RuleRepository, getD1Connection } from '@/handlers/d1';
+import { AutoruleBindingRepository, AutoruleScopeRepository, RuleRepository, getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
 import type { Condition, Rule, RuleExpressionNode, RuleSetCondition } from '@/types/rule';
+import type { AutoruleScopeConfig, AutoruleScopeType } from '@/types/autoruleScope';
 import { ListResolverService, type AutoruleVisitContext } from './list-resolver.service';
 
 export interface RealtimeRuleEvaluationInput {
@@ -20,7 +21,8 @@ export interface RealtimeRuleDecision {
   matched: boolean;
   bound: boolean;
   matchedRuleId?: string;
-  matchedLayer?: 'flow' | 'campaign' | 'whitelist' | 'blacklist';
+  matchedLayer?: 'flow' | 'campaign' | 'traffic_source' | 'global' | 'whitelist' | 'blacklist';
+  effectiveScopeType?: 'campaign' | 'traffic_source' | 'global';
   reason?: string;
   redirectUrl?: string;
 }
@@ -28,12 +30,14 @@ export interface RealtimeRuleDecision {
 export class RealtimeRuleEngineService {
   private readonly ruleRepo: RuleRepository;
   private readonly bindingRepo: AutoruleBindingRepository;
+  private readonly scopeRepo: AutoruleScopeRepository;
   private readonly listResolver: ListResolverService;
 
   constructor(env: Env) {
     const db = getD1Connection(env);
     this.ruleRepo = new RuleRepository(db);
     this.bindingRepo = new AutoruleBindingRepository(db);
+    this.scopeRepo = new AutoruleScopeRepository(db);
     this.listResolver = new ListResolverService(env);
   }
 
@@ -48,39 +52,128 @@ export class RealtimeRuleEngineService {
       return blacklistDecision;
     }
 
-    const bindings = await this.bindingRepo.getEffectiveBindings(input.campaignId, input.flowId || undefined);
-    if (bindings.length === 0) {
-      return { action: 'allow', matched: false, bound: false, reason: 'not_bound' };
+    const scopeResolution = await this.scopeRepo.resolveEffectiveScopeConfig(
+      input.campaignId,
+      input.context.trafficSourceId
+    );
+
+    if (!scopeResolution.effectiveConfig) {
+      if (!scopeResolution.hasExplicitConfig && input.flowId) {
+        const legacyBindings = await this.bindingRepo.getFlowBindings(input.flowId);
+        const legacyDecision = await this.evaluateBoundRules(legacyBindings, input.context, 'flow');
+        if (legacyDecision) {
+          return legacyDecision;
+        }
+      }
+
+      return {
+        action: 'allow',
+        matched: false,
+        bound: scopeResolution.hasExplicitConfig,
+        reason: scopeResolution.hasExplicitConfig ? 'scope_inherit_without_effective_config' : 'not_bound',
+      };
     }
 
-    let unavailableRuleId: string | undefined;
+    if (scopeResolution.effectiveConfig.mode === 'off') {
+      return {
+        action: 'allow',
+        matched: false,
+        bound: true,
+        matchedLayer: scopeResolution.effectiveConfig.scopeType,
+        effectiveScopeType: scopeResolution.effectiveConfig.scopeType,
+        reason: 'scope_off',
+      };
+    }
 
-    for (const binding of bindings) {
-      const rule = await this.ruleRepo.findById(binding.ruleId);
-      if (!rule || !rule.enabled || rule.status !== 'active') {
-        unavailableRuleId = binding.ruleId;
-        continue;
-      }
+    if (scopeResolution.effectiveConfig.mode === 'whitelist_gate') {
+      return {
+        action: 'challenge',
+        matched: false,
+        bound: true,
+        matchedLayer: scopeResolution.effectiveConfig.scopeType,
+        effectiveScopeType: scopeResolution.effectiveConfig.scopeType,
+        reason: 'whitelist_gate_unmatched',
+      };
+    }
 
-      const decision = await this.evaluateRule(rule, input.context);
-      if (decision.matched || decision.action !== 'allow') {
-        return {
-          ...decision,
-          bound: true,
-          matchedLayer: binding.scope,
-          matchedRuleId: decision.matched ? (decision.matchedRuleId || rule.id) : undefined,
-        };
-      }
+    const scopeDecision = await this.evaluateScopeConfig(scopeResolution.effectiveConfig, input.context);
+    if (scopeDecision) {
+      return scopeDecision;
     }
 
     return {
       action: 'allow',
       matched: false,
       bound: true,
-      matchedLayer: bindings[0]?.scope,
-      matchedRuleId: undefined,
-      reason: unavailableRuleId ? 'bound_rule_unavailable' : 'no_bound_rule_matched',
+      matchedLayer: scopeResolution.effectiveConfig.scopeType,
+      effectiveScopeType: scopeResolution.effectiveConfig.scopeType,
+      reason: 'no_bound_rule_matched',
     };
+  }
+
+  private async evaluateScopeConfig(
+    config: AutoruleScopeConfig,
+    context: AutoruleVisitContext
+  ): Promise<RealtimeRuleDecision | null> {
+    if (config.mode !== 'rules') {
+      return null;
+    }
+
+    return this.evaluateBoundRules(
+      config.bindings.map((binding) => ({
+        ...binding,
+        scope: config.scopeType,
+      })),
+      context,
+      config.scopeType
+    );
+  }
+
+  private async evaluateBoundRules(
+    bindings: Array<{ ruleId: string; priority: number; scope: 'flow' | AutoruleScopeType }>,
+    context: AutoruleVisitContext,
+    scopeType: 'flow' | AutoruleScopeType
+  ): Promise<RealtimeRuleDecision | null> {
+    if (bindings.length === 0) {
+      return null;
+    }
+
+    const rules = await this.ruleRepo.findManyByIds(bindings.map((binding) => binding.ruleId));
+    const rulesById = new Map(rules.map((rule) => [rule.id, rule]));
+    let unavailableRuleId: string | undefined;
+
+    for (const binding of [...bindings].sort((left, right) => left.priority - right.priority)) {
+      const rule =
+        rulesById.get(binding.ruleId) ||
+        rules.find((item) => item.displayId === binding.ruleId);
+      if (!rule || !rule.enabled || rule.status !== 'active') {
+        unavailableRuleId = binding.ruleId;
+        continue;
+      }
+
+      const decision = await this.evaluateRule(rule, context);
+      if (decision.matched || decision.action !== 'allow') {
+        return {
+          ...decision,
+          bound: true,
+          matchedLayer: scopeType,
+          effectiveScopeType: scopeType === 'flow' ? undefined : scopeType,
+          matchedRuleId: decision.matched ? (decision.matchedRuleId || rule.id) : undefined,
+        };
+      }
+    }
+
+    return unavailableRuleId
+      ? {
+          action: 'allow',
+          matched: false,
+          bound: true,
+          matchedLayer: scopeType,
+          effectiveScopeType: scopeType === 'flow' ? undefined : scopeType,
+          matchedRuleId: undefined,
+          reason: 'bound_rule_unavailable',
+        }
+      : null;
   }
 
   private async resolveDirectListDecision(
@@ -105,6 +198,7 @@ export class RealtimeRuleEngineService {
         bound: false,
         matchedRuleId: `${side}:${listType}`,
         matchedLayer: side,
+        effectiveScopeType: undefined,
         reason: `${side}_${listType}_matched`,
       };
     }
@@ -250,7 +344,13 @@ export class RealtimeRuleEngineService {
     if (Array.isArray(block.eq) && block.eq.length === 2) {
       const [path, expected] = block.eq as [string, unknown];
       const actual = this.readByPath(context as unknown as Record<string, unknown>, path);
-      return String(actual ?? '') === String(expected ?? '');
+      return this.compareScalar(actual, expected, 'eq');
+    }
+
+    if (Array.isArray(block.ne) && block.ne.length === 2) {
+      const [path, expected] = block.ne as [string, unknown];
+      const actual = this.readByPath(context as unknown as Record<string, unknown>, path);
+      return this.compareScalar(actual, expected, 'ne');
     }
 
     if (Array.isArray(block.in) && block.in.length === 2) {
@@ -264,6 +364,36 @@ export class RealtimeRuleEngineService {
       const [path, needle] = block.contains as [string, string];
       const actual = this.readByPath(context as unknown as Record<string, unknown>, path);
       return String(actual ?? '').toLowerCase().includes(String(needle ?? '').toLowerCase());
+    }
+
+    if (Array.isArray(block.not_contains) && block.not_contains.length === 2) {
+      const [path, needle] = block.not_contains as [string, string];
+      const actual = this.readByPath(context as unknown as Record<string, unknown>, path);
+      return !String(actual ?? '').toLowerCase().includes(String(needle ?? '').toLowerCase());
+    }
+
+    if (Array.isArray(block.gt) && block.gt.length === 2) {
+      const [path, expected] = block.gt as [string, unknown];
+      const actual = this.readByPath(context as unknown as Record<string, unknown>, path);
+      return this.compareNumeric(actual, expected, 'gt');
+    }
+
+    if (Array.isArray(block.gte) && block.gte.length === 2) {
+      const [path, expected] = block.gte as [string, unknown];
+      const actual = this.readByPath(context as unknown as Record<string, unknown>, path);
+      return this.compareNumeric(actual, expected, 'gte');
+    }
+
+    if (Array.isArray(block.lt) && block.lt.length === 2) {
+      const [path, expected] = block.lt as [string, unknown];
+      const actual = this.readByPath(context as unknown as Record<string, unknown>, path);
+      return this.compareNumeric(actual, expected, 'lt');
+    }
+
+    if (Array.isArray(block.lte) && block.lte.length === 2) {
+      const [path, expected] = block.lte as [string, unknown];
+      const actual = this.readByPath(context as unknown as Record<string, unknown>, path);
+      return this.compareNumeric(actual, expected, 'lte');
     }
 
     if (Array.isArray(block.exists) && block.exists.length === 1) {
@@ -289,6 +419,33 @@ export class RealtimeRuleEngineService {
       current = (current as Record<string, unknown>)[segment];
     }
     return current;
+  }
+
+  private compareScalar(actual: unknown, expected: unknown, operator: 'eq' | 'ne'): boolean {
+    const actualValue = String(actual ?? '');
+    const expectedValue = String(expected ?? '');
+    return operator === 'eq' ? actualValue === expectedValue : actualValue !== expectedValue;
+  }
+
+  private compareNumeric(actual: unknown, expected: unknown, operator: 'gt' | 'gte' | 'lt' | 'lte'): boolean {
+    const actualNumber = Number(actual);
+    const expectedNumber = Number(expected);
+    if (!Number.isFinite(actualNumber) || !Number.isFinite(expectedNumber)) {
+      return false;
+    }
+
+    switch (operator) {
+      case 'gt':
+        return actualNumber > expectedNumber;
+      case 'gte':
+        return actualNumber >= expectedNumber;
+      case 'lt':
+        return actualNumber < expectedNumber;
+      case 'lte':
+        return actualNumber <= expectedNumber;
+      default:
+        return false;
+    }
   }
 
   private normalizeDecisionAction(action: unknown): 'allow' | 'block' | 'challenge' | 'redirect' {

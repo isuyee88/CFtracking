@@ -8,6 +8,8 @@ import {
   type AutoruleBindingRecord,
   type Rule,
 } from '../services/api';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 interface BindingDraft {
   id: string;
@@ -167,8 +169,8 @@ export function CampaignAutoruleBindingsModal({
         <div className="flex items-center justify-between border-b border-border-default px-6 py-4">
           <div>
             <h2 className="text-xl font-display font-bold text-fg-default">Campaign Autorules</h2>
-            <p className="text-sm text-fg-muted">
-              {campaignName || campaignId} - lower priority number runs first after whitelist/blacklist checks.
+            <p className="text-sm text-fg-muted" title={campaignName || campaignId || undefined}>
+              {truncateLabel(campaignName || campaignId || '', DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)} - lower priority number runs first after whitelist/blacklist checks.
             </p>
           </div>
           <button
@@ -216,8 +218,8 @@ export function CampaignAutoruleBindingsModal({
                         >
                           <option value="">Select an autorule</option>
                           {rules.map((rule) => (
-                            <option key={rule.id} value={rule.id}>
-                              {rule.name} [{rule.type}] P{rule.priority}
+                            <option key={rule.id} value={rule.id} title={`${rule.name} [${rule.type}] P${rule.priority}`}>
+                              {truncateLabel(`${rule.name} [${rule.type}] P${rule.priority}`, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
                             </option>
                           ))}
                         </select>
@@ -262,9 +264,9 @@ export function CampaignAutoruleBindingsModal({
                             const rule = rules.find((item) => item.id === binding.ruleId);
                             return rule ? (
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1 text-primary">
+                                <span className="inline-flex items-center gap-1 text-primary" title={rule.name}>
                                   <Zap size={14} />
-                                  {rule.name}
+                                  <span className="truncate max-w-[260px]">{truncateLabel(rule.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}</span>
                                 </span>
                                 <span>[{rule.type}]</span>
                                 <span>Rule priority: P{rule.priority}</span>

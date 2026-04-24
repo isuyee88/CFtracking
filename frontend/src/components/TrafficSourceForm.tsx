@@ -107,6 +107,14 @@ const TRAFFIC_SOURCE_NAME_MAX_LENGTH = FIELD_MAX_LENGTH.NAME;
 const TRAFFIC_SOURCE_NOTES_MAX_LENGTH = FIELD_MAX_LENGTH.NOTES;
 const TRAFFIC_SOURCE_URL_MAX_LENGTH = FIELD_MAX_LENGTH.URL;
 const TRAFFIC_SOURCE_API_KEY_MAX_LENGTH = FIELD_MAX_LENGTH.API_KEY;
+
+function renderLengthCounter(value: string | undefined, maxLength: number, className = 'mt-1 text-right text-[11px] text-on-surface-variant/70') {
+  return (
+    <p className={className}>
+      {(value || '').length}/{maxLength}
+    </p>
+  );
+}
 const DEFAULT_MACRO_CONTEXT_INPUT = `{
   "click_id": "clk_demo_1001",
   "campaign_id": "cmp_101",
@@ -489,8 +497,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-surface-container-lowest w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center">
+      <div className="my-8 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden bg-surface-container-lowest sm:my-0">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-outline-variant/10">
           <div>
@@ -510,25 +518,27 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
         </div>
 
         {/* Stepper */}
-        <div className="flex items-center px-6 py-4 bg-surface-container/30 border-b border-outline-variant/10">
-          {steps.map((step, index) => (
-            <React.Fragment key={step.key}>
-              <button
-                onClick={() => setCurrentStep(step.key)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-sm transition-all ${
-                  currentStep === step.key
-                    ? 'bg-primary text-on-primary'
-                    : 'text-on-surface-variant hover:bg-surface-container'
-                }`}
-              >
-                {step.icon}
-                <span className="text-xs font-bold uppercase tracking-widest">{step.label}</span>
-              </button>
-              {index < steps.length - 1 && (
-                <ChevronRight size={16} className="mx-2 text-on-surface-variant/30" />
-              )}
-            </React.Fragment>
-          ))}
+        <div className="overflow-x-auto border-b border-outline-variant/10 bg-surface-container/30 px-6 py-4">
+          <div className="flex min-w-max items-center">
+            {steps.map((step, index) => (
+              <React.Fragment key={step.key}>
+                <button
+                  onClick={() => setCurrentStep(step.key)}
+                  className={`flex shrink-0 items-center gap-2 rounded-sm px-4 py-2 transition-all ${
+                    currentStep === step.key
+                      ? 'bg-primary text-on-primary'
+                      : 'text-on-surface-variant hover:bg-surface-container'
+                  }`}
+                >
+                  {step.icon}
+                  <span className="text-xs font-bold uppercase tracking-widest">{step.label}</span>
+                </button>
+                {index < steps.length - 1 && (
+                  <ChevronRight size={16} className="mx-2 shrink-0 text-on-surface-variant/30" />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
         </div>
 
         {/* Form Content */}
@@ -572,6 +582,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                     errors.name ? 'border-error' : 'border-outline-variant'
                   }`}
                 />
+                {renderLengthCounter(formData.name, TRAFFIC_SOURCE_NAME_MAX_LENGTH)}
                 {errors.name && <p className="mt-1 text-xs text-error">{errors.name}</p>}
               </div>
 
@@ -592,7 +603,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
               </div>
 
               {/* Cost Model & Value */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-4 md:grid-cols-3">
                 <div className="col-span-1">
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                     Cost Model <span className="text-error">*</span>
@@ -664,7 +675,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                 <p className="text-xs text-on-surface-variant mb-3">
                   These fields will be captured from traffic source and available in reports:
                 </p>
-                <div className="grid grid-cols-2 gap-2">
+                 <div className="grid gap-2 md:grid-cols-2">
                   {formData.parameters && formData.parameters.length > 0 ? (
                     formData.parameters.map((param: ParameterTemplate, index: number) => (
                       <div key={index} className="flex items-center gap-2 px-3 py-2 bg-surface rounded-sm border border-outline-variant/20">
@@ -699,6 +710,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   maxLength={TRAFFIC_SOURCE_NOTES_MAX_LENGTH}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
                 />
+                {renderLengthCounter(formData.notes, TRAFFIC_SOURCE_NOTES_MAX_LENGTH)}
               </div>
             </div>
           )}
@@ -718,8 +730,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
               </div>
 
               {/* Parameters Table */}
-              <div className="border border-outline-variant/20 rounded-sm overflow-hidden">
-                <table className="w-full">
+              <div className="overflow-x-auto rounded-sm border border-outline-variant/20">
+                <table className="min-w-[720px] w-full">
                   <thead className="bg-surface-container">
                     <tr>
                       <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
@@ -738,7 +750,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                     {(formData.parameters || []).map((param: ParameterTemplate, index: number) => (
                       <tr key={index} className="border-t border-outline-variant/10">
                         <td className="px-4 py-2">
-                          <input
+                   <input
                             type="text"
                             value={param.alias}
                             onChange={(e) => handleParameterChange(index, 'alias', e.target.value)}
@@ -746,6 +758,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             maxLength={FIELD_MAX_LENGTH.PARAMETER_ALIAS}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
+                          {renderLengthCounter(param.alias, FIELD_MAX_LENGTH.PARAMETER_ALIAS, 'mt-1 text-right text-[10px] text-on-surface-variant/70')}
                         </td>
                         <td className="px-4 py-2">
                           <input
@@ -756,6 +769,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             maxLength={FIELD_MAX_LENGTH.PARAMETER_NAME}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
+                          {renderLengthCounter(param.paramName, FIELD_MAX_LENGTH.PARAMETER_NAME, 'mt-1 text-right text-[10px] text-on-surface-variant/70')}
                         </td>
                         <td className="px-4 py-2">
                           <input
@@ -766,6 +780,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             maxLength={FIELD_MAX_LENGTH.PARAMETER_VALUE}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
+                          {renderLengthCounter(param.macro, FIELD_MAX_LENGTH.PARAMETER_VALUE, 'mt-1 text-right text-[10px] text-on-surface-variant/70')}
                         </td>
                         <td className="px-4 py-2">
                           <button
@@ -913,6 +928,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   maxLength={TRAFFIC_SOURCE_URL_MAX_LENGTH}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                 />
+                {renderLengthCounter(formData.postbackConfig?.url, TRAFFIC_SOURCE_URL_MAX_LENGTH)}
                 <p className="mt-1 text-xs text-on-surface-variant/60">
                   Use macros like {'{click_id}'}, {'{payout}'}, {'{revenue}'} in your URL
                 </p>
@@ -998,6 +1014,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                     maxLength={TRAFFIC_SOURCE_API_KEY_MAX_LENGTH}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                   />
+                  {renderLengthCounter(formData.postbackConfig?.taboolaKey, TRAFFIC_SOURCE_API_KEY_MAX_LENGTH)}
                   <p className="mt-2 text-xs text-on-surface-variant">
                     Required for decoding CPC placeholder and tracking costs. 
                     Contact Taboola support to obtain this key (may take up to 72 hours).
@@ -1065,6 +1082,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                       maxLength={TRAFFIC_SOURCE_URL_MAX_LENGTH}
                       className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                     />
+                    {renderLengthCounter(formData.apiBaseUrl, TRAFFIC_SOURCE_URL_MAX_LENGTH)}
                   </div>
 
                   {/* API Key */}
@@ -1080,10 +1098,11 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                       maxLength={TRAFFIC_SOURCE_API_KEY_MAX_LENGTH}
                       className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                     />
+                    {renderLengthCounter(formData.apiKey, TRAFFIC_SOURCE_API_KEY_MAX_LENGTH)}
                   </div>
 
                   {/* Test Connection */}
-                  <div className="flex items-center gap-3 pt-2">
+                  <div className="flex flex-wrap items-center gap-3 pt-2">
                     <button
                       type="button"
                       onClick={handleTestConnection}
@@ -1162,7 +1181,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-6 border-t border-outline-variant/10">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-6 border-t border-outline-variant/10">
           <button
             type="button"
             onClick={onClose}
@@ -1170,7 +1189,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
           >
             Cancel
           </button>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {currentStep !== 'basic' && (
               <button
                 type="button"

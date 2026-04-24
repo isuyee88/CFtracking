@@ -593,7 +593,7 @@ export class WhitelistService {
       case 'isp':
       case 'fingerprint':
       case 'rule':
-        // 这些类型只需要非空值
+        // These types only require a non-empty value at this stage.
         break;
       default:
         throw new ValidationError(`Unsupported type: ${type}`);
@@ -772,8 +772,8 @@ export class WhitelistService {
    * 验证UA值
    */
   private validateUaValue(value: string, matchMode?: string): void {
-    if (value.length > 1000) {
-      throw new ValidationError('User Agent pattern too long (max 1000 characters)');
+    if (value.length > FIELD_MAX_LENGTH.USER_AGENT_VALUE) {
+      throw new ValidationError(`User Agent pattern too long (max ${FIELD_MAX_LENGTH.USER_AGENT_VALUE} characters)`);
     }
 
     const mode = matchMode || 'exact';

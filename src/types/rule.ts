@@ -55,12 +55,36 @@ export interface EqCondition {
   eq: [string, string | number | boolean | null];
 }
 
+export interface NeCondition {
+  ne: [string, string | number | boolean | null];
+}
+
 export interface InCondition {
   in: [string, Array<string | number | boolean>];
 }
 
 export interface ContainsCondition {
   contains: [string, string];
+}
+
+export interface NotContainsCondition {
+  not_contains: [string, string];
+}
+
+export interface GtCondition {
+  gt: [string, string | number];
+}
+
+export interface GteCondition {
+  gte: [string, string | number];
+}
+
+export interface LtCondition {
+  lt: [string, string | number];
+}
+
+export interface LteCondition {
+  lte: [string, string | number];
 }
 
 export interface ExistsCondition {
@@ -82,8 +106,14 @@ export interface AnyCondition {
 export type RuleExpressionNode =
   | FunctionCondition
   | EqCondition
+  | NeCondition
   | InCondition
   | ContainsCondition
+  | NotContainsCondition
+  | GtCondition
+  | GteCondition
+  | LtCondition
+  | LteCondition
   | ExistsCondition
   | NotCondition
   | AllCondition

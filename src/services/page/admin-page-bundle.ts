@@ -528,6 +528,24 @@ async function buildAuditBundle(env: Env, url: URL): Promise<AdminPageBundle> {
   const endDate = url.searchParams.get('endDate') || defaults.endDate;
   const page = Number(url.searchParams.get('page') || '1') || 1;
   const pageSize = Number(url.searchParams.get('pageSize') || '20') || 20;
+  const campaignId = url.searchParams.get('campaignId') || undefined;
+  const source = url.searchParams.get('source') || undefined;
+  const zoneId = url.searchParams.get('zoneId') || undefined;
+  const utmSource = url.searchParams.get('utmSource') || undefined;
+  const utmCampaign = url.searchParams.get('utmCampaign') || undefined;
+  const subId1 = url.searchParams.get('subId1') || undefined;
+  const subId2 = url.searchParams.get('subId2') || undefined;
+  const subId3 = url.searchParams.get('subId3') || undefined;
+  const country = url.searchParams.get('country') || undefined;
+  const device = url.searchParams.get('device') || undefined;
+  const browser = url.searchParams.get('browser') || undefined;
+  const os = url.searchParams.get('os') || undefined;
+  const isp = url.searchParams.get('isp') || undefined;
+  const fingerprint = url.searchParams.get('fingerprint') || undefined;
+  const ip = url.searchParams.get('ip') || undefined;
+  const visitorId = url.searchParams.get('visitorId') || undefined;
+  const offerId = url.searchParams.get('offerId') || undefined;
+  const flowId = url.searchParams.get('flowId') || undefined;
   const search = url.searchParams.get('search') || undefined;
   const status = url.searchParams.get('status') || 'all';
   const isUnique = status === 'unique' ? true : status === 'nonunique' ? false : undefined;
@@ -536,12 +554,51 @@ async function buildAuditBundle(env: Env, url: URL): Promise<AdminPageBundle> {
     clickRepo.findClicks({
       page,
       pageSize,
+      campaignId,
+      source,
+      zoneId,
+      utmSource,
+      utmCampaign,
+      subId1,
+      subId2,
+      subId3,
+      country,
+      device,
+      browser,
+      os,
+      isp,
+      fingerprint,
+      ip,
+      visitorId,
+      offerId,
+      flowId,
       search,
       startDate,
       endDate,
       isUnique,
     }),
-    clickRepo.getClickStats(startDate, endDate).catch(() => ({
+    clickRepo.getClickStats(startDate, endDate, {
+      campaignId,
+      source,
+      zoneId,
+      utmSource,
+      utmCampaign,
+      subId1,
+      subId2,
+      subId3,
+      country,
+      device,
+      browser,
+      os,
+      isp,
+      fingerprint,
+      ip,
+      visitorId,
+      offerId,
+      flowId,
+      search,
+      isUnique,
+    }).catch(() => ({
       totalClicks: 0,
       uniqueClicks: 0,
       countries: 0,
@@ -556,6 +613,24 @@ async function buildAuditBundle(env: Env, url: URL): Promise<AdminPageBundle> {
       pageSize,
       startDate,
       endDate,
+      campaignId: campaignId || '',
+      source: source || '',
+      zoneId: zoneId || '',
+      utmSource: utmSource || '',
+      utmCampaign: utmCampaign || '',
+      subId1: subId1 || '',
+      subId2: subId2 || '',
+      subId3: subId3 || '',
+      country: country || '',
+      device: device || '',
+      browser: browser || '',
+      os: os || '',
+      isp: isp || '',
+      fingerprint: fingerprint || '',
+      ip: ip || '',
+      visitorId: visitorId || '',
+      offerId: offerId || '',
+      flowId: flowId || '',
       search: search || '',
       status,
     },

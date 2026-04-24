@@ -11,6 +11,7 @@ import { success, error } from '@/utils/response';
 import { ERROR_CODES, HTTP_STATUS } from '@/config/constants';
 import { validateStringField, validateColor, getSafeErrorMessage } from '@/utils/validation';
 import type { CreateCampaignGroupDTO } from '@/types/campaignGroup';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 
 /**
  * 验证 Campaign Group 数据
@@ -20,7 +21,7 @@ function validateCampaignGroupData(data: Record<string, unknown>): { valid: bool
   const nameResult = validateStringField(data.name, '名称', {
     required: true,
     minLength: 1,
-    maxLength: 100,
+    maxLength: FIELD_MAX_LENGTH.GROUP,
     sanitize: true,
   });
 

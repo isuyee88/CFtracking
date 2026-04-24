@@ -8,6 +8,7 @@ import { success, error } from '@/utils/response';
 import { validatePagination, validateRequired, validateStringLength } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 
 const HOSTNAME_REGEX = /^(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i;
 
@@ -57,7 +58,7 @@ export function createDomainRouter(): Hono<{ Bindings: Env }> {
       return c.json(error(hostnameValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
     }
 
-    const lengthValidation = validateStringLength(body.hostname, 3, 255, 'hostname');
+    const lengthValidation = validateStringLength(body.hostname, 3, FIELD_MAX_LENGTH.HOSTNAME, 'hostname');
     if (!lengthValidation.valid) {
       return c.json(error(lengthValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
     }

@@ -5,7 +5,7 @@
  * Logic: 使用 EntityForm 组件实现表单，支持搜索、筛选、分页
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   Globe, 
   Plus, 
@@ -33,7 +33,14 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { TrafficSourceForm } from '../components/TrafficSourceForm';
 import { useToast } from '../components/Toast';
-import { fetchTrafficSources, createTrafficSource, updateTrafficSource, deleteTrafficSource } from '../services/api';
+import {
+  fetchTrafficSources,
+  createTrafficSource,
+  updateTrafficSource,
+  deleteTrafficSource,
+  fetchTrafficSourceAutoruleScopeConfigs,
+  type AutoruleScopeConfig,
+} from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatTrafficSourceForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
@@ -78,6 +85,7 @@ export const TrafficSources = () => {
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>(
     Array.isArray(bootstrap?.data?.trafficSources) ? bootstrap.data.trafficSources : []
   );
+  const [autoruleScopeConfigs, setAutoruleScopeConfigs] = useState<AutoruleScopeConfig[]>([]);
   const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   
@@ -124,12 +132,16 @@ export const TrafficSources = () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await fetchTrafficSources(true, {
-          startDate: dateRange.from,
-          endDate: dateRange.to,
-        });
+        const [data, scopeConfigs] = await Promise.all([
+          fetchTrafficSources(true, {
+            startDate: dateRange.from,
+            endDate: dateRange.to,
+          }),
+          fetchTrafficSourceAutoruleScopeConfigs().catch(() => []),
+        ]);
         if (Array.isArray(data)) {
           setTrafficSources(data);
+          setAutoruleScopeConfigs(Array.isArray(scopeConfigs) ? scopeConfigs : []);
         } else {
           setError('Failed to load traffic sources');
         }
@@ -284,6 +296,11 @@ export const TrafficSources = () => {
   const paginatedSources = filteredSources.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
+  );
+
+  const scopeConfigMap = useMemo(
+    () => new Map(autoruleScopeConfigs.map((config) => [config.scopeId, config])),
+    [autoruleScopeConfigs]
   );
 
   const getTypeLabel = (type: string) => {
@@ -521,6 +538,15 @@ export const TrafficSources = () => {
                           {source.templateId && (
                             <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded max-w-[110px] truncate" title={getTemplateName(source.templateId)}>
                               {truncateLabel(getTemplateName(source.templateId), DISPLAY_MAX_LENGTH.TAG_TEXT)}
+                            </span>
+                          )}
+                          {scopeConfigMap.get(source.id)?.enabled ? (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-secondary-container text-secondary rounded">
+                              Autorule: {scopeConfigMap.get(source.id)?.mode}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-surface-container-high text-on-surface-variant rounded">
+                              Autorule: inherit global
                             </span>
                           )}
                         </div>

@@ -44,6 +44,7 @@ import { CACHE_CONFIGS, ETagCacheManager, ETagGenerator } from '@/services/cache
 import { CacheRefreshConsumer, type CacheRefreshMessage } from '@/services/cache/cache-refresh-consumer';
 import { matchAdminPage } from '@/services/page/admin-page-bundle';
 import { getWorkerVersionInfo } from '@/services/cache/version-utils';
+import { isPublicApiPath } from '@/services/auth/public-api-path';
 import { appendServerTiming, durationMs, nowMs } from '@/utils/server-timing';
 
 // 瀵煎嚭 Durable Objects锛圕loudflare Workers 瑕佹眰锛?
@@ -424,22 +425,6 @@ app.use('*', async (c, next) => {
   }
 });
 
-// API 璁よ瘉淇濇姢 - 鎺掗櫎鍏紑绔偣
-// 娉ㄦ剰锛氳窡韪摼鎺ュ拰杞寲 postback 蹇呴』鍏紑锛屽惁鍒欒仈鐩熻惀閿€鏃犳硶姝ｅ父宸ヤ綔
-const PUBLIC_PATHS = [
-  '/health',
-  '/sw.js',
-  '/__bootstrap',
-  '/__bootstrap-object',
-  '/api/tracking/script',
-  '/api/tracking/kclient',
-  '/api/tracking/click',
-  '/api/tracking/conversion',
-  '/api/auth/login',
-  '/api/auth/status',
-  '/api/webhook',
-];
-
 type AuthMode = 'on' | 'off';
 
 let authOnLogPrinted = false;
@@ -488,7 +473,7 @@ app.use('/api/*', async (c, next) => {
   const path = c.req.path;
   
   // 妫€鏌ユ槸鍚︽槸鍏紑璺緞
-  const isPublicPath = PUBLIC_PATHS.some(publicPath => path.startsWith(publicPath));
+  const isPublicPath = isPublicApiPath(path);
 
   if (isPublicPath) {
     return next();

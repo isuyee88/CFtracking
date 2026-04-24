@@ -7,33 +7,34 @@
 import { Hono } from 'hono';
 import { createCustomMetricService } from './customMetric.service';
 import type { Env } from '@/config/env';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 import { z } from 'zod';
 
 const app = new Hono<{ Bindings: Env }>();
 
 // 验证模式
 const CreateCustomMetricSchema = z.object({
-  name: z.string().min(1).max(50).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
-  displayName: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
+  name: z.string().min(1).max(FIELD_MAX_LENGTH.CUSTOM_METRIC_NAME).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+  displayName: z.string().min(1).max(FIELD_MAX_LENGTH.CUSTOM_METRIC_DISPLAY_NAME),
+  description: z.string().max(FIELD_MAX_LENGTH.CUSTOM_METRIC_DESCRIPTION).optional(),
   type: z.enum(['calculated', 'aggregated']).default('calculated'),
   formula: z.string().min(1),
   dataType: z.enum(['number', 'currency', 'percent']).default('number'),
   format: z.enum(['number', 'currency', 'percent', 'custom']).default('number'),
   decimals: z.number().int().min(0).max(10).default(2),
-  prefix: z.string().max(10).optional(),
-  suffix: z.string().max(10).optional(),
+  prefix: z.string().max(FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX).optional(),
+  suffix: z.string().max(FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX).optional(),
 });
 
 const UpdateCustomMetricSchema = z.object({
-  displayName: z.string().min(1).max(100).optional(),
-  description: z.string().max(500).optional(),
+  displayName: z.string().min(1).max(FIELD_MAX_LENGTH.CUSTOM_METRIC_DISPLAY_NAME).optional(),
+  description: z.string().max(FIELD_MAX_LENGTH.CUSTOM_METRIC_DESCRIPTION).optional(),
   formula: z.string().min(1).optional(),
   dataType: z.enum(['number', 'currency', 'percent']).optional(),
   format: z.enum(['number', 'currency', 'percent', 'custom']).optional(),
   decimals: z.number().int().min(0).max(10).optional(),
-  prefix: z.string().max(10).optional(),
-  suffix: z.string().max(10).optional(),
+  prefix: z.string().max(FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX).optional(),
+  suffix: z.string().max(FIELD_MAX_LENGTH.CUSTOM_METRIC_PREFIX_SUFFIX).optional(),
   status: z.enum(['active', 'inactive']).optional(),
 });
 

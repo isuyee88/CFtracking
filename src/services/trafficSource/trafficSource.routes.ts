@@ -46,6 +46,38 @@ export function createTrafficSourceRouter(): Hono<{ Bindings: Env }> {
     return c.json(success(sources));
   });
 
+  router.get('/autorule-scope-configs', async (c) => {
+    const service = new TrafficSourceService(c.env);
+    const configs = await service.listAutoruleScopeConfigs();
+    return c.json(success(configs));
+  });
+
+  router.put('/autorule-scope-configs/batch', async (c) => {
+    const service = new TrafficSourceService(c.env);
+    const body = await c.req.json().catch(() => ({}));
+    const trafficSourceIds = Array.isArray(body?.trafficSourceIds)
+      ? body.trafficSourceIds.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+      : [];
+
+    if (trafficSourceIds.length === 0) {
+      return c.json(error('trafficSourceIds is required', ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+    }
+
+    const configs = await service.batchApplyAutoruleScopeConfig(trafficSourceIds, {
+      mode: String(body.mode || 'inherit') as any,
+      enabled: body.enabled !== false,
+      bindings: Array.isArray(body.bindings)
+        ? body.bindings.map((item: { ruleId: unknown; priority?: unknown; enabled?: unknown }) => ({
+            ruleId: String(item.ruleId || ''),
+            priority: Number(item.priority || 0),
+            enabled: item.enabled !== false,
+          }))
+        : [],
+    });
+
+    return c.json(success(configs));
+  });
+
   router.post('/macro-preview', async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const context =
@@ -83,6 +115,21 @@ export function createTrafficSourceRouter(): Hono<{ Bindings: Env }> {
     }
   });
 
+  router.get('/:id/autorule-scope-config', async (c) => {
+    const id = c.req.param('id');
+    const service = new TrafficSourceService(c.env);
+
+    try {
+      const config = await service.getAutoruleScopeConfig(id);
+      return c.json(success(config));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Traffic Source not found') {
+        return c.json(error('Traffic Source not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
   router.post('/', async (c) => {
     const body = await c.req.json();
 
@@ -109,6 +156,32 @@ export function createTrafficSourceRouter(): Hono<{ Bindings: Env }> {
     try {
       const ts = await service.update(id, body);
       return c.json(success(ts));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Traffic Source not found') {
+        return c.json(error('Traffic Source not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
+  router.put('/:id/autorule-scope-config', async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const service = new TrafficSourceService(c.env);
+
+    try {
+      const config = await service.saveAutoruleScopeConfig(id, {
+        mode: String(body.mode || 'inherit') as any,
+        enabled: body.enabled !== false,
+        bindings: Array.isArray(body.bindings)
+          ? body.bindings.map((item: { ruleId: unknown; priority?: unknown; enabled?: unknown }) => ({
+              ruleId: String(item.ruleId || ''),
+              priority: Number(item.priority || 0),
+              enabled: item.enabled !== false,
+            }))
+          : [],
+      });
+      return c.json(success(config));
     } catch (err) {
       if (err instanceof Error && err.message === 'Traffic Source not found') {
         return c.json(error('Traffic Source not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);

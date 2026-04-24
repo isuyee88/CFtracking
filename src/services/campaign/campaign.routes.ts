@@ -10,6 +10,7 @@ import { success, error } from '@/utils/response';
 import { validatePagination, validateRequired, validateStringLength } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 
 export function createCampaignRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -62,7 +63,7 @@ export function createCampaignRouter(): Hono<{ Bindings: Env }> {
       return c.json(error(nameValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
     }
 
-    const aliasValidation = validateStringLength(body.alias, 2, 50, 'alias');
+    const aliasValidation = validateStringLength(body.alias, 2, FIELD_MAX_LENGTH.CAMPAIGN_ALIAS, 'alias');
     if (!aliasValidation.valid) {
       return c.json(error(aliasValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
     }
@@ -229,6 +230,21 @@ export function createCampaignRouter(): Hono<{ Bindings: Env }> {
     }
   });
 
+  router.get('/:id/autorule-scope-config', async (c) => {
+    const id = c.req.param('id');
+    const service = new CampaignService(c.env);
+
+    try {
+      const config = await service.getAutoruleScopeConfig(id);
+      return c.json(success(config));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Campaign not found') {
+        return c.json(error('Campaign not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
   router.put('/:id/autorule-binding', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json();
@@ -277,6 +293,36 @@ export function createCampaignRouter(): Hono<{ Bindings: Env }> {
         }))
       );
       return c.json(success(nextBindings));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Campaign not found') {
+        return c.json(error('Campaign not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
+  router.put('/:id/autorule-scope-config', async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const service = new CampaignService(c.env);
+
+    if (!body || typeof body !== 'object') {
+      return c.json(error('scope config payload is required', ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+    }
+
+    try {
+      const config = await service.saveAutoruleScopeConfig(id, {
+        mode: String(body.mode || 'inherit') as any,
+        enabled: body.enabled !== false,
+        bindings: Array.isArray(body.bindings)
+          ? body.bindings.map((item: { ruleId: unknown; priority?: unknown; enabled?: unknown }) => ({
+              ruleId: String(item.ruleId || ''),
+              priority: Number(item.priority || 0),
+              enabled: item.enabled !== false,
+            }))
+          : [],
+      });
+      return c.json(success(config));
     } catch (err) {
       if (err instanceof Error && err.message === 'Campaign not found') {
         return c.json(error('Campaign not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);

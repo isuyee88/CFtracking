@@ -17,6 +17,7 @@ import { fetchTrafficSources, fetchRules, type Rule } from '../services/api';
 import type { TrafficSource } from '../types/trafficSource';
 import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
 import { clampInput, truncateLabel } from '../utils/text';
+import { buildCampaignTrackingUrl } from '../utils/campaignUrl';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -139,26 +140,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
     if (!formData.domain || !formData.alias) return '';
 
     const selectedSource = trafficSources.find(ts => ts.id === formData.trafficSource);
-    const params = selectedSource?.parameters;
-
-    let baseUrl = formData.domain.startsWith('http') ? formData.domain : `https://${formData.domain}`;
-    baseUrl = baseUrl.replace(/\/$/, '');
-    let url = `${baseUrl}/${formData.alias}`;
-
-    if (params && Array.isArray(params) && params.length > 0) {
-      const searchParams = new URLSearchParams();
-      params.forEach((p: any) => {
-        if (p.paramName && p.macro) {
-          searchParams.set(p.paramName, p.macro);
-        }
-      });
-      const queryString = searchParams.toString();
-      if (queryString) {
-        url = `${url}?${queryString}`;
-      }
-    }
-
-    return url;
+    return buildCampaignTrackingUrl(formData.domain, formData.alias, selectedSource?.parameters);
   }, [formData.domain, formData.alias, formData.trafficSource, trafficSources]);
 
   // 自动生成 alias（基于 name）
@@ -309,8 +291,8 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-surface-container-lowest w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center">
+      <div className="my-8 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden bg-surface-container-lowest sm:my-0">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-outline-variant/10">
           <h2 className="text-xl font-display font-bold text-primary">
@@ -322,25 +304,27 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-outline-variant/10">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-2 px-6 py-4 text-sm font-medium transition-colors border-b-2",
-                  activeTab === tab.id
-                    ? "border-primary text-primary"
-                    : "border-transparent text-on-surface-variant hover:text-primary"
-                )}
-              >
-                <Icon size={16} />
-                {tab.label}
-              </button>
-            );
-          })}
+        <div className="overflow-x-auto border-b border-outline-variant/10">
+          <div className="flex min-w-max">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2 border-b-2 px-6 py-4 text-sm font-medium transition-colors",
+                    activeTab === tab.id
+                      ? "border-primary text-primary"
+                      : "border-transparent text-on-surface-variant hover:text-primary"
+                  )}
+                >
+                  <Icon size={16} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Form Content */}
@@ -371,7 +355,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid gap-6 md:grid-cols-2">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                     Campaign Name *
@@ -402,10 +386,13 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     maxLength={CAMPAIGN_ALIAS_MAX_LENGTH}
                     required
                   />
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    {formData.alias.length}/{CAMPAIGN_ALIAS_MAX_LENGTH}
+                  </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid gap-6 md:grid-cols-2">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                     Domain *
@@ -419,6 +406,9 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     maxLength={CAMPAIGN_DOMAIN_MAX_LENGTH}
                     required
                   />
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    {formData.domain.length}/{CAMPAIGN_DOMAIN_MAX_LENGTH}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
@@ -432,10 +422,13 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     placeholder="Select or create group"
                     maxLength={CAMPAIGN_GROUP_MAX_LENGTH}
                   />
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    {formData.group.length}/{CAMPAIGN_GROUP_MAX_LENGTH}
+                  </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid gap-6 md:grid-cols-2">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                     Traffic Source
@@ -489,7 +482,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
               {/* Cost Configuration */}
               <div className="bg-surface-container p-4 rounded-sm">
                 <h3 className="text-sm font-bold text-primary mb-4">Cost Configuration</h3>
-                <div className="grid grid-cols-3 gap-6">
+                <div className="grid gap-6 md:grid-cols-3">
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                       Cost Model
@@ -540,7 +533,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
               {/* Uniqueness Configuration */}
               <div className="bg-surface-container p-4 rounded-sm">
                 <h3 className="text-sm font-bold text-primary mb-4">Uniqueness (Deduplication)</h3>
-                <div className="grid grid-cols-3 gap-6">
+                <div className="grid gap-6 md:grid-cols-3">
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                       Uniqueness Method
@@ -570,6 +563,9 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                         placeholder="clickid"
                         maxLength={CAMPAIGN_UNIQUE_PARAMETER_MAX_LENGTH}
                       />
+                      <p className="mt-1 text-xs text-on-surface-variant">
+                        {formData.uniquenessParameter.length}/{CAMPAIGN_UNIQUE_PARAMETER_MAX_LENGTH}
+                      </p>
                     </div>
                   )}
                   <div>
@@ -671,7 +667,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
 
                 <div className="space-y-3">
                   {formData.autoruleBindings.map((binding, index) => (
-                      <div key={`${binding.ruleId || 'binding'}-${index}`} className="grid grid-cols-[minmax(0,1fr)_120px_48px] gap-3 items-end border border-outline-variant/20 p-3 rounded-sm bg-surface">
+                      <div key={`${binding.ruleId || 'binding'}-${index}`} className="grid items-end gap-3 rounded-sm border border-outline-variant/20 bg-surface p-3 md:grid-cols-[minmax(0,1fr)_120px_48px]">
                         <div>
                           <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                             Autorule
@@ -683,7 +679,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                           >
                             <option value="">Select autorule...</option>
                             {selectableAutorules.map((rule) => (
-                              <option key={rule.id} value={rule.id}>
+                              <option key={rule.id} value={rule.id} title={`${rule.name} [${rule.type}]`}>
                                 {truncateLabel(`${rule.name} [${rule.type}]`, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
                               </option>
                             ))}
@@ -767,13 +763,16 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                   placeholder="Add notes about this campaign..."
                   maxLength={CAMPAIGN_NOTES_MAX_LENGTH}
                 />
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  {formData.notes.length}/{CAMPAIGN_NOTES_MAX_LENGTH}
+                </p>
               </div>
             </div>
           )}
         </form>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-6 border-t border-outline-variant/10">
+        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-outline-variant/10 p-6">
           <button
             type="button"
             onClick={onClose}

@@ -93,7 +93,9 @@ function getCurrentRangePreset(fallback: string): string {
 
 const CAMPAIGN_ROW_HEIGHT = 72;
 const CAMPAIGN_HEADER_HEIGHT = 72;
-const CAMPAIGN_NAME_DISPLAY_LIMIT = 30;
+const CAMPAIGN_NAME_DISPLAY_LIMIT = 36;
+const CAMPAIGN_ALIAS_DISPLAY_LIMIT = 28;
+const CAMPAIGN_GROUP_DISPLAY_LIMIT = 32;
 
 function getCampaignTableHeight(rowCount: number): number {
   if (rowCount <= 0) {
@@ -111,6 +113,22 @@ function truncateCampaignName(name: string): string {
   }
   const maxLength = Math.min(CAMPAIGN_NAME_DISPLAY_LIMIT, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT);
   return truncateLabel(normalizedName, maxLength);
+}
+
+function truncateCampaignAlias(alias: string): string {
+  const normalizedAlias = String(alias || '').trim();
+  if (!normalizedAlias) {
+    return '-';
+  }
+  return truncateLabel(normalizedAlias, CAMPAIGN_ALIAS_DISPLAY_LIMIT);
+}
+
+function truncateCampaignGroup(group: string): string {
+  const normalizedGroup = String(group || '').trim();
+  if (!normalizedGroup) {
+    return '-';
+  }
+  return truncateLabel(normalizedGroup, CAMPAIGN_GROUP_DISPLAY_LIMIT);
 }
 
 // Backend Campaign data structure
@@ -138,6 +156,7 @@ interface Campaign {
   id: string;
   displayId?: string;
   name: string;
+  alias: string;
   status: 'Active' | 'Paused' | 'Deleted';
   type: 'Redirect' | 'Direct';
   group: string;
@@ -166,6 +185,7 @@ interface CampaignStats {
 const transformCampaign = (backend: BackendCampaign, stats?: CampaignStats): Campaign => ({
   id: backend.displayId || backend.id,
   name: backend.name,
+  alias: backend.alias || '',
   status: backend.status === 'active' ? 'Active' : backend.status === 'paused' ? 'Paused' : 'Deleted',
   type: 'Redirect',
   group: backend.group || 'Default',
@@ -507,6 +527,7 @@ export const CampaignManagement = () => {
   const filteredCampaigns = React.useMemo(() => {
     let result = campaigns.filter(campaign => {
       const matchesSearch = campaign.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           campaign.alias?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            campaign.id?.toString().includes(searchTerm) ||
                            campaign.group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            false;
@@ -670,7 +691,7 @@ export const CampaignManagement = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" size={16} />
             <input 
               type="text" 
-              placeholder="Search by name, ID, or group..."
+              placeholder="Search by name, alias, ID, or group..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-canvas text-sm border border-border-default focus:border-accent-fg focus:ring-2 focus:ring-accent-subtle rounded-md outline-none transition-all text-fg-default placeholder:text-fg-subtle"
@@ -749,9 +770,9 @@ export const CampaignManagement = () => {
                     </button>
                     <p
                       className="text-xs text-medium-contrast truncate max-w-[220px]"
-                      title={`ID: ${row.displayId || row.id}`}
+                      title={`Alias: ${row.alias || '-'} | ID: ${row.displayId || row.id}`}
                     >
-                      ID: {truncateLabel(row.displayId || row.id, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+                      Alias: {truncateCampaignAlias(row.alias)} | ID: {truncateLabel(row.displayId || row.id, 18)}
                     </p>
                   </div>
                 </div>
@@ -796,15 +817,15 @@ export const CampaignManagement = () => {
             {
               key: 'group',
               label: 'Group',
-              width: '120px',
+              width: '160px',
               sorter: (a: any, b: any) => a.group.localeCompare(b.group),
               showSorter: true,
               render: (_: any, row: any) => (
                 <span
-                  className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-medium-contrast rounded-sm inline-block max-w-[110px] truncate"
+                  className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-medium-contrast rounded-sm inline-block max-w-[150px] truncate"
                   title={row.group}
                 >
-                  {truncateLabel(row.group, DISPLAY_MAX_LENGTH.TAG_TEXT)}
+                  {truncateCampaignGroup(row.group)}
                 </span>
               ),
             },

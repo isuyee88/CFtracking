@@ -17,6 +17,16 @@ import {
   CheckCircle,
   Clock,
 } from 'lucide-react';
+import { FIELD_MAX_LENGTH } from '@/constants/fieldConstraints';
+import { clampInput, truncateLabel } from '@/utils/text';
+import {
+  cancelExportTask,
+  createExportTask,
+  deleteExportTask,
+  fetchExportTasks,
+  fetchExportTaskStats,
+  retryExportTask,
+} from '@/services/api';
 
 interface ExportTask {
   id: string;
@@ -87,6 +97,14 @@ const STATUS_CONFIG: Record<
 
 const EXPORT_TASK_DRAFT_STORAGE_KEY = 'cftracking.export-task-draft.v1';
 
+function renderLengthCounter(value: string | undefined, maxLength: number) {
+  return (
+    <p className="mt-1 text-right text-[11px] text-gray-500">
+      {(value || '').length}/{maxLength}
+    </p>
+  );
+}
+
 export default function ExportedReports() {
   const [tasks, setTasks] = useState<ExportTask[]>([]);
   const [stats, setStats] = useState<ExportTaskStats | null>(null);
@@ -96,11 +114,8 @@ export default function ExportedReports() {
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/export-tasks');
-      const data = await response.json();
-      if (data.success) {
-        setTasks(data.data.list);
-      }
+      const list = await fetchExportTasks();
+      setTasks(Array.isArray(list) ? list : []);
     } catch (error) {
       console.error('Failed to fetch export tasks:', error);
     } finally {
@@ -110,11 +125,8 @@ export default function ExportedReports() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const response = await fetch('/api/export-tasks/stats');
-      const data = await response.json();
-      if (data.success) {
-        setStats(data.data);
-      }
+      const data = await fetchExportTaskStats();
+      setStats(data ?? null);
     } catch (error) {
       console.error('Failed to fetch export task stats:', error);
     }
@@ -134,13 +146,8 @@ export default function ExportedReports() {
 
   const handleCancel = async (taskId: string) => {
     try {
-      const response = await fetch(`/api/export-tasks/${taskId}/cancel`, {
-        method: 'POST',
-      });
-      const data = await response.json();
-      if (data.success) {
-        fetchTasks();
-      }
+      await cancelExportTask(taskId);
+      fetchTasks();
     } catch (error) {
       console.error('Failed to cancel task:', error);
     }
@@ -148,13 +155,8 @@ export default function ExportedReports() {
 
   const handleRetry = async (taskId: string) => {
     try {
-      const response = await fetch(`/api/export-tasks/${taskId}/retry`, {
-        method: 'POST',
-      });
-      const data = await response.json();
-      if (data.success) {
-        fetchTasks();
-      }
+      await retryExportTask(taskId);
+      fetchTasks();
     } catch (error) {
       console.error('Failed to retry task:', error);
     }
@@ -163,14 +165,9 @@ export default function ExportedReports() {
   const handleDelete = async (taskId: string) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
     try {
-      const response = await fetch(`/api/export-tasks/${taskId}`, {
-        method: 'DELETE',
-      });
-      const data = await response.json();
-      if (data.success) {
-        fetchTasks();
-        fetchStats();
-      }
+      await deleteExportTask(taskId);
+      fetchTasks();
+      fetchStats();
     } catch (error) {
       console.error('Failed to delete task:', error);
     }
@@ -191,7 +188,7 @@ export default function ExportedReports() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center mb-4">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Exported Reports
           </h1>
@@ -205,7 +202,7 @@ export default function ExportedReports() {
         </div>
 
         {stats && (
-          <div className="grid grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-2 gap-4 mb-6 xl:grid-cols-5">
             <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
               <div className="text-sm text-gray-600 dark:text-gray-400">Total</div>
               <div className="text-2xl font-bold">{stats.total}</div>
@@ -256,10 +253,12 @@ export default function ExportedReports() {
               const statusConfig = STATUS_CONFIG[task.status];
               return (
                 <div key={task.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <div className="flex items-start justify-between">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="font-medium">{task.name}</h3>
+                      <div className="mb-2 flex flex-wrap items-center gap-3">
+                        <h3 className="max-w-full break-words font-medium" title={task.name}>
+                          {truncateLabel(task.name, FIELD_MAX_LENGTH.EXPORT_TASK_NAME)}
+                        </h3>
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig.color}`}
                         >
@@ -269,14 +268,14 @@ export default function ExportedReports() {
                       </div>
 
                       <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                        <div className="flex items-center gap-4">
+                        <div className="flex flex-wrap items-center gap-4">
                           <span>Type: {ENTITY_TYPE_LABELS[task.entityType] || task.entityType}</span>
                           <span>Format: {task.format.toUpperCase()}</span>
                           {task.totalRecords > 0 && <span>Records: {task.totalRecords}</span>}
                           {task.fileSize > 0 && <span>Size: {formatFileSize(task.fileSize)}</span>}
                         </div>
 
-                        <div className="flex items-center gap-4">
+                        <div className="flex flex-wrap items-center gap-4">
                           <span>Created: {formatDate(task.createdAt)}</span>
                           {task.completedAt && <span>Completed: {formatDate(task.completedAt)}</span>}
                         </div>
@@ -304,7 +303,7 @@ export default function ExportedReports() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 ml-4">
+                    <div className="ml-0 flex flex-wrap items-center gap-2 lg:ml-4">
                       {task.status === 'completed' && task.fileUrl && (
                         <button
                           onClick={() => handleDownload(task)}
@@ -422,20 +421,14 @@ function CreateExportModal({
     setLoading(true);
 
     try {
-      const response = await fetch('/api/export-tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await createExportTask({
           name: name || `${entityType}-export-${new Date().toISOString().split('T')[0]}`,
           entityType,
           format,
           filters,
           dateRange,
           fields,
-        }),
       });
-
-      const data = await response.json();
       if (data.success) {
         onSuccess();
         onClose();
@@ -448,8 +441,8 @@ function CreateExportModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black bg-opacity-50 p-4 sm:items-center">
+      <div className="my-8 w-full max-w-md rounded-lg bg-white shadow-xl dark:bg-gray-800 sm:my-0">
         <div className="p-4 border-b dark:border-gray-700">
           <h2 className="text-lg font-semibold">Create Export Task</h2>
         </div>
@@ -460,10 +453,12 @@ function CreateExportModal({
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => setName(clampInput(e.target.value, FIELD_MAX_LENGTH.EXPORT_TASK_NAME))}
               placeholder="Export name (optional)"
               className="w-full px-3 py-2 border dark:border-gray-700 rounded-lg dark:bg-gray-700"
+              maxLength={FIELD_MAX_LENGTH.EXPORT_TASK_NAME}
             />
+            {renderLengthCounter(name, FIELD_MAX_LENGTH.EXPORT_TASK_NAME)}
           </div>
 
           <div>
@@ -498,7 +493,7 @@ function CreateExportModal({
             </select>
           </div>
 
-          <div className="flex justify-end gap-2 pt-4">
+          <div className="flex flex-wrap justify-end gap-2 pt-4">
             <button
               type="button"
               onClick={onClose}

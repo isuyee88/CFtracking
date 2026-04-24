@@ -24,10 +24,19 @@ export interface ClickQueryParams {
   campaignId?: string;
   startDate?: string;
   endDate?: string;
+  source?: string;
+  zoneId?: string;
+  utmSource?: string;
+  utmCampaign?: string;
+  subId1?: string;
+  subId2?: string;
+  subId3?: string;
   country?: string;
   device?: string;
   browser?: string;
   os?: string;
+  isp?: string;
+  fingerprint?: string;
   ip?: string;
   visitorId?: string;
   offerId?: string;
@@ -43,7 +52,7 @@ export interface ClickListResult {
   pageSize: number;
 }
 
-const GOVERNANCE_COLUMN_NAMES = ['matchedRuleId', 'matchedRuleLayer', 'matchedRuleReason'] as const;
+const GOVERNANCE_COLUMN_NAMES = ['governanceAction', 'matchedRuleId', 'matchedRuleLayer', 'matchedRuleReason'] as const;
 
 const BASE_CLICK_COLUMNS = [
   'clickId', 'campaignId', 'flowId', 'landingPageId', 'offerId',
@@ -75,7 +84,7 @@ export class ClickRepository extends BaseRepository<ClickData> {
   async saveClick(data: ClickData): Promise<void> {
     const now = new Date().toISOString();
     const availableColumns = await this.getClickColumns();
-    const supportsGovernanceColumns = GOVERNANCE_COLUMN_NAMES.every((column) => availableColumns.includes(column));
+    const availableGovernanceColumns = GOVERNANCE_COLUMN_NAMES.filter((column) => availableColumns.includes(column));
 
     const columns = [
       'id', 'clickId', 'campaignId', 'flowId', 'landingPageId', 'offerId',
@@ -94,12 +103,12 @@ export class ClickRepository extends BaseRepository<ClickData> {
       'createdAt',
     ];
 
-    if (supportsGovernanceColumns) {
-      columns.splice(columns.length - 1, 0, ...GOVERNANCE_COLUMN_NAMES);
+    if (availableGovernanceColumns.length > 0) {
+      columns.splice(columns.length - 1, 0, ...availableGovernanceColumns);
     }
 
     const placeholders = columns.map(() => '?').join(', ');
-    const normalizedRiskReasons = this.normalizeRiskReasons(data, supportsGovernanceColumns);
+    const normalizedRiskReasons = this.normalizeRiskReasons(data, new Set(availableGovernanceColumns));
 
     const values = [
       data.clickId,
@@ -168,14 +177,20 @@ export class ClickRepository extends BaseRepository<ClickData> {
       now,
     ];
 
-    if (supportsGovernanceColumns) {
-      values.splice(
-        values.length - 1,
-        0,
-        data.matchedRuleId ?? null,
-        data.matchedRuleLayer ?? null,
-        data.matchedRuleReason ?? null,
-      );
+    if (availableGovernanceColumns.length > 0) {
+      const governanceValues = availableGovernanceColumns.map((column) => {
+        switch (column) {
+          case 'governanceAction':
+            return data.governanceAction ?? null;
+          case 'matchedRuleId':
+            return data.matchedRuleId ?? null;
+          case 'matchedRuleLayer':
+            return data.matchedRuleLayer ?? null;
+          case 'matchedRuleReason':
+            return data.matchedRuleReason ?? null;
+        }
+      });
+      values.splice(values.length - 1, 0, ...governanceValues);
     }
 
     try {
@@ -213,10 +228,19 @@ export class ClickRepository extends BaseRepository<ClickData> {
       campaignId,
       startDate,
       endDate,
+      source,
+      zoneId,
+      utmSource,
+      utmCampaign,
+      subId1,
+      subId2,
+      subId3,
       country,
       device,
       browser,
       os,
+      isp,
+      fingerprint,
       ip,
       visitorId,
       offerId,
@@ -227,18 +251,48 @@ export class ClickRepository extends BaseRepository<ClickData> {
 
     const conditions: string[] = [];
     const values: (string | number)[] = [];
+    const normalizedStartDate = this.normalizeDateBoundary(startDate, 'start');
+    const normalizedEndDate = this.normalizeDateBoundary(endDate, 'end');
 
     if (campaignId) {
       conditions.push('c.campaignId = ?');
       values.push(campaignId);
     }
-    if (startDate) {
+    if (normalizedStartDate) {
       conditions.push('c.timestamp >= ?');
-      values.push(startDate);
+      values.push(normalizedStartDate);
     }
-    if (endDate) {
+    if (normalizedEndDate) {
       conditions.push('c.timestamp <= ?');
-      values.push(endDate);
+      values.push(normalizedEndDate);
+    }
+    if (source) {
+      conditions.push("COALESCE(NULLIF(ts.name, ''), NULLIF(cmp.trafficSource, '')) = ?");
+      values.push(source);
+    }
+    if (zoneId) {
+      conditions.push("COALESCE(NULLIF(c.subId1, ''), NULLIF(c.subId2, ''), NULLIF(c.subId3, '')) = ?");
+      values.push(zoneId);
+    }
+    if (utmSource) {
+      conditions.push('c.utmSource = ?');
+      values.push(utmSource);
+    }
+    if (utmCampaign) {
+      conditions.push('c.utmCampaign = ?');
+      values.push(utmCampaign);
+    }
+    if (subId1) {
+      conditions.push('c.subId1 = ?');
+      values.push(subId1);
+    }
+    if (subId2) {
+      conditions.push('c.subId2 = ?');
+      values.push(subId2);
+    }
+    if (subId3) {
+      conditions.push('c.subId3 = ?');
+      values.push(subId3);
     }
     if (country) {
       conditions.push('c.country = ?');
@@ -255,6 +309,14 @@ export class ClickRepository extends BaseRepository<ClickData> {
     if (os) {
       conditions.push('c.os = ?');
       values.push(os);
+    }
+    if (isp) {
+      conditions.push('c.isp = ?');
+      values.push(isp);
+    }
+    if (fingerprint) {
+      conditions.push('c.fingerprint = ?');
+      values.push(fingerprint);
     }
     if (ip) {
       conditions.push('c.ip = ?');
@@ -299,7 +361,11 @@ export class ClickRepository extends BaseRepository<ClickData> {
     const offset = (page - 1) * pageSize;
 
     const allValues = [...values, ...ftsValues];
-    const countSql = `SELECT COUNT(*) as total FROM clicks c ${whereClause}`;
+    const joins = `
+      LEFT JOIN campaigns cmp ON cmp.id = c.campaignId
+      LEFT JOIN trafficSources ts ON ts.id = cmp.trafficSource
+    `;
+    const countSql = `SELECT COUNT(*) as total FROM clicks c ${joins} ${whereClause}`;
     const countStmt = this.db.prepare(countSql);
     const countResult = await (allValues.length > 0
       ? countStmt.bind(...allValues)
@@ -308,8 +374,12 @@ export class ClickRepository extends BaseRepository<ClickData> {
     const clickColumns = await this.getSelectableColumns();
 
     const listSql = `
-      SELECT ${clickColumns}
+      SELECT
+        ${clickColumns},
+        COALESCE(NULLIF(ts.name, ''), NULLIF(cmp.trafficSource, '')) as source,
+        COALESCE(NULLIF(c.subId1, ''), NULLIF(c.subId2, ''), NULLIF(c.subId3, '')) as zoneId
       FROM clicks c
+      ${joins}
       ${whereClause}
       ORDER BY c.timestamp DESC
       LIMIT ? OFFSET ?
@@ -374,30 +444,144 @@ export class ClickRepository extends BaseRepository<ClickData> {
   async getClickStats(
     startDate: string,
     endDate: string,
-    campaignId?: string,
+    campaignIdOrFilters?: string | Omit<ClickQueryParams, 'page' | 'pageSize' | 'startDate' | 'endDate'>,
   ): Promise<{
     totalClicks: number;
     uniqueClicks: number;
     countries: number;
     deviceTypes: number;
   }> {
-    const cacheKey = `query:clicks:stats:${startDate}:${endDate}:${campaignId ?? 'all'}`;
+    const filters =
+      typeof campaignIdOrFilters === 'string'
+        ? { campaignId: campaignIdOrFilters }
+        : (campaignIdOrFilters || {});
+    const cacheKey = buildQueryCacheKey('clicks:stats', {
+      startDate,
+      endDate,
+      ...filters,
+    });
     return this.queryCache.getOrFetch(cacheKey, async () => {
+      const {
+        campaignId,
+        source,
+        zoneId,
+        utmSource,
+        utmCampaign,
+        subId1,
+        subId2,
+        subId3,
+        country,
+        device,
+        browser,
+        os,
+        isp,
+        fingerprint,
+        ip,
+        visitorId,
+        offerId,
+        flowId,
+        isUnique,
+        search,
+      } = filters;
+
       let sql = `
         SELECT
           COUNT(*) as totalClicks,
           SUM(CASE WHEN isUnique = 1 THEN 1 ELSE 0 END) as uniqueClicks,
           COUNT(DISTINCT country) as countries,
           COUNT(DISTINCT device) as deviceTypes
-        FROM clicks
-        WHERE timestamp >= ? AND timestamp <= ?
+        FROM clicks c
+        LEFT JOIN campaigns cmp ON cmp.id = c.campaignId
+        LEFT JOIN trafficSources ts ON ts.id = cmp.trafficSource
+        WHERE c.timestamp >= ? AND c.timestamp <= ?
       `;
 
-      const values: (string | number)[] = [startDate, endDate];
+      const normalizedStartDate = this.normalizeDateBoundary(startDate, 'start') || startDate;
+      const normalizedEndDate = this.normalizeDateBoundary(endDate, 'end') || endDate;
+      const values: (string | number)[] = [normalizedStartDate, normalizedEndDate];
 
       if (campaignId) {
-        sql += ' AND campaignId = ?';
+        sql += ' AND c.campaignId = ?';
         values.push(campaignId);
+      }
+      if (source) {
+        sql += " AND COALESCE(NULLIF(ts.name, ''), NULLIF(cmp.trafficSource, '')) = ?";
+        values.push(source);
+      }
+      if (zoneId) {
+        sql += " AND COALESCE(NULLIF(c.subId1, ''), NULLIF(c.subId2, ''), NULLIF(c.subId3, '')) = ?";
+        values.push(zoneId);
+      }
+      if (utmSource) {
+        sql += ' AND c.utmSource = ?';
+        values.push(utmSource);
+      }
+      if (utmCampaign) {
+        sql += ' AND c.utmCampaign = ?';
+        values.push(utmCampaign);
+      }
+      if (subId1) {
+        sql += ' AND c.subId1 = ?';
+        values.push(subId1);
+      }
+      if (subId2) {
+        sql += ' AND c.subId2 = ?';
+        values.push(subId2);
+      }
+      if (subId3) {
+        sql += ' AND c.subId3 = ?';
+        values.push(subId3);
+      }
+      if (country) {
+        sql += ' AND c.country = ?';
+        values.push(country);
+      }
+      if (device) {
+        sql += ' AND c.device = ?';
+        values.push(device);
+      }
+      if (browser) {
+        sql += ' AND c.browser = ?';
+        values.push(browser);
+      }
+      if (os) {
+        sql += ' AND c.os = ?';
+        values.push(os);
+      }
+      if (isp) {
+        sql += ' AND c.isp = ?';
+        values.push(isp);
+      }
+      if (fingerprint) {
+        sql += ' AND c.fingerprint = ?';
+        values.push(fingerprint);
+      }
+      if (ip) {
+        sql += ' AND c.ip = ?';
+        values.push(ip);
+      }
+      if (visitorId) {
+        sql += ' AND c.visitorId = ?';
+        values.push(visitorId);
+      }
+      if (offerId) {
+        sql += ' AND c.offerId = ?';
+        values.push(offerId);
+      }
+      if (flowId) {
+        sql += ' AND c.flowId = ?';
+        values.push(flowId);
+      }
+      if (isUnique !== undefined) {
+        sql += ' AND c.isUnique = ?';
+        values.push(isUnique ? 1 : 0);
+      }
+      if (search && search.trim()) {
+        const escapedSearch = search
+          .replace(/"/g, '""')
+          .replace(/'/g, "''");
+        sql += ' AND c.rowid IN (SELECT rowid FROM clicks_fts WHERE clicks_fts MATCH ?)';
+        values.push(`"${escapedSearch}"`);
       }
 
       const result = await this.db.prepare(sql).bind(...values).first();
@@ -472,14 +656,21 @@ export class ClickRepository extends BaseRepository<ClickData> {
     ].join(', ');
   }
 
-  private normalizeRiskReasons(data: ClickData, supportsGovernanceColumns: boolean): string | null {
+  private normalizeRiskReasons(data: ClickData, availableGovernanceColumns: Set<string>): string | null {
     const reasons = Array.isArray(data.riskReasons)
       ? data.riskReasons.filter((reason): reason is string => typeof reason === 'string' && reason.trim().length > 0)
       : [];
 
-    if (!supportsGovernanceColumns) {
+    if (!availableGovernanceColumns.has('governanceAction')) {
+      this.pushUniqueReason(reasons, data.governanceAction ? `governance_action:${data.governanceAction}` : null);
+    }
+    if (!availableGovernanceColumns.has('matchedRuleLayer')) {
       this.pushUniqueReason(reasons, data.matchedRuleLayer ? `governance_layer:${data.matchedRuleLayer}` : null);
+    }
+    if (!availableGovernanceColumns.has('matchedRuleId')) {
       this.pushUniqueReason(reasons, data.matchedRuleId ? `governance_rule:${data.matchedRuleId}` : null);
+    }
+    if (!availableGovernanceColumns.has('matchedRuleReason')) {
       this.pushUniqueReason(reasons, data.matchedRuleReason ? `governance_reason:${data.matchedRuleReason}` : null);
     }
 
@@ -492,5 +683,15 @@ export class ClickRepository extends BaseRepository<ClickData> {
     }
 
     reasons.push(value);
+  }
+
+  private normalizeDateBoundary(value: string | undefined, boundary: 'start' | 'end'): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    return value.includes('T')
+      ? value
+      : `${value}${boundary === 'start' ? 'T00:00:00.000Z' : 'T23:59:59.999Z'}`;
   }
 }

@@ -99,6 +99,7 @@ const BUILTIN_REPORT_METRICS: ReportMetric[] = [
   'margin',
   'epc',
   'cpc',
+  'unique_clicks',
   'unique_visitors',
   'fraud_clicks',
   'bot_clicks',
@@ -112,6 +113,7 @@ const BUILTIN_REPORT_METRICS: ReportMetric[] = [
 const BUILTIN_REPORT_METRIC_SET = new Set<ReportMetric>(BUILTIN_REPORT_METRICS);
 
 const BUILTIN_METRIC_ALIASES: Record<string, ReportMetric> = {
+  uniqueClicks: 'unique_clicks',
   uniqueVisitors: 'unique_visitors',
 };
 

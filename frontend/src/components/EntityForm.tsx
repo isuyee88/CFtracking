@@ -44,6 +44,29 @@ export interface FormField {
   showWhen?: (data: Record<string, any>) => boolean;
 }
 
+function supportsLengthCounter(field: FormField): boolean {
+  return Boolean(
+    field.maxLength &&
+      (field.type === 'text' ||
+        field.type === 'textarea' ||
+        field.type === 'url' ||
+        field.type === 'email' ||
+        field.type === 'password')
+  );
+}
+
+function renderLengthCounter(value: unknown, maxLength?: number) {
+  if (!maxLength || typeof value !== 'string') {
+    return null;
+  }
+
+  return (
+    <p className="mt-1 text-right text-[11px] text-on-surface-variant/70">
+      {value.length}/{maxLength}
+    </p>
+  );
+}
+
 function isFieldVisible(field: FormField, data: Record<string, any>): boolean {
   return field.showWhen ? field.showWhen(data) : true;
 }
@@ -70,6 +93,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [draftInputs, setDraftInputs] = useState<Record<string, string>>({});
 
   const computedInitialData = useMemo(() => {
     if (!isOpen) return null;
@@ -86,6 +110,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
       setFormData(computedInitialData);
       setErrors({});
       setTouched({});
+      setDraftInputs({});
     }
   }, [isOpen, computedInitialData]);
 
@@ -120,6 +145,37 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   const handleBlur = (name: string) => {
     setTouched(prev => ({ ...prev, [name]: true }));
     validateField(name, formData[name]);
+  };
+
+  const getDraftInputValue = (field: FormField): string => draftInputs[field.name] || '';
+
+  const updateDraftInput = (field: FormField, value: string) => {
+    const nextValue = field.maxLength ? clampInput(value, field.maxLength) : value;
+    setDraftInputs(prev => ({ ...prev, [field.name]: nextValue }));
+  };
+
+  const clearDraftInput = (fieldName: string) => {
+    setDraftInputs(prev => {
+      if (!(fieldName in prev)) {
+        return prev;
+      }
+
+      const next = { ...prev };
+      delete next[fieldName];
+      return next;
+    });
+  };
+
+  const addDraftItem = (field: FormField, selectedValues: string[]) => {
+    const draftValue = getDraftInputValue(field);
+    const nextValue = (field.maxLength ? clampInput(draftValue.trim(), field.maxLength) : draftValue.trim()).trim();
+
+    if (!nextValue || selectedValues.includes(nextValue)) {
+      return;
+    }
+
+    handleChange(field.name, [...selectedValues, nextValue]);
+    clearDraftInput(field.name);
   };
 
   const validateField = (name: string, value: any): boolean => {
@@ -207,15 +263,18 @@ export const EntityForm: React.FC<EntityFormProps> = ({
     switch (field.type) {
       case 'textarea':
         return (
-          <textarea
-            value={value || ''}
-            onChange={(e) => handleChange(field.name, e.target.value)}
-            onBlur={() => handleBlur(field.name)}
-            placeholder={field.placeholder}
-            rows={4}
-            maxLength={field.maxLength}
-            className={cn(baseInputClass, "resize-none")}
-          />
+          <div>
+            <textarea
+              value={value || ''}
+              onChange={(e) => handleChange(field.name, e.target.value)}
+              onBlur={() => handleBlur(field.name)}
+              placeholder={field.placeholder}
+              rows={4}
+              maxLength={field.maxLength}
+              className={cn(baseInputClass, "resize-none")}
+            />
+            {renderLengthCounter(value, field.maxLength)}
+          </div>
         );
 
       case 'select':
@@ -297,38 +356,31 @@ export const EntityForm: React.FC<EntityFormProps> = ({
               )}
               
               {/* 搜索/过滤输入框 */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder={field.placeholder || "Search or add custom value..."}
-                  className={cn(baseInputClass, "flex-1")}
-                  maxLength={field.maxLength}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      const input = e.target as HTMLInputElement;
-                      const inputValue = clampInput(input.value.trim(), field.maxLength).trim();
-                      if (inputValue && !selectedValues.includes(inputValue)) {
-                        handleChange(field.name, [...selectedValues, inputValue]);
-                        input.value = '';
+              <div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={getDraftInputValue(field)}
+                    placeholder={field.placeholder || "Search or add custom value..."}
+                    className={cn(baseInputClass, "flex-1")}
+                    maxLength={field.maxLength}
+                    onChange={(e) => updateDraftInput(field, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addDraftItem(field, selectedValues);
                       }
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
-                    const inputValue = clampInput(input.value.trim(), field.maxLength).trim();
-                    if (inputValue && !selectedValues.includes(inputValue)) {
-                      handleChange(field.name, [...selectedValues, inputValue]);
-                      input.value = '';
-                    }
-                  }}
-                  className="px-4 py-3 bg-surface-container text-primary hover:bg-surface-container-high rounded-sm transition-colors"
-                >
-                  <Plus size={18} />
-                </button>
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addDraftItem(field, selectedValues)}
+                    className="px-4 py-3 bg-surface-container text-primary hover:bg-surface-container-high rounded-sm transition-colors"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+                {renderLengthCounter(getDraftInputValue(field), field.maxLength)}
               </div>
             </div>
           );
@@ -358,38 +410,31 @@ export const EntityForm: React.FC<EntityFormProps> = ({
                 </span>
               ))}
             </div>
-            <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Add item..."
-                  className={cn(baseInputClass, "flex-1")}
-                  maxLength={field.maxLength}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      const input = e.target as HTMLInputElement;
-                      const nextValue = clampInput(input.value.trim(), field.maxLength).trim();
-                      if (nextValue) {
-                        handleChange(field.name, [...(value || []), nextValue]);
-                        input.value = '';
+            <div>
+              <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={getDraftInputValue(field)}
+                    placeholder="Add item..."
+                    className={cn(baseInputClass, "flex-1")}
+                    maxLength={field.maxLength}
+                    onChange={(e) => updateDraftInput(field, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addDraftItem(field, value || []);
                       }
-                    }
-                }}
-              />
-              <button
-                type="button"
-                onClick={(e) => {
-                  const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
-                  const nextValue = clampInput(input.value.trim(), field.maxLength).trim();
-                  if (nextValue) {
-                    handleChange(field.name, [...(value || []), nextValue]);
-                    input.value = '';
-                  }
-                }}
-                className="px-4 py-3 bg-surface-container text-primary hover:bg-surface-container-high rounded-sm transition-colors"
-              >
-                <Plus size={18} />
-              </button>
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => addDraftItem(field, value || [])}
+                  className="px-4 py-3 bg-surface-container text-primary hover:bg-surface-container-high rounded-sm transition-colors"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+              {renderLengthCounter(getDraftInputValue(field), field.maxLength)}
             </div>
           </div>
         );
@@ -486,7 +531,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
         );
 
       default:
-        return (
+        const control = (
           <input
             type={field.type}
             value={value || ''}
@@ -500,6 +545,17 @@ export const EntityForm: React.FC<EntityFormProps> = ({
             }
             className={baseInputClass}
           />
+        );
+
+        if (!supportsLengthCounter(field)) {
+          return control;
+        }
+
+        return (
+          <div>
+            {control}
+            {renderLengthCounter(value, field.maxLength)}
+          </div>
         );
     }
   };

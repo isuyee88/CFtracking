@@ -2,6 +2,7 @@
 import {
   BarChart3,
   Bookmark,
+  Crosshair,
   Download,
   Filter,
   Play,
@@ -11,7 +12,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DateRangePickerComponent, getDateRange, type DateRangeValue } from '@/components/DateRangePicker';
 import {
   createExportTask,
@@ -19,6 +20,7 @@ import {
   exportReport,
   fetchReportMetadata,
   queryReport,
+  type ClickLogParams,
   type ExportFormat,
   type ReportDimension,
   type ReportDimensionOption,
@@ -30,6 +32,8 @@ import {
 } from '../services/api';
 import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
 import type { VirtualTableColumn } from '../components/VirtualTable';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 
 interface BuilderConfig {
   reportType: ReportType;
@@ -53,6 +57,7 @@ interface SavedView {
 type ReportRow = Record<string, string | number | null | undefined>;
 
 const SAVED_VIEWS_STORAGE_KEY = 'cftracking.report-builder.saved-views.v1';
+const SAVED_VIEW_NAME_MAX_LENGTH = FIELD_MAX_LENGTH.NAME;
 
 const DEFAULT_DIMENSION_OPTIONS: ReportDimensionOption[] = [
   { value: 'campaign', label: 'Campaign', hint: 'Campaign performance leaderboard' },
@@ -62,9 +67,9 @@ const DEFAULT_DIMENSION_OPTIONS: ReportDimensionOption[] = [
   { value: 'country', label: 'Country', hint: 'Geo segmentation' },
   { value: 'device', label: 'Device', hint: 'Desktop / mobile split' },
   { value: 'browser', label: 'Browser', hint: 'Browser quality and compatibility' },
-  { value: 'source', label: 'Source', hint: 'UTM source / traffic source signature' },
-  { value: 'zoneid', label: 'Zone ID', hint: 'Zone-level quality and fraud signal' },
-  { value: 'utm_source', label: 'UTM Source', hint: 'Campaign acquisition source' },
+  { value: 'source', label: 'Traffic Source', hint: 'Campaign-bound traffic source name or identifier' },
+  { value: 'zoneid', label: 'Zone ID', hint: 'Zone signature from subId1 -> subId2 -> subId3 fallback' },
+  { value: 'utm_source', label: 'UTM Source', hint: 'Raw utm_source captured from the tracking URL' },
   { value: 'utm_campaign', label: 'UTM Campaign', hint: 'UTM campaign token' },
   { value: 'subid1', label: 'SubID1', hint: 'Primary sub identifier' },
   { value: 'subid2', label: 'SubID2', hint: 'Secondary sub identifier' },
@@ -85,6 +90,7 @@ const DEFAULT_METRIC_OPTIONS: ReportMetricOption[] = [
   { value: 'margin', label: 'Margin', format: 'percent' },
   { value: 'epc', label: 'EPC', format: 'currency' },
   { value: 'cpc', label: 'CPC', format: 'currency' },
+  { value: 'unique_clicks', label: 'Unique Clicks', format: 'number' },
   { value: 'unique_visitors', label: 'Unique Visitors', format: 'number' },
   { value: 'fraud_clicks', label: 'Fraud Clicks', format: 'number' },
   { value: 'bot_clicks', label: 'Bot Clicks', format: 'number' },
@@ -180,6 +186,22 @@ const DEFAULT_CONFIG: BuilderConfig = {
   limit: 250,
   sortBy: 'clicks',
   sortOrder: 'desc',
+};
+
+const REPORT_TO_CLICK_LOG_PARAM_MAP: Partial<Record<ReportDimension, keyof ClickLogParams>> = {
+  campaign: 'campaignId',
+  offer: 'offerId',
+  flow: 'flowId',
+  country: 'country',
+  device: 'device',
+  browser: 'browser',
+  source: 'source',
+  zoneid: 'zoneId',
+  utm_source: 'utmSource',
+  utm_campaign: 'utmCampaign',
+  subid1: 'subId1',
+  subid2: 'subId2',
+  subid3: 'subId3',
 };
 
 function cn(...inputs: Array<string | false | null | undefined>) {
@@ -353,14 +375,105 @@ function createFilterDraft(): ReportFilterCondition {
   };
 }
 
+function parseFiltersParam(raw: string | null): ReportFilterCondition[] {
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is ReportFilterCondition => Boolean(item?.field && item?.operator))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseCsvParam(raw: string | null): string[] {
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseConfigFromSearchParams(searchParams: URLSearchParams): BuilderConfig {
+  const defaultClone = cloneConfig(DEFAULT_CONFIG);
+  const startDate = searchParams.get('startDate') || defaultClone.startDate;
+  const endDate = searchParams.get('endDate') || defaultClone.endDate;
+  const groupBy = parseCsvParam(searchParams.get('groupBy')) as ReportDimension[];
+  const metrics = parseCsvParam(searchParams.get('metrics')) as ReportMetric[];
+  const filters = parseFiltersParam(searchParams.get('filters'));
+  const sortBy = (searchParams.get('sortBy') || defaultClone.sortBy) as ReportDimension | ReportMetric;
+  const sortOrder = searchParams.get('sortOrder') === 'asc' ? 'asc' : defaultClone.sortOrder;
+  const limit = Math.max(Number(searchParams.get('limit') || defaultClone.limit) || defaultClone.limit, 1);
+  const reportType = (searchParams.get('reportType') || defaultClone.reportType) as ReportType;
+
+  return {
+    reportType,
+    startDate: normalizeDateValue(startDate),
+    endDate: normalizeDateValue(endDate),
+    groupBy: groupBy.length > 0 ? groupBy : defaultClone.groupBy,
+    metrics: metrics.length > 0 ? metrics : defaultClone.metrics,
+    filters,
+    limit,
+    sortBy,
+    sortOrder,
+  };
+}
+
+function buildSearchParamsFromConfig(config: BuilderConfig): URLSearchParams {
+  const searchParams = new URLSearchParams();
+  searchParams.set('reportType', config.reportType);
+  searchParams.set('startDate', normalizeDateValue(config.startDate));
+  searchParams.set('endDate', normalizeDateValue(config.endDate));
+  searchParams.set('groupBy', config.groupBy.join(','));
+  searchParams.set('metrics', config.metrics.join(','));
+  searchParams.set('sortBy', config.sortBy);
+  searchParams.set('sortOrder', config.sortOrder);
+  searchParams.set('limit', String(config.limit));
+
+  const filters = config.filters.filter((filter) => String(filter.value).trim().length > 0);
+  if (filters.length > 0) {
+    searchParams.set('filters', JSON.stringify(filters));
+  }
+
+  return searchParams;
+}
+
+function normalizeFilterValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  return String(value).trim();
+}
+
 export default function Reports() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialConfig = useMemo(() => parseConfigFromSearchParams(searchParams), [searchParams]);
   const [dateRange, setDateRange] = useState<DateRangeValue>({
-    startDate: DEFAULT_CONFIG.startDate,
-    endDate: DEFAULT_CONFIG.endDate,
+    startDate: initialConfig.startDate,
+    endDate: initialConfig.endDate,
   });
-  const [builder, setBuilder] = useState<BuilderConfig>(cloneConfig(DEFAULT_CONFIG));
-  const [appliedConfig, setAppliedConfig] = useState<BuilderConfig>(cloneConfig(DEFAULT_CONFIG));
+  const [builder, setBuilder] = useState<BuilderConfig>(cloneConfig(initialConfig));
+  const [appliedConfig, setAppliedConfig] = useState<BuilderConfig>(cloneConfig(initialConfig));
+  const scopedCampaignId = useMemo(
+    () =>
+      appliedConfig.filters.find(
+        (filter) => filter.field === 'campaign' && filter.operator === 'eq' && String(filter.value).trim().length > 0
+      )?.value,
+    [appliedConfig.filters]
+  );
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -450,15 +563,16 @@ export default function Reports() {
 
       setRows(Array.isArray(reportData) ? reportData : []);
       setAppliedConfig(nextConfig);
+      setSearchParams(buildSearchParamsFromConfig(nextConfig), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to run report');
     } finally {
       setLoading(false);
     }
-  }, [builder]);
+  }, [builder, setSearchParams]);
 
   useEffect(() => {
-    void runReport(DEFAULT_CONFIG);
+    void runReport(initialConfig);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -502,6 +616,45 @@ export default function Reports() {
   const reportTableHeight = useMemo(() => (
     Math.min(Math.max(filteredRows.length, 6) * 48 + 48, 640)
   ), [filteredRows.length]);
+
+  const buildClickLogHref = useCallback((row?: ReportRow) => {
+    const params = new URLSearchParams();
+    params.set('startDate', appliedConfig.startDate);
+    params.set('endDate', appliedConfig.endDate);
+
+    appliedConfig.filters.forEach((filter) => {
+      if (filter.operator !== 'eq') {
+        return;
+      }
+
+      const mappedKey = REPORT_TO_CLICK_LOG_PARAM_MAP[filter.field as ReportDimension];
+      const normalizedValue = normalizeFilterValue(filter.value);
+      if (mappedKey && normalizedValue) {
+        params.set(mappedKey, normalizedValue);
+      }
+
+      if (filter.field === 'date' && normalizedValue) {
+        params.set('startDate', normalizedValue);
+        params.set('endDate', normalizedValue);
+      }
+    });
+
+    if (row) {
+      appliedConfig.groupBy.forEach((dimension) => {
+        const mappedKey = REPORT_TO_CLICK_LOG_PARAM_MAP[dimension];
+        const normalizedValue = normalizeFilterValue(row[dimension]);
+        if (mappedKey && normalizedValue) {
+          params.set(mappedKey, normalizedValue);
+        }
+        if (dimension === 'date' && normalizedValue) {
+          params.set('startDate', normalizedValue);
+          params.set('endDate', normalizedValue);
+        }
+      });
+    }
+
+    return `/audit?${params.toString()}`;
+  }, [appliedConfig]);
 
   const summaryCards = useMemo(() => {
     const candidates = appliedConfig.metrics.slice(0, 4);
@@ -592,7 +745,7 @@ export default function Reports() {
   }, []);
 
   const saveCurrentView = useCallback(() => {
-    const nextName = viewName.trim();
+    const nextName = clampInput(viewName.trim(), SAVED_VIEW_NAME_MAX_LENGTH);
     if (!nextName) {
       setError('Enter a view name before saving.');
       return;
@@ -712,6 +865,12 @@ export default function Reports() {
           <p className="mt-1 max-w-3xl text-sm text-on-surface-variant">
             Build Keitaro-style analytical views with flexible dimensions, metrics, filters, saved views, and exports.
           </p>
+          {scopedCampaignId && (
+            <div className="mt-3 inline-flex items-center gap-2 rounded-sm border border-primary/20 bg-primary/10 px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary">
+              <Crosshair size={14} />
+              Campaign Scope {String(scopedCampaignId)}
+            </div>
+          )}
         </div>
         <div className="grid gap-3 md:grid-cols-[minmax(280px,340px)_160px_160px]">
           <DateRangePickerComponent
@@ -789,8 +948,9 @@ export default function Reports() {
             <input
               type="text"
               value={viewName}
-              onChange={(event) => setViewName(event.target.value)}
+              onChange={(event) => setViewName(clampInput(event.target.value, SAVED_VIEW_NAME_MAX_LENGTH))}
               placeholder="Save current layout as..."
+              maxLength={SAVED_VIEW_NAME_MAX_LENGTH}
               className="w-full border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
             />
             <button
@@ -801,6 +961,9 @@ export default function Reports() {
               Save
             </button>
           </div>
+          <div className="mt-1 text-right text-[11px] text-on-surface-variant/70">
+            {viewName.length}/{SAVED_VIEW_NAME_MAX_LENGTH}
+          </div>
           <div className="mt-4 space-y-2">
             {savedViews.length === 0 ? (
               <div className="rounded-sm border border-dashed border-outline-variant/40 px-3 py-4 text-sm text-on-surface-variant">
@@ -810,14 +973,25 @@ export default function Reports() {
               savedViews.map((view) => (
                 <div key={view.id} className="flex items-center justify-between rounded-sm border border-outline-variant/20 bg-surface-container px-3 py-3">
                   <button onClick={() => loadSavedView(view)} className="text-left">
-                    <div className="text-sm font-medium text-on-surface">{view.name}</div>
-                    <div className="text-xs text-on-surface-variant">
-                      {view.config.groupBy
+                    <div className="text-sm font-medium text-on-surface" title={view.name}>
+                      {truncateLabel(view.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                    </div>
+                    <div
+                      className="max-w-[28rem] truncate text-xs text-on-surface-variant"
+                      title={`${view.config.groupBy
                         .map((field) => getColumnLabel(field, dimensionOptions, metricOptions))
-                        .join(' / ') || 'Summary'} ·{' '}
-                      {view.config.metrics
+                        .join(' / ') || 'Summary'} · ${view.config.metrics
                         .map((field) => getColumnLabel(field, dimensionOptions, metricOptions))
-                        .join(', ')}
+                        .join(', ')}`}
+                    >
+                      {truncateLabel(
+                        `${view.config.groupBy
+                          .map((field) => getColumnLabel(field, dimensionOptions, metricOptions))
+                          .join(' / ') || 'Summary'} · ${view.config.metrics
+                          .map((field) => getColumnLabel(field, dimensionOptions, metricOptions))
+                          .join(', ')}`,
+                        DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT
+                      )}
                     </div>
                   </button>
                   <button
@@ -1017,6 +1191,15 @@ export default function Reports() {
           <Plus size={16} />
           {queueingFormat === 'excel' ? 'Queueing Excel...' : 'Queue Excel'}
         </button>
+        {scopedCampaignId && (
+          <button
+            onClick={() => navigate(buildClickLogHref())}
+            className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+          >
+            <Filter size={16} />
+            Open Click Log
+          </button>
+        )}
         <button
           onClick={() => navigate('/exported-reports')}
           className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
@@ -1048,6 +1231,10 @@ export default function Reports() {
 
       {error && <div className="mb-4 rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>}
 
+      <div className="mb-4 rounded-sm border border-outline-variant/20 bg-surface-container-low px-4 py-3 text-xs uppercase tracking-widest text-on-surface-variant">
+        Click any result row to open the matching click log drilldown with the current report date range and dimension values.
+      </div>
+
       <VirtualTableEnhanced
         tableId="report-builder-results"
         columns={resultColumns}
@@ -1058,6 +1245,8 @@ export default function Reports() {
         overscan={10}
         emptyMessage={searchQuery.trim() ? 'No rows matched the current query.' : 'Run a report to see results.'}
         getRowId={(row, index) => getReportRowKey(row, index, visibleColumns)}
+        onRowClick={(row) => navigate(buildClickLogHref(row))}
+        rowClassName={() => 'cursor-pointer hover:bg-surface-container/60'}
         className="overflow-x-auto rounded-sm border border-outline-variant bg-surface"
       />
     </div>

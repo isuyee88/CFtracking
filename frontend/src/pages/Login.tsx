@@ -1,9 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, Form, Input, message, Card, Divider, Typography, Alert } from 'antd';
-// 按需引入 Ant Design Icons，减少打包体积
-import GoogleOutlined from '@ant-design/icons/lib/icons/GoogleOutlined';
-import LockOutlined from '@ant-design/icons/lib/icons/LockOutlined';
-import UserOutlined from '@ant-design/icons/lib/icons/UserOutlined';
+import { GoogleOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
 import './Login.css';
 
 const { Title, Text, Link } = Typography;

@@ -136,6 +136,40 @@ describe('service input length guards', () => {
     );
   });
 
+  it('accepts advanced blacklist passthrough types without throwing', () => {
+    const service = new BlacklistService(createEnv());
+    const serviceWithPrivate = service as unknown as {
+      validateEntryValue: (
+        type: CreateBlacklistDTO['type'],
+        value: string,
+        ipMatchMode?: string,
+        uaMatchMode?: string,
+        hasConditionRules?: boolean
+      ) => void;
+    };
+
+    for (const type of ['zone', 'sub_id', 'device', 'isp', 'fingerprint', 'rule'] as const) {
+      expect(() => serviceWithPrivate.validateEntryValue(type, `probe-${type}`)).not.toThrow();
+    }
+  });
+
+  it('accepts advanced whitelist passthrough types without throwing', () => {
+    const service = new WhitelistService(createEnv());
+    const serviceWithPrivate = service as unknown as {
+      validateEntryValue: (
+        type: CreateWhitelistDTO['type'],
+        value: string,
+        ipMatchMode?: string,
+        uaMatchMode?: string,
+        hasConditionRules?: boolean
+      ) => void;
+    };
+
+    for (const type of ['zone', 'sub_id', 'device', 'isp', 'fingerprint', 'rule'] as const) {
+      expect(() => serviceWithPrivate.validateEntryValue(type, `probe-${type}`)).not.toThrow();
+    }
+  });
+
   it('rejects flow rule names longer than configured max length', () => {
     const service = new FlowService(createEnv());
     const serviceWithPrivate = service as unknown as {

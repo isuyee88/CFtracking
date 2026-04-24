@@ -5,16 +5,25 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const bootstrapPath = path.join(repoRoot, '.wrangler-dns-bootstrap.cjs');
+const preloadPaths = [
+  path.join(repoRoot, '.wrangler-dns-bootstrap.cjs'),
+  path.join(repoRoot, '.wrangler-dns-patch.cjs'),
+];
 
 const env = { ...process.env };
-const stableRequire = `--require=${bootstrapPath}`;
+const requiredFlags = preloadPaths.map((preloadPath) => `--require=${preloadPath}`);
 
-env.NODE_OPTIONS = env.NODE_OPTIONS
-  ? env.NODE_OPTIONS.includes(stableRequire)
-    ? env.NODE_OPTIONS
-    : `${env.NODE_OPTIONS} ${stableRequire}`
-  : stableRequire;
+if (!env.CFTRACKING_PROXY_PORT && !env.CFTRACKING_PROXY_URL && !env.HTTP_PROXY && !env.HTTPS_PROXY) {
+  env.CFTRACKING_PROXY_PORT = '7897';
+}
+
+for (const requiredFlag of requiredFlags) {
+  env.NODE_OPTIONS = env.NODE_OPTIONS
+    ? env.NODE_OPTIONS.includes(requiredFlag)
+      ? env.NODE_OPTIONS
+      : `${env.NODE_OPTIONS} ${requiredFlag}`
+    : requiredFlag;
+}
 
 const child = spawn('npm', ['run', 'deploy'], {
   cwd: repoRoot,

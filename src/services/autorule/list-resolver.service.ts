@@ -35,8 +35,10 @@ export interface AutoruleVisitContext {
   userAgent?: string;
   zoneId?: string;
   country?: string;
+  city?: string;
   device?: string;
   isp?: string;
+  connectionType?: string;
   fingerprint?: string;
   utmSource?: string;
   utmCampaign?: string;

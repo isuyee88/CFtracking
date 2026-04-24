@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import { DISPLAY_MAX_LENGTH } from '../../constants/fieldConstraints';
+import { truncateLabel } from '../../utils/text';
 
 interface MetricItem {
   key: string;
@@ -121,9 +123,10 @@ export function DashboardPreferencesModal({
                 return (
                   <span
                     key={key}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-accent-muted text-accent-fg text-xs rounded-lg"
+                    className="inline-flex max-w-[220px] items-center gap-1 px-2 py-1 bg-accent-muted text-accent-fg text-xs rounded-lg"
+                    title={metric?.label || key}
                   >
-                    {metric?.label || key}
+                    <span className="truncate">{truncateLabel(metric?.label || key, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}</span>
                     <button onClick={() => toggleMetric(key)} className="hover:opacity-70 transition-opacity">
                       <X size={12} />
                     </button>
@@ -163,9 +166,10 @@ export function DashboardPreferencesModal({
                 return (
                   <span
                     key={key}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-surface-container text-fg-default text-xs rounded-lg border border-border-default"
+                    className="inline-flex max-w-[220px] items-center gap-1 px-2 py-1 bg-surface-container text-fg-default text-xs rounded-lg border border-border-default"
+                    title={entity?.label || key}
                   >
-                    {entity?.label || key}
+                    <span className="truncate">{truncateLabel(entity?.label || key, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}</span>
                     <button onClick={() => toggleEntity(key)} className="hover:text-fg-muted transition-colors">
                       <X size={12} />
                     </button>
@@ -217,9 +221,10 @@ export function DashboardPreferencesModal({
                 return (
                   <span
                     key={key}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-surface-container-low text-fg-default text-xs rounded-lg border border-border-default"
+                    className="inline-flex max-w-[220px] items-center gap-1 px-2 py-1 bg-surface-container-low text-fg-default text-xs rounded-lg border border-border-default"
+                    title={col?.label || key}
                   >
-                    {col?.label || key}
+                    <span className="truncate">{truncateLabel(col?.label || key, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}</span>
                     <button onClick={() => toggleRecentClickColumn(key)} className="hover:text-fg-muted transition-colors">
                       <X size={12} />
                     </button>

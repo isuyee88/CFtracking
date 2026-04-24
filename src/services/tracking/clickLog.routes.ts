@@ -17,18 +17,6 @@ import { getD1Connection } from '@/handlers/d1';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
-import { createDashboardQueryService } from '@/services/analytics/dashboard-query.service';
-
-function isWithinThreeMonths(dateString: string): boolean {
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) {
-    return false;
-  }
-
-  const threeMonthsAgo = new Date();
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-  return date >= threeMonthsAgo;
-}
 
 export function createClickLogRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -66,61 +54,28 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
         search: c.req.query('search') || undefined,
       };
 
-      if (startDate && isWithinThreeMonths(startDate)) {
-        const analyticsQuery = createDashboardQueryService(c.env);
-        const aeResult = await analyticsQuery.getRecentClicks({
-          limit: pageSize,
-          campaignId: params.campaignId,
-          country: params.country,
-          device: params.device,
-        });
+      const db = getD1Connection(c.env);
+      const clickRepo = new ClickRepository(db);
+      const result = await clickRepo.findClicks({
+        ...params,
+        source: c.req.query('source') || undefined,
+        zoneId: c.req.query('zoneId') || undefined,
+        utmSource: c.req.query('utmSource') || undefined,
+        utmCampaign: c.req.query('utmCampaign') || undefined,
+        subId1: c.req.query('subId1') || undefined,
+        subId2: c.req.query('subId2') || undefined,
+        subId3: c.req.query('subId3') || undefined,
+        isp: c.req.query('isp') || undefined,
+        fingerprint: c.req.query('fingerprint') || undefined,
+      });
 
-        const formattedList = aeResult.list.map((item: Record<string, unknown>) => ({
-          clickId: item.event_id || item.clickId,
-          campaignId: item.campaign || item.campaignId,
-          flowId: item.stream || item.flowId,
-          landingPageId: item.landing || item.landingPageId,
-          offerId: item.offer || item.offerId,
-          timestamp: item.datetime || item.timestamp,
-          ip: item.ip,
-          userAgent: item.user_agent || item.userAgent || '',
-          referer: item.referrer || item.referer,
-          country: item.country,
-          city: item.city,
-          device: item.device_type || item.device,
-          browser: item.browser,
-          os: item.os,
-          isp: item.isp || '',
-          connectionType: item.connection_type || item.connectionType || null,
-          visitorId: item.visitor_code || item.visitorId,
-          subId1: item.sub1 || item.subId1,
-          subId2: item.sub2 || item.subId2,
-          subId3: item.sub3 || item.subId3,
-          subId4: item.sub4 || item.subId4,
-          subId5: item.sub5 || item.subId5,
-          cost: item.cost,
-        }));
-
-        return c.json(success(formattedList, {
-          page,
-          pageSize,
-          total: aeResult.total,
-          totalPages: Math.ceil(aeResult.total / pageSize),
-          dataSource: 'd1_database',
-        }));
-      } else {
-        const db = getD1Connection(c.env);
-        const clickRepo = new ClickRepository(db);
-        const result = await clickRepo.findClicks(params);
-
-        return c.json(success(result.list, {
-          page: result.page,
-          pageSize: result.pageSize,
-          total: result.total,
-          totalPages: Math.ceil(result.total / result.pageSize),
-          dataSource: 'd1_database',
-        }));
-      }
+      return c.json(success(result.list, {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: Math.ceil(result.total / result.pageSize),
+        dataSource: 'd1_database',
+      }));
     } catch (err) {
       console.error('[ClickLog] Failed to fetch clicks:', err);
       return c.json(
@@ -146,6 +101,28 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
       const startDate = c.req.query('startDate');
       const endDate = c.req.query('endDate');
       const campaignId = c.req.query('campaignId') || undefined;
+      const filters = {
+        campaignId,
+        source: c.req.query('source') || undefined,
+        zoneId: c.req.query('zoneId') || undefined,
+        utmSource: c.req.query('utmSource') || undefined,
+        utmCampaign: c.req.query('utmCampaign') || undefined,
+        subId1: c.req.query('subId1') || undefined,
+        subId2: c.req.query('subId2') || undefined,
+        subId3: c.req.query('subId3') || undefined,
+        country: c.req.query('country') || undefined,
+        device: c.req.query('device') || undefined,
+        browser: c.req.query('browser') || undefined,
+        os: c.req.query('os') || undefined,
+        isp: c.req.query('isp') || undefined,
+        fingerprint: c.req.query('fingerprint') || undefined,
+        ip: c.req.query('ip') || undefined,
+        visitorId: c.req.query('visitorId') || undefined,
+        offerId: c.req.query('offerId') || undefined,
+        flowId: c.req.query('flowId') || undefined,
+        isUnique: c.req.query('isUnique') ? c.req.query('isUnique') === 'true' : undefined,
+        search: c.req.query('search') || undefined,
+      };
 
       if (!startDate || !endDate) {
         return c.json(
@@ -154,34 +131,14 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
         );
       }
 
-      if (isWithinThreeMonths(startDate)) {
-        const analyticsQuery = createDashboardQueryService(c.env);
-        const aeResult = await analyticsQuery.getRecentClicks({
-          limit: 1000,
-          campaignId,
-        });
+      const db = getD1Connection(c.env);
+      const clickRepo = new ClickRepository(db);
+      const stats = await clickRepo.getClickStats(startDate, endDate, filters);
 
-        const uniqueVisitors = new Set(aeResult.list.map((item: Record<string, unknown>) => item.visitorId)).size;
-        const countries = new Set(aeResult.list.map((item: Record<string, unknown>) => item.country)).size;
-        const devices = new Set(aeResult.list.map((item: Record<string, unknown>) => item.device)).size;
-
-        return c.json(success({
-          totalClicks: aeResult.total,
-          uniqueClicks: uniqueVisitors,
-          countries,
-          deviceTypes: devices,
-          dataSource: 'd1_database',
-        }));
-      } else {
-        const db = getD1Connection(c.env);
-        const clickRepo = new ClickRepository(db);
-        const stats = await clickRepo.getClickStats(startDate, endDate, campaignId);
-
-        return c.json(success({
-          ...stats,
-          dataSource: 'd1_database',
-        }));
-      }
+      return c.json(success({
+        ...stats,
+        dataSource: 'd1_database',
+      }));
     } catch (err) {
       console.error('[ClickLog] Failed to fetch stats:', err);
       return c.json(

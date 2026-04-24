@@ -5,6 +5,7 @@
  */
 
 import { TrafficSourceRepository } from '@/handlers/d1/trafficSource.repo';
+import { AutoruleScopeRepository } from '@/handlers/d1/autoruleScope.repo';
 import { getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
 import type {
@@ -16,16 +17,19 @@ import type {
   TrafficSourceApiConfig,
   ConversionStatus,
 } from '@/types/trafficSource';
+import type { AutoruleScopeConfig, SaveAutoruleScopeConfigInput } from '@/types/autoruleScope';
 import { NotFoundError, ValidationError } from '@/middleware/error';
 import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldLength';
 
 export class TrafficSourceService {
   private repo: TrafficSourceRepository;
+  private autoruleScopeRepo: AutoruleScopeRepository;
 
   constructor(env: Env) {
     const db = getD1Connection(env);
     this.repo = new TrafficSourceRepository(db);
+    this.autoruleScopeRepo = new AutoruleScopeRepository(db);
   }
 
   /**
@@ -159,6 +163,33 @@ export class TrafficSourceService {
     );
 
     return { list: listWithStats, total };
+  }
+
+  async getAutoruleScopeConfig(id: string): Promise<AutoruleScopeConfig | null> {
+    const existing = await this.repo.findById(id);
+    if (!existing) {
+      throw new NotFoundError('Traffic Source not found');
+    }
+    return this.autoruleScopeRepo.getTrafficSourceConfig(id);
+  }
+
+  async saveAutoruleScopeConfig(id: string, input: SaveAutoruleScopeConfigInput): Promise<AutoruleScopeConfig> {
+    const existing = await this.repo.findById(id);
+    if (!existing) {
+      throw new NotFoundError('Traffic Source not found');
+    }
+    return this.autoruleScopeRepo.saveTrafficSourceConfig(id, input);
+  }
+
+  async batchApplyAutoruleScopeConfig(
+    ids: string[],
+    input: SaveAutoruleScopeConfigInput
+  ): Promise<AutoruleScopeConfig[]> {
+    return this.autoruleScopeRepo.batchApplyTrafficSourceConfig(ids, input);
+  }
+
+  async listAutoruleScopeConfigs(): Promise<AutoruleScopeConfig[]> {
+    return this.autoruleScopeRepo.listTrafficSourceScopeConfigs();
   }
 
   private normalizeCreateInput(data: CreateTrafficSourceDTO): CreateTrafficSourceDTO {

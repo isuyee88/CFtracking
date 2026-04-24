@@ -36,6 +36,14 @@ import { readBootstrapPage } from '../services/bootstrap';
 import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
 import { clampInput, truncateLabel } from '../utils/text';
 import {
+  createWhitelistEntry,
+  deleteWhitelistEntry,
+  fetchTrafficSources,
+  fetchWhitelistEntries,
+  syncWhitelist,
+  updateWhitelistEntry,
+} from '../services/api';
+import {
   ListConditionsEditor,
   type ListCondition,
   type ListConditionMode,
@@ -43,6 +51,14 @@ import {
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function renderLengthCounter(value: string | undefined, maxLength: number) {
+  return (
+    <p className="mt-1 text-right text-[11px] text-on-surface-variant/70">
+      {(value || '').length}/{maxLength}
+    </p>
+  );
 }
 
 type WhitelistType =
@@ -219,23 +235,14 @@ export const Whitelist = () => {
         setLoading(true);
       }
 
-      const [entriesResponse, trafficSourcesResponse] = await Promise.all([
-        fetch('/api/whitelist'),
-        fetch('/api/traffic-sources'),
-      ]);
-
-      if (!entriesResponse.ok || !trafficSourcesResponse.ok) {
-        throw new Error('Failed to fetch latest whitelist data');
-      }
-
       const [entriesPayload, trafficSourcesPayload] = await Promise.all([
-        entriesResponse.json(),
-        trafficSourcesResponse.json(),
+        fetchWhitelistEntries(),
+        fetchTrafficSources(false),
       ]);
 
-      setEntries(Array.isArray(entriesPayload?.data) ? entriesPayload.data : []);
+      setEntries(Array.isArray(entriesPayload) ? entriesPayload : []);
       setTrafficSources(
-        withGeneralTrafficSource(Array.isArray(trafficSourcesPayload?.data) ? trafficSourcesPayload.data : [])
+        withGeneralTrafficSource(Array.isArray(trafficSourcesPayload) ? trafficSourcesPayload : [])
       );
     } catch (err) {
       console.error('Failed to fetch whitelist:', err);
@@ -250,10 +257,7 @@ export const Whitelist = () => {
   const handleSync = async (trafficSourceId: string) => {
     try {
       setSyncing(trafficSourceId);
-      const response = await fetch(`/api/whitelist/sync/${trafficSourceId}`, {
-        method: 'POST'
-      });
-      const data = await response.json();
+      const data = await syncWhitelist(trafficSourceId);
       if (data.success) {
         alert(`Sync completed: ${data.data.synced} synced, ${data.data.failed} failed`);
         await fetchData();
@@ -269,12 +273,8 @@ export const Whitelist = () => {
     if (!confirm('Are you sure you want to remove this entry from whitelist?')) return;
     
     try {
-      const response = await fetch(`/api/whitelist/${id}`, {
-        method: 'DELETE'
-      });
-      if (response.ok) {
-        await fetchData();
-      }
+      await deleteWhitelistEntry(id);
+      await fetchData();
     } catch (err) {
       console.error('Failed to remove:', err);
     }
@@ -374,29 +374,19 @@ export const Whitelist = () => {
 
     setSubmitting(true);
     try {
-      const url = isEditMode ? `/api/whitelist/${editingId}` : '/api/whitelist';
-      const method = isEditMode ? 'PUT' : 'POST';
-      
       const payload = {
         ...formData,
         name: formData.name || undefined,
         reason: formData.reason || undefined,
       };
 
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        await response.json().catch(() => null);
+      if (isEditMode && editingId) {
+        await updateWhitelistEntry(editingId, payload);
+      } else {
+        await createWhitelistEntry(payload);
+      }
         await fetchData();
         closeModal();
-      } else {
-        const error = await response.json();
-        alert(error?.error?.message || error?.message || 'Failed to save whitelist entry');
-      }
     } catch (err) {
       console.error('Failed to save:', err);
       alert('Failed to save whitelist entry');
@@ -857,6 +847,7 @@ export const Whitelist = () => {
                     disabled={isEditMode}
                     maxLength={getWhitelistValueMaxLength(formData.type)}
                   />
+                  {renderLengthCounter(formData.value, getWhitelistValueMaxLength(formData.type))}
                   {formErrors.value && (
                     <p className="text-xs text-error mt-1">{formErrors.value}</p>
                   )}
@@ -990,6 +981,7 @@ export const Whitelist = () => {
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
                     maxLength={FIELD_MAX_LENGTH.NAME}
                   />
+                  {renderLengthCounter(formData.name, FIELD_MAX_LENGTH.NAME)}
                 </div>
 
                 {/* Reason */}
@@ -1005,6 +997,7 @@ export const Whitelist = () => {
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none resize-none"
                     maxLength={FIELD_MAX_LENGTH.REASON}
                   />
+                  {renderLengthCounter(formData.reason, FIELD_MAX_LENGTH.REASON)}
                 </div>
 
                 {/* Actions */}

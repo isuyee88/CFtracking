@@ -590,7 +590,8 @@ export class BlacklistService {
       case 'isp':
       case 'fingerprint':
       case 'rule':
-        // 杩欎簺绫诲瀷鍙渶瑕侀潪绌哄€?        break;
+        // These types only require a non-empty value at this stage.
+        break;
       default:
         throw new ValidationError(`Unsupported type: ${type}`);
     }
@@ -776,8 +777,8 @@ export class BlacklistService {
    * 楠岃瘉UA鍊?
    */
   private validateUaValue(value: string, matchMode?: string): void {
-    if (value.length > 1000) {
-      throw new ValidationError('User Agent pattern too long (max 1000 characters)');
+    if (value.length > FIELD_MAX_LENGTH.USER_AGENT_VALUE) {
+      throw new ValidationError(`User Agent pattern too long (max ${FIELD_MAX_LENGTH.USER_AGENT_VALUE} characters)`);
     }
 
     const mode = matchMode || 'exact';

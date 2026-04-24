@@ -7,13 +7,14 @@
 import { Hono } from 'hono';
 import { createExportTaskService } from './exportTask.service';
 import type { Env } from '@/config/env';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 import { z } from 'zod';
 
 const app = new Hono<{ Bindings: Env }>();
 
 // 验证模式
 const CreateExportTaskSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1).max(FIELD_MAX_LENGTH.EXPORT_TASK_NAME),
   entityType: z.enum([
     'campaigns',
     'landing-pages',

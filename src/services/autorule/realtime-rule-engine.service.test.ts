@@ -1,181 +1,121 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { D1Database } from '@/handlers/d1';
-import type { Env } from '@/config/env';
-import { RealtimeRuleEngineService } from '@/services/autorule/realtime-rule-engine.service';
+import { RealtimeRuleEngineService } from './realtime-rule-engine.service';
 
-function createEnv(): Env {
-  const db = {
-    prepare: vi.fn(() => ({
-      bind: vi.fn(() => ({
-        first: vi.fn(),
-        all: vi.fn(),
-        run: vi.fn(),
-      })),
-    })),
-  } as unknown as D1Database;
+function createService() {
+  const service = new RealtimeRuleEngineService({
+    DB: {} as any,
+  } as any);
 
-  return {
-    DB: db,
-  } as unknown as Env;
+  (service as any).listResolver = {
+    inWhitelist: vi.fn().mockResolvedValue(false),
+    inBlacklist: vi.fn().mockResolvedValue(false),
+  };
+  (service as any).scopeRepo = {
+    resolveEffectiveScopeConfig: vi.fn(),
+  };
+  (service as any).bindingRepo = {
+    getFlowBindings: vi.fn(),
+  };
+  (service as any).ruleRepo = {
+    findManyByIds: vi.fn(),
+  };
+
+  return service as any;
 }
 
-describe('RealtimeRuleEngineService multi-binding evaluation', () => {
-  it('evaluates bindings in priority order until one produces a decisive result', async () => {
-    const service = new RealtimeRuleEngineService(createEnv());
-    const serviceAny = service as any;
-    const bindingRepo = {
-      getEffectiveBindings: vi.fn().mockResolvedValue([
-        { scope: 'campaign', scopeId: 'c1', ruleId: 'r1', priority: 10, updatedAt: '' },
-        { scope: 'campaign', scopeId: 'c1', ruleId: 'r2', priority: 20, updatedAt: '' },
-      ]),
-    };
-    const listResolver = {
-      inWhitelist: vi.fn().mockResolvedValue(false),
-      inBlacklist: vi.fn().mockResolvedValue(false),
-    };
-    const ruleRepo = {
-      findById: vi
-        .fn()
-        .mockResolvedValueOnce({ id: 'r1', enabled: true, status: 'active' })
-        .mockResolvedValueOnce({ id: 'r2', enabled: true, status: 'active' }),
-    };
-
-    Object.defineProperty(serviceAny, 'bindingRepo', { value: bindingRepo, configurable: true, writable: true });
-    Object.defineProperty(serviceAny, 'listResolver', { value: listResolver, configurable: true, writable: true });
-    Object.defineProperty(serviceAny, 'ruleRepo', { value: ruleRepo, configurable: true, writable: true });
-    Object.defineProperty(serviceAny, 'evaluateRule', {
-      value: vi
-        .fn()
-        .mockResolvedValueOnce({ action: 'allow', matched: false, bound: true, reason: 'not-matched' })
-        .mockResolvedValueOnce({
-          action: 'block',
-          matched: true,
-          bound: true,
-          matchedRuleId: 'r2',
-          reason: 'matched',
-        }),
-      configurable: true,
-      writable: true,
+describe('RealtimeRuleEngineService', () => {
+  it('returns whitelist_gate challenge when whitelist misses and trust handling is deferred', async () => {
+    const service = createService();
+    service.scopeRepo.resolveEffectiveScopeConfig.mockResolvedValue({
+      effectiveConfig: {
+        scopeType: 'campaign',
+        scopeId: 'camp-1',
+        mode: 'whitelist_gate',
+        enabled: true,
+        bindings: [],
+        updatedAt: '2026-04-24T00:00:00.000Z',
+      },
+      hasExplicitConfig: true,
+      scannedScopeTypes: ['campaign', 'traffic_source', 'global'],
     });
 
     const decision = await service.evaluate({
-      campaignId: 'c1',
-      context: { campaignId: 'c1' },
+      campaignId: 'camp-1',
+      context: { campaignId: 'camp-1' },
     });
 
-    expect(bindingRepo.getEffectiveBindings).toHaveBeenCalledWith('c1', undefined);
-    expect(ruleRepo.findById).toHaveBeenNthCalledWith(1, 'r1');
-    expect(ruleRepo.findById).toHaveBeenNthCalledWith(2, 'r2');
-    expect(decision.action).toBe('block');
-    expect(decision.matched).toBe(true);
-    expect(decision.matchedLayer).toBe('campaign');
-    expect(decision.matchedRuleId).toBe('r2');
-  });
-
-  it('skips unavailable bindings and returns allow when nothing decisive matches', async () => {
-    const service = new RealtimeRuleEngineService(createEnv());
-    const serviceAny = service as any;
-    const bindingRepo = {
-      getEffectiveBindings: vi.fn().mockResolvedValue([
-        { scope: 'flow', scopeId: 'f1', ruleId: 'missing-rule', priority: 10, updatedAt: '' },
-      ]),
-    };
-    const listResolver = {
-      inWhitelist: vi.fn().mockResolvedValue(false),
-      inBlacklist: vi.fn().mockResolvedValue(false),
-    };
-    const ruleRepo = {
-      findById: vi.fn().mockResolvedValue(null),
-    };
-
-    Object.defineProperty(serviceAny, 'bindingRepo', { value: bindingRepo, configurable: true, writable: true });
-    Object.defineProperty(serviceAny, 'listResolver', { value: listResolver, configurable: true, writable: true });
-    Object.defineProperty(serviceAny, 'ruleRepo', { value: ruleRepo, configurable: true, writable: true });
-
-    const decision = await service.evaluate({
-      campaignId: 'c1',
-      flowId: 'f1',
-      context: { campaignId: 'c1', flowId: 'f1' },
-    });
-
-    expect(decision.action).toBe('allow');
+    expect(decision.action).toBe('challenge');
     expect(decision.matched).toBe(false);
-    expect(decision.bound).toBe(true);
-    expect(decision.matchedLayer).toBe('flow');
-    expect(decision.reason).toBe('bound_rule_unavailable');
+    expect(decision.matchedLayer).toBe('campaign');
+    expect(decision.reason).toBe('whitelist_gate_unmatched');
   });
 
-  it('applies whitelist matches before blacklist and autorules', async () => {
-    const service = new RealtimeRuleEngineService(createEnv());
-    const serviceAny = service as any;
-    const bindingRepo = {
-      getEffectiveBindings: vi.fn(),
-    };
-    const listResolver = {
-      inWhitelist: vi.fn().mockResolvedValueOnce(true),
-      inBlacklist: vi.fn().mockResolvedValue(false),
-    };
-    const ruleRepo = {
-      findById: vi.fn(),
-    };
-
-    Object.defineProperty(serviceAny, 'bindingRepo', { value: bindingRepo, configurable: true, writable: true });
-    Object.defineProperty(serviceAny, 'listResolver', { value: listResolver, configurable: true, writable: true });
-    Object.defineProperty(serviceAny, 'ruleRepo', { value: ruleRepo, configurable: true, writable: true });
-
-    const decision = await service.evaluate({
-      campaignId: 'c1',
-      context: { campaignId: 'c1', ip: '1.1.1.1' },
+  it('falls back to legacy flow bindings only when no explicit layered config exists', async () => {
+    const service = createService();
+    service.scopeRepo.resolveEffectiveScopeConfig.mockResolvedValue({
+      effectiveConfig: null,
+      hasExplicitConfig: false,
+      scannedScopeTypes: ['campaign', 'traffic_source', 'global'],
     });
-
-    expect(decision.action).toBe('allow');
-    expect(decision.matched).toBe(true);
-    expect(decision.matchedLayer).toBe('whitelist');
-    expect(bindingRepo.getEffectiveBindings).not.toHaveBeenCalled();
-    expect(ruleRepo.findById).not.toHaveBeenCalled();
-  });
-
-  it('includes redirectUrl when a matched rule resolves to redirect', async () => {
-    const service = new RealtimeRuleEngineService(createEnv());
-    const serviceAny = service as any;
-    const bindingRepo = {
-      getEffectiveBindings: vi.fn().mockResolvedValue([
-        { scope: 'campaign', scopeId: 'c1', ruleId: 'r-redirect', priority: 10, updatedAt: '' },
-      ]),
-    };
-    const listResolver = {
-      inWhitelist: vi.fn().mockResolvedValue(false),
-      inBlacklist: vi.fn().mockResolvedValue(false),
-    };
-    const ruleRepo = {
-      findById: vi.fn().mockResolvedValue({
-        id: 'r-redirect',
+    service.bindingRepo.getFlowBindings.mockResolvedValue([
+      { ruleId: 'rule-1', priority: 1, scope: 'flow' },
+    ]);
+    service.ruleRepo.findManyByIds.mockResolvedValue([
+      {
+        id: 'rule-1',
+        name: 'Legacy block',
         enabled: true,
         status: 'active',
-        conditions: { eq: ['country', 'DE'] },
-        actions: [
-          {
-            type: 'redirect',
-            platform: 'internal',
-            parameters: { redirectUrl: 'https://example.com/review' },
-            delay: 0,
-            retry: 0,
-          },
-        ],
-      }),
-    };
-
-    Object.defineProperty(serviceAny, 'bindingRepo', { value: bindingRepo, configurable: true, writable: true });
-    Object.defineProperty(serviceAny, 'listResolver', { value: listResolver, configurable: true, writable: true });
-    Object.defineProperty(serviceAny, 'ruleRepo', { value: ruleRepo, configurable: true, writable: true });
+        conditions: { eq: ['country', 'US'] },
+        actions: [{ type: 'block', platform: 'all', parameters: {}, delay: 0, retry: 0 }],
+      },
+    ]);
 
     const decision = await service.evaluate({
-      campaignId: 'c1',
-      context: { campaignId: 'c1', country: 'DE' },
+      campaignId: 'camp-1',
+      flowId: 'flow-1',
+      context: { campaignId: 'camp-1', country: 'US' },
     });
 
-    expect(decision.action).toBe('redirect');
+    expect(decision.action).toBe('block');
     expect(decision.matched).toBe(true);
-    expect(decision.redirectUrl).toBe('https://example.com/review');
+    expect(decision.matchedLayer).toBe('flow');
+  });
+
+  it('does not read legacy flow bindings when any explicit layered config exists', async () => {
+    const service = createService();
+    service.scopeRepo.resolveEffectiveScopeConfig.mockResolvedValue({
+      effectiveConfig: null,
+      hasExplicitConfig: true,
+      scannedScopeTypes: ['campaign', 'traffic_source', 'global'],
+    });
+
+    const decision = await service.evaluate({
+      campaignId: 'camp-1',
+      flowId: 'flow-1',
+      context: { campaignId: 'camp-1' },
+    });
+
+    expect(service.bindingRepo.getFlowBindings).not.toHaveBeenCalled();
+    expect(decision.action).toBe('allow');
+    expect(decision.reason).toBe('scope_inherit_without_effective_config');
+  });
+
+  it('supports ne/not_contains/gt/gte/lt/lte operators in expression nodes', async () => {
+    const service = createService();
+    const context = {
+      campaignId: 'camp-1',
+      country: 'CA',
+      city: 'Toronto',
+      asn: 13335,
+      utmCampaign: 'spring-sale',
+    };
+
+    await expect(service.evaluateExpressionNode({ ne: ['country', 'US'] }, context)).resolves.toBe(true);
+    await expect(service.evaluateExpressionNode({ not_contains: ['utmCampaign', 'winter'] }, context)).resolves.toBe(true);
+    await expect(service.evaluateExpressionNode({ gt: ['asn', 10000] }, context)).resolves.toBe(true);
+    await expect(service.evaluateExpressionNode({ gte: ['asn', 13335] }, context)).resolves.toBe(true);
+    await expect(service.evaluateExpressionNode({ lt: ['asn', 20000] }, context)).resolves.toBe(true);
+    await expect(service.evaluateExpressionNode({ lte: ['asn', 13335] }, context)).resolves.toBe(true);
   });
 });

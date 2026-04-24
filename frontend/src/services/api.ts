@@ -892,6 +892,38 @@ export interface AutoruleBindingInput {
   priority: number;
 }
 
+export type AutoruleScopeType = 'global' | 'traffic_source' | 'campaign';
+
+export type AutoruleScopeMode = 'inherit' | 'off' | 'rules' | 'whitelist_gate';
+
+export interface AutoruleScopeBinding {
+  ruleId: string;
+  priority: number;
+  enabled?: boolean;
+  updatedAt?: string;
+}
+
+export interface AutoruleScopeConfig {
+  id?: string;
+  scopeType: AutoruleScopeType;
+  scopeId: string;
+  mode: AutoruleScopeMode;
+  enabled: boolean;
+  bindings: AutoruleScopeBinding[];
+  createdAt?: string;
+  updatedAt: string;
+}
+
+export interface SaveAutoruleScopeConfigInput {
+  mode: AutoruleScopeMode;
+  enabled?: boolean;
+  bindings?: Array<{
+    ruleId: string;
+    priority?: number;
+    enabled?: boolean;
+  }>;
+}
+
 export async function fetchCampaignAutoruleBindings(campaignId: string | number): Promise<AutoruleBindingRecord[]> {
   const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-bindings`);
   const result = await handleResponse(response);
@@ -916,6 +948,84 @@ export async function clearCampaignAutoruleBindings(campaignId: string | number)
   });
   const result = await handleResponse(response);
   return result.data;
+}
+
+export async function fetchCampaignAutoruleScopeConfig(
+  campaignId: string | number
+): Promise<AutoruleScopeConfig | null> {
+  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-scope-config`);
+  const result = await handleResponse(response);
+  return (result.data as AutoruleScopeConfig | null) || null;
+}
+
+export async function saveCampaignAutoruleScopeConfig(
+  campaignId: string | number,
+  input: SaveAutoruleScopeConfigInput
+): Promise<AutoruleScopeConfig> {
+  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-scope-config`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  const result = await handleResponse(response);
+  return result.data as AutoruleScopeConfig;
+}
+
+export async function fetchGlobalAutoruleScopeConfig(): Promise<AutoruleScopeConfig | null> {
+  const response = await authenticatedFetch('/api/rules/global-scope-config');
+  const result = await handleResponse(response);
+  return (result.data as AutoruleScopeConfig | null) || null;
+}
+
+export async function saveGlobalAutoruleScopeConfig(
+  input: SaveAutoruleScopeConfigInput
+): Promise<AutoruleScopeConfig> {
+  const response = await authenticatedFetch('/api/rules/global-scope-config', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  const result = await handleResponse(response);
+  return result.data as AutoruleScopeConfig;
+}
+
+export async function fetchTrafficSourceAutoruleScopeConfig(
+  trafficSourceId: string | number
+): Promise<AutoruleScopeConfig | null> {
+  const response = await authenticatedFetch(`/api/traffic-sources/${trafficSourceId}/autorule-scope-config`);
+  const result = await handleResponse(response);
+  return (result.data as AutoruleScopeConfig | null) || null;
+}
+
+export async function saveTrafficSourceAutoruleScopeConfig(
+  trafficSourceId: string | number,
+  input: SaveAutoruleScopeConfigInput
+): Promise<AutoruleScopeConfig> {
+  const response = await authenticatedFetch(`/api/traffic-sources/${trafficSourceId}/autorule-scope-config`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  const result = await handleResponse(response);
+  return result.data as AutoruleScopeConfig;
+}
+
+export async function batchApplyTrafficSourceAutoruleScopeConfig(
+  trafficSourceIds: Array<string | number>,
+  input: SaveAutoruleScopeConfigInput
+): Promise<AutoruleScopeConfig[]> {
+  const response = await authenticatedFetch('/api/traffic-sources/autorule-scope-configs/batch', {
+    method: 'PUT',
+    body: JSON.stringify({
+      trafficSourceIds: trafficSourceIds.map((item) => String(item)),
+      ...input,
+    }),
+  });
+  const result = await handleResponse(response);
+  return Array.isArray(result.data) ? (result.data as AutoruleScopeConfig[]) : [];
+}
+
+export async function fetchTrafficSourceAutoruleScopeConfigs(): Promise<AutoruleScopeConfig[]> {
+  const response = await authenticatedFetch('/api/traffic-sources/autorule-scope-configs');
+  const result = await handleResponse(response);
+  return Array.isArray(result.data) ? (result.data as AutoruleScopeConfig[]) : [];
 }
 
 // 删除 Campaign
@@ -1132,6 +1242,66 @@ export async function fetchTrafficSources(
     endDate: dateParams.endDate,
   });
   return fetchListResult<any>(`/api/traffic-sources${query}`);
+}
+
+export async function fetchBlacklistEntries() {
+  return fetchListResult<any>('/api/blacklist');
+}
+
+export async function fetchWhitelistEntries() {
+  return fetchListResult<any>('/api/whitelist');
+}
+
+export async function syncBlacklist(trafficSourceId: string) {
+  return mutateJsonData<any>(`/api/blacklist/sync/${trafficSourceId}`, {
+    method: 'POST',
+  });
+}
+
+export async function deleteBlacklistEntry(id: string) {
+  return mutateJsonData<any>(`/api/blacklist/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createBlacklistEntry(payload: unknown) {
+  return mutateJsonData<any>('/api/blacklist', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateBlacklistEntry(id: string, payload: unknown) {
+  return mutateJsonData<any>(`/api/blacklist/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function syncWhitelist(trafficSourceId: string) {
+  return mutateJsonData<any>(`/api/whitelist/sync/${trafficSourceId}`, {
+    method: 'POST',
+  });
+}
+
+export async function deleteWhitelistEntry(id: string) {
+  return mutateJsonData<any>(`/api/whitelist/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createWhitelistEntry(payload: unknown) {
+  return mutateJsonData<any>('/api/whitelist', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateWhitelistEntry(id: string, payload: unknown) {
+  return mutateJsonData<any>(`/api/whitelist/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function fetchTrafficSource(id: string | number) {
@@ -2268,10 +2438,19 @@ export interface ClickLogParams {
   campaignId?: string;
   startDate?: string;
   endDate?: string;
+  source?: string;
+  zoneId?: string;
+  utmSource?: string;
+  utmCampaign?: string;
+  subId1?: string;
+  subId2?: string;
+  subId3?: string;
   country?: string;
   device?: string;
   browser?: string;
   os?: string;
+  isp?: string;
+  fingerprint?: string;
   ip?: string;
   visitorId?: string;
   offerId?: string;
@@ -2304,8 +2483,26 @@ export async function fetchClicks(params: ClickLogParams = {}): Promise<ClickLog
     matchesBootstrapScope(auditBundle.scope, {
       page: params.page || 1,
       pageSize: params.pageSize || 20,
+      campaignId: params.campaignId || '',
       startDate: params.startDate || '',
       endDate: params.endDate || '',
+      source: params.source || '',
+      zoneId: params.zoneId || '',
+      utmSource: params.utmSource || '',
+      utmCampaign: params.utmCampaign || '',
+      subId1: params.subId1 || '',
+      subId2: params.subId2 || '',
+      subId3: params.subId3 || '',
+      country: params.country || '',
+      device: params.device || '',
+      browser: params.browser || '',
+      os: params.os || '',
+      isp: params.isp || '',
+      fingerprint: params.fingerprint || '',
+      ip: params.ip || '',
+      visitorId: params.visitorId || '',
+      offerId: params.offerId || '',
+      flowId: params.flowId || '',
       search: params.search || '',
       status,
     })
@@ -2325,10 +2522,19 @@ export async function fetchClicks(params: ClickLogParams = {}): Promise<ClickLog
     campaignId: params.campaignId,
     startDate: params.startDate,
     endDate: params.endDate,
+    source: params.source,
+    zoneId: params.zoneId,
+    utmSource: params.utmSource,
+    utmCampaign: params.utmCampaign,
+    subId1: params.subId1,
+    subId2: params.subId2,
+    subId3: params.subId3,
     country: params.country,
     device: params.device,
     browser: params.browser,
     os: params.os,
+    isp: params.isp,
+    fingerprint: params.fingerprint,
     ip: params.ip,
     visitorId: params.visitorId,
     offerId: params.offerId,
@@ -2340,14 +2546,35 @@ export async function fetchClicks(params: ClickLogParams = {}): Promise<ClickLog
   return fetchPaginatedResult<any>(`/api/clicks${query}`);
 }
 
-export async function fetchClickStats(startDate: string, endDate: string, campaignId?: string): Promise<ClickStats> {
+export async function fetchClickStats(params: ClickLogParams): Promise<ClickStats> {
   const auditBundle = readBootstrapPage('audit');
+  const status =
+    params.isUnique === true ? 'unique' : params.isUnique === false ? 'nonunique' : 'all';
   if (
-    !campaignId &&
     auditBundle &&
     matchesBootstrapScope(auditBundle.scope, {
-      startDate,
-      endDate,
+      startDate: params.startDate || '',
+      endDate: params.endDate || '',
+      campaignId: params.campaignId || '',
+      source: params.source || '',
+      zoneId: params.zoneId || '',
+      utmSource: params.utmSource || '',
+      utmCampaign: params.utmCampaign || '',
+      subId1: params.subId1 || '',
+      subId2: params.subId2 || '',
+      subId3: params.subId3 || '',
+      country: params.country || '',
+      device: params.device || '',
+      browser: params.browser || '',
+      os: params.os || '',
+      isp: params.isp || '',
+      fingerprint: params.fingerprint || '',
+      ip: params.ip || '',
+      visitorId: params.visitorId || '',
+      offerId: params.offerId || '',
+      flowId: params.flowId || '',
+      search: params.search || '',
+      status,
     }) &&
     auditBundle.data?.stats
   ) {
@@ -2355,9 +2582,28 @@ export async function fetchClickStats(startDate: string, endDate: string, campai
   }
 
   const query = buildQueryString({
-    startDate,
-    endDate,
-    campaignId,
+    startDate: params.startDate,
+    endDate: params.endDate,
+    campaignId: params.campaignId,
+    source: params.source,
+    zoneId: params.zoneId,
+    utmSource: params.utmSource,
+    utmCampaign: params.utmCampaign,
+    subId1: params.subId1,
+    subId2: params.subId2,
+    subId3: params.subId3,
+    country: params.country,
+    device: params.device,
+    browser: params.browser,
+    os: params.os,
+    isp: params.isp,
+    fingerprint: params.fingerprint,
+    ip: params.ip,
+    visitorId: params.visitorId,
+    offerId: params.offerId,
+    flowId: params.flowId,
+    isUnique: params.isUnique,
+    search: params.search,
   });
   const response = await authenticatedFetch(`/api/clicks/stats${query}`);
   const payload = await handleRawJsonResponse(response);
@@ -2798,12 +3044,7 @@ export interface Rule {
   priority: number;
   enabled: boolean;
   status: 'active' | 'paused' | 'deleted';
-  conditions: Array<{
-    metric: string;
-    operator: string;
-    value: number | string;
-    duration?: string;
-  }>;
+  conditions: RuleConditionPayload;
   actions: Array<{
     type: string;
     platform?: string;
@@ -2819,7 +3060,7 @@ export interface CreateRuleDTO {
   type: 'campaign' | 'platform' | 'flow';
   priority?: number;
   enabled?: boolean;
-  conditions: Rule['conditions'];
+  conditions: RuleConditionPayload;
   actions: Rule['actions'];
 }
 
@@ -2830,9 +3071,33 @@ export interface UpdateRuleDTO {
   priority?: number;
   enabled?: boolean;
   status?: 'active' | 'paused' | 'deleted';
-  conditions?: Rule['conditions'];
+  conditions?: RuleConditionPayload;
   actions?: Rule['actions'];
 }
+
+export type RuleExpressionNode =
+  | { eq: [string, string | number | boolean | null] }
+  | { ne: [string, string | number | boolean | null] }
+  | { in: [string, Array<string | number | boolean>] }
+  | { contains: [string, string] }
+  | { not_contains: [string, string] }
+  | { gt: [string, string | number] }
+  | { gte: [string, string | number] }
+  | { lt: [string, string | number] }
+  | { lte: [string, string | number] }
+  | { exists: [string] }
+  | { all: RuleExpressionNode[] }
+  | { any: RuleExpressionNode[] }
+  | { not: RuleExpressionNode };
+
+export interface LegacyRuleCondition {
+  metric: string;
+  operator: string;
+  value: number | string;
+  duration?: string;
+}
+
+export type RuleConditionPayload = LegacyRuleCondition[] | RuleExpressionNode;
 
 export interface RuleConflict {
   type: 'duplicate_priority' | 'condition_overlap' | 'action_conflict';
@@ -2916,6 +3181,42 @@ export async function fetchRules(params: { page?: number; pageSize?: number; typ
       totalPages: result.totalPages,
     },
   };
+}
+
+export async function fetchExportTasks() {
+  const response = await authenticatedFetch('/api/export-tasks');
+  const payload = await handleRawJsonResponse<{
+    success?: boolean;
+    data?: { list?: any[] };
+  }>(response);
+  return Array.isArray(payload?.data?.list) ? payload.data.list : [];
+}
+
+export async function fetchExportTaskStats() {
+  const response = await authenticatedFetch('/api/export-tasks/stats');
+  const payload = await handleRawJsonResponse<{
+    success?: boolean;
+    data?: any;
+  }>(response);
+  return unwrapPayload<any>(payload);
+}
+
+export async function cancelExportTask(taskId: string) {
+  return mutateJsonData<any>(`/api/export-tasks/${taskId}/cancel`, {
+    method: 'POST',
+  });
+}
+
+export async function retryExportTask(taskId: string) {
+  return mutateJsonData<any>(`/api/export-tasks/${taskId}/retry`, {
+    method: 'POST',
+  });
+}
+
+export async function deleteExportTask(taskId: string) {
+  return mutateJsonData<any>(`/api/export-tasks/${taskId}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function fetchRuleById(id: string): Promise<Rule> {

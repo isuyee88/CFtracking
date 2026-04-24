@@ -24,27 +24,36 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { DateRangePickerComponent, getDateRange, type DateRangeValue } from '@/components/DateRangePicker';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 import {
   addLandingPageToFlow,
   addOfferToFlow,
   createFlow,
   deleteFlow,
   fetchCampaign,
+  fetchCampaignAutoruleScopeConfig,
   fetchCampaignStats,
   fetchConversions,
   fetchFlows,
   fetchLandings,
   fetchOffers,
+  fetchRules,
   fetchTrackingScript,
   fetchTrafficSources,
   fetchTrendsReport,
   regenerateCampaignToken,
+  saveCampaignAutoruleScopeConfig,
+  type AutoruleScopeConfig,
+  type AutoruleScopeMode,
+  type Rule as AutoruleRule,
   updateCampaign,
   updateFlow,
 } from '../services/api';
 import { useToast } from '../components/Toast';
 import { FlowDesigner, type FlowConnection, type FlowNode } from '../components/FlowDesigner';
 import CampaignRoutingWorkbench from '../components/CampaignRoutingWorkbench';
+import { buildCampaignTrackingUrl, parseTrafficSourceParameters } from '../utils/campaignUrl';
 import {
   ChartWrapper,
   LazyArea,
@@ -56,12 +65,28 @@ import {
   LazyXAxis,
   LazyYAxis,
 } from '../components/ChartWrapper';
-import type { ParameterTemplate, TrafficSource } from '../types/trafficSource';
+import type { TrafficSource } from '../types/trafficSource';
 import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+const CAMPAIGN_DETAIL_NAME_DISPLAY_LIMIT = Math.max(
+  DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL,
+  DISPLAY_MAX_LENGTH.CAMPAIGN_OPTION_LABEL
+);
+const CAMPAIGN_DETAIL_IDENTITY_DISPLAY_LIMIT =
+  DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT + DISPLAY_MAX_LENGTH.TAG_TEXT;
+
+const DRAFT_TEXT_FIELD_MAX_LENGTH = {
+  name: FIELD_MAX_LENGTH.NAME,
+  alias: FIELD_MAX_LENGTH.CAMPAIGN_ALIAS,
+  domain: FIELD_MAX_LENGTH.DOMAIN,
+  group: FIELD_MAX_LENGTH.GROUP,
+  uniquenessParameter: FIELD_MAX_LENGTH.UNIQUE_PARAMETER,
+  notes: FIELD_MAX_LENGTH.NOTES,
+} as const;
 
 type CampaignTab = 'general' | 'routing' | 'tracking' | 'parameters' | 'postback' | 'notes';
 type CampaignStatusApi = 'active' | 'paused' | 'deleted';
@@ -191,27 +216,6 @@ const FLOW_STATUS_OPTIONS: Array<{ value: FlowStatusApi; label: string }> = [
   { value: 'deleted', label: 'Deleted' },
 ];
 
-function parseSourceParameters(parameters?: TrafficSource['parameters']): ParameterTemplate[] {
-  if (!parameters) {
-    return [];
-  }
-
-  if (Array.isArray(parameters)) {
-    return parameters;
-  }
-
-  if (typeof parameters === 'string') {
-    try {
-      const parsed = JSON.parse(parameters);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
-}
-
 function formatCurrency(value: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -235,10 +239,6 @@ function formatDateLabel(value?: string) {
   }
 
   return parsed.toLocaleString();
-}
-
-function buildCampaignUrl(domain: string, alias: string) {
-  return `${domain.startsWith('http') ? domain : `https://${domain}`}/${alias}`;
 }
 
 function toDraft(campaign: BackendCampaign): Draft {
@@ -529,9 +529,15 @@ export default function CampaignDetail() {
       ? (bootstrap?.data?.kclientScript as any).code
       : ''
   );
+  const [campaignScopeConfig, setCampaignScopeConfig] = useState<AutoruleScopeConfig | null>(null);
+  const [campaignScopeMode, setCampaignScopeMode] = useState<AutoruleScopeMode>('inherit');
+  const [campaignScopeEnabled, setCampaignScopeEnabled] = useState(true);
+  const [campaignScopeBindings, setCampaignScopeBindings] = useState<Array<{ ruleId: string; priority: number }>>([]);
+  const [availableAutorules, setAvailableAutorules] = useState<AutoruleRule[]>([]);
   const [loading, setLoading] = useState(!hasMatchingBootstrap);
   const [analyticsLoading, setAnalyticsLoading] = useState(!hasMatchingBootstrap);
   const [saving, setSaving] = useState(false);
+  const [governanceSaving, setGovernanceSaving] = useState(false);
   const [routingSaving, setRoutingSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRangeValue>(() => {
@@ -547,10 +553,56 @@ export default function CampaignDetail() {
   });
 
   const campaignKey = campaign?.displayId || campaign?.id || id || '';
+  const reportFilterCampaignId = campaign?.id || id || '';
+
+  const buildCampaignReportsHref = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set('reportType', 'traffic');
+    params.set('startDate', dateRange.startDate);
+    params.set('endDate', dateRange.endDate);
+    params.set('groupBy', 'campaign,source,zoneid');
+    params.set('metrics', 'clicks,fraud_clicks,avg_fraud_score,blacklist_rate,rule_hits,blocked');
+    params.set('sortBy', 'fraud_clicks');
+    params.set('sortOrder', 'desc');
+    params.set(
+      'filters',
+      JSON.stringify([
+        {
+          field: 'campaign',
+          operator: 'eq',
+          value: reportFilterCampaignId,
+        },
+      ])
+    );
+    return `/reports?${params.toString()}`;
+  }, [dateRange.endDate, dateRange.startDate, reportFilterCampaignId]);
+
+  const buildCampaignClicksHref = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set('campaignId', reportFilterCampaignId);
+    params.set('startDate', dateRange.startDate);
+    params.set('endDate', dateRange.endDate);
+    return `/audit?${params.toString()}`;
+  }, [dateRange.endDate, dateRange.startDate, reportFilterCampaignId]);
+
+  const buildCampaignTrendsHref = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set('campaignId', reportFilterCampaignId);
+    params.set('startDate', dateRange.startDate);
+    params.set('endDate', dateRange.endDate);
+    return `/trends?${params.toString()}`;
+  }, [dateRange.endDate, dateRange.startDate, reportFilterCampaignId]);
 
   const setField = useCallback(<K extends keyof Draft>(field: K, value: Draft[K]) => {
     setDraft((current) => (current ? { ...current, [field]: value } : current));
   }, []);
+
+  const setTextField = useCallback(
+    <K extends keyof typeof DRAFT_TEXT_FIELD_MAX_LENGTH>(field: K, value: string) => {
+      setField(field, clampInput(value, DRAFT_TEXT_FIELD_MAX_LENGTH[field]) as Draft[K]);
+    },
+    [setField]
+  );
 
   const loadBaseData = useCallback(async () => {
     if (!id) {
@@ -565,12 +617,14 @@ export default function CampaignDetail() {
 
       await loadBootstrapForLocation().catch(() => null);
 
-      const [campaignData, flowsData, sourcesData, landingsData, offersData] = await Promise.all([
+      const [campaignData, flowsData, sourcesData, landingsData, offersData, scopeConfig, ruleLibrary] = await Promise.all([
         fetchCampaign(id),
         fetchFlows(id).catch(() => []),
         fetchTrafficSources(false).catch(() => []),
         fetchLandings(false).catch(() => []),
         fetchOffers(false).catch(() => []),
+        fetchCampaignAutoruleScopeConfig(id).catch(() => null),
+        fetchRules({ status: 'active' }).catch(() => ({ list: [], meta: { total: 0, page: 1, pageSize: 0, totalPages: 0 } })),
       ]);
 
       if (!campaignData?.id) {
@@ -604,6 +658,18 @@ export default function CampaignDetail() {
             }))
           : []
       );
+      setCampaignScopeConfig(scopeConfig);
+      setCampaignScopeMode(scopeConfig?.mode || 'inherit');
+      setCampaignScopeEnabled(scopeConfig?.enabled !== false);
+      setCampaignScopeBindings(
+        Array.isArray(scopeConfig?.bindings)
+          ? scopeConfig.bindings.map((binding) => ({
+              ruleId: binding.ruleId,
+              priority: Number(binding.priority || 0),
+            }))
+          : []
+      );
+      setAvailableAutorules(Array.isArray(ruleLibrary?.list) ? (ruleLibrary.list as AutoruleRule[]) : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load campaign');
     } finally {
@@ -798,15 +864,69 @@ export default function CampaignDetail() {
     () => trafficSources.find((source) => source.id === draft?.trafficSourceId),
     [draft?.trafficSourceId, trafficSources]
   );
+  const activeGovernanceRules = useMemo(
+    () => availableAutorules.filter((rule) => rule.enabled && rule.status === 'active'),
+    [availableAutorules]
+  );
+
+  const handleGovernanceRuleChange = useCallback((index: number, patch: { ruleId?: string; priority?: number }) => {
+    setCampaignScopeBindings((current) =>
+      current.map((binding, bindingIndex) =>
+        bindingIndex === index
+          ? {
+              ...binding,
+              ...patch,
+            }
+          : binding
+      )
+    );
+  }, []);
+
+  const handleSaveGovernance = useCallback(async () => {
+    if (!campaignKey) {
+      return;
+    }
+
+    setGovernanceSaving(true);
+    try {
+      const nextConfig = await saveCampaignAutoruleScopeConfig(campaignKey, {
+        mode: campaignScopeMode,
+        enabled: campaignScopeEnabled,
+        bindings: campaignScopeBindings
+          .map((binding, index) => ({
+            ruleId: String(binding.ruleId || '').trim(),
+            priority: Number.isFinite(Number(binding.priority)) ? Number(binding.priority) : index,
+          }))
+          .filter((binding) => binding.ruleId),
+      });
+      setCampaignScopeConfig(nextConfig);
+      setCampaignScopeMode(nextConfig.mode);
+      setCampaignScopeEnabled(nextConfig.enabled);
+      setCampaignScopeBindings(
+        (nextConfig.bindings || []).map((binding) => ({
+          ruleId: binding.ruleId,
+          priority: Number(binding.priority || 0),
+        }))
+      );
+      toast.success('Traffic governance updated');
+    } catch (err) {
+      toast.error('Failed to save traffic governance', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setGovernanceSaving(false);
+    }
+  }, [campaignKey, campaignScopeBindings, campaignScopeEnabled, campaignScopeMode, toast]);
 
   const macros = useMemo(
-    () => parseSourceParameters(selectedSource?.parameters),
+    () => parseTrafficSourceParameters(selectedSource?.parameters),
     [selectedSource?.parameters]
   );
 
   const campaignUrl = useMemo(
-    () => (draft ? buildCampaignUrl(draft.domain, draft.alias) : ''),
-    [draft]
+    () =>
+      draft
+        ? buildCampaignTrackingUrl(draft.domain, draft.alias, selectedSource?.parameters)
+        : '',
+    [draft, selectedSource?.parameters]
   );
 
   const readinessChecks = useMemo(
@@ -1104,7 +1224,12 @@ export default function CampaignDetail() {
             Back to Campaigns
           </button>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-3xl font-display font-bold text-primary">{draft.name}</h1>
+            <h1
+              className="max-w-[min(100%,36rem)] truncate text-3xl font-display font-bold text-primary"
+              title={draft.name}
+            >
+              {truncateLabel(draft.name, CAMPAIGN_DETAIL_NAME_DISPLAY_LIMIT)}
+            </h1>
             <span
               className={cn(
                 'inline-flex items-center gap-2 rounded-sm px-3 py-1 text-[10px] font-bold uppercase tracking-widest',
@@ -1120,8 +1245,14 @@ export default function CampaignDetail() {
             </span>
             <span className="text-xs font-mono text-on-surface-variant">{campaign.displayId || campaign.id}</span>
           </div>
-          <p className="text-sm text-on-surface-variant">
-            {draft.domain} / {draft.alias} / {draft.group}
+          <p
+            className="max-w-[min(100%,44rem)] truncate text-sm text-on-surface-variant"
+            title={`${draft.domain} / ${draft.alias} / ${draft.group}`}
+          >
+            {truncateLabel(
+              `${draft.domain} / ${draft.alias} / ${draft.group}`,
+              CAMPAIGN_DETAIL_IDENTITY_DISPLAY_LIMIT
+            )}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -1133,14 +1264,21 @@ export default function CampaignDetail() {
             Copy URL
           </button>
           <button
-            onClick={() => navigate('/reports')}
+            onClick={() => navigate(buildCampaignReportsHref())}
             className="flex items-center gap-2 border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-surface transition-colors hover:bg-surface-container"
           >
             <BarChart3 size={16} />
             Reports
           </button>
           <button
-            onClick={() => navigate('/trends')}
+            onClick={() => navigate(buildCampaignClicksHref())}
+            className="flex items-center gap-2 border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-surface transition-colors hover:bg-surface-container"
+          >
+            <ExternalLink size={16} />
+            Click Log
+          </button>
+          <button
+            onClick={() => navigate(buildCampaignTrendsHref())}
             className="flex items-center gap-2 border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-surface transition-colors hover:bg-surface-container"
           >
             <Activity size={16} />
@@ -1211,17 +1349,37 @@ export default function CampaignDetail() {
                 <Settings2 size={18} className="text-on-surface-variant" />
               </div>
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Campaign Name">
-                  <input value={draft.name} onChange={(event) => setField('name', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                <Field label="Campaign Name" meta={`${draft.name.length}/${FIELD_MAX_LENGTH.NAME}`}>
+                  <input
+                    value={draft.name}
+                    onChange={(event) => setTextField('name', event.target.value)}
+                    maxLength={FIELD_MAX_LENGTH.NAME}
+                    className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                  />
                 </Field>
-                <Field label="Alias">
-                  <input value={draft.alias} onChange={(event) => setField('alias', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                <Field label="Alias" meta={`${draft.alias.length}/${FIELD_MAX_LENGTH.CAMPAIGN_ALIAS}`}>
+                  <input
+                    value={draft.alias}
+                    onChange={(event) => setTextField('alias', event.target.value)}
+                    maxLength={FIELD_MAX_LENGTH.CAMPAIGN_ALIAS}
+                    className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                  />
                 </Field>
-                <Field label="Domain">
-                  <input value={draft.domain} onChange={(event) => setField('domain', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                <Field label="Domain" meta={`${draft.domain.length}/${FIELD_MAX_LENGTH.DOMAIN}`}>
+                  <input
+                    value={draft.domain}
+                    onChange={(event) => setTextField('domain', event.target.value)}
+                    maxLength={FIELD_MAX_LENGTH.DOMAIN}
+                    className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                  />
                 </Field>
-                <Field label="Group">
-                  <input value={draft.group} onChange={(event) => setField('group', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                <Field label="Group" meta={`${draft.group.length}/${FIELD_MAX_LENGTH.GROUP}`}>
+                  <input
+                    value={draft.group}
+                    onChange={(event) => setTextField('group', event.target.value)}
+                    maxLength={FIELD_MAX_LENGTH.GROUP}
+                    className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                  />
                 </Field>
                 <Field label="Status">
                   <select value={draft.status} onChange={(event) => setField('status', event.target.value as CampaignStatusApi)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary">
@@ -1287,6 +1445,97 @@ export default function CampaignDetail() {
                   <InfoRow label="Updated" value={formatDateLabel(campaign.updatedAt)} />
                   <InfoRow label="Linked Destinations" value={`${flows.length} flows`} />
                   <InfoRow label="API Token" value={campaign.apiToken ? 'Ready' : 'Missing'} />
+                </div>
+              </div>
+
+              <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Traffic Governance</h3>
+                    <p className="mt-2 text-sm text-on-surface-variant">
+                      Campaign scope overrides traffic source and global governance when configured.
+                    </p>
+                  </div>
+                  <Shield size={18} className="text-on-surface-variant" />
+                </div>
+                <div className="mt-5 space-y-4">
+                  <Field label="Mode">
+                    <select
+                      value={campaignScopeMode}
+                      onChange={(event) => setCampaignScopeMode(event.target.value as AutoruleScopeMode)}
+                      className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                    >
+                      <option value="inherit">Inherit lower scope</option>
+                      <option value="off">Off</option>
+                      <option value="rules">Rules</option>
+                      <option value="whitelist_gate">Whitelist gate</option>
+                    </select>
+                  </Field>
+                  <label className="flex items-center gap-3 rounded-sm border border-outline-variant/60 px-4 py-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={campaignScopeEnabled}
+                      onChange={(event) => setCampaignScopeEnabled(event.target.checked)}
+                    />
+                    Enable this campaign override
+                  </label>
+                  {campaignScopeMode === 'rules' && (
+                    <div className="space-y-3">
+                      {campaignScopeBindings.map((binding, index) => (
+                        <div key={`scope-binding-${index}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr),120px,40px]">
+                          <select
+                            value={binding.ruleId}
+                            onChange={(event) => handleGovernanceRuleChange(index, { ruleId: event.target.value })}
+                            className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                          >
+                            <option value="">Select rule</option>
+                            {activeGovernanceRules.map((rule) => (
+                              <option key={rule.id} value={rule.id}>
+                                {rule.name}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            value={binding.priority}
+                            onChange={(event) => handleGovernanceRuleChange(index, { priority: Number(event.target.value) })}
+                            className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                            placeholder="Priority"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCampaignScopeBindings((current) => current.filter((_, currentIndex) => currentIndex !== index))
+                            }
+                            className="inline-flex items-center justify-center border border-outline-variant bg-surface text-on-surface-variant hover:text-error"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setCampaignScopeBindings((current) => [...current, { ruleId: '', priority: current.length }])}
+                        className="inline-flex items-center gap-2 border border-outline-variant px-3 py-2 text-sm hover:border-primary hover:text-primary"
+                      >
+                        <Plus size={14} />
+                        Add bound rule
+                      </button>
+                    </div>
+                  )}
+                  <div className="rounded-sm bg-surface-container p-4 text-xs text-on-surface-variant">
+                    Effective precedence: Campaign override {'>'} Traffic Source {'>'} Global.
+                    {campaignScopeConfig?.updatedAt ? ` Last updated ${formatDateLabel(campaignScopeConfig.updatedAt)}.` : ' No campaign override saved yet.'}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveGovernance()}
+                    disabled={governanceSaving}
+                    className="inline-flex items-center gap-2 bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {governanceSaving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                    Save governance
+                  </button>
                 </div>
               </div>
             </div>
@@ -1573,8 +1822,17 @@ export default function CampaignDetail() {
                 <input type="number" min="0" value={draft.uniquenessTTL} onChange={(event) => setField('uniquenessTTL', Number(event.target.value))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
               </Field>
               {draft.uniquenessMethod === 'parameter' && (
-                <Field label="Uniqueness Parameter" className="md:col-span-2">
-                  <input value={draft.uniquenessParameter} onChange={(event) => setField('uniquenessParameter', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                <Field
+                  label="Uniqueness Parameter"
+                  meta={`${draft.uniquenessParameter.length}/${FIELD_MAX_LENGTH.UNIQUE_PARAMETER}`}
+                  className="md:col-span-2"
+                >
+                  <input
+                    value={draft.uniquenessParameter}
+                    onChange={(event) => setTextField('uniquenessParameter', event.target.value)}
+                    maxLength={FIELD_MAX_LENGTH.UNIQUE_PARAMETER}
+                    className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+                  />
                 </Field>
               )}
             </div>
@@ -1651,7 +1909,18 @@ export default function CampaignDetail() {
                 Document QA checkpoints, domain ownership, launch gates, and handoff details.
               </p>
             </div>
-            <textarea rows={14} value={draft.notes} onChange={(event) => setField('notes', event.target.value)} className="w-full resize-none border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" placeholder="Document domain ownership, QA checkpoints, fallback behavior, and launch notes..." />
+            <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+              <span>Notes Capacity</span>
+              <span>{draft.notes.length}/{FIELD_MAX_LENGTH.NOTES}</span>
+            </div>
+            <textarea
+              rows={14}
+              value={draft.notes}
+              onChange={(event) => setTextField('notes', event.target.value)}
+              maxLength={FIELD_MAX_LENGTH.NOTES}
+              className="w-full resize-none border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary"
+              placeholder="Document domain ownership, QA checkpoints, fallback behavior, and launch notes..."
+            />
             <button onClick={() => void saveDraft()} disabled={saving} className="modal-btn-primary inline-flex items-center gap-2 rounded-sm px-5 py-3 text-xs font-bold uppercase tracking-widest disabled:opacity-60">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               Save Notes
@@ -1684,12 +1953,25 @@ export default function CampaignDetail() {
   );
 }
 
-function Field({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  meta,
+  className,
+  children,
+}: {
+  label: string;
+  meta?: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className={className}>
-      <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-        {label}
-      </label>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+          {label}
+        </label>
+        {meta ? <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{meta}</span> : null}
+      </div>
       {children}
     </div>
   );

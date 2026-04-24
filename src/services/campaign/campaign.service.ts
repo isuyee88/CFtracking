@@ -11,9 +11,11 @@ import {
   type ReplaceRuleBindingInput,
   type RuleBindingRecord,
 } from '@/handlers/d1/autoruleBinding.repo';
+import { AutoruleScopeRepository } from '@/handlers/d1/autoruleScope.repo';
 import { getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
 import type { Campaign, CreateCampaignDTO, UpdateCampaignDTO, CampaignListQuery } from '@/types/campaign';
+import type { AutoruleScopeConfig, SaveAutoruleScopeConfigInput } from '@/types/autoruleScope';
 import { DuplicateError, NotFoundError } from '@/middleware/error';
 import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldLength';
@@ -22,12 +24,14 @@ export class CampaignService {
   private repo: CampaignRepository;
   private trafficRepo: TrafficRepository;
   private autoruleBindingRepo: AutoruleBindingRepository;
+  private autoruleScopeRepo: AutoruleScopeRepository;
 
   constructor(env: Env) {
     const db = getD1Connection(env);
     this.repo = new CampaignRepository(db);
     this.trafficRepo = new TrafficRepository(db);
     this.autoruleBindingRepo = new AutoruleBindingRepository(db);
+    this.autoruleScopeRepo = new AutoruleScopeRepository(db);
   }
 
   /**
@@ -257,6 +261,25 @@ export class CampaignService {
       throw new NotFoundError('Campaign not found');
     }
     await this.autoruleBindingRepo.clearCampaignBindings(campaignId);
+  }
+
+  async getAutoruleScopeConfig(campaignId: string): Promise<AutoruleScopeConfig | null> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleScopeRepo.getCampaignConfig(campaignId);
+  }
+
+  async saveAutoruleScopeConfig(
+    campaignId: string,
+    input: SaveAutoruleScopeConfigInput
+  ): Promise<AutoruleScopeConfig> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleScopeRepo.saveCampaignConfig(campaignId, input);
   }
 
   private normalizeUpdateInput(data: UpdateCampaignDTO, existing: Campaign): UpdateCampaignDTO {

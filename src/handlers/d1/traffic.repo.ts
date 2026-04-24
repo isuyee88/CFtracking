@@ -63,6 +63,7 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     margin: 'CASE WHEN SUM(revenue) > 0 THEN ROUND(((SUM(revenue) - SUM(spend)) * 100.0 / SUM(revenue)), 2) ELSE 0 END',
     epc: 'CASE WHEN SUM(clicks) > 0 THEN ROUND((SUM(revenue) * 1.0 / SUM(clicks)), 4) ELSE 0 END',
     cpc: 'CASE WHEN SUM(clicks) > 0 THEN ROUND((SUM(spend) * 1.0 / SUM(clicks)), 4) ELSE 0 END',
+    unique_clicks: '0',
     unique_visitors: '0',
     fraud_clicks: '0',
     bot_clicks: '0',
@@ -82,7 +83,7 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     country: 'c.country',
     device: 'c.device',
     browser: 'c.browser',
-    source: 'c.utmSource',
+    source: "COALESCE(NULLIF(ts.name, ''), NULLIF(cmp.trafficSource, ''))",
     zoneid: "COALESCE(NULLIF(c.subId1, ''), NULLIF(c.subId2, ''), NULLIF(c.subId3, ''))",
     utm_source: 'c.utmSource',
     utm_campaign: 'c.utmCampaign',
@@ -92,6 +93,8 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
   };
 
   private static readonly FRAUD_METRIC_SET: Set<string> = new Set([
+    'unique_clicks',
+    'unique_visitors',
     'fraud_clicks',
     'bot_clicks',
     'avg_fraud_score',
@@ -120,9 +123,9 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     { value: 'country', label: 'Country', hint: 'Visitor country' },
     { value: 'device', label: 'Device', hint: 'Device type' },
     { value: 'browser', label: 'Browser', hint: 'Browser family' },
-    { value: 'source', label: 'Source', hint: 'Traffic source token (utmSource)' },
-    { value: 'zoneid', label: 'Zone ID', hint: 'Primary zone signature (subId fallback chain)' },
-    { value: 'utm_source', label: 'UTM Source', hint: 'UTM source' },
+    { value: 'source', label: 'Traffic Source', hint: 'Campaign-bound traffic source name or identifier' },
+    { value: 'zoneid', label: 'Zone ID', hint: 'Zone signature using subId1 -> subId2 -> subId3 fallback' },
+    { value: 'utm_source', label: 'UTM Source', hint: 'Raw utm_source captured from tracking URL' },
     { value: 'utm_campaign', label: 'UTM Campaign', hint: 'UTM campaign' },
     { value: 'subid1', label: 'SubID1', hint: 'First sub identifier' },
     { value: 'subid2', label: 'SubID2', hint: 'Second sub identifier' },
@@ -146,6 +149,7 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     { value: 'margin', label: 'Margin', format: 'percent' },
     { value: 'epc', label: 'EPC', format: 'currency' },
     { value: 'cpc', label: 'CPC', format: 'currency' },
+    { value: 'unique_clicks', label: 'Unique Clicks', format: 'number' },
     { value: 'unique_visitors', label: 'Unique Visitors', format: 'number' },
     { value: 'fraud_clicks', label: 'Fraud Clicks', format: 'number' },
     { value: 'bot_clicks', label: 'Bot Clicks', format: 'number' },
@@ -1005,6 +1009,8 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
       SELECT
         ${selectClauses.join(',\n        ')}
       FROM clicks c
+      LEFT JOIN campaigns cmp ON cmp.id = c.campaignId
+      LEFT JOIN trafficSources ts ON ts.id = cmp.trafficSource
       LEFT JOIN (
         SELECT
           clickId,
@@ -1053,6 +1059,8 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
         return 'CASE WHEN COUNT(*) > 0 THEN ROUND((SUM(COALESCE(cv.convRevenue, 0)) * 1.0 / COUNT(*)), 4) ELSE 0 END';
       case 'cpc':
         return 'CASE WHEN COUNT(*) > 0 THEN ROUND((SUM(COALESCE(c.cost, 0)) * 1.0 / COUNT(*)), 4) ELSE 0 END';
+      case 'unique_clicks':
+        return 'COALESCE(SUM(CASE WHEN COALESCE(c.isUnique, 0) = 1 THEN 1 ELSE 0 END), 0)';
       case 'unique_visitors':
         return 'COALESCE(COUNT(DISTINCT c.visitorId), 0)';
       case 'fraud_clicks':

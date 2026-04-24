@@ -6,9 +6,11 @@
 
 import { Hono } from 'hono';
 import { RuleRepository } from '@/handlers/d1/rule.repo';
+import { AutoruleScopeRepository } from '@/handlers/d1/autoruleScope.repo';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 import { RuleEngine } from './engine';
 import { success, error } from '@/utils/response';
-import { validateRequired, validatePagination } from '@/utils/validator';
+import { validatePagination, validateRequired, validateStringLength } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
 import type { Action, Condition, CreateRuleDTO, Rule, UpdateRuleDTO } from '@/types/rule';
@@ -269,6 +271,29 @@ export function createRuleRouter(): Hono<{ Bindings: Env }> {
     return c.json(success(rules));
   });
 
+  router.get('/global-scope-config', async (c) => {
+    const repo = new AutoruleScopeRepository(c.env.DB);
+    const config = await repo.getGlobalConfig();
+    return c.json(success(config));
+  });
+
+  router.put('/global-scope-config', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const repo = new AutoruleScopeRepository(c.env.DB);
+    const config = await repo.saveGlobalConfig({
+      mode: String(body.mode || 'inherit') as any,
+      enabled: body.enabled !== false,
+      bindings: Array.isArray(body.bindings)
+        ? body.bindings.map((item: { ruleId: unknown; priority?: unknown; enabled?: unknown }) => ({
+            ruleId: String(item.ruleId || ''),
+            priority: Number(item.priority || 0),
+            enabled: item.enabled !== false,
+          }))
+        : [],
+    });
+    return c.json(success(config));
+  });
+
   router.get('/conflicts', async (c) => {
     const repo = new RuleRepository(c.env.DB);
     const result = await repo.findList({ page: 1, pageSize: 500, status: 'active' });
@@ -403,6 +428,23 @@ export function createRuleRouter(): Hono<{ Bindings: Env }> {
       return c.json(error(nameValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
     }
 
+    const boundedNameValidation = validateStringLength(String(body.name || '').trim(), 1, FIELD_MAX_LENGTH.RULE_NAME, 'name');
+    if (!boundedNameValidation.valid) {
+      return c.json(error(boundedNameValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+    }
+
+    if (typeof body.description === 'string' && body.description.length > 0) {
+      const descriptionValidation = validateStringLength(
+        body.description,
+        0,
+        FIELD_MAX_LENGTH.RULE_DESCRIPTION,
+        'description'
+      );
+      if (!descriptionValidation.valid) {
+        return c.json(error(descriptionValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+      }
+    }
+
     const typeValidation = validateRequired(body.type, 'type');
     if (!typeValidation.valid) {
       return c.json(error(typeValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
@@ -443,6 +485,25 @@ export function createRuleRouter(): Hono<{ Bindings: Env }> {
     const existing = await repo.findById(id);
     if (!existing) {
       return c.json(error('Rule not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+    }
+
+    if (typeof body.name === 'string') {
+      const nameValidation = validateStringLength(body.name.trim(), 1, FIELD_MAX_LENGTH.RULE_NAME, 'name');
+      if (!nameValidation.valid) {
+        return c.json(error(nameValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+      }
+    }
+
+    if (typeof body.description === 'string') {
+      const descriptionValidation = validateStringLength(
+        body.description,
+        0,
+        FIELD_MAX_LENGTH.RULE_DESCRIPTION,
+        'description'
+      );
+      if (!descriptionValidation.valid) {
+        return c.json(error(descriptionValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+      }
     }
 
     const rule = await repo.update(id, body);
