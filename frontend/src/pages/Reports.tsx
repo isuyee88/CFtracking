@@ -1,354 +1,1074 @@
-/**
- * File: Reports.tsx
- * Purpose: 报表页面主组件，集成列选择器、筛选构建器、数据表格
- * Input: 无
- * Output: 完整的报表页面 UI 和功能
- */
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  BarChart3,
+  Bookmark,
+  Download,
+  Filter,
+  Play,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Trash2,
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { DateRangePickerComponent, getDateRange, type DateRangeValue } from '@/components/DateRangePicker';
+import {
+  createExportTask,
+  downloadReport,
+  exportReport,
+  fetchReportMetadata,
+  queryReport,
+  type ExportFormat,
+  type ReportDimension,
+  type ReportDimensionOption,
+  type ReportFilterCondition,
+  type ReportFilterOperator,
+  type ReportMetric,
+  type ReportMetricOption,
+  type ReportType,
+} from '../services/api';
+import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
+import type { VirtualTableColumn } from '../components/VirtualTable';
 
-import React, { useState, useMemo } from 'react';
-import { Calendar, Download, RefreshCw, Settings2, X } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-import { useReportState } from '../hooks/useReportState';
-import { ReportColumnSelector, type ReportColumn } from '../components/ReportColumnSelector';
-import { ReportFilterBuilder, type ReportFilter } from '../components/ReportFilterBuilder';
-import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
-import { QuickDateRangePicker } from '@/components/DateRangePicker';
-import type { DateRangeValue } from '@/components/DateRangePicker';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+interface BuilderConfig {
+  reportType: ReportType;
+  startDate: string;
+  endDate: string;
+  groupBy: ReportDimension[];
+  metrics: ReportMetric[];
+  filters: ReportFilterCondition[];
+  limit: number;
+  sortBy: ReportDimension | ReportMetric;
+  sortOrder: 'asc' | 'desc';
 }
 
-// 模拟数据生成
-const generateMockData = (count: number) => {
-  const campaigns = ['Campaign A', 'Campaign B', 'Campaign C', 'Campaign D'];
-  const landings = ['Landing Page 1', 'Landing Page 2', 'Landing Page 3'];
-  const offers = ['Offer X', 'Offer Y', 'Offer Z'];
-  const countries = ['US', 'CN', 'GB', 'DE', 'FR'];
-  const devices = ['Desktop', 'Mobile', 'Tablet'];
-  const osList = ['Windows', 'macOS', 'iOS', 'Android'];
-  const browsers = ['Chrome', 'Firefox', 'Safari', 'Edge'];
+interface SavedView {
+  id: string;
+  name: string;
+  createdAt: string;
+  config: BuilderConfig;
+}
 
-  return Array.from({ length: count }, (_, i) => ({
-    id: i + 1,
-    datetime: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-    campaign: campaigns[Math.floor(Math.random() * campaigns.length)],
-    landing: landings[Math.floor(Math.random() * landings.length)],
-    offer: offers[Math.floor(Math.random() * offers.length)],
-    clicks: Math.floor(Math.random() * 1000),
-    unique_clicks: Math.floor(Math.random() * 500),
-    conversions: Math.floor(Math.random() * 100),
-    revenue: (Math.random() * 1000).toFixed(2),
-    cost: (Math.random() * 500).toFixed(2),
-    profit: (Math.random() * 500 - 100).toFixed(2),
-    roi: (Math.random() * 200 - 50).toFixed(2),
-    cr: (Math.random() * 10).toFixed(2),
-    epc: (Math.random() * 5).toFixed(2),
-    country: countries[Math.floor(Math.random() * countries.length)],
-    region: ['California', 'New York', 'Beijing', 'London', 'Berlin'][Math.floor(Math.random() * 5)],
-    city: ['Los Angeles', 'New York', 'Beijing', 'London', 'Berlin'][Math.floor(Math.random() * 5)],
-    device_type: devices[Math.floor(Math.random() * devices.length)],
-    os: osList[Math.floor(Math.random() * osList.length)],
-    browser: browsers[Math.floor(Math.random() * browsers.length)],
-    source: ['Google', 'Facebook', 'Direct', 'Email'][Math.floor(Math.random() * 4)],
-    referrer: ['google.com', 'facebook.com', '', 'email'][Math.floor(Math.random() * 4)],
-    sub1: `sub1_${Math.floor(Math.random() * 100)}`,
-    sub2: `sub2_${Math.floor(Math.random() * 100)}`,
-    sub3: `sub3_${Math.floor(Math.random() * 100)}`,
-  }));
+type ReportRow = Record<string, string | number | null | undefined>;
+
+const SAVED_VIEWS_STORAGE_KEY = 'cftracking.report-builder.saved-views.v1';
+
+const DEFAULT_DIMENSION_OPTIONS: ReportDimensionOption[] = [
+  { value: 'campaign', label: 'Campaign', hint: 'Campaign performance leaderboard' },
+  { value: 'offer', label: 'Offer', hint: 'Offer payout and conversion split' },
+  { value: 'landing', label: 'Landing', hint: 'Landing page funnel breakdown' },
+  { value: 'flow', label: 'Flow', hint: 'Routing path performance' },
+  { value: 'country', label: 'Country', hint: 'Geo segmentation' },
+  { value: 'device', label: 'Device', hint: 'Desktop / mobile split' },
+  { value: 'browser', label: 'Browser', hint: 'Browser quality and compatibility' },
+  { value: 'source', label: 'Source', hint: 'UTM source / traffic source signature' },
+  { value: 'zoneid', label: 'Zone ID', hint: 'Zone-level quality and fraud signal' },
+  { value: 'utm_source', label: 'UTM Source', hint: 'Campaign acquisition source' },
+  { value: 'utm_campaign', label: 'UTM Campaign', hint: 'UTM campaign token' },
+  { value: 'subid1', label: 'SubID1', hint: 'Primary sub identifier' },
+  { value: 'subid2', label: 'SubID2', hint: 'Secondary sub identifier' },
+  { value: 'subid3', label: 'SubID3', hint: 'Third-level sub identifier' },
+  { value: 'date', label: 'Date', hint: 'Day-by-day trend table' },
+];
+
+const DEFAULT_METRIC_OPTIONS: ReportMetricOption[] = [
+  { value: 'clicks', label: 'Clicks', format: 'number' },
+  { value: 'impressions', label: 'Impressions', format: 'number' },
+  { value: 'conversions', label: 'Conversions', format: 'number' },
+  { value: 'revenue', label: 'Revenue', format: 'currency' },
+  { value: 'spend', label: 'Spend', format: 'currency' },
+  { value: 'cost', label: 'Cost', format: 'currency' },
+  { value: 'profit', label: 'Profit', format: 'currency' },
+  { value: 'roi', label: 'ROI', format: 'percent' },
+  { value: 'cr', label: 'CR', format: 'percent' },
+  { value: 'margin', label: 'Margin', format: 'percent' },
+  { value: 'epc', label: 'EPC', format: 'currency' },
+  { value: 'cpc', label: 'CPC', format: 'currency' },
+  { value: 'unique_visitors', label: 'Unique Visitors', format: 'number' },
+  { value: 'fraud_clicks', label: 'Fraud Clicks', format: 'number' },
+  { value: 'bot_clicks', label: 'Bot Clicks', format: 'number' },
+  { value: 'avg_fraud_score', label: 'Avg Fraud Score', format: 'number' },
+  { value: 'blacklist_hits', label: 'Blacklist Hits', format: 'number' },
+  { value: 'blacklist_rate', label: 'Blacklist Rate', format: 'percent' },
+  { value: 'rule_hits', label: 'Rule Hits', format: 'number' },
+  { value: 'blocked', label: 'Blocked', format: 'number' },
+];
+
+const FILTER_OPERATORS: Array<{ value: ReportFilterOperator; label: string }> = [
+  { value: 'eq', label: 'Equals' },
+  { value: 'neq', label: 'Not equal' },
+  { value: 'contains', label: 'Contains' },
+  { value: 'gt', label: 'Greater than' },
+  { value: 'gte', label: 'Greater or equal' },
+  { value: 'lt', label: 'Less than' },
+  { value: 'lte', label: 'Less or equal' },
+];
+
+const REPORT_TEMPLATES: Array<{
+  id: string;
+  title: string;
+  description: string;
+  reportType: ReportType;
+  groupBy: ReportDimension[];
+  metrics: ReportMetric[];
+  sortBy: ReportDimension | ReportMetric;
+}> = [
+  {
+    id: 'traffic-command',
+    title: 'Traffic Command',
+    description: 'Campaign volume, reach, and conversion rate',
+    reportType: 'traffic',
+    groupBy: ['campaign'],
+    metrics: ['clicks', 'impressions', 'conversions', 'cr'],
+    sortBy: 'clicks',
+  },
+  {
+    id: 'offer-profit',
+    title: 'Offer Profit',
+    description: 'Offer-level revenue and ROI ranking',
+    reportType: 'conversion',
+    groupBy: ['offer'],
+    metrics: ['conversions', 'revenue', 'profit', 'roi'],
+    sortBy: 'revenue',
+  },
+  {
+    id: 'landing-quality',
+    title: 'Landing Quality',
+    description: 'Landing page conversion efficiency',
+    reportType: 'traffic',
+    groupBy: ['landing'],
+    metrics: ['clicks', 'conversions', 'cr', 'revenue'],
+    sortBy: 'cr',
+  },
+  {
+    id: 'geo-margin',
+    title: 'Geo Margin',
+    description: 'Country-level cost, revenue, and margin',
+    reportType: 'financial',
+    groupBy: ['country'],
+    metrics: ['clicks', 'revenue', 'spend', 'profit', 'margin'],
+    sortBy: 'profit',
+  },
+  {
+    id: 'browser-roi',
+    title: 'Browser ROI',
+    description: 'Browser mix for quality and profit',
+    reportType: 'roi',
+    groupBy: ['browser'],
+    metrics: ['clicks', 'conversions', 'revenue', 'roi', 'epc'],
+    sortBy: 'roi',
+  },
+  {
+    id: 'fraud-source-scan',
+    title: 'Fraud Source Scan',
+    description: 'Source / zone / subID fraud exposure with blacklist ratio',
+    reportType: 'traffic',
+    groupBy: ['campaign', 'source', 'zoneid'],
+    metrics: ['clicks', 'fraud_clicks', 'avg_fraud_score', 'blacklist_rate', 'rule_hits', 'blocked'],
+    sortBy: 'fraud_clicks',
+  },
+];
+
+const DEFAULT_CONFIG: BuilderConfig = {
+  reportType: 'traffic',
+  startDate: normalizeDateValue(getDateRange('last7days').startDate),
+  endDate: normalizeDateValue(getDateRange('last7days').endDate),
+  groupBy: ['campaign'],
+  metrics: ['clicks', 'impressions', 'conversions', 'cr'],
+  filters: [],
+  limit: 250,
+  sortBy: 'clicks',
+  sortOrder: 'desc',
 };
 
-const Reports: React.FC = () => {
-  const {
-    columns,
-    selectedColumns,
-    setSelectedColumns,
-    visibleColumns,
-    filters,
-    setFilters,
-    sortField,
-    sortOrder,
-    handleSort,
-    page,
-    pageSize,
-    setPage,
-    setPageSize,
-    dateRange,
-    setDateRange,
-  } = useReportState();
+function cn(...inputs: Array<string | false | null | undefined>) {
+  return inputs.filter(Boolean).join(' ');
+}
 
-  const [showColumnSelector, setShowColumnSelector] = useState(false);
-  const [loading, setLoading] = useState(false);
+function normalizeDateValue(value: string) {
+  return value.split('T')[0] || value;
+}
 
-  // 生成模拟数据
-  const allData = useMemo(() => generateMockData(1000), []);
-
-  // 应用筛选和排序
-  const filteredData = useMemo(() => {
-    let result = [...allData];
-
-    // 应用筛选
-    if (filters.length > 0) {
-      result = result.filter((item) => {
-        return filters.every((filter) => {
-          const value = item[filter.field as keyof typeof item];
-          
-          switch (filter.operator) {
-            case 'equals':
-              return String(value) === String(filter.value);
-            case 'not_equals':
-              return String(value) !== String(filter.value);
-            case 'contains':
-              return String(value).includes(String(filter.value));
-            case 'not_contains':
-              return !String(value).includes(String(filter.value));
-            case 'greater_than':
-              return Number(value) > Number(filter.value);
-            case 'less_than':
-              return Number(value) < Number(filter.value);
-            default:
-              return true;
-          }
-        });
-      });
-    }
-
-    // 应用排序
-    if (sortField && sortOrder) {
-      result.sort((a, b) => {
-        const aValue = a[sortField as keyof typeof a];
-        const bValue = b[sortField as keyof typeof b];
-
-        if (sortOrder === 'asc') {
-          return aValue > bValue ? 1 : -1;
-        } else {
-          return aValue < bValue ? 1 : -1;
-        }
-      });
-    }
-
-    return result;
-  }, [allData, filters, sortField, sortOrder]);
-
-  // 分页数据
-  const paginatedData = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    const end = start + pageSize;
-    return filteredData.slice(start, end);
-  }, [filteredData, page, pageSize]);
-
-  // 总页数
-  const totalPages = Math.ceil(filteredData.length / pageSize);
-
-  // 刷新数据
-  const handleRefresh = () => {
-    setLoading(true);
-    setTimeout(() => setLoading(false), 1000);
+function cloneConfig(config: BuilderConfig): BuilderConfig {
+  return {
+    ...config,
+    groupBy: [...config.groupBy],
+    metrics: [...config.metrics],
+    filters: config.filters.map((filter) => ({ ...filter })),
   };
+}
 
-  // 导出报表
-  const handleExport = () => {
-    console.log('Export report', {
-      columns: selectedColumns,
-      filters,
-      sortField,
-      sortOrder,
-      dateRange,
-      totalRecords: filteredData.length,
+function formatMetricValue(metric: ReportMetric, value: unknown, metricOptions: ReportMetricOption[]) {
+  const numericValue = Number(value ?? 0);
+  const option = metricOptions.find((item) => item.value === metric);
+
+  if (!option) {
+    return String(value ?? '-');
+  }
+
+  if (option.format === 'currency') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: metric === 'epc' || metric === 'cpc' ? 4 : 2,
+    }).format(numericValue);
+  }
+
+  if (option.format === 'percent') {
+    return `${numericValue.toFixed(2)}%`;
+  }
+
+  return numericValue.toLocaleString();
+}
+
+function formatCellValue(key: string, value: unknown, metricOptions: ReportMetricOption[]) {
+  if (metricOptions.some((option) => option.value === key)) {
+    return formatMetricValue(key as ReportMetric, value, metricOptions);
+  }
+
+  return String(value ?? '-');
+}
+
+function getColumnLabel(
+  key: string,
+  dimensionOptions: ReportDimensionOption[],
+  metricOptions: ReportMetricOption[]
+) {
+  const dimension = dimensionOptions.find((option) => option.value === key);
+  if (dimension) {
+    return dimension.label;
+  }
+
+  const metric = metricOptions.find((option) => option.value === key);
+  if (metric) {
+    return metric.label;
+  }
+
+  if (key === 'summary') {
+    return 'Summary';
+  }
+
+  return key;
+}
+
+function isMetricColumn(key: string, metricOptions: ReportMetricOption[]) {
+  return metricOptions.some((option) => option.value === key);
+}
+
+function compareReportValues(a: unknown, b: unknown) {
+  const aNumber = Number(a);
+  const bNumber = Number(b);
+
+  if (Number.isFinite(aNumber) && Number.isFinite(bNumber)) {
+    return aNumber - bNumber;
+  }
+
+  return String(a ?? '').localeCompare(String(b ?? ''), 'en-US', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+function getReportRowKey(row: ReportRow, index: number, columns: string[]) {
+  const signature = columns.map((column) => String(row[column] ?? '')).join('|');
+  return `${index}-${signature}`;
+}
+
+function readSavedViews(): SavedView[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SAVED_VIEWS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedViews(views: SavedView[]) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(views));
+}
+
+function mergeDimensionOptions(remote: ReportDimensionOption[]) {
+  const merged = new Map<string, ReportDimensionOption>();
+
+  for (const item of DEFAULT_DIMENSION_OPTIONS) {
+    merged.set(item.value, item);
+  }
+
+  for (const item of remote) {
+    if (!item?.value) {
+      continue;
+    }
+    merged.set(item.value, {
+      value: item.value,
+      label: item.label || item.value,
+      hint: item.hint || '',
     });
-    // TODO: 实现导出功能
-  };
+  }
 
-  // 列配置转换为 VirtualTable 格式
-  const tableColumns: VirtualTableColumn[] = useMemo(() => {
-    return visibleColumns.map((col) => ({
-      key: col.key,
-      label: col.label,
-      width: col.key === 'datetime' ? '180px' : col.key === 'campaign' ? '200px' : '120px',
-      align: ['clicks', 'unique_clicks', 'conversions', 'revenue', 'cost', 'profit', 'roi', 'cr', 'epc'].includes(col.key) ? 'right' : 'left',
-      sorter: sortOrder ? undefined : (a: any, b: any) => {
-        const aValue = a[col.key as keyof typeof a];
-        const bValue = b[col.key as keyof typeof b];
-        
-        if (col.type === 'number') {
-          return Number(aValue) - Number(bValue);
+  return Array.from(merged.values());
+}
+
+function mergeMetricOptions(remote: ReportMetricOption[]) {
+  const merged = new Map<string, ReportMetricOption>();
+
+  for (const item of DEFAULT_METRIC_OPTIONS) {
+    merged.set(item.value, item);
+  }
+
+  for (const item of remote) {
+    if (!item?.value) {
+      continue;
+    }
+
+    merged.set(item.value, {
+      value: item.value,
+      label: item.label || item.value,
+      format: item.format || 'number',
+      isCustom: Boolean(item.isCustom),
+    });
+  }
+
+  return Array.from(merged.values());
+}
+
+function createFilterDraft(): ReportFilterCondition {
+  return {
+    field: 'campaign',
+    operator: 'eq',
+    value: '',
+  };
+}
+
+export default function Reports() {
+  const navigate = useNavigate();
+  const [dateRange, setDateRange] = useState<DateRangeValue>({
+    startDate: DEFAULT_CONFIG.startDate,
+    endDate: DEFAULT_CONFIG.endDate,
+  });
+  const [builder, setBuilder] = useState<BuilderConfig>(cloneConfig(DEFAULT_CONFIG));
+  const [appliedConfig, setAppliedConfig] = useState<BuilderConfig>(cloneConfig(DEFAULT_CONFIG));
+  const [rows, setRows] = useState<ReportRow[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [queueingFormat, setQueueingFormat] = useState<ExportFormat | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [viewName, setViewName] = useState('');
+  const [activeTemplateId, setActiveTemplateId] = useState<string>('traffic-command');
+  const [dimensionOptions, setDimensionOptions] = useState<ReportDimensionOption[]>(DEFAULT_DIMENSION_OPTIONS);
+  const [metricOptions, setMetricOptions] = useState<ReportMetricOption[]>(DEFAULT_METRIC_OPTIONS);
+  const deferredSearchQuery = React.useDeferredValue(searchQuery);
+
+  useEffect(() => {
+    setSavedViews(readSavedViews());
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadMetadata = async () => {
+      try {
+        const metadata = await fetchReportMetadata();
+        if (!active) {
+          return;
         }
-        return String(aValue).localeCompare(String(bValue));
-      },
-      showSorter: true,
-      render: (value: any, row: any) => {
-        // 格式化数值
-        if (['revenue', 'cost', 'profit', 'epc'].includes(col.key)) {
-          return <span className="font-mono">${Number(value).toFixed(2)}</span>;
+
+        setDimensionOptions(mergeDimensionOptions(metadata.dimensions || []));
+        setMetricOptions(mergeMetricOptions(metadata.metrics || []));
+      } catch {
+        if (!active) {
+          return;
         }
-        if (['roi', 'cr'].includes(col.key)) {
-          return <span className="font-mono">{Number(value).toFixed(2)}%</span>;
-        }
-        if (['clicks', 'unique_clicks', 'conversions'].includes(col.key)) {
-          return <span className="font-mono">{Number(value).toLocaleString()}</span>;
-        }
-        if (col.key === 'datetime') {
-          return <span className="text-sm">{new Date(value).toLocaleString()}</span>;
-        }
-        return <span>{value || '-'}</span>;
-      },
+
+        setDimensionOptions(DEFAULT_DIMENSION_OPTIONS);
+        setMetricOptions(DEFAULT_METRIC_OPTIONS);
+      }
+    };
+
+    void loadMetadata();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setBuilder((current) => ({
+      ...current,
+      startDate: normalizeDateValue(dateRange.startDate),
+      endDate: normalizeDateValue(dateRange.endDate),
     }));
-  }, [visibleColumns, sortOrder]);
+  }, [dateRange.endDate, dateRange.startDate]);
+
+  const filterFieldOptions = useMemo(
+    () =>
+      [
+        ...dimensionOptions.map((option) => ({ value: option.value, label: option.label })),
+        ...metricOptions.map((option) => ({ value: option.value, label: option.label })),
+      ] as Array<{ value: ReportDimension | ReportMetric; label: string }>,
+    [dimensionOptions, metricOptions]
+  );
+
+  const runReport = useCallback(async (config?: BuilderConfig) => {
+    const nextConfig = cloneConfig(config || builder);
+
+    if (nextConfig.metrics.length === 0) {
+      setError('Select at least one metric before running the report.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const reportData = await queryReport({
+        startDate: nextConfig.startDate,
+        endDate: nextConfig.endDate,
+        groupBy: nextConfig.groupBy,
+        metrics: nextConfig.metrics,
+        filters: nextConfig.filters.filter((filter) => String(filter.value).trim().length > 0),
+        limit: nextConfig.limit,
+        sortBy: nextConfig.sortBy,
+        sortOrder: nextConfig.sortOrder,
+      });
+
+      setRows(Array.isArray(reportData) ? reportData : []);
+      setAppliedConfig(nextConfig);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to run report');
+    } finally {
+      setLoading(false);
+    }
+  }, [builder]);
+
+  useEffect(() => {
+    void runReport(DEFAULT_CONFIG);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filteredRows = useMemo(() => {
+    const lowered = deferredSearchQuery.trim().toLowerCase();
+    if (!lowered) {
+      return rows;
+    }
+
+    return rows.filter((row) =>
+      Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(lowered))
+    );
+  }, [deferredSearchQuery, rows]);
+
+  const visibleColumns = useMemo(() => {
+    if (appliedConfig.groupBy.length === 0) {
+      return ['summary', ...appliedConfig.metrics];
+    }
+
+    return [...appliedConfig.groupBy, ...appliedConfig.metrics];
+  }, [appliedConfig.groupBy, appliedConfig.metrics]);
+
+  const resultColumns = useMemo<VirtualTableColumn<ReportRow>[]>(() => (
+    visibleColumns.map((column) => {
+      const metricColumn = isMetricColumn(column, metricOptions);
+
+      return {
+        key: column,
+        label: getColumnLabel(column, dimensionOptions, metricOptions),
+        dataIndex: column,
+        width: metricColumn ? 156 : 196,
+        align: metricColumn ? 'right' : 'left',
+        sorter: (left, right) => compareReportValues(left[column], right[column]),
+        showFilter: false,
+        render: (value) => formatCellValue(column, value, metricOptions),
+        className: metricColumn ? 'font-mono' : undefined,
+      };
+    })
+  ), [dimensionOptions, metricOptions, visibleColumns]);
+
+  const reportTableHeight = useMemo(() => (
+    Math.min(Math.max(filteredRows.length, 6) * 48 + 48, 640)
+  ), [filteredRows.length]);
+
+  const summaryCards = useMemo(() => {
+    const candidates = appliedConfig.metrics.slice(0, 4);
+
+    return candidates.map((metric) => {
+      const isRatio = ['roi', 'cr', 'margin'].includes(metric);
+      const total = filteredRows.reduce((sum, row) => sum + Number(row[metric] ?? 0), 0);
+      const value = isRatio && filteredRows.length > 0 ? total / filteredRows.length : total;
+
+      return {
+        label: getColumnLabel(metric, dimensionOptions, metricOptions),
+        value: formatMetricValue(metric, value, metricOptions),
+      };
+    });
+  }, [appliedConfig.metrics, dimensionOptions, filteredRows, metricOptions]);
+
+  const isDirty = useMemo(() => JSON.stringify(builder) !== JSON.stringify(appliedConfig), [appliedConfig, builder]);
+
+  const applyTemplate = useCallback((templateId: string) => {
+    const template = REPORT_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) {
+      return;
+    }
+
+    const nextConfig: BuilderConfig = {
+      ...cloneConfig(builder),
+      reportType: template.reportType,
+      groupBy: [...template.groupBy],
+      metrics: [...template.metrics],
+      sortBy: template.sortBy,
+      sortOrder: 'desc',
+    };
+
+    setBuilder(nextConfig);
+    setActiveTemplateId(templateId);
+    void runReport(nextConfig);
+  }, [builder, runReport]);
+
+  const toggleDimension = useCallback((dimension: ReportDimension) => {
+    setBuilder((current) => {
+      const active = current.groupBy.includes(dimension);
+      const nextGroupBy = active
+        ? current.groupBy.filter((item) => item !== dimension)
+        : [...current.groupBy, dimension];
+
+      const fallbackSort = nextGroupBy.includes(current.sortBy as ReportDimension)
+        || current.metrics.includes(current.sortBy as ReportMetric)
+        ? current.sortBy
+        : nextGroupBy[0] || current.metrics[0];
+
+      return {
+        ...current,
+        groupBy: nextGroupBy,
+        sortBy: fallbackSort,
+      };
+    });
+  }, []);
+
+  const toggleMetric = useCallback((metric: ReportMetric) => {
+    setBuilder((current) => {
+      const active = current.metrics.includes(metric);
+      const nextMetrics = active
+        ? current.metrics.filter((item) => item !== metric)
+        : [...current.metrics, metric];
+
+      if (nextMetrics.length === 0) {
+        return current;
+      }
+
+      const fallbackSort = current.groupBy.includes(current.sortBy as ReportDimension)
+        || nextMetrics.includes(current.sortBy as ReportMetric)
+        ? current.sortBy
+        : nextMetrics[0];
+
+      return {
+        ...current,
+        metrics: nextMetrics,
+        sortBy: fallbackSort,
+      };
+    });
+  }, []);
+
+  const updateFilter = useCallback((index: number, patch: Partial<ReportFilterCondition>) => {
+    setBuilder((current) => ({
+      ...current,
+      filters: current.filters.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }));
+  }, []);
+
+  const saveCurrentView = useCallback(() => {
+    const nextName = viewName.trim();
+    if (!nextName) {
+      setError('Enter a view name before saving.');
+      return;
+    }
+
+    const nextView: SavedView = {
+      id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `view-${Date.now()}`,
+      name: nextName,
+      createdAt: new Date().toISOString(),
+      config: cloneConfig(builder),
+    };
+
+    const nextViews = [nextView, ...savedViews].slice(0, 12);
+    setSavedViews(nextViews);
+    writeSavedViews(nextViews);
+    setViewName('');
+  }, [builder, savedViews, viewName]);
+
+  const loadSavedView = useCallback((view: SavedView) => {
+    const nextConfig = cloneConfig(view.config);
+    setBuilder(nextConfig);
+    setAppliedConfig(nextConfig);
+    setDateRange({
+      startDate: nextConfig.startDate,
+      endDate: nextConfig.endDate,
+    });
+    void runReport(nextConfig);
+  }, [runReport]);
+
+  const deleteSavedView = useCallback((id: string) => {
+    const nextViews = savedViews.filter((view) => view.id !== id);
+    setSavedViews(nextViews);
+    writeSavedViews(nextViews);
+  }, [savedViews]);
+
+  const handleExport = useCallback(async (format: ExportFormat) => {
+    setExporting(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const blob = await exportReport({
+        type: appliedConfig.reportType,
+        format,
+        startDate: appliedConfig.startDate,
+        endDate: appliedConfig.endDate,
+        groupBy: appliedConfig.groupBy,
+        metrics: appliedConfig.metrics,
+        filters: appliedConfig.filters.filter((filter) => String(filter.value).trim().length > 0),
+        limit: appliedConfig.limit,
+        sortBy: appliedConfig.sortBy,
+        sortOrder: appliedConfig.sortOrder,
+        columns: visibleColumns,
+      });
+
+      const safeName = `${appliedConfig.reportType}-builder.${format === 'excel' ? 'xlsx' : 'csv'}`;
+      downloadReport(blob, safeName);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export report');
+    } finally {
+      setExporting(false);
+    }
+  }, [appliedConfig, visibleColumns]);
+
+  const handleQueueExport = useCallback(async (format: ExportFormat) => {
+    setQueueingFormat(format);
+    setError(null);
+    setNotice(null);
+
+    const normalizedFilters = appliedConfig.filters.filter((filter) => String(filter.value).trim().length > 0);
+    const today = new Date().toISOString().split('T')[0] || '';
+
+    const payload = {
+      name: `${appliedConfig.reportType}-report-${today}-${format}`,
+      entityType: 'reports' as const,
+      format,
+      dateRange: {
+        startDate: appliedConfig.startDate,
+        endDate: appliedConfig.endDate,
+      },
+      fields: visibleColumns,
+      filters: {
+        reportType: appliedConfig.reportType,
+        groupBy: appliedConfig.groupBy,
+        metrics: appliedConfig.metrics,
+        filters: normalizedFilters,
+        limit: appliedConfig.limit,
+        sortBy: appliedConfig.sortBy,
+        sortOrder: appliedConfig.sortOrder,
+        columns: visibleColumns,
+      },
+    };
+
+    try {
+      await createExportTask(payload);
+      setNotice(`Queued ${format.toUpperCase()} export. You can monitor progress in Exported Reports.`);
+
+      if (typeof window !== 'undefined') {
+        try {
+          window.sessionStorage.setItem('cftracking.export-task-draft.v1', JSON.stringify(payload));
+        } catch {
+          // Ignore session storage failures in restricted contexts.
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to queue export task');
+    } finally {
+      setQueueingFormat(null);
+    }
+  }, [appliedConfig, visibleColumns]);
 
   return (
-    <div className="p-6 bg-background min-h-screen">
-      {/* 页面标题 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-display font-bold text-on-surface">报表中心</h1>
-        <p className="text-sm text-fg-muted mt-1">自定义列和筛选条件，生成您的专属报表</p>
-      </div>
-
-      {/* 顶部工具栏 */}
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          {/* 日期范围选择 */}
-          <QuickDateRangePicker
-            value={dateRange as DateRangeValue}
-            onChange={(range) => setDateRange(range as any)}
+    <div className="min-h-full bg-background p-6">
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-display font-bold text-on-surface">Report Builder</h1>
+          <p className="mt-1 max-w-3xl text-sm text-on-surface-variant">
+            Build Keitaro-style analytical views with flexible dimensions, metrics, filters, saved views, and exports.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[minmax(280px,340px)_160px_160px]">
+          <DateRangePickerComponent
+            value={dateRange}
+            onChange={(value) => value && setDateRange(value)}
+            showTime={false}
           />
-
-          {/* 刷新按钮 */}
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium',
-              'bg-surface-container border border-outline-variant',
-              'text-on-surface hover:bg-surface-container-high',
-              'transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
+          <select
+            value={builder.sortBy}
+            onChange={(event) =>
+              setBuilder((current) => ({
+                ...current,
+                sortBy: event.target.value as ReportDimension | ReportMetric,
+              }))
+            }
+            className="border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface"
           >
-            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-            刷新
-          </button>
-
-          {/* 导出按钮 */}
-          <button
-            onClick={handleExport}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium',
-              'bg-primary text-on-primary hover:bg-primary-dark',
-              'transition-colors'
-            )}
+            {[...builder.groupBy, ...builder.metrics].map((field) => (
+              <option key={field} value={field}>
+                Sort by {getColumnLabel(field, dimensionOptions, metricOptions)}
+              </option>
+            ))}
+            {builder.groupBy.length === 0 && builder.metrics.length === 0 && <option value="clicks">Sort by Clicks</option>}
+          </select>
+          <select
+            value={builder.sortOrder}
+            onChange={(event) =>
+              setBuilder((current) => ({
+                ...current,
+                sortOrder: event.target.value as 'asc' | 'desc',
+              }))
+            }
+            className="border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface"
           >
-            <Download className="w-4 h-4" />
-            导出
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* 列选择器开关 */}
-          <button
-            onClick={() => setShowColumnSelector(!showColumnSelector)}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium',
-              showColumnSelector
-                ? 'bg-primary/10 text-primary'
-                : 'bg-surface-container border border-outline-variant text-on-surface',
-              'hover:bg-surface-container-high transition-colors'
-            )}
-          >
-            <Settings2 className="w-4 h-4" />
-            列设置
-            <span className="text-xs opacity-60">({selectedColumns.length})</span>
-            {showColumnSelector && <X className="w-3 h-3" />}
-          </button>
+            <option value="desc">Descending</option>
+            <option value="asc">Ascending</option>
+          </select>
         </div>
       </div>
 
-      {/* 主内容区 */}
-      <div className="flex gap-4">
-        {/* 左侧面板：列选择器 */}
-        {showColumnSelector && (
-          <div
-            className="w-80 flex-shrink-0 animate-in slide-in-from-left-4 duration-200"
-            style={{ height: 'calc(100vh - 280px)' }}
-          >
-            <ReportColumnSelector
-              columns={columns}
-              selectedColumns={selectedColumns}
-              onColumnsChange={setSelectedColumns}
-            />
+      <div className="mb-6 grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+        <div className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <BarChart3 size={16} />
+            Quick Templates
           </div>
-        )}
-
-        {/* 右侧：筛选器和表格 */}
-        <div className="flex-1 min-w-0">
-          {/* 筛选构建器 */}
-          <div className="mb-4">
-            <ReportFilterBuilder
-              columns={columns}
-              filters={filters}
-              onFiltersChange={setFilters}
-            />
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {REPORT_TEMPLATES.map((template) => {
+              const active = template.id === activeTemplateId;
+              return (
+                <button
+                  key={template.id}
+                  onClick={() => applyTemplate(template.id)}
+                  className={cn(
+                    'rounded-sm border p-4 text-left transition-colors',
+                    active
+                      ? 'border-primary bg-primary/10'
+                      : 'border-outline-variant/30 bg-surface-container hover:border-primary/40'
+                  )}
+                >
+                  <div className="text-sm font-semibold text-on-surface">{template.title}</div>
+                  <div className="mt-1 text-xs text-on-surface-variant">{template.description}</div>
+                </button>
+              );
+            })}
           </div>
+        </div>
 
-          {/* 数据表格 */}
-          <div className="bg-surface rounded-sm border border-outline-variant overflow-hidden">
-            <VirtualTableEnhanced
-              tableId="reports"
-              columns={tableColumns}
-              data={paginatedData}
-              rowHeight={48}
-              height={500}
-              overscan={5}
-              emptyMessage="暂无数据"
+        <div className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <Bookmark size={16} />
+            Saved Views
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={viewName}
+              onChange={(event) => setViewName(event.target.value)}
+              placeholder="Save current layout as..."
+              className="w-full border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
             />
-
-            {/* 分页 */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-outline-variant">
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-fg-muted">
-                  显示 {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, filteredData.length)} 条，
-                  共 {filteredData.length} 条
-                </span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                  }}
-                  className="px-2 py-1 text-sm bg-surface border border-outline-variant rounded-sm text-on-surface"
-                >
-                  <option value={25}>25 条/页</option>
-                  <option value={50}>50 条/页</option>
-                  <option value={100}>100 条/页</option>
-                  <option value={500}>500 条/页</option>
-                </select>
+            <button
+              onClick={saveCurrentView}
+              className="flex items-center gap-2 rounded-sm bg-primary px-4 py-2 text-sm text-on-primary"
+            >
+              <Save size={16} />
+              Save
+            </button>
+          </div>
+          <div className="mt-4 space-y-2">
+            {savedViews.length === 0 ? (
+              <div className="rounded-sm border border-dashed border-outline-variant/40 px-3 py-4 text-sm text-on-surface-variant">
+                No saved views yet.
               </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page === 1}
-                  className="px-3 py-1.5 text-sm bg-surface-container border border-outline-variant rounded-sm text-on-surface disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-container-high transition-colors"
-                >
-                  上一页
-                </button>
-                <span className="text-sm text-on-surface">
-                  第 {page} 页 / 共 {totalPages} 页
-                </span>
-                <button
-                  onClick={() => setPage(Math.min(totalPages, page + 1))}
-                  disabled={page === totalPages}
-                  className="px-3 py-1.5 text-sm bg-surface-container border border-outline-variant rounded-sm text-on-surface disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-container-high transition-colors"
-                >
-                  下一页
-                </button>
-              </div>
-            </div>
+            ) : (
+              savedViews.map((view) => (
+                <div key={view.id} className="flex items-center justify-between rounded-sm border border-outline-variant/20 bg-surface-container px-3 py-3">
+                  <button onClick={() => loadSavedView(view)} className="text-left">
+                    <div className="text-sm font-medium text-on-surface">{view.name}</div>
+                    <div className="text-xs text-on-surface-variant">
+                      {view.config.groupBy
+                        .map((field) => getColumnLabel(field, dimensionOptions, metricOptions))
+                        .join(' / ') || 'Summary'} ·{' '}
+                      {view.config.metrics
+                        .map((field) => getColumnLabel(field, dimensionOptions, metricOptions))
+                        .join(', ')}
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => deleteSavedView(view.id)}
+                    className="rounded-sm border border-outline-variant px-2 py-2 text-on-surface-variant hover:text-error"
+                    aria-label={`Delete saved view ${view.name}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
+
+      <div className="mb-6 grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
+        <section className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-3 text-sm font-semibold text-on-surface">Dimensions</div>
+          <div className="flex flex-wrap gap-2">
+            {dimensionOptions.map((option) => {
+              const active = builder.groupBy.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => toggleDimension(option.value)}
+                  className={cn(
+                    'rounded-sm border px-3 py-2 text-left text-sm transition-colors',
+                    active
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-outline-variant bg-surface-container text-on-surface'
+                  )}
+                >
+                  <div>{option.label}</div>
+                  <div className="mt-1 text-[11px] text-on-surface-variant">{option.hint}</div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-3 text-sm font-semibold text-on-surface">Metrics</div>
+          <div className="flex flex-wrap gap-2">
+            {metricOptions.map((option) => {
+              const active = builder.metrics.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => toggleMetric(option.value)}
+                  className={cn(
+                    'rounded-sm border px-3 py-2 text-sm transition-colors',
+                    active
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-outline-variant bg-surface-container text-on-surface'
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-sm border border-outline-variant bg-surface p-5">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <Filter size={16} />
+            Filters
+          </div>
+          <div className="space-y-3">
+            {builder.filters.length === 0 ? (
+              <div className="rounded-sm border border-dashed border-outline-variant/40 px-3 py-4 text-sm text-on-surface-variant">
+                No filters. Add rules for country, device, campaign, or even metric thresholds like ROI greater than 20.
+              </div>
+            ) : (
+              builder.filters.map((filter, index) => (
+                <div key={`${filter.field}-${index}`} className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+                  <select
+                    value={filter.field}
+                    onChange={(event) =>
+                      updateFilter(index, { field: event.target.value as ReportDimension | ReportMetric })
+                    }
+                    className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
+                  >
+                    {filterFieldOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={filter.operator}
+                    onChange={(event) => updateFilter(index, { operator: event.target.value as ReportFilterOperator })}
+                    className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
+                  >
+                    {FILTER_OPERATORS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={String(filter.value)}
+                    onChange={(event) => updateFilter(index, { value: event.target.value })}
+                    placeholder="Filter value"
+                    className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
+                  />
+                  <button
+                    onClick={() =>
+                      setBuilder((current) => ({
+                        ...current,
+                        filters: current.filters.filter((_, itemIndex) => itemIndex !== index),
+                      }))
+                    }
+                    className="rounded-sm border border-outline-variant px-3 py-2 text-on-surface-variant hover:text-error"
+                    aria-label="Remove filter"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))
+            )}
+            <button
+              onClick={() =>
+                setBuilder((current) => ({
+                  ...current,
+                  filters: [...current.filters, createFilterDraft()],
+                }))
+              }
+              className="flex items-center gap-2 rounded-sm border border-outline-variant px-3 py-2 text-sm text-on-surface"
+            >
+              <Plus size={14} />
+              Add filter
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <SummaryCard label="Rows" value={filteredRows.length.toLocaleString()} />
+        <SummaryCard label="Dimensions" value={(appliedConfig.groupBy.length || 0).toString()} />
+        {summaryCards.map((card) => (
+          <SummaryCard key={card.label} label={card.label} value={card.value} />
+        ))}
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => void runReport()}
+          disabled={loading}
+          className="flex items-center gap-2 rounded-sm bg-primary px-4 py-2 text-sm text-on-primary"
+        >
+          <Play size={16} />
+          Run Report
+        </button>
+        <button
+          onClick={() => {
+            setBuilder(cloneConfig(DEFAULT_CONFIG));
+            setDateRange({ startDate: DEFAULT_CONFIG.startDate, endDate: DEFAULT_CONFIG.endDate });
+            setActiveTemplateId('traffic-command');
+          }}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <RefreshCw size={16} />
+          Reset Builder
+        </button>
+        <button
+          onClick={() => void handleExport('csv')}
+          disabled={exporting || queueingFormat !== null}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <Download size={16} />
+          Export CSV
+        </button>
+        <button
+          onClick={() => void handleExport('excel')}
+          disabled={exporting || queueingFormat !== null}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <Download size={16} />
+          Export Excel
+        </button>
+        <button
+          onClick={() => void handleQueueExport('csv')}
+          disabled={exporting || queueingFormat !== null}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <Plus size={16} />
+          {queueingFormat === 'csv' ? 'Queueing CSV...' : 'Queue CSV'}
+        </button>
+        <button
+          onClick={() => void handleQueueExport('excel')}
+          disabled={exporting || queueingFormat !== null}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <Plus size={16} />
+          {queueingFormat === 'excel' ? 'Queueing Excel...' : 'Queue Excel'}
+        </button>
+        <button
+          onClick={() => navigate('/exported-reports')}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <BarChart3 size={16} />
+          Open Export Queue
+        </button>
+        <div className="ml-auto flex items-center gap-2 rounded-sm border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface-variant">
+          <Search size={14} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search visible rows"
+            className="bg-transparent outline-none placeholder:text-on-surface-variant"
+          />
+        </div>
+      </div>
+
+      {isDirty && (
+        <div className="mb-4 rounded-sm border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-on-surface">
+          Builder settings changed but not yet applied. Click <strong>Run Report</strong> to refresh the dataset.
+        </div>
+      )}
+
+      {notice && (
+        <div className="mb-4 rounded-sm border border-success/20 bg-success/10 p-4 text-sm text-success">{notice}</div>
+      )}
+
+      {error && <div className="mb-4 rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>}
+
+      <VirtualTableEnhanced
+        tableId="report-builder-results"
+        columns={resultColumns}
+        data={filteredRows}
+        loading={loading}
+        rowHeight={48}
+        height={reportTableHeight}
+        overscan={10}
+        emptyMessage={searchQuery.trim() ? 'No rows matched the current query.' : 'Run a report to see results.'}
+        getRowId={(row, index) => getReportRowKey(row, index, visibleColumns)}
+        className="overflow-x-auto rounded-sm border border-outline-variant bg-surface"
+      />
     </div>
   );
-};
+}
 
-export default Reports;
+function SummaryCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-sm border border-outline-variant/20 bg-surface-container-lowest p-4">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</div>
+      <div className="mt-2 text-2xl font-display font-bold text-on-surface">{value}</div>
+    </div>
+  );
+}

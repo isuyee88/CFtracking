@@ -19,6 +19,8 @@ export function createOfferRouter(): Hono<{ Bindings: Env }> {
       page: parseInt(c.req.query('page') || '1'),
       pageSize: parseInt(c.req.query('pageSize') || '20'),
       withStats: c.req.query('withStats') === 'true',
+      startDate: c.req.query('startDate') || undefined,
+      endDate: c.req.query('endDate') || undefined,
     };
 
     const { page, pageSize } = validatePagination(query.page, query.pageSize);
@@ -26,7 +28,7 @@ export function createOfferRouter(): Hono<{ Bindings: Env }> {
     
     // Use getListWithStats if withStats=true
     const result = query.withStats 
-      ? await service.getListWithStats(page, pageSize)
+      ? await service.getListWithStats(page, pageSize, query.startDate, query.endDate)
       : await service.getList(page, pageSize);
 
     return c.json(success(result.list, {
@@ -45,12 +47,14 @@ export function createOfferRouter(): Hono<{ Bindings: Env }> {
   router.get('/:id', async (c) => {
     const id = c.req.param('id');
     const withStats = c.req.query('withStats') === 'true';
+    const startDate = c.req.query('startDate') || undefined;
+    const endDate = c.req.query('endDate') || undefined;
     const service = new OfferService(c.env);
 
     try {
       // Use getDetail if withStats=true
       const offer = withStats 
-        ? await service.getDetail(id)
+        ? await service.getDetail(id, startDate, endDate)
         : await service.getById(id);
       return c.json(success(offer));
     } catch (err) {

@@ -1,30 +1,34 @@
 /**
- * @fileoverview Dashboard 数据查询服务
- * @description 从 D1 获取数据
+ * @fileoverview Dashboard 鏁版嵁鏌ヨ鏈嶅姟
+ * @description 浠?D1 鑾峰彇鏁版嵁
  * @module services/analytics/dashboard-query.service
  *
- * 数据存储架构:
- *   - DO (Durable Objects): 唯一性检查和计数器
- *   - D1: 主存储，用于所有数据查询
+ * 鏁版嵁瀛樺偍鏋舵瀯:
+ *   - DO (Durable Objects): 鍞竴鎬ф鏌ュ拰璁℃暟鍣?
+ *   - D1: 涓诲瓨鍌紝鐢ㄤ簬鎵€鏈夋暟鎹煡璇?
  *
- * 数据流:
- *   点击请求 → DO(唯一性检查) → D1(主存储)
+ * 鏁版嵁娴?
+ *   鐐瑰嚮璇锋眰 鈫?DO(鍞竴鎬ф鏌? 鈫?D1(涓诲瓨鍌?
  *
- * Dashboard数据读取逻辑:
- *   - 所有数据 ──► D1读取
- *     优点: 完整准确、永久存储
+ * Dashboard鏁版嵁璇诲彇閫昏緫:
+ *   - 鎵€鏈夋暟鎹?鈹€鈹€鈻?D1璇诲彇
+ *     浼樼偣: 瀹屾暣鍑嗙‘銆佹案涔呭瓨鍌?
  *
- * 输入: 查询参数（range, campaignId, filters）
- * 输出: Dashboard 统计数据
- * 逻辑交互:
- *   - 被 analytics.routes.ts 调用
- *   - 内部调用 TrafficRepository (D1)
- * 前后端交互: 通过 API 返回统一格式的数据
+ * 杈撳叆: 鏌ヨ鍙傛暟锛坮ange, campaignId, filters锛?
+ * 杈撳嚭: Dashboard 缁熻鏁版嵁
+ * 閫昏緫浜や簰:
+ *   - 琚?analytics.routes.ts 璋冪敤
+ *   - 鍐呴儴璋冪敤 TrafficRepository (D1)
+ * 鍓嶅悗绔氦浜? 閫氳繃 API 杩斿洖缁熶竴鏍煎紡鐨勬暟鎹?
  */
 
 import type { Env } from '@/config/env';
 import { getD1Connection, TrafficRepository } from '@/handlers/d1';
 import { getTrackingStatsStub } from '@/handlers/do';
+import type { ReportDimension, ReportFilter, ReportMetric, ReportQueryOptions } from '@/handlers/d1/traffic.repo';
+import { createCustomMetricService } from '@/services/customMetric/customMetric.service';
+import { createMetricCalculationEngine, type MetricCalculationEngine } from '@/services/customMetric/metric.engine';
+import type { CustomMetric, MetricCalculationContext } from '@/types/customMetric';
 
 export type DataSource = 'D1' | 'DO';
 
@@ -64,49 +68,95 @@ export interface DashboardQueryResult {
   range: string;
 }
 
+interface DOStatsResponse {
+  todayClicks?: number;
+  uniqueClicks?: number;
+  todayConversions?: number;
+  todayCost?: number;
+  todayRevenue?: number;
+  todayProfit?: number;
+  todayROI?: number;
+}
+
+interface DOChartResponse {
+  chartData?: ChartDataPoint[];
+}
+
+interface DOEntityStatsResponse {
+  stats?: Record<string, EntityStatItem[]>;
+}
+
+const BUILTIN_REPORT_METRICS: ReportMetric[] = [
+  'clicks',
+  'impressions',
+  'conversions',
+  'revenue',
+  'spend',
+  'cost',
+  'profit',
+  'roi',
+  'cr',
+  'margin',
+  'epc',
+  'cpc',
+  'unique_visitors',
+  'fraud_clicks',
+  'bot_clicks',
+  'avg_fraud_score',
+  'blacklist_hits',
+  'blacklist_rate',
+  'rule_hits',
+  'blocked',
+];
+
+const BUILTIN_REPORT_METRIC_SET = new Set<ReportMetric>(BUILTIN_REPORT_METRICS);
+
+const BUILTIN_METRIC_ALIASES: Record<string, ReportMetric> = {
+  uniqueVisitors: 'unique_visitors',
+};
+
 export class DashboardQueryService {
   private trafficRepo: TrafficRepository;
+  private readonly customMetricService: ReturnType<typeof createCustomMetricService>;
+  private readonly metricEngine: MetricCalculationEngine;
 
   constructor(env: Env) {
     this.trafficRepo = new TrafficRepository(getD1Connection(env));
+    this.customMetricService = createCustomMetricService(env);
+    this.metricEngine = createMetricCalculationEngine();
   }
 
   /**
-   * 获取 Dashboard 统计数据
-   * 根据时间范围从不同数据源获取数据
-   * - < 90天数据 ──► DO读取
-   * - > 90天数据 ──► D1读取
+   * 鑾峰彇 Dashboard 缁熻鏁版嵁
+   * 鏍规嵁鏃堕棿鑼冨洿浠庝笉鍚屾暟鎹簮鑾峰彇鏁版嵁
+   * - < 90澶╂暟鎹?鈹€鈹€鈻?DO璇诲彇
+   * - > 90澶╂暟鎹?鈹€鈹€鈻?D1璇诲彇
    */
-  async getDashboardStats(range: string, env: Env): Promise<DashboardQueryResult> {
-    const { startDate, endDate } = this.getDateRange(range);
-    
-    // 判断是否在90天以内
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    const startDateObj = new Date(startDate);
-    const useDO = startDateObj >= ninetyDaysAgo;
+  async getDashboardStats(range: string, env: Env, campaignId?: string): Promise<DashboardQueryResult> {
+    // Only keep DO on the hot "today" path until DO/D1 aggregates are fully aligned.
+    const useDO = range === 'today' && !campaignId;
     const dataSource: DataSource = useDO ? 'DO' : 'D1';
 
-    console.log(`[DashboardQueryService] Range: ${range}, DataSource: ${dataSource}, Start: ${startDate}, End: ${endDate}`);
+    console.log(`[DashboardQueryService] Range: ${range}, Campaign: ${campaignId || 'all'}, DataSource: ${dataSource}`);
 
     if (useDO) {
-      // 从 DO 获取数据
+      // 浠?DO 鑾峰彇鏁版嵁
       return this.getDashboardStatsFromDO(range, env);
     } else {
-      // 从 D1 获取数据
-      return this.getDashboardStatsFromD1(range);
+      // 浠?D1 鑾峰彇鏁版嵁
+      return this.getDashboardStatsFromD1(range, campaignId);
     }
   }
 
   /**
-   * 从 D1 获取 Dashboard 统计数据
+   * 浠?D1 鑾峰彇 Dashboard 缁熻鏁版嵁
    */
-  private async getDashboardStatsFromD1(range: string): Promise<DashboardQueryResult> {
-    const d1Result = await this.trafficRepo.getDashboardStats(range);
-    const d1ChartData = await this.trafficRepo.getChartData(range);
+  private async getDashboardStatsFromD1(range: string, campaignId?: string): Promise<DashboardQueryResult> {
+    const d1Result = await this.trafficRepo.getDashboardStats(range, campaignId);
+    const d1ChartData = await this.trafficRepo.getChartData(range, campaignId);
     const metrics = this.formatD1Metrics(d1Result);
     const chartData = this.formatD1ChartData(d1ChartData);
-    const entityStats = await this.getEntityStatsFromD1(range);
+    const entityStats = await this.getEntityStatsFromD1(range, campaignId);
 
     return {
       metrics,
@@ -119,32 +169,32 @@ export class DashboardQueryService {
   }
 
   /**
-   * 从 DO 获取 Dashboard 统计数据
+   * 浠?DO 鑾峰彇 Dashboard 缁熻鏁版嵁
    */
   private async getDashboardStatsFromDO(range: string, env: Env): Promise<DashboardQueryResult> {
     try {
       const trackingDO = getTrackingStatsStub(env, 'global-stats');
-      
-      // 并行获取统计数据、图表数据和实体统计
+
+      // 骞惰鑾峰彇缁熻鏁版嵁銆佸浘琛ㄦ暟鎹拰瀹炰綋缁熻
       const [statsResponse, chartResponse, entityStatsResponse] = await Promise.all([
         trackingDO.fetch('http://do/stats'),
         trackingDO.fetch(`http://do/chart-data?range=${range}`),
         trackingDO.fetch(`http://do/entity-stats?range=${range}`),
       ]);
-      
-      const stats = await statsResponse.json();
-      const chartData = await chartResponse.json();
-      const entityStatsData = await entityStatsResponse.json();
-      
-      // 格式化指标数据
+
+      const stats = await statsResponse.json() as DOStatsResponse;
+      const chartData = await chartResponse.json() as DOChartResponse;
+      const entityStatsData = await entityStatsResponse.json() as DOEntityStatsResponse;
+
+      // 鏍煎紡鍖栨寚鏍囨暟鎹?
       const metrics = this.formatDOMetrics(stats);
-      
-      // 格式化图表数据
+
+      // 鏍煎紡鍖栧浘琛ㄦ暟鎹?
       const formattedChartData = chartData.chartData || [];
-      
-      // 格式化实体统计数据
+
+      // 鏍煎紡鍖栧疄浣撶粺璁℃暟鎹?
       const entityStats = entityStatsData.stats || {};
-      
+
       return {
         metrics,
         chartData: formattedChartData,
@@ -155,13 +205,13 @@ export class DashboardQueryService {
       };
     } catch (error) {
       console.error('[DashboardQueryService] Error fetching from DO:', error);
-      // 降级到 D1
+      // 闄嶇骇鍒?D1
       return this.getDashboardStatsFromD1(range);
     }
   }
 
   /**
-   * 格式化 DO 指标数据
+   * 鏍煎紡鍖?DO 鎸囨爣鏁版嵁
    */
   private formatDOMetrics(data: any): DashboardMetric[] {
     return [
@@ -176,8 +226,8 @@ export class DashboardQueryService {
   }
 
   /**
-   * 获取趋势报告数据
-   * 从 D1 获取数据
+   * 鑾峰彇瓒嬪娍鎶ュ憡鏁版嵁
+   * 浠?D1 鑾峰彇鏁版嵁
    */
   async getTrendReport(
     startDate: string,
@@ -190,16 +240,21 @@ export class DashboardQueryService {
   }
 
   /**
-   * 获取近期点击数据
-   * 从 D1 获取数据
+   * 鑾峰彇杩戞湡鐐瑰嚮鏁版嵁
+   * 浠?D1 鑾峰彇鏁版嵁
    */
   async getRecentClicks(params: {
     limit?: number;
     range?: string;
     campaignId?: string;
+    country?: string;
+    device?: string;
   }): Promise<{ list: any[]; total: number; dataSource: DataSource }> {
-    const dataSource: DataSource = 'D1';
-    const clicks = await this.trafficRepo.getRecentClicks(params.limit || 50);
+    const clicks = await this.trafficRepo.getRecentClicks({
+      limit: params.limit || 50,
+      range: params.range,
+      campaignId: params.campaignId,
+    });
     return {
       list: clicks,
       total: clicks.length,
@@ -208,11 +263,11 @@ export class DashboardQueryService {
   }
 
   /**
-   * 获取实体统计数据
-   * 从 D1 获取数据
+   * 鑾峰彇瀹炰綋缁熻鏁版嵁
+   * 浠?D1 鑾峰彇鏁版嵁
    */
-  async getEntityStats(entityType: string, range: string): Promise<EntityStatItem[]> {
-    const stats = await this.trafficRepo.getEntityStats(entityType, range);
+  async getEntityStats(entityType: string, range: string, campaignId?: string): Promise<EntityStatItem[]> {
+    const stats = await this.trafficRepo.getEntityStats(entityType, range, campaignId);
     return stats.map((item: any) => ({
       name: item.name || 'Unknown',
       clicks: Number(item.clicks) || 0,
@@ -224,18 +279,16 @@ export class DashboardQueryService {
     }));
   }
 
-
-
   /**
-   * 从 D1 获取实体统计数据
+   * 浠?D1 鑾峰彇瀹炰綋缁熻鏁版嵁
    */
-  private async getEntityStatsFromD1(range: string): Promise<Record<string, EntityStatItem[]>> {
+  private async getEntityStatsFromD1(range: string, campaignId?: string): Promise<Record<string, EntityStatItem[]>> {
     const entityTypes = ['campaigns', 'countries', 'device_types', 'browsers'];
     const stats: Record<string, EntityStatItem[]> = {};
 
     for (const entityType of entityTypes) {
       try {
-        const entityStats = await this.trafficRepo.getEntityStats(entityType, range);
+        const entityStats = await this.trafficRepo.getEntityStats(entityType, range, campaignId);
         stats[entityType] = entityStats.map((item: any) => ({
           name: item.name || 'Unknown',
           clicks: Number(item.clicks) || 0,
@@ -246,8 +299,8 @@ export class DashboardQueryService {
           unique_visitors: 0,
         }));
       } catch (error) {
-        // 静默处理错误，避免影响其他实体类型的数据加载
-        // 常见原因：数据源中没有该类型的数据，或者引用了已删除的实体
+        // 闈欓粯澶勭悊閿欒锛岄伩鍏嶅奖鍝嶅叾浠栧疄浣撶被鍨嬬殑鏁版嵁鍔犺浇
+        // 甯歌鍘熷洜锛氭暟鎹簮涓病鏈夎绫诲瀷鐨勬暟鎹紝鎴栬€呭紩鐢ㄤ簡宸插垹闄ょ殑瀹炰綋
         console.warn(`[DashboardQueryService] ${entityType} stats from D1: No data available`);
         stats[entityType] = [];
       }
@@ -257,7 +310,7 @@ export class DashboardQueryService {
   }
 
   /**
-   * 格式化 D1 指标数据
+   * 鏍煎紡鍖?D1 鎸囨爣鏁版嵁
    */
   private formatD1Metrics(data: any[]): DashboardMetric[] {
     const metricsMap: Record<string, any> = {};
@@ -277,7 +330,7 @@ export class DashboardQueryService {
   }
 
   /**
-   * 格式化 D1 图表数据
+   * 鏍煎紡鍖?D1 鍥捐〃鏁版嵁
    */
   private formatD1ChartData(data: any[]): ChartDataPoint[] {
     return data.map((item: any) => ({
@@ -291,7 +344,7 @@ export class DashboardQueryService {
   }
 
   /**
-   * 格式化 D1 趋势数据
+   * 鏍煎紡鍖?D1 瓒嬪娍鏁版嵁
    */
   private formatD1TrendData(data: any[]): ChartDataPoint[] {
     return data.map((item: any) => ({
@@ -305,163 +358,338 @@ export class DashboardQueryService {
   }
 
   /**
-   * 获取指定类型的报表数据
-   * 支持 traffic | conversion | financial | roi
-   * 从 D1 获取数据
+   * 鑾峰彇鎸囧畾绫诲瀷鐨勬姤琛ㄦ暟鎹?
+   * 鏀寔 traffic | conversion | financial | roi
+   * 浠?D1 鑾峰彇鏁版嵁
    */
   async getReport(
     reportType: 'traffic' | 'conversion' | 'financial' | 'roi',
     options: {
       startDate: string;
       endDate: string;
-      groupBy: string[];
+      groupBy: ReportDimension[];
+      metrics?: ReportMetric[];
+      filters?: ReportFilter[];
       limit: number;
-      sortBy: string;
+      sortBy: ReportDimension | ReportMetric;
       sortOrder: 'asc' | 'desc';
     }
   ): Promise<any[]> {
-    const { startDate, endDate, groupBy, limit, sortBy, sortOrder } = options;
-    const dataSource: DataSource = 'D1';
-
-    const baseQuery = {
-      startDate,
-      endDate,
-      groupBy,
-      limit,
-      sortBy,
-      sortOrder,
-    };
-
-    switch (reportType) {
-      case 'traffic':
-        return this.getTrafficReport(dataSource, baseQuery);
-      case 'conversion':
-        return this.getConversionReport(dataSource, baseQuery);
-      case 'financial':
-        return this.getFinancialReport(dataSource, baseQuery);
-      case 'roi':
-        return this.getROIReport(dataSource, baseQuery);
-      default:
-        return [];
-    }
-  }
-
-  /**
-   * 获取流量报表
-   * 从 D1 获取数据
-   */
-  private async getTrafficReport(
-    _dataSource: DataSource,
-    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
-  ): Promise<any[]> {
-    const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
-    return stats.map((item: any) => ({
-      date: item.name || 'N/A',
-      clicks: Number(item.clicks) || 0,
-      impressions: Number(item.impressions) || 0,
-      unique_visitors: 0,
-      conversions: Number(item.conversions) || 0,
-      cr: Number(item.clicks) > 0 ? ((Number(item.conversions) / Number(item.clicks)) * 100).toFixed(2) + '%' : '0%',
-    }));
-  }
-
-  /**
-   * 获取转化报表
-   * 从 D1 获取数据
-   */
-  private async getConversionReport(
-    _dataSource: DataSource,
-    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
-  ): Promise<any[]> {
-    const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
-    return stats.map((item: any) => ({
-      date: item.name || 'N/A',
-      conversions: Number(item.conversions) || 0,
-      revenue: Number(item.revenue) || 0,
-      cost: Number(item.spend) || 0,
-      profit: (Number(item.revenue) || 0) - (Number(item.spend) || 0),
-      roi: Number(item.spend) > 0 ? (((Number(item.revenue) - Number(item.spend)) / Number(item.spend)) * 100).toFixed(2) + '%' : '0%',
-    }));
-  }
-
-  /**
-   * 获取财务报表
-   * 从 D1 获取数据
-   */
-  private async getFinancialReport(
-    _dataSource: DataSource,
-    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
-  ): Promise<any[]> {
-    const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
-    return stats.map((item: any) => ({
-      date: item.name || 'N/A',
-      spend: Number(item.spend) || 0,
-      revenue: Number(item.revenue) || 0,
-      profit: (Number(item.revenue) || 0) - (Number(item.spend) || 0),
-      margin: Number(item.revenue) > 0 ? (((Number(item.revenue) - Number(item.spend)) / Number(item.revenue)) * 100).toFixed(2) + '%' : '0%',
-    }));
-  }
-
-  /**
-   * 获取ROI报表
-   * 从 D1 获取数据
-   */
-  private async getROIReport(
-    _dataSource: DataSource,
-    _query: { startDate: string; endDate: string; groupBy: string[]; limit: number; sortBy: string; sortOrder: 'asc' | 'desc' }
-  ): Promise<any[]> {
-    const stats = await this.trafficRepo.getEntityStats('campaigns', 'last30days');
-    return stats.map((item: any) => {
-      const clicks = Number(item.clicks) || 0;
-      const spend = Number(item.spend) || 0;
-      const revenue = Number(item.revenue) || 0;
-      return {
-        date: item.name || 'N/A',
-        spend,
-        revenue,
-        profit: revenue - spend,
-        roi: spend > 0 ? (((revenue - spend) / spend) * 100).toFixed(2) + '%' : '0%',
-        epc: clicks > 0 ? (revenue / clicks).toFixed(2) : '0',
-        cpc: clicks > 0 ? (spend / clicks).toFixed(2) : '0',
-      };
+    return this.getCustomReport({
+      ...options,
+      metrics: options.metrics?.length ? options.metrics : this.getDefaultMetricsForReportType(reportType),
     });
   }
 
-  /**
-   * 根据 range 获取日期范围
-   */
-  private getDateRange(range: string): { startDate: string; endDate: string } {
-    const now = new Date();
-    const endDate = now.toISOString().split('T')[0]!;
-    let startDate: string = endDate;
+  async getCustomReport(options: ReportQueryOptions): Promise<any[]> {
+    const groupBy = (options.groupBy || []).filter((item, index, array) => array.indexOf(item) === index);
+    const requestedMetrics = (options.metrics || ['clicks']).filter(
+      (item, index, array) => array.indexOf(item) === index
+    );
+    const filters = options.filters || [];
+    const sortOrder = options.sortOrder === 'asc' ? 'asc' : 'desc';
+    const requestedLimit = Math.min(Math.max(Number(options.limit) || 100, 1), 5000);
 
-    switch (range) {
-      case 'today':
-        break;
-      case 'yesterday':
-        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
-      case 'last7days':
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
-      case 'last30days':
-        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
-      case 'last3months':
-        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
-      case 'thismonth':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]!;
-        break;
-      case 'lastmonth':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]!;
-        break;
-      default:
-        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-        break;
+    const activeCustomMetrics = await this.customMetricService.getActiveMetrics();
+    const customMetricByName = new Map<string, CustomMetric>(
+      activeCustomMetrics.map((metric) => [metric.name, metric])
+    );
+
+    const requestedCustomMetricNames = requestedMetrics.filter((metric) => customMetricByName.has(metric));
+    const customFilterMetricNames = filters
+      .map((filter) => filter.field)
+      .filter((field, index, array) => array.indexOf(field) === index && customMetricByName.has(field));
+    const customFilterFieldSet = new Set<string>(customFilterMetricNames);
+    const customFilters = filters.filter((filter) => customFilterFieldSet.has(filter.field));
+    const sortByCandidate = options.sortBy || requestedMetrics[0] || groupBy[0] || 'summary';
+    const customSortMetricName = customMetricByName.has(sortByCandidate) ? sortByCandidate : null;
+
+    const targetCustomMetricNames = Array.from(
+      new Set([
+        ...requestedCustomMetricNames,
+        ...customFilterMetricNames,
+        ...(customSortMetricName ? [customSortMetricName] : []),
+      ])
+    );
+
+    const metricCalculationOrder: string[] = [];
+    const metricVariables = new Map<string, string[]>();
+    const requiredBaseMetrics = new Set<ReportMetric>();
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+
+    for (const metric of requestedMetrics) {
+      const normalized = this.normalizeBuiltinMetricName(metric);
+      if (normalized) {
+        requiredBaseMetrics.add(normalized);
+      }
     }
 
-    return { startDate, endDate };
+    const visitCustomMetric = (metricName: string) => {
+      if (visited.has(metricName)) {
+        return;
+      }
+
+      if (visiting.has(metricName)) {
+        throw new Error(`Circular custom metric dependency detected: ${metricName}`);
+      }
+
+      const metric = customMetricByName.get(metricName);
+      if (!metric) {
+        return;
+      }
+
+      visiting.add(metricName);
+      const variables = this.metricEngine.extractVariables(metric.formula);
+      metricVariables.set(metricName, variables);
+
+      for (const variable of variables) {
+        if (customMetricByName.has(variable)) {
+          visitCustomMetric(variable);
+          continue;
+        }
+
+        const normalizedBuiltin = this.normalizeBuiltinMetricName(variable);
+        if (normalizedBuiltin) {
+          requiredBaseMetrics.add(normalizedBuiltin);
+        }
+      }
+
+      visiting.delete(metricName);
+      visited.add(metricName);
+      metricCalculationOrder.push(metricName);
+    };
+
+    for (const metricName of targetCustomMetricNames) {
+      visitCustomMetric(metricName);
+    }
+
+    if (requiredBaseMetrics.size === 0) {
+      requiredBaseMetrics.add('clicks');
+    }
+
+    const baseFilters = filters.filter((filter) => !customMetricByName.has(filter.field));
+    const requiresInMemoryPostProcess =
+      targetCustomMetricNames.length > 0 ||
+      baseFilters.length !== filters.length ||
+      Boolean(customSortMetricName);
+
+    const baseLimit = requiresInMemoryPostProcess
+      ? Math.min(Math.max(requestedLimit * 5, 500), 5000)
+      : requestedLimit;
+    const baseSortBy: ReportDimension | ReportMetric = customSortMetricName
+      ? (Array.from(requiredBaseMetrics)[0] || groupBy[0] || 'summary')
+      : sortByCandidate;
+
+    const baseRows = await this.trafficRepo.getCustomReport({
+      ...options,
+      groupBy,
+      metrics: Array.from(requiredBaseMetrics),
+      filters: baseFilters,
+      limit: baseLimit,
+      sortBy: baseSortBy,
+      sortOrder,
+    });
+
+    const rows = baseRows.map((item) => ({ ...item } as Record<string, unknown>));
+
+    for (const row of rows) {
+      if (metricCalculationOrder.length > 0) {
+        this.populateCustomMetricValues(row, metricCalculationOrder, metricVariables, customMetricByName);
+      }
+    }
+
+    const filteredRows = rows.filter((row) => this.matchesAllFilters(row, customFilters));
+    filteredRows.sort((left, right) => this.compareRows(left, right, sortByCandidate, sortOrder));
+
+    const projected = filteredRows.slice(0, requestedLimit).map((row) =>
+      this.projectReportRow(row, groupBy, requestedMetrics)
+    );
+
+    return projected;
+  }
+
+  async getReportMetadata(): Promise<{
+    dimensions: Array<{ value: string; label: string; hint: string }>;
+    metrics: Array<{ value: string; label: string; format: 'number' | 'currency' | 'percent' }>;
+  }> {
+    return this.trafficRepo.getReportMetadata();
+  }
+
+  private getDefaultMetricsForReportType(reportType: 'traffic' | 'conversion' | 'financial' | 'roi'): ReportMetric[] {
+    switch (reportType) {
+      case 'traffic':
+        return ['clicks', 'impressions', 'unique_visitors', 'conversions', 'cr'];
+      case 'conversion':
+        return ['conversions', 'revenue', 'cost', 'profit', 'roi'];
+      case 'financial':
+        return ['spend', 'revenue', 'profit', 'margin'];
+      case 'roi':
+        return ['spend', 'revenue', 'profit', 'roi', 'epc', 'cpc'];
+      default:
+        return ['clicks', 'conversions', 'revenue'];
+    }
+  }
+
+  private normalizeBuiltinMetricName(metric: string): ReportMetric | null {
+    if (BUILTIN_REPORT_METRIC_SET.has(metric)) {
+      return metric as ReportMetric;
+    }
+
+    const alias = BUILTIN_METRIC_ALIASES[metric];
+    return alias && BUILTIN_REPORT_METRIC_SET.has(alias) ? alias : null;
+  }
+
+  private buildMetricContext(row: Record<string, unknown>): MetricCalculationContext {
+    const context: MetricCalculationContext = {
+      clicks: 0,
+      impressions: 0,
+      conversions: 0,
+      revenue: 0,
+      spend: 0,
+      cost: 0,
+      profit: 0,
+      uniqueVisitors: 0,
+    };
+
+    for (const [key, value] of Object.entries(row)) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) {
+        context[key] = numeric;
+      }
+    }
+
+    if (context.unique_visitors !== undefined && context.uniqueVisitors === undefined) {
+      context.uniqueVisitors = context.unique_visitors;
+    }
+    if (context.uniqueVisitors !== undefined && context.unique_visitors === undefined) {
+      context.unique_visitors = context.uniqueVisitors;
+    }
+    if (context.spend !== undefined && context.cost === undefined) {
+      context.cost = context.spend;
+    }
+    if (context.cost !== undefined && context.spend === undefined) {
+      context.spend = context.cost;
+    }
+
+    return context;
+  }
+
+  private populateCustomMetricValues(
+    row: Record<string, unknown>,
+    calculationOrder: string[],
+    metricVariables: Map<string, string[]>,
+    customMetricByName: Map<string, CustomMetric>
+  ) {
+    const context = this.buildMetricContext(row);
+
+    for (const metricName of calculationOrder) {
+      const metric = customMetricByName.get(metricName);
+      if (!metric) {
+        continue;
+      }
+
+      const variables = metricVariables.get(metricName) || [];
+      for (const variable of variables) {
+        const aliased = BUILTIN_METRIC_ALIASES[variable];
+        if (aliased) {
+          if (context[variable] === undefined && context[aliased] !== undefined) {
+            context[variable] = context[aliased];
+          }
+          if (context[aliased] === undefined && context[variable] !== undefined) {
+            context[aliased] = context[variable];
+          }
+        }
+
+        if (context[variable] === undefined) {
+          context[variable] = 0;
+        }
+      }
+
+      const result = this.metricEngine.calculate(metric, context);
+      const numericValue = Number(result.value);
+      const safeValue = Number.isFinite(numericValue) ? numericValue : 0;
+
+      context[metricName] = safeValue;
+      row[metricName] = safeValue;
+    }
+  }
+
+  private matchesAllFilters(row: Record<string, unknown>, filters: ReportFilter[]): boolean {
+    for (const filter of filters) {
+      const actual = row[filter.field];
+      if (!this.evaluateFilterCondition(actual, filter.operator, filter.value)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private evaluateFilterCondition(
+    actual: unknown,
+    operator: ReportFilter['operator'],
+    expected: string | number
+  ): boolean {
+    const actualNumber = Number(actual);
+    const expectedNumber = Number(expected);
+    const canCompareAsNumber = Number.isFinite(actualNumber) && Number.isFinite(expectedNumber);
+
+    switch (operator) {
+      case 'eq':
+        return canCompareAsNumber ? actualNumber === expectedNumber : String(actual ?? '') === String(expected);
+      case 'neq':
+        return canCompareAsNumber ? actualNumber !== expectedNumber : String(actual ?? '') !== String(expected);
+      case 'contains':
+        return String(actual ?? '').toLowerCase().includes(String(expected).toLowerCase());
+      case 'gt':
+        return canCompareAsNumber && actualNumber > expectedNumber;
+      case 'gte':
+        return canCompareAsNumber && actualNumber >= expectedNumber;
+      case 'lt':
+        return canCompareAsNumber && actualNumber < expectedNumber;
+      case 'lte':
+        return canCompareAsNumber && actualNumber <= expectedNumber;
+      default:
+        return true;
+    }
+  }
+
+  private compareRows(
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+    sortBy: string,
+    sortOrder: 'asc' | 'desc'
+  ): number {
+    const leftValue = left[sortBy];
+    const rightValue = right[sortBy];
+    const leftNumber = Number(leftValue);
+    const rightNumber = Number(rightValue);
+
+    const rawResult =
+      Number.isFinite(leftNumber) && Number.isFinite(rightNumber)
+        ? leftNumber - rightNumber
+        : String(leftValue ?? '').localeCompare(String(rightValue ?? ''), 'en-US', {
+            numeric: true,
+            sensitivity: 'base',
+          });
+
+    return sortOrder === 'asc' ? rawResult : -rawResult;
+  }
+
+  private projectReportRow(
+    row: Record<string, unknown>,
+    groupBy: ReportDimension[],
+    metrics: ReportMetric[]
+  ): Record<string, unknown> {
+    const selectedColumns = groupBy.length > 0 ? [...groupBy, ...metrics] : ['summary', ...metrics];
+    const projected: Record<string, unknown> = {};
+
+    for (const column of selectedColumns) {
+      projected[column] = row[column] ?? (column === 'summary' ? 'Total' : 0);
+    }
+
+    return projected;
   }
 }
 

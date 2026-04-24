@@ -7,22 +7,32 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Plus, Trash2, Settings, Filter, Activity, FileText, GripVertical, Copy, Check, Link } from 'lucide-react';
+import { X, Plus, Trash2, Settings, Filter, Activity, FileText, GripVertical, Copy, Check, Link, Zap } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { FilterBuilder } from './filters';
 import type { FilterConfig } from './filters';
 import { FlowDesigner, type FlowNode, type FlowConnection } from './FlowDesigner';
-import { fetchTrafficSources } from '../services/api';
+import { fetchTrafficSources, fetchRules, type Rule } from '../services/api';
 import type { TrafficSource } from '../types/trafficSource';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const CAMPAIGN_NAME_MAX_LENGTH = FIELD_MAX_LENGTH.NAME;
+const CAMPAIGN_ALIAS_MAX_LENGTH = FIELD_MAX_LENGTH.CAMPAIGN_ALIAS;
+const CAMPAIGN_DOMAIN_MAX_LENGTH = FIELD_MAX_LENGTH.DOMAIN;
+const CAMPAIGN_GROUP_MAX_LENGTH = FIELD_MAX_LENGTH.GROUP;
+const CAMPAIGN_UNIQUE_PARAMETER_MAX_LENGTH = FIELD_MAX_LENGTH.UNIQUE_PARAMETER;
+const CAMPAIGN_NOTES_MAX_LENGTH = FIELD_MAX_LENGTH.NOTES;
+
 type UniquenessMethod = 'ip' | 'ip_ua' | 'cookie' | 'parameter' | 'none';
 
 interface CampaignFormData {
+  id?: string;
   name: string;
   alias: string;
   domain: string;
@@ -41,6 +51,10 @@ interface CampaignFormData {
   notes: string;
   flows: FlowNode[];
   connections: FlowConnection[];
+  autoruleBindings: Array<{
+    ruleId: string;
+    priority: number;
+  }>;
 }
 
 interface CampaignFormProps {
@@ -51,25 +65,9 @@ interface CampaignFormProps {
   mode: 'create' | 'edit';
 }
 
-const TABS = [
-  { id: 'main', label: 'Main', icon: Settings },
-  { id: 'schema', label: 'Schema', icon: GripVertical },
-  { id: 'filters', label: 'Filters', icon: Filter },
-  { id: 'monitoring', label: 'Monitoring', icon: Activity },
-  { id: 'notes', label: 'Notes', icon: FileText },
-];
-
-export const CampaignForm: React.FC<CampaignFormProps> = ({
-  isOpen,
-  onClose,
-  onSubmit,
-  initialData,
-  mode
-}) => {
-  const [activeTab, setActiveTab] = useState('main');
-  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
-  const [copiedUrl, setCopiedUrl] = useState(false);
-  const [formData, setFormData] = useState<CampaignFormData>({
+function buildInitialCampaignFormData(initialData?: Partial<CampaignFormData>): CampaignFormData {
+  return {
+    id: initialData?.id,
     name: initialData?.name || '',
     alias: initialData?.alias || '',
     domain: initialData?.domain || '',
@@ -89,48 +87,52 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
         id: 'default-group',
         name: 'Default Group',
         logic: 'AND',
-        conditions: []
+        conditions: [],
       }],
-      globalLogic: 'AND'
+      globalLogic: 'AND',
     },
     notes: initialData?.notes || '',
     flows: initialData?.flows || [],
     connections: initialData?.connections || [],
-  });
+    autoruleBindings: Array.isArray((initialData as CampaignFormData | undefined)?.autoruleBindings)
+      ? ((initialData as CampaignFormData).autoruleBindings || []).map((binding) => ({
+          ruleId: binding.ruleId,
+          priority: Number(binding.priority || 0),
+        }))
+      : [],
+  };
+}
+
+const TABS = [
+  { id: 'main', label: 'Main', icon: Settings },
+  { id: 'rules', label: 'Autorules', icon: Zap },
+  { id: 'schema', label: 'Schema', icon: GripVertical },
+  { id: 'filters', label: 'Filters', icon: Filter },
+  { id: 'monitoring', label: 'Monitoring', icon: Activity },
+  { id: 'notes', label: 'Notes', icon: FileText },
+];
+
+export const CampaignForm: React.FC<CampaignFormProps> = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  initialData,
+  mode
+}) => {
+  const [activeTab, setActiveTab] = useState('main');
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
+  const [availableRules, setAvailableRules] = useState<Rule[]>([]);
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [formData, setFormData] = useState<CampaignFormData>(() => buildInitialCampaignFormData(initialData));
 
   // 当 initialData 变化时更新表单数据（Edit模式切换campaign时）
   useEffect(() => {
-    if (initialData) {
-      setFormData({
-        name: initialData?.name || '',
-        alias: initialData?.alias || '',
-        domain: initialData?.domain || '',
-        group: initialData?.group || '',
-        trafficSource: initialData?.trafficSource || '',
-        flowRotation: initialData?.flowRotation || 'weight',
-        costModel: initialData?.costModel || 'cpc',
-        costValue: initialData?.costValue || 0,
-        currency: initialData?.currency || 'USD',
-        uniquenessMethod: initialData?.uniquenessMethod || 'none',
-        uniquenessParameter: initialData?.uniquenessParameter || '',
-        uniquenessTTL: initialData?.uniquenessTTL || 86400,
-        visitorBinding: initialData?.visitorBinding || 'none',
-        status: initialData?.status || 'active',
-        filterConfig: initialData?.filterConfig || {
-          groups: [{
-            id: 'default-group',
-            name: 'Default Group',
-            logic: 'AND',
-            conditions: []
-          }],
-          globalLogic: 'AND'
-        },
-        notes: initialData?.notes || '',
-        flows: initialData?.flows || [],
-        connections: initialData?.connections || [],
-      });
+    if (isOpen) {
+      setFormData(buildInitialCampaignFormData(initialData));
+      setActiveTab('main');
     }
-  }, [initialData]);
+  }, [initialData, isOpen]);
 
   // 自动生成 Campaign URL（包含 Traffic Source 的宏参数）
   const campaignUrl = useMemo(() => {
@@ -179,32 +181,128 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
 
   // 处理 name 变化，自动生成 alias
   const handleNameChange = (name: string) => {
-    const alias = generateAlias(name);
-    setFormData(prev => ({ ...prev, name, alias }));
+    const normalizedName = clampInput(name, CAMPAIGN_NAME_MAX_LENGTH);
+    const alias = generateAlias(normalizedName);
+    setFormData(prev => ({ ...prev, name: normalizedName, alias }));
   };
 
   useEffect(() => {
-    const loadTrafficSources = async () => {
+    const loadOptions = async () => {
       try {
-        const data = await fetchTrafficSources(false);
-        if (Array.isArray(data)) {
-          setTrafficSources(data);
+        setRulesLoading(true);
+        const [trafficSourceData, rulesData] = await Promise.all([
+          fetchTrafficSources(false),
+          fetchRules({ page: 1, pageSize: 200, status: 'active' }),
+        ]);
+        if (Array.isArray(trafficSourceData)) {
+          setTrafficSources(trafficSourceData);
+        }
+        if (Array.isArray(rulesData?.list)) {
+          setAvailableRules(rulesData.list);
         }
       } catch (err) {
-        console.error('Failed to load traffic sources:', err);
+        console.error('Failed to load campaign form options:', err);
+      } finally {
+        setRulesLoading(false);
       }
     };
     if (isOpen) {
-      loadTrafficSources();
+      loadOptions();
     }
   }, [isOpen]);
 
+  const selectableAutorules = useMemo(
+    () =>
+      availableRules
+        .filter((rule) => rule.enabled && rule.status === 'active' && rule.type !== 'flow')
+        .sort((left, right) => left.priority - right.priority),
+    [availableRules]
+  );
+
+  const addAutoruleBinding = () => {
+    const selectedRuleIds = new Set(formData.autoruleBindings.map((binding) => binding.ruleId).filter(Boolean));
+    const nextRule = selectableAutorules.find((rule) => !selectedRuleIds.has(rule.id));
+    if (!nextRule) {
+      return;
+    }
+
+    setFormData((current) => ({
+      ...current,
+      autoruleBindings: [
+        ...current.autoruleBindings,
+        {
+          ruleId: nextRule.id,
+          priority:
+            current.autoruleBindings.length > 0
+              ? Math.max(...current.autoruleBindings.map((binding) => Number(binding.priority || 0))) + 10
+              : 10,
+        },
+      ],
+    }));
+  };
+
+  const updateAutoruleBinding = (
+    index: number,
+    field: 'ruleId' | 'priority',
+    value: string | number
+  ) => {
+    setFormData((current) => ({
+      ...current,
+      autoruleBindings: current.autoruleBindings.map((binding, bindingIndex) =>
+        bindingIndex === index
+          ? {
+              ...binding,
+              [field]: field === 'priority' ? Number(value || 0) : value,
+            }
+          : binding
+      ),
+    }));
+  };
+
+  const removeAutoruleBinding = (index: number) => {
+    setFormData((current) => ({
+      ...current,
+      autoruleBindings: current.autoruleBindings.filter((_, bindingIndex) => bindingIndex !== index),
+    }));
+  };
+
   const handleChange = (field: keyof CampaignFormData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    let nextValue = value;
+
+    if (typeof value === 'string') {
+      const maxLengthMap: Partial<Record<keyof CampaignFormData, number>> = {
+        alias: CAMPAIGN_ALIAS_MAX_LENGTH,
+        domain: CAMPAIGN_DOMAIN_MAX_LENGTH,
+        group: CAMPAIGN_GROUP_MAX_LENGTH,
+        uniquenessParameter: CAMPAIGN_UNIQUE_PARAMETER_MAX_LENGTH,
+        notes: CAMPAIGN_NOTES_MAX_LENGTH,
+      };
+
+      const maxLength = maxLengthMap[field];
+      if (maxLength) {
+        nextValue = clampInput(value, maxLength);
+      }
+    }
+
+    setFormData(prev => ({ ...prev, [field]: nextValue }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const normalizedBindings = (formData.autoruleBindings || [])
+      .filter((binding) => String(binding.ruleId || '').trim())
+      .map((binding) => ({
+        ruleId: String(binding.ruleId).trim(),
+        priority: Number(binding.priority || 0),
+      }));
+
+    const uniqueRuleIds = new Set(normalizedBindings.map((binding) => binding.ruleId));
+    if (uniqueRuleIds.size !== normalizedBindings.length) {
+      alert('Each autorule can only be bound once per campaign.');
+      return;
+    }
+
     onSubmit(formData);
   };
 
@@ -284,8 +382,12 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     onChange={(e) => handleNameChange(e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                     placeholder="Enter campaign name"
+                    maxLength={CAMPAIGN_NAME_MAX_LENGTH}
                     required
                   />
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    {formData.name.length}/{CAMPAIGN_NAME_MAX_LENGTH}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
@@ -297,6 +399,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     onChange={(e) => handleChange('alias', e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all font-mono"
                     placeholder="campaign-alias"
+                    maxLength={CAMPAIGN_ALIAS_MAX_LENGTH}
                     required
                   />
                 </div>
@@ -313,6 +416,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     onChange={(e) => handleChange('domain', e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                     placeholder="example.com"
+                    maxLength={CAMPAIGN_DOMAIN_MAX_LENGTH}
                     required
                   />
                 </div>
@@ -326,6 +430,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     onChange={(e) => handleChange('group', e.target.value)}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                     placeholder="Select or create group"
+                    maxLength={CAMPAIGN_GROUP_MAX_LENGTH}
                   />
                 </div>
               </div>
@@ -351,11 +456,14 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                     {trafficSources.length === 0 ? (
                       <option disabled>No traffic sources available</option>
                     ) : (
-                      trafficSources.map(source => (
-                        <option key={source.id} value={source.id}>
-                          {source.name} ({source.type})
-                        </option>
-                      ))
+                      trafficSources.map(source => {
+                        const sourceLabel = `${source.name} (${source.type})`;
+                        return (
+                          <option key={source.id} value={source.id} title={sourceLabel}>
+                            {truncateLabel(sourceLabel, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
+                          </option>
+                        );
+                      })
                     )}
                   </select>
                   {trafficSources.length > 0 && (
@@ -460,6 +568,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                         onChange={(e) => handleChange('uniquenessParameter', e.target.value)}
                         className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
                         placeholder="clickid"
+                        maxLength={CAMPAIGN_UNIQUE_PARAMETER_MAX_LENGTH}
                       />
                     </div>
                   )}
@@ -523,6 +632,89 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
             </div>
           )}
 
+          {activeTab === 'rules' && (
+            <div className="space-y-6">
+              <div className="bg-surface-container p-4 rounded-sm space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-primary">Campaign Autorule Bindings</h3>
+                    <p className="text-sm text-on-surface-variant">
+                      Bind multiple autorules to this campaign. Lower priority number runs first.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addAutoruleBinding}
+                    disabled={rulesLoading || selectableAutorules.length === 0}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest disabled:opacity-50"
+                  >
+                    <Plus size={14} />
+                    Add Binding
+                  </button>
+                </div>
+
+                {rulesLoading && (
+                  <p className="text-sm text-on-surface-variant">Loading active autorules...</p>
+                )}
+
+                {!rulesLoading && selectableAutorules.length === 0 && (
+                  <p className="text-sm text-on-surface-variant">
+                    No active autorules available. Create rules in the Autorules page first.
+                  </p>
+                )}
+
+                {formData.autoruleBindings.length === 0 && !rulesLoading && selectableAutorules.length > 0 && (
+                  <div className="border border-dashed border-outline-variant/40 rounded-sm p-4 text-sm text-on-surface-variant">
+                    No autorules bound yet. Add at least one binding if this campaign should screen, block, or reroute traffic by rules.
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {formData.autoruleBindings.map((binding, index) => (
+                      <div key={`${binding.ruleId || 'binding'}-${index}`} className="grid grid-cols-[minmax(0,1fr)_120px_48px] gap-3 items-end border border-outline-variant/20 p-3 rounded-sm bg-surface">
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                            Autorule
+                          </label>
+                          <select
+                            value={binding.ruleId}
+                            onChange={(e) => updateAutoruleBinding(index, 'ruleId', e.target.value)}
+                            className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                          >
+                            <option value="">Select autorule...</option>
+                            {selectableAutorules.map((rule) => (
+                              <option key={rule.id} value={rule.id}>
+                                {truncateLabel(`${rule.name} [${rule.type}]`, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                            Priority
+                          </label>
+                          <input
+                            type="number"
+                            value={binding.priority}
+                            onChange={(e) => updateAutoruleBinding(index, 'priority', Number(e.target.value || 0))}
+                            className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeAutoruleBinding(index)}
+                          className="h-[46px] flex items-center justify-center border border-outline-variant text-on-surface-variant hover:text-error hover:border-error transition-colors"
+                          title="Remove binding"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Schema Tab */}
           {activeTab === 'schema' && (
             <div className="space-y-6">
@@ -573,6 +765,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
                   rows={10}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant focus:border-primary outline-none transition-all resize-none"
                   placeholder="Add notes about this campaign..."
+                  maxLength={CAMPAIGN_NOTES_MAX_LENGTH}
                 />
               </div>
             </div>

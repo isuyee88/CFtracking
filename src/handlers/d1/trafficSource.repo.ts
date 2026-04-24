@@ -9,6 +9,9 @@ import type { D1Database } from './index';
 import type { TrafficSource, CreateTrafficSourceDTO, UpdateTrafficSourceDTO } from '@/types/trafficSource';
 import { IdService } from '@/services/id.service';
 
+export const GENERAL_TRAFFIC_SOURCE_ID = 'general';
+export const GENERAL_TRAFFIC_SOURCE_NAME = 'General Traffic Source';
+
 export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
   private idService: IdService;
 
@@ -34,6 +37,10 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
     return result;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   async findByDisplayId(displayId: string): Promise<TrafficSource | null> {
     const result = await this.db
       .prepare(`SELECT * FROM trafficSources WHERE displayId = ?`)
@@ -41,6 +48,69 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
       .first();
     if (!result) return null;
     return this.transform(result as Record<string, unknown>);
+  }
+
+  async resolveStorageId(identifier: string): Promise<string | null> {
+    const result = await this.db
+      .prepare(`SELECT id FROM trafficSources WHERE id = ? OR displayId = ? LIMIT 1`)
+      .bind(identifier, identifier)
+      .first<{ id: string }>();
+
+    return result?.id || null;
+  }
+
+  async findByIdentifierWithStorageId(
+    identifier: string
+  ): Promise<{ trafficSource: TrafficSource; storageId: string } | null> {
+    const result = await this.db
+      .prepare(`SELECT * FROM trafficSources WHERE id = ? OR displayId = ? LIMIT 1`)
+      .bind(identifier, identifier)
+      .first<Record<string, unknown>>();
+
+    if (!result || typeof result.id !== 'string') {
+      return null;
+    }
+
+    return {
+      trafficSource: this.transform(result),
+      storageId: result.id,
+    };
+  }
+
+  async ensureGeneralTrafficSource(): Promise<{ trafficSource: TrafficSource; storageId: string }> {
+    const existing = await this.findByIdentifierWithStorageId(GENERAL_TRAFFIC_SOURCE_ID);
+    if (existing) {
+      return existing;
+    }
+
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(`
+        INSERT OR IGNORE INTO trafficSources (
+          id, name, type, status, postbackUrl, costModel, costValue, currency, parameters, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        GENERAL_TRAFFIC_SOURCE_ID,
+        GENERAL_TRAFFIC_SOURCE_NAME,
+        'other',
+        'active',
+        null,
+        'cpc',
+        0,
+        'USD',
+        '{}',
+        now,
+        now
+      )
+      .run();
+
+    const ensured = await this.findByIdentifierWithStorageId(GENERAL_TRAFFIC_SOURCE_ID);
+    if (!ensured) {
+      throw new Error('Failed to create general traffic source');
+    }
+
+    return ensured;
   }
 
   /**
@@ -204,20 +274,37 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
   /**
    * 获取 Traffic Source 统计数据
    */
-  async getStats(trafficSourceId: string): Promise<{ clicks: number; conversions: number; revenue: number; cost: number }> {
+  async getStats(
+    trafficSourceId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<{ clicks: number; conversions: number; revenue: number; cost: number }> {
+    let sql = `
+      SELECT 
+        COALESCE(SUM(clicks), 0) as clicks,
+        COALESCE(SUM(conversions), 0) as conversions,
+        COALESCE(SUM(revenue), 0) as revenue,
+        COALESCE(SUM(spend), 0) as cost
+      FROM trafficSummary
+      WHERE campaignId IN (
+        SELECT id FROM campaigns WHERE trafficSource = ?
+      )
+    `;
+    const params: unknown[] = [trafficSourceId];
+
+    if (startDate) {
+      sql += ' AND date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ' AND date <= ?';
+      params.push(endDate);
+    }
+
     const result = await this.db
-      .prepare(`
-        SELECT 
-          COALESCE(SUM(clicks), 0) as clicks,
-          COALESCE(SUM(conversions), 0) as conversions,
-          COALESCE(SUM(revenue), 0) as revenue,
-          COALESCE(SUM(spend), 0) as cost
-        FROM trafficSummary
-        WHERE campaignId IN (
-          SELECT id FROM campaigns WHERE trafficSource = ?
-        )
-      `)
-      .bind(trafficSourceId)
+      .prepare(sql)
+      .bind(...params)
       .first<{ clicks: number; conversions: number; revenue: number; cost: number }>();
     return {
       clicks: result?.clicks || 0,

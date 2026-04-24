@@ -34,7 +34,6 @@ export class TrendService {
   async generateReport(filter: TrendFilter): Promise<TrendsReport> {
     const { startDate, endDate } = filter;
     const campaignId = filter.campaignId;
-    const interval = filter.interval || 'day';
 
     // Get trend data from D1
     const trendData = await this.trafficRepo.getTrend(campaignId || '', startDate, endDate);
@@ -54,7 +53,7 @@ export class TrendService {
         timestamp: point.date || '',
         date: point.date || '',
         clicks: clicks,
-        uniqueClicks: point.uniqueVisitors || clicks,
+        uniqueClicks: Number(point.uniqueVisitors) || clicks,
         conversions: conversions,
         revenue: revenue,
         cost: spend,
@@ -234,6 +233,6 @@ export class TrendService {
   }
 }
 
-export function createTrendsService(env: Env): TrendsService {
-  return new TrendsService(env);
+export function createTrendsService(env: Env): TrendService {
+  return new TrendService(env);
 }

@@ -74,6 +74,7 @@ export function VirtualTableEnhanced<T = any>({
   
   // 筛选下拉框可见状态
   const [openFilterDropdown, setOpenFilterDropdown] = useState<string | null>(null);
+  const [draftFilterValues, setDraftFilterValues] = useState<Record<string, any[]>>({});
 
   // 更新容器高度
   React.useEffect(() => {
@@ -149,6 +150,11 @@ export function VirtualTableEnhanced<T = any>({
     const newFilters = { ...filters };
     delete newFilters[columnKey];
     setFilters(newFilters);
+    setDraftFilterValues((current) => {
+      const next = { ...current };
+      delete next[columnKey];
+      return next;
+    });
     setOpenFilterDropdown(null);
     onChange?.({}, newFilters, sorter);
   }, [filters, setFilters, sorter, onChange]);
@@ -245,6 +251,7 @@ export function VirtualTableEnhanced<T = any>({
           {columns.map((column) => {
             const columnSortOrder = sorter?.columnKey === column.key ? sorter.order : column.sortOrder;
             const columnFilters = column.filteredValue || (filters[column.key] ? filters[column.key] : null);
+            const draftSelectedKeys = draftFilterValues[column.key] ?? (columnFilters || []);
             const hasFilter = columnFilters && (Array.isArray(columnFilters) ? columnFilters.length > 0 : true);
             const showSorter = column.showSorter !== false && (column.sorter || column.defaultSortOrder);
             const showFilter = column.showFilter !== false && (column.filters || column.onFilter);
@@ -285,6 +292,10 @@ export function VirtualTableEnhanced<T = any>({
                       filtered={!!hasFilter}
                       onClick={(e) => {
                         e.stopPropagation();
+                        setDraftFilterValues((current) => ({
+                          ...current,
+                          [column.key]: Array.isArray(columnFilters) ? [...columnFilters] : [],
+                        }));
                         setOpenFilterDropdown(openFilterDropdown === column.key ? null : column.key);
                       }}
                     />
@@ -306,12 +317,15 @@ export function VirtualTableEnhanced<T = any>({
                         >
                           <TableFilterDropdown
                             column={column}
-                            selectedKeys={columnFilters || []}
+                            selectedKeys={draftSelectedKeys}
                             setSelectedKeys={(keys) => {
-                              // 临时更新，等待 confirm 才真正应用
+                              setDraftFilterValues((current) => ({
+                                ...current,
+                                [column.key]: keys,
+                              }));
                             }}
                             confirm={() => {
-                              const keys = columnFilters || [];
+                              const keys = draftFilterValues[column.key] ?? [];
                               handleFilterConfirm(column.key, keys);
                             }}
                             clearFilters={() => handleFilterClear(column.key)}

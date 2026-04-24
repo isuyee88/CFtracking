@@ -23,7 +23,12 @@ import {
   FileText,
   Key
 } from 'lucide-react';
-import { testTrafficSourceConnection } from '../services/api';
+import {
+  previewTrafficSourceMacros,
+  testTrafficSourceConnection,
+  type TrafficSourceApiConnectionDiagnostics,
+  type TrafficSourceMacroPreviewResult,
+} from '../services/api';
 import { 
   TRAFFIC_SOURCE_TEMPLATES, 
   getTemplateById, 
@@ -35,6 +40,8 @@ import type {
   TrafficSourceApiConfig,
   ConversionStatus 
 } from '../types/trafficSource';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 
 interface TrafficSourceFormProps {
   isOpen: boolean;
@@ -53,6 +60,7 @@ interface TestResult {
     balance?: number;
     currency?: string;
   };
+  diagnostics?: TrafficSourceApiConnectionDiagnostics;
 }
 
 type FormStep = 'basic' | 'parameters' | 'postback' | 'api';
@@ -95,6 +103,23 @@ const EMPTY_PARAMETER: ParameterTemplate = {
   macro: ''
 };
 
+const TRAFFIC_SOURCE_NAME_MAX_LENGTH = FIELD_MAX_LENGTH.NAME;
+const TRAFFIC_SOURCE_NOTES_MAX_LENGTH = FIELD_MAX_LENGTH.NOTES;
+const TRAFFIC_SOURCE_URL_MAX_LENGTH = FIELD_MAX_LENGTH.URL;
+const TRAFFIC_SOURCE_API_KEY_MAX_LENGTH = FIELD_MAX_LENGTH.API_KEY;
+const DEFAULT_MACRO_CONTEXT_INPUT = `{
+  "click_id": "clk_demo_1001",
+  "campaign_id": "cmp_101",
+  "source": "facebook",
+  "geo": "US",
+  "device": "mobile",
+  "revenue": "3.20",
+  "payout": "2.50",
+  "currency": "USD",
+  "status": "sale",
+  "timestamp": "1712620800"
+}`;
+
 export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   isOpen,
   onClose,
@@ -127,6 +152,10 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [isPreviewingMacros, setIsPreviewingMacros] = useState(false);
+  const [macroContextInput, setMacroContextInput] = useState(DEFAULT_MACRO_CONTEXT_INPUT);
+  const [macroPreview, setMacroPreview] = useState<TrafficSourceMacroPreviewResult | null>(null);
+  const [macroPreviewError, setMacroPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && initialData) {
@@ -185,6 +214,9 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
     setErrors({});
     setTestResult(null);
     setCurrentStep('basic');
+    setMacroPreview(null);
+    setMacroPreviewError(null);
+    setMacroContextInput(DEFAULT_MACRO_CONTEXT_INPUT);
   }, [isOpen, initialData]);
 
   const parseJsonField = <T,>(field: any, defaultValue: T): T => {
@@ -198,7 +230,24 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   };
 
   const handleChange = (name: string, value: any) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    let nextValue = value;
+
+    if (typeof value === 'string') {
+      const maxLengthMap: Record<string, number> = {
+        name: TRAFFIC_SOURCE_NAME_MAX_LENGTH,
+        notes: TRAFFIC_SOURCE_NOTES_MAX_LENGTH,
+        postbackUrl: TRAFFIC_SOURCE_URL_MAX_LENGTH,
+        apiBaseUrl: TRAFFIC_SOURCE_URL_MAX_LENGTH,
+        apiKey: TRAFFIC_SOURCE_API_KEY_MAX_LENGTH,
+      };
+
+      const maxLength = maxLengthMap[name];
+      if (maxLength) {
+        nextValue = clampInput(value, maxLength);
+      }
+    }
+
+    setFormData(prev => ({ ...prev, [name]: nextValue }));
     if (errors[name]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -239,9 +288,16 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   };
 
   const handleParameterChange = (index: number, field: keyof ParameterTemplate, value: string) => {
+    const maxLengthMap: Record<keyof ParameterTemplate, number> = {
+      alias: FIELD_MAX_LENGTH.PARAMETER_ALIAS,
+      paramName: FIELD_MAX_LENGTH.PARAMETER_NAME,
+      macro: FIELD_MAX_LENGTH.PARAMETER_VALUE,
+    };
+    const normalizedValue = clampInput(value, maxLengthMap[field]);
+
     setFormData(prev => {
       const newParams = [...(prev.parameters || [])];
-      newParams[index] = { ...newParams[index], [field]: value };
+      newParams[index] = { ...newParams[index], [field]: normalizedValue };
       return { ...prev, parameters: newParams };
     });
   };
@@ -367,13 +423,16 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
       if (response.success) {
         setTestResult({
           success: true,
-          message: response.data?.message || 'Connection successful!',
-          details: response.data?.details
+          message: response.message || 'Connection successful!',
+          details: response.details,
+          diagnostics: response.diagnostics,
         });
       } else {
         setTestResult({
           success: false,
-          message: response.error?.message || 'Connection failed'
+          message: response.message || 'Connection failed',
+          details: response.details,
+          diagnostics: response.diagnostics,
         });
       }
     } catch (error) {
@@ -383,6 +442,40 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
       });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const handlePreviewMacros = async () => {
+    setMacroPreviewError(null);
+
+    let parsedContext: Record<string, unknown> = {};
+    const trimmed = macroContextInput.trim();
+    if (trimmed) {
+      try {
+        const contextCandidate = JSON.parse(trimmed);
+        if (!contextCandidate || typeof contextCandidate !== 'object' || Array.isArray(contextCandidate)) {
+          setMacroPreviewError('Sample context must be a JSON object');
+          return;
+        }
+        parsedContext = contextCandidate as Record<string, unknown>;
+      } catch {
+        setMacroPreviewError('Sample context JSON is invalid');
+        return;
+      }
+    }
+
+    setIsPreviewingMacros(true);
+    try {
+      const response = await previewTrafficSourceMacros({
+        parameters: formData.parameters || [],
+        postbackUrl: formData.postbackConfig?.url || formData.postbackUrl || '',
+        context: parsedContext,
+      });
+      setMacroPreview(response);
+    } catch (err) {
+      setMacroPreviewError(err instanceof Error ? err.message : 'Failed to preview macros');
+    } finally {
+      setIsPreviewingMacros(false);
     }
   };
 
@@ -454,8 +547,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                 >
                   {getTemplateOptions().map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
+                    <option key={opt.value} value={opt.value} title={opt.label}>
+                      {truncateLabel(opt.label, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
                     </option>
                   ))}
                 </select>
@@ -474,6 +567,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   value={formData.name}
                   onChange={(e) => handleChange('name', e.target.value)}
                   placeholder="Enter traffic source name"
+                  maxLength={TRAFFIC_SOURCE_NAME_MAX_LENGTH}
                   className={`w-full px-4 py-3 bg-surface border rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 ${
                     errors.name ? 'border-error' : 'border-outline-variant'
                   }`}
@@ -602,6 +696,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   onChange={(e) => handleChange('notes', e.target.value)}
                   placeholder="Add notes about this traffic source..."
                   rows={3}
+                  maxLength={TRAFFIC_SOURCE_NOTES_MAX_LENGTH}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
                 />
               </div>
@@ -648,6 +743,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             value={param.alias}
                             onChange={(e) => handleParameterChange(index, 'alias', e.target.value)}
                             placeholder="e.g., Campaign"
+                            maxLength={FIELD_MAX_LENGTH.PARAMETER_ALIAS}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
                         </td>
@@ -657,6 +753,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             value={param.paramName}
                             onChange={(e) => handleParameterChange(index, 'paramName', e.target.value)}
                             placeholder="e.g., utm_campaign"
+                            maxLength={FIELD_MAX_LENGTH.PARAMETER_NAME}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
                         </td>
@@ -666,6 +763,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             value={param.macro}
                             onChange={(e) => handleParameterChange(index, 'macro', e.target.value)}
                             placeholder="e.g., {campaign_id}"
+                            maxLength={FIELD_MAX_LENGTH.PARAMETER_VALUE}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
                         </td>
@@ -699,6 +797,75 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                 <Plus size={14} />
                 Add Parameter
               </button>
+
+              <div className="border border-outline-variant/20 bg-surface-container/30 p-4 rounded-sm space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                      Macro Preview
+                    </h4>
+                    <p className="text-xs text-on-surface-variant/70 mt-1">
+                      Dry-run parameter macros and preview the final tracking query string.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handlePreviewMacros}
+                    disabled={isPreviewingMacros}
+                    className="flex items-center gap-2 px-3 py-2 bg-surface border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isPreviewingMacros ? <Loader2 size={14} className="animate-spin" /> : <Code size={14} />}
+                    {isPreviewingMacros ? 'Previewing...' : 'Generate Preview'}
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                    Sample Context (JSON)
+                  </label>
+                  <textarea
+                    value={macroContextInput}
+                    onChange={(e) => setMacroContextInput(e.target.value)}
+                    rows={6}
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-xs font-mono focus:border-primary focus:outline-none"
+                  />
+                </div>
+
+                {macroPreviewError && (
+                  <div className="text-xs text-error flex items-center gap-2">
+                    <AlertCircle size={14} />
+                    <span>{macroPreviewError}</span>
+                  </div>
+                )}
+
+                {macroPreview && (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">
+                        Tracking Query Preview
+                      </p>
+                      <code className="block w-full break-all px-3 py-2 bg-surface border border-outline-variant/20 text-xs text-primary">
+                        {macroPreview.trackingQuery || '(empty)'}
+                      </code>
+                    </div>
+
+                    {macroPreview.parameterPreview.length > 0 && (
+                      <div className="space-y-2">
+                        {macroPreview.parameterPreview.map((entry, index) => (
+                          <div key={`${entry.paramName}-${index}`} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="text-on-surface-variant">
+                              {entry.paramName || '(unnamed)'} {'<-'} {entry.macro || '(empty)'}
+                            </span>
+                            <span className={entry.unresolved ? 'text-warning' : 'text-secondary'}>
+                              {entry.unresolved ? 'Unresolved' : entry.resolvedValue}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Common Macros Help */}
               <div className="bg-surface-container/30 p-4 rounded-sm">
@@ -740,14 +907,54 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   value={formData.postbackConfig?.url || ''}
                   onChange={(e) => setFormData(prev => ({
                     ...prev,
-                    postbackConfig: { ...prev.postbackConfig, url: e.target.value }
+                    postbackConfig: { ...prev.postbackConfig, url: clampInput(e.target.value, TRAFFIC_SOURCE_URL_MAX_LENGTH) }
                   }))}
                   placeholder="https://example.com/postback?click_id={click_id}&payout={payout}"
+                  maxLength={TRAFFIC_SOURCE_URL_MAX_LENGTH}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                 />
                 <p className="mt-1 text-xs text-on-surface-variant/60">
                   Use macros like {'{click_id}'}, {'{payout}'}, {'{revenue}'} in your URL
                 </p>
+              </div>
+
+              <div className="border border-outline-variant/20 bg-surface-container/30 p-4 rounded-sm space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                    Postback Preview
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={handlePreviewMacros}
+                    disabled={isPreviewingMacros}
+                    className="flex items-center gap-2 px-3 py-2 bg-surface border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isPreviewingMacros ? <Loader2 size={14} className="animate-spin" /> : <Link size={14} />}
+                    {isPreviewingMacros ? 'Previewing...' : 'Refresh Preview'}
+                  </button>
+                </div>
+
+                {macroPreviewError && (
+                  <div className="text-xs text-error flex items-center gap-2">
+                    <AlertCircle size={14} />
+                    <span>{macroPreviewError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">
+                    Rendered URL
+                  </p>
+                  <code className="block w-full break-all px-3 py-2 bg-surface border border-outline-variant/20 text-xs text-primary">
+                    {macroPreview?.postbackPreview || '(click "Refresh Preview" to generate)'}
+                  </code>
+                </div>
+
+                {macroPreview && macroPreview.unresolvedMacros.length > 0 && (
+                  <div className="text-xs text-warning">
+                    Unresolved macros: {macroPreview.unresolvedMacros.join(', ')}
+                  </div>
+                )}
               </div>
 
               {/* Send Only Statuses */}
@@ -785,9 +992,10 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                     value={formData.postbackConfig?.taboolaKey || ''}
                     onChange={(e) => setFormData(prev => ({
                       ...prev,
-                      postbackConfig: { ...prev.postbackConfig, taboolaKey: e.target.value }
+                      postbackConfig: { ...prev.postbackConfig, taboolaKey: clampInput(e.target.value, TRAFFIC_SOURCE_API_KEY_MAX_LENGTH) }
                     }))}
                     placeholder="Enter your Taboola API key"
+                    maxLength={TRAFFIC_SOURCE_API_KEY_MAX_LENGTH}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                   />
                   <p className="mt-2 text-xs text-on-surface-variant">
@@ -854,6 +1062,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                       value={formData.apiBaseUrl}
                       onChange={(e) => handleChange('apiBaseUrl', e.target.value)}
                       placeholder="https://api.example.com/v1"
+                      maxLength={TRAFFIC_SOURCE_URL_MAX_LENGTH}
                       className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                     />
                   </div>
@@ -868,6 +1077,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                       value={formData.apiKey}
                       onChange={(e) => handleChange('apiKey', e.target.value)}
                       placeholder="Enter your API key"
+                      maxLength={TRAFFIC_SOURCE_API_KEY_MAX_LENGTH}
                       className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                     />
                   </div>
@@ -917,6 +1127,32 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                           <p>Balance: {testResult.details.balance} {testResult.details.currency}</p>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {testResult?.diagnostics && (
+                    <div className="p-3 bg-surface-container/40 rounded-sm text-xs text-on-surface-variant space-y-1">
+                      <p className="font-bold uppercase tracking-widest text-[10px] text-on-surface-variant">
+                        Verify Diagnostics
+                      </p>
+                      {testResult.diagnostics.platformType && (
+                        <p>Platform: {testResult.diagnostics.platformType}</p>
+                      )}
+                      {testResult.diagnostics.baseUrl && (
+                        <p>Base URL: {testResult.diagnostics.baseUrl}</p>
+                      )}
+                      {testResult.diagnostics.httpStatus !== undefined && (
+                        <p>HTTP Status: {testResult.diagnostics.httpStatus}</p>
+                      )}
+                      {testResult.diagnostics.durationMs !== undefined && (
+                        <p>Latency: {testResult.diagnostics.durationMs}ms</p>
+                      )}
+                      {testResult.diagnostics.checkedAt && (
+                        <p>Checked At: {testResult.diagnostics.checkedAt}</p>
+                      )}
+                      {testResult.diagnostics.hint && (
+                        <p className="text-warning">Hint: {testResult.diagnostics.hint}</p>
+                      )}
                     </div>
                   )}
                 </div>

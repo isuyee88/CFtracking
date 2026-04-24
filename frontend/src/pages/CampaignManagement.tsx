@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { 
   Zap, 
   Plus, 
   Search, 
-  MoreHorizontal, 
   ArrowUpRight, 
   Play, 
   Pause, 
   Trash2, 
-  Copy, 
   Edit3,
   Check,
   X,
@@ -19,8 +16,18 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { fetchCampaigns, createCampaign, updateCampaign, deleteCampaign, fetchEntityStats } from '../services/api';
+import {
+  fetchCampaigns,
+  fetchCampaign,
+  createCampaign,
+  updateCampaign,
+  deleteCampaign,
+  fetchEntityStats,
+  fetchCampaignAutoruleBindings,
+  replaceCampaignAutoruleBindings,
+} from '../services/api';
 import { CampaignForm } from '../components/CampaignForm';
+import { CampaignAutoruleBindingsModal } from '../components/CampaignAutoruleBindingsModal';
 import { ExportButton } from '../components/ExportButton';
 import { formatCampaignForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
@@ -28,9 +35,82 @@ import { GroupByFilter, filterByGroupBy } from '../components/GroupByFilter';
 import type { GroupByState, GroupByOption } from '../types/filter';
 import { useToast } from '../components/Toast';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { loadBootstrapForLocation, normalizeRangeParam, readBootstrapPage } from '../services/bootstrap';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function resolveDateRangeFromPreset(preset: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const start = new Date(today);
+  const normalizedPreset = normalizeRangeParam(preset);
+
+  switch (normalizedPreset) {
+    case 'yesterday':
+      start.setDate(start.getDate() - 1);
+      return {
+        from: start.toISOString().split('T')[0]!,
+        to: start.toISOString().split('T')[0]!,
+        pickerValue: 'yesterday',
+      };
+    case 'last7days':
+      start.setDate(start.getDate() - 6);
+      return {
+        from: start.toISOString().split('T')[0]!,
+        to: today.toISOString().split('T')[0]!,
+        pickerValue: 'last7days',
+      };
+    case 'last30days':
+      start.setDate(start.getDate() - 29);
+      return {
+        from: start.toISOString().split('T')[0]!,
+        to: today.toISOString().split('T')[0]!,
+        pickerValue: 'last30days',
+      };
+    case 'today':
+    default:
+      return {
+        from: today.toISOString().split('T')[0]!,
+        to: today.toISOString().split('T')[0]!,
+        pickerValue: 'today',
+      };
+  }
+}
+
+function getCurrentRangePreset(fallback: string): string {
+  if (typeof window === 'undefined') {
+    return normalizeRangeParam(fallback);
+  }
+
+  return normalizeRangeParam(new URLSearchParams(window.location.search).get('range') || fallback);
+}
+
+const CAMPAIGN_ROW_HEIGHT = 72;
+const CAMPAIGN_HEADER_HEIGHT = 72;
+const CAMPAIGN_NAME_DISPLAY_LIMIT = 30;
+
+function getCampaignTableHeight(rowCount: number): number {
+  if (rowCount <= 0) {
+    return 280;
+  }
+
+  // +2 补偿容器边框，避免出现 1-2px 的纵向滚动条
+  return CAMPAIGN_HEADER_HEIGHT + rowCount * CAMPAIGN_ROW_HEIGHT + 2;
+}
+
+function truncateCampaignName(name: string): string {
+  const normalizedName = String(name || '').trim();
+  if (!normalizedName) {
+    return '-';
+  }
+  const maxLength = Math.min(CAMPAIGN_NAME_DISPLAY_LIMIT, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT);
+  return truncateLabel(normalizedName, maxLength);
 }
 
 // Backend Campaign data structure
@@ -101,29 +181,93 @@ const transformCampaign = (backend: BackendCampaign, stats?: CampaignStats): Cam
   cr: stats?.clicks ? `${(((stats?.conversions || 0) / stats.clicks) * 100).toFixed(1)}%` : '0%'
 });
 
+function mapBackendCampaignToFormData(campaign: BackendCampaign | Record<string, any>) {
+  return {
+    id: campaign.id,
+    name: campaign.name || '',
+    alias: campaign.alias || '',
+    domain: campaign.domain || '',
+    group: campaign.group || '',
+    trafficSource: campaign.trafficSource || '',
+    flowRotation: campaign.flowRotation || 'weight',
+    costModel: campaign.costModel || 'cpc',
+    costValue: Number(campaign.costValue || 0),
+    currency: campaign.currency || 'USD',
+    uniquenessMethod: campaign.uniquenessMethod || 'none',
+    uniquenessParameter: campaign.uniquenessParameter || '',
+    uniquenessTTL: Number(campaign.uniquenessTTL || 86400),
+    visitorBinding: campaign.visitorBinding || 'none',
+    status: campaign.status || 'active',
+    notes: campaign.notes || '',
+    flows: Array.isArray(campaign.flows) ? campaign.flows : [],
+    connections: Array.isArray(campaign.connections) ? campaign.connections : [],
+    filterConfig: campaign.filterConfig,
+  };
+}
+
+function mapBootstrapCampaigns(bundle: {
+  data?: {
+    campaigns?: BackendCampaign[];
+    entityStats?: CampaignStats[];
+  };
+} | null | undefined): Campaign[] {
+  const statsMap = new Map<string, CampaignStats>();
+
+  if (Array.isArray(bundle?.data?.entityStats)) {
+    bundle.data.entityStats.forEach((stat) => {
+      if (stat?.name) {
+        statsMap.set(stat.name, stat);
+      }
+    });
+  }
+
+  if (!Array.isArray(bundle?.data?.campaigns)) {
+    return [];
+  }
+
+  return bundle.data.campaigns.map((item) => {
+    const campaignStats =
+      statsMap.get(item.displayId || '') ||
+      statsMap.get(item.id) ||
+      statsMap.get(item.name);
+    return transformCampaign(item, campaignStats);
+  });
+}
+
 export const CampaignManagement = () => {
-  const navigate = useNavigate();
   const toast = useToast();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const bootstrap = readBootstrapPage<{ campaigns?: BackendCampaign[]; entityStats?: CampaignStats[] }>('campaigns');
+  const hasBootstrap = Boolean(bootstrap);
+  const initialBootstrapCampaigns = mapBootstrapCampaigns(bootstrap);
+  const urlRangePreset =
+    typeof window !== 'undefined' ? new URLSearchParams(location.search).get('range') || null : null;
+  const initialRangePreset =
+    urlRangePreset || (typeof bootstrap?.scope?.range === 'string' ? bootstrap.scope.range : 'today');
+  const initialDateRange = resolveDateRangeFromPreset(initialRangePreset);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(initialBootstrapCampaigns);
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => new URLSearchParams(location.search).get('search') || '');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
   
   // Date range state
   const [dateRange, setDateRange] = useState<{from: string; to: string}>({
-    from: new Date().toISOString().split('T')[0],
-    to: new Date().toISOString().split('T')[0]
+    from: initialDateRange.from,
+    to: initialDateRange.to
   });
   
   // Form modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
-  const [selectedCampaign, setSelectedCampaign] = useState<Partial<Campaign> | undefined>(undefined);
+  const [selectedCampaign, setSelectedCampaign] = useState<Record<string, any> | undefined>(undefined);
+  const [isAutoruleModalOpen, setIsAutoruleModalOpen] = useState(false);
+  const [selectedCampaignForAutorules, setSelectedCampaignForAutorules] = useState<Campaign | null>(null);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [itemsPerPage] = useState(25);
   
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -142,21 +286,39 @@ export const CampaignManagement = () => {
       const isToday = fromDate.toDateString() === today.toDateString();
       return isToday ? 'today' : 'yesterday';
     } else if (diffDays === 6) {
-      return '7days';
+      return 'last7days';
     } else if (diffDays === 29) {
-      return '30days';
+      return 'last30days';
     }
     return 'custom';
   };
 
   const loadCampaignsWithStats = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!hasBootstrap && campaigns.length === 0) {
+        setLoading(true);
+      }
       setError(null);
+
+      const refreshedBootstrap = await loadBootstrapForLocation().catch(() => null);
+      const requestedRange = getCurrentRangePreset(
+        initialRangePreset || getRangeFromDates(dateRange.from, dateRange.to)
+      );
+
+      if (
+        refreshedBootstrap?.page === 'campaigns' &&
+        (refreshedBootstrap.scope?.range || 'today') === requestedRange
+      ) {
+        const bootstrapCampaigns = mapBootstrapCampaigns(refreshedBootstrap as typeof bootstrap);
+        if (bootstrapCampaigns.length > 0) {
+          setCampaigns(bootstrapCampaigns);
+          return;
+        }
+      }
       
       const [campaignsData, statsData] = await Promise.all([
         fetchCampaigns(),
-        fetchEntityStats('campaigns', getRangeFromDates(dateRange.from, dateRange.to))
+        fetchEntityStats('campaigns', requestedRange)
       ]);
       
       if (Array.isArray(campaignsData)) {
@@ -182,11 +344,19 @@ export const CampaignManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [dateRange.from, dateRange.to]);
+  }, [campaigns.length, dateRange.from, dateRange.to, hasBootstrap, initialRangePreset, location.search]);
 
   useEffect(() => {
     loadCampaignsWithStats();
   }, [loadCampaignsWithStats]);
+
+  useEffect(() => {
+    setSearchTerm(new URLSearchParams(location.search).get('search') || '');
+  }, [location.search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, groupByStates]);
 
   const handleCampaignClick = (id: string) => {
     navigate(`/campaigns/${id}`);
@@ -198,27 +368,59 @@ export const CampaignManagement = () => {
     setIsFormOpen(true);
   };
   
-  const handleEditCampaign = (campaign: Campaign) => {
+  const handleEditCampaign = async (campaign: Campaign) => {
     setFormMode('edit');
-    setSelectedCampaign(campaign);
+
+    try {
+      const [fullCampaign, autoruleBindings] = await Promise.all([
+        fetchCampaign(campaign.id),
+        fetchCampaignAutoruleBindings(campaign.id),
+      ]);
+      setSelectedCampaign({
+        ...mapBackendCampaignToFormData(fullCampaign),
+        autoruleBindings,
+      });
+    } catch (err) {
+      toast.error('Failed to load campaign', err instanceof Error ? err.message : 'Unknown error');
+      return;
+    }
+
     setIsFormOpen(true);
+  };
+
+  const handleConfigureAutorules = (campaign: Campaign) => {
+    setSelectedCampaignForAutorules(campaign);
+    setIsAutoruleModalOpen(true);
   };
   
   const handleFormSubmit = async (formData: any) => {
     try {
+      const { autoruleBindings = [], ...campaignPayload } = formData || {};
+
       if (formMode === 'create') {
-        const campaign = await createCampaign(formData);
+        const campaign = await createCampaign(campaignPayload);
         // createCampaign returns the campaign object directly
         if (campaign && campaign.id) {
+          await replaceCampaignAutoruleBindings(campaign.id, autoruleBindings);
           const newCampaign = transformCampaign(campaign);
           setCampaigns(prev => [...prev, newCampaign]);
           toast.success('Campaign Created', `Campaign "${formData.name}" has been created successfully.`);
+        }
+      } else if (selectedCampaign?.id) {
+        const campaign = await updateCampaign(selectedCampaign.id, campaignPayload);
+        if (campaign && campaign.id) {
+          await replaceCampaignAutoruleBindings(selectedCampaign.id, autoruleBindings);
+          await loadCampaignsWithStats();
+          toast.success('Campaign Updated', `Campaign "${formData.name}" has been updated successfully.`);
         }
       }
       setIsFormOpen(false);
     } catch (err) {
       console.error('Failed to save campaign:', err);
-      toast.error('Failed to Create Campaign', err instanceof Error ? err.message : 'Please check your input and try again.');
+      toast.error(
+        formMode === 'create' ? 'Failed to Create Campaign' : 'Failed to Update Campaign',
+        err instanceof Error ? err.message : 'Please check your input and try again.'
+      );
     }
   };
   
@@ -274,6 +476,24 @@ export const CampaignManagement = () => {
     }
   };
 
+  const handleQuickStatusAction = async (campaign: Campaign, action: 'activate' | 'pause') => {
+    const nextStatus = action === 'activate' ? 'active' : 'paused';
+    try {
+      await updateCampaign(campaign.id, { status: nextStatus });
+      setCampaigns((prev) =>
+        prev.map((item) =>
+          item.id === campaign.id ? { ...item, status: action === 'activate' ? 'Active' : 'Paused' } : item
+        )
+      );
+      toast.success(
+        'Campaign Updated',
+        `${campaign.name} has been ${action === 'activate' ? 'activated' : 'paused'}.`
+      );
+    } catch (err) {
+      toast.error('Update Failed', err instanceof Error ? err.message : 'Failed to update campaign status.');
+    }
+  };
+
   // Group By options for campaigns
   const CAMPAIGN_GROUP_BY_OPTIONS: GroupByOption[] = [
     { value: 'status', label: 'Status', category: 'Status' },
@@ -308,6 +528,9 @@ export const CampaignManagement = () => {
     currentPage * itemsPerPage
   );
 
+  // 让每页数据完整展示，避免表格内部出现向下滚动条
+  const tableHeight = getCampaignTableHeight(paginatedCampaigns.length);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -322,7 +545,7 @@ export const CampaignManagement = () => {
         <X size={48} className="mb-4" />
         <p className="text-lg font-bold">{error}</p>
         <button 
-          onClick={() => window.location.reload()}
+          onClick={() => void loadCampaignsWithStats()}
           className="mt-4 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest rounded-sm"
         >
           Retry
@@ -341,6 +564,23 @@ export const CampaignManagement = () => {
         initialData={selectedCampaign}
         mode={formMode}
       />
+      <CampaignAutoruleBindingsModal
+        isOpen={isAutoruleModalOpen}
+        campaignId={selectedCampaignForAutorules?.id || null}
+        campaignName={selectedCampaignForAutorules?.name}
+        onClose={() => {
+          setIsAutoruleModalOpen(false);
+          setSelectedCampaignForAutorules(null);
+        }}
+        onSaved={(bindings) => {
+          toast.success(
+            'Autorules Updated',
+            bindings.length > 0
+              ? `${selectedCampaignForAutorules?.name || 'Campaign'} now has ${bindings.length} autorule binding(s).`
+              : `${selectedCampaignForAutorules?.name || 'Campaign'} autorule bindings cleared.`
+          );
+        }}
+      />
       
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -348,25 +588,28 @@ export const CampaignManagement = () => {
           <h1 className="text-3xl font-display font-bold text-fg-default">Campaign Management</h1>
           <p className="text-sm text-fg-muted">Manage your tracking campaigns and traffic distribution</p>
         </div>
-        <div className="flex gap-3 items-center">
+        <div className="flex flex-wrap gap-3 items-center">
           {/* Date Range Picker */}
-          <div className="w-[280px]">
+          <div className="w-[280px] min-w-[220px]">
             <QuickDateRangePicker
-              value="today"
+              value={initialDateRange.pickerValue}
               onChange={(preset, range) => {
+                const normalizedPreset = normalizeRangeParam(preset);
+                const nextUrl = normalizedPreset ? `/campaigns?range=${normalizedPreset}` : '/campaigns';
                 if (range) {
                   setDateRange({
-                    from: range.startDate.split('T')[0],
-                    to: range.endDate.split('T')[0]
+                    from: range.startDate.split('T')[0]!,
+                    to: range.endDate.split('T')[0]!,
                   });
                 }
+                navigate(nextUrl);
               }}
               showTime={false}
               maxRangeDays={365}
             />
           </div>
           <ExportButton 
-            data={campaigns.map(formatCampaignForExport)}
+            data={filteredCampaigns.map(formatCampaignForExport)}
             filename="campaigns"
             label="Export"
           />
@@ -393,7 +636,7 @@ export const CampaignManagement = () => {
 
       {/* Toolbar */}
       <div className="card p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           {selectedItems.size > 0 ? (
             <>
               <span className="text-sm text-fg-muted mr-2">{selectedItems.size} selected</span>
@@ -421,15 +664,9 @@ export const CampaignManagement = () => {
               <div className="h-6 w-px bg-border-default mx-2" />
             </>
           ) : (
-            <>
-              <button className="btn-icon-create p-2 rounded transition-colors" title="Play"><Play size={18} /></button>
-              <button className="btn-icon-pause p-2 rounded transition-colors" title="Pause"><Pause size={18} /></button>
-              <button className="p-2 text-fg-muted hover:text-accent-fg transition-colors rounded" title="Copy"><Copy size={18} /></button>
-              <button className="btn-icon-delete p-2 rounded transition-colors" title="Delete"><Trash2 size={18} /></button>
-              <div className="h-6 w-px bg-border-default mx-2" />
-            </>
+            <span className="text-sm text-fg-subtle">Select rows to use bulk actions</span>
           )}
-          <div className="relative flex-1 min-w-[300px]">
+          <div className="relative flex-1 min-w-0 md:min-w-[260px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" size={16} />
             <input 
               type="text" 
@@ -475,6 +712,7 @@ export const CampaignManagement = () => {
       <div className="card overflow-hidden">
         <VirtualTableEnhanced
           tableId="campaigns"
+          className="overflow-y-hidden"
           columns={[
             {
               key: 'select',
@@ -501,14 +739,20 @@ export const CampaignManagement = () => {
                   <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
                     <Zap size={20} className="text-primary" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <button 
                       onClick={() => handleCampaignClick(row.id)}
-                      className="font-bold text-high-contrast hover:text-secondary cursor-pointer link-primary"
+                      className="font-bold text-high-contrast hover:text-secondary cursor-pointer link-primary truncate inline-block max-w-[220px]"
+                      title={row.name}
                     >
-                      {row.name}
+                      {truncateCampaignName(row.name)}
                     </button>
-                    <p className="text-xs text-medium-contrast">ID: {row.displayId || row.id}</p>
+                    <p
+                      className="text-xs text-medium-contrast truncate max-w-[220px]"
+                      title={`ID: ${row.displayId || row.id}`}
+                    >
+                      ID: {truncateLabel(row.displayId || row.id, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+                    </p>
                   </div>
                 </div>
               ),
@@ -556,8 +800,11 @@ export const CampaignManagement = () => {
               sorter: (a: any, b: any) => a.group.localeCompare(b.group),
               showSorter: true,
               render: (_: any, row: any) => (
-                <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-medium-contrast rounded-sm">
-                  {row.group}
+                <span
+                  className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-medium-contrast rounded-sm inline-block max-w-[110px] truncate"
+                  title={row.group}
+                >
+                  {truncateLabel(row.group, DISPLAY_MAX_LENGTH.TAG_TEXT)}
                 </span>
               ),
             },
@@ -647,10 +894,27 @@ export const CampaignManagement = () => {
             {
               key: 'actions',
               label: '',
-              width: '80px',
+              width: '120px',
               align: 'center',
               render: (_: any, row: any) => (
                 <div className="flex items-center gap-1">
+                  {row.status === 'Active' ? (
+                    <button
+                      onClick={() => void handleQuickStatusAction(row, 'pause')}
+                      className="p-2 text-warning hover:text-warning/80 transition-colors"
+                      title="Pause"
+                    >
+                      <Pause size={16} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => void handleQuickStatusAction(row, 'activate')}
+                      className="p-2 text-secondary hover:text-secondary/80 transition-colors"
+                      title="Activate"
+                    >
+                      <Play size={16} />
+                    </button>
+                  )}
                   <button 
                     onClick={() => handleEditCampaign(row)}
                     className="p-2 text-on-surface-variant hover:text-primary transition-colors"
@@ -658,21 +922,53 @@ export const CampaignManagement = () => {
                   >
                     <Edit3 size={16} />
                   </button>
-                  <button className="p-2 text-on-surface-variant hover:text-primary transition-colors">
-                    <MoreHorizontal size={18} />
+                  <button
+                    onClick={() => handleConfigureAutorules(row)}
+                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    title="Autorules"
+                  >
+                    <Zap size={16} />
                   </button>
                 </div>
               ),
             },
           ]}
           data={paginatedCampaigns}
-          rowHeight={72}
-          height={400}
+          rowHeight={CAMPAIGN_ROW_HEIGHT}
+          height={tableHeight}
           overscan={5}
           selectable={false}
           emptyMessage="No campaigns found"
         />
       </div>
+
+      {totalPages > 1 ? (
+        <div className="flex items-center justify-between rounded-sm border border-outline-variant/20 bg-surface-container-lowest px-4 py-3">
+          <div className="text-sm text-on-surface-variant">
+            Page {currentPage} of {totalPages}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage === 1}
+              className="flex items-center gap-2 rounded-sm border border-outline-variant/20 px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ChevronLeft size={16} />
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={currentPage === totalPages}
+              className="flex items-center gap-2 rounded-sm border border-outline-variant/20 px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

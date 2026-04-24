@@ -1,100 +1,126 @@
+# -----------------------------------------------------------------------------
+# Git Tracking Policy (runtime-first)
+# Keep runtime source/config in Git; ignore generated artifacts and local tooling
+# -----------------------------------------------------------------------------
+
 # Dependencies
 node_modules/
+frontend/node_modules/
 .pnp
 .pnp.js
+jspm_packages/
 
-# Production builds
-dist/
-build/
+# Build outputs / deploy bundles
+/dist/
+/build/
+/wrangler-out/
+/dist-*/
+/frontend/dist/
+/frontend/output/
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Test, benchmark and analysis artifacts
+/test-results/
+/performance-results/
+/analysis/
+/output/
+/.playwright-cli/
+/frontend/lighthouse-*/
+/frontend/playwright-screenshots/
+/frontend/.lighthouseci/
+
+# Generated reports / exports (root)
+/lighthouse-*.json
+/keitaro-*.json
+/output_*.html
+/report.html
+/report.json
+/test-*.png
+/verify-dashboard.png
+/wrangler-deploy-log.txt
+
+# Non-runtime research / snapshots
+/affiliate-pages/
+/image-processor/
+/keitaro-images/
+/keitaro-screenshots/
+/keitaro-screenshots-detailed/
+/spa-performance-test/
+/ssr-performance-test/
+/version_20_code/
+/trae-self-evolving/
+
+# Archives and temp bundles
+/*.zip
+/*.tgz
 
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+pnpm-debug.log*
 
 # Runtime data
-pids
+pids/
 *.pid
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
+# Coverage and caches
 coverage/
 *.lcov
-
-# nyc test coverage
-.nyc_output
-
-# Dependency directories
-node_modules/
-jspm_packages/
-
-# TypeScript v1 declaration files
-typings/
-
-# TypeScript cache
+.nyc_output/
 *.tsbuildinfo
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
+.npm/
 .eslintcache
 
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
+# Wrangler local state
+.wrangler/
+wrangler.toml.bak
 
-# Optional REPL history
-.node_repl_history
+# Environment variables / secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.dev.vars
+frontend/.env*
+!frontend/.env.example
 
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Next.js build output
-.next
-
-# Nuxt.js build / generate output
-.nuxt
-dist
-
-# Gatsby files
-.cache/
-public
-
-# Storybook build outputs
-.out
-.storybook-out
-
-# Temporary folders
-tmp/
-temp/
-
-# Editor directories and files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# AI agent / IDE tool directories (not required to run app)
+.adal/
+.agents/
+.augment/
+.bob/
+.claude/
+.codebuddy/
+.commandcode/
+.continue/
+.cortex/
+.crush/
+.factory/
+.goose/
+.iflow/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.trae/
+.vibe/
+.windsurf/
+.zencoder/
 
 # OS generated files
 .DS_Store
@@ -102,13 +128,23 @@ temp/
 ._*
 .Spotlight-V100
 .Trashes
-ehthumbs.db
 Thumbs.db
 
-# Wrangler
-.wrangler/
-wrangler.toml.bak
+# Editor / workspace files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
 
-# Cloudflare
-.dev.vars
-node_modules
+# -----------------------------------------------------------------------------
+# Runtime-critical paths (documented)
+# - src/**
+# - frontend/src/**
+# - frontend/public/**
+# - schema/**
+# - scripts/**
+# - wrangler.toml / wrangler.dev.toml
+# - package*.json / tsconfig / vite / vitest configs
+# -----------------------------------------------------------------------------

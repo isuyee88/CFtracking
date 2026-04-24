@@ -9,6 +9,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -17,13 +19,33 @@ function cn(...inputs: ClassValue[]) {
 export interface FormField {
   name: string;
   label: string;
-  type: 'text' | 'textarea' | 'select' | 'multiselect' | 'number' | 'url' | 'email' | 'password' | 'json' | 'checkbox';
+  type:
+    | 'text'
+    | 'textarea'
+    | 'select'
+    | 'multiselect'
+    | 'number'
+    | 'url'
+    | 'email'
+    | 'password'
+    | 'json'
+    | 'checkbox'
+    | 'file';
   required?: boolean;
+  maxLength?: number;
+  optionLabelMaxLength?: number;
   placeholder?: string;
   options?: { value: string; label: string }[];
+  accept?: string;
+  maxFileSizeMB?: number;
+  fileAsBase64?: boolean;
   description?: string;
   validation?: (value: any) => string | null;
   showWhen?: (data: Record<string, any>) => boolean;
+}
+
+function isFieldVisible(field: FormField, data: Record<string, any>): boolean {
+  return field.showWhen ? field.showWhen(data) : true;
 }
 
 interface EntityFormProps {
@@ -68,7 +90,22 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   }, [isOpen, computedInitialData]);
 
   const handleChange = (name: string, value: any) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const field = fields.find(item => item.name === name);
+    let nextValue = value;
+
+    if (
+      field?.maxLength &&
+      typeof value === 'string' &&
+      (field.type === 'text' ||
+        field.type === 'textarea' ||
+        field.type === 'url' ||
+        field.type === 'email' ||
+        field.type === 'password')
+    ) {
+      nextValue = clampInput(value, field.maxLength);
+    }
+
+    setFormData(prev => ({ ...prev, [name]: nextValue }));
     
     // Clear error when field is modified
     if (errors[name]) {
@@ -88,9 +125,23 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   const validateField = (name: string, value: any): boolean => {
     const field = fields.find(f => f.name === name);
     if (!field) return true;
+    if (!isFieldVisible(field, formData)) {
+      return true;
+    }
 
     // Required validation
     if (field.required) {
+      if (field.type === 'file') {
+        if (!value || typeof value !== 'object' || !value.base64) {
+          setErrors(prev => ({ ...prev, [name]: `${field.label} is required` }));
+          return false;
+        }
+      } else if (field.type === 'checkbox') {
+        if (!value) {
+          setErrors(prev => ({ ...prev, [name]: `${field.label} is required` }));
+          return false;
+        }
+      } else
       if (field.type === 'multiselect') {
         if (!value || value.length === 0) {
           setErrors(prev => ({ ...prev, [name]: `${field.label} is required` }));
@@ -117,6 +168,9 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   const validateForm = (): boolean => {
     let isValid = true;
     fields.forEach(field => {
+      if (!isFieldVisible(field, formData)) {
+        return;
+      }
       if (!validateField(field.name, formData[field.name])) {
         isValid = false;
       }
@@ -142,6 +196,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   const renderField = (field: FormField) => {
     const value = formData[field.name];
     const error = touched[field.name] ? errors[field.name] : null;
+    const optionLabelMaxLength = field.optionLabelMaxLength ?? DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL;
 
     const baseInputClass = cn(
       "w-full px-4 py-3 bg-surface border rounded-sm text-sm transition-all",
@@ -158,6 +213,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
             onBlur={() => handleBlur(field.name)}
             placeholder={field.placeholder}
             rows={4}
+            maxLength={field.maxLength}
             className={cn(baseInputClass, "resize-none")}
           />
         );
@@ -171,15 +227,114 @@ export const EntityForm: React.FC<EntityFormProps> = ({
             className={baseInputClass}
           >
             <option value="">Select {field.label}...</option>
-            {field.options?.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
+            {field.options?.map(option => {
+              const fullLabel = option.label || option.value;
+              return (
+                <option key={option.value} value={option.value} title={fullLabel}>
+                  {truncateLabel(fullLabel, optionLabelMaxLength)}
+                </option>
+              );
+            })}
           </select>
         );
 
       case 'multiselect':
+        // 如果有预定义选项，使用下拉选择模式
+        if (field.options && field.options.length > 0) {
+          const selectedValues = value || [];
+          const availableOptions = field.options.filter(opt => !selectedValues.includes(opt.value));
+          
+          return (
+            <div className="space-y-2">
+              {/* 已选择的项 */}
+              <div className="flex flex-wrap gap-2">
+                {selectedValues.map((item: string, idx: number) => {
+                  const option = field.options?.find(o => o.value === item);
+                  return (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary text-sm rounded-sm"
+                      title={option?.label || item}
+                    >
+                      {truncateLabel(option?.label || item, optionLabelMaxLength)}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newValue = selectedValues.filter((_: any, i: number) => i !== idx);
+                          handleChange(field.name, newValue);
+                        }}
+                        className="text-on-surface-variant hover:text-error ml-1"
+                      >
+                        <X size={14} />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+              
+              {/* 下拉选择框 */}
+              {availableOptions.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleChange(field.name, [...selectedValues, e.target.value]);
+                      e.target.value = '';
+                    }
+                  }}
+                  className={baseInputClass}
+                >
+                  <option value="">Select {field.label}...</option>
+                  {availableOptions.map(option => {
+                    const fullLabel = option.label || option.value;
+                    return (
+                      <option key={option.value} value={option.value} title={fullLabel}>
+                        {truncateLabel(fullLabel, optionLabelMaxLength)}
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
+              
+              {/* 搜索/过滤输入框 */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder={field.placeholder || "Search or add custom value..."}
+                  className={cn(baseInputClass, "flex-1")}
+                  maxLength={field.maxLength}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const input = e.target as HTMLInputElement;
+                      const inputValue = clampInput(input.value.trim(), field.maxLength).trim();
+                      if (inputValue && !selectedValues.includes(inputValue)) {
+                        handleChange(field.name, [...selectedValues, inputValue]);
+                        input.value = '';
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
+                    const inputValue = clampInput(input.value.trim(), field.maxLength).trim();
+                    if (inputValue && !selectedValues.includes(inputValue)) {
+                      handleChange(field.name, [...selectedValues, inputValue]);
+                      input.value = '';
+                    }
+                  }}
+                  className="px-4 py-3 bg-surface-container text-primary hover:bg-surface-container-high rounded-sm transition-colors"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+            </div>
+          );
+        }
+        
+        // 没有预定义选项时，使用手动输入模式
         return (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
@@ -187,8 +342,9 @@ export const EntityForm: React.FC<EntityFormProps> = ({
                 <span
                   key={idx}
                   className="inline-flex items-center gap-1 px-3 py-1 bg-surface-container text-sm rounded-sm"
+                  title={item}
                 >
-                  {item}
+                  {truncateLabel(item, optionLabelMaxLength)}
                   <button
                     type="button"
                     onClick={() => {
@@ -203,27 +359,30 @@ export const EntityForm: React.FC<EntityFormProps> = ({
               ))}
             </div>
             <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Add item..."
-                className={cn(baseInputClass, "flex-1")}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const input = e.target as HTMLInputElement;
-                    if (input.value.trim()) {
-                      handleChange(field.name, [...(value || []), input.value.trim()]);
-                      input.value = '';
+                <input
+                  type="text"
+                  placeholder="Add item..."
+                  className={cn(baseInputClass, "flex-1")}
+                  maxLength={field.maxLength}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const input = e.target as HTMLInputElement;
+                      const nextValue = clampInput(input.value.trim(), field.maxLength).trim();
+                      if (nextValue) {
+                        handleChange(field.name, [...(value || []), nextValue]);
+                        input.value = '';
+                      }
                     }
-                  }
                 }}
               />
               <button
                 type="button"
                 onClick={(e) => {
                   const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
-                  if (input.value.trim()) {
-                    handleChange(field.name, [...(value || []), input.value.trim()]);
+                  const nextValue = clampInput(input.value.trim(), field.maxLength).trim();
+                  if (nextValue) {
+                    handleChange(field.name, [...(value || []), nextValue]);
                     input.value = '';
                   }
                 }}
@@ -267,6 +426,65 @@ export const EntityForm: React.FC<EntityFormProps> = ({
           </label>
         );
 
+      case 'file':
+        return (
+          <div className="space-y-2">
+            <input
+              type="file"
+              accept={field.accept}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) {
+                  handleChange(field.name, null);
+                  return;
+                }
+
+                if (field.maxFileSizeMB && file.size > field.maxFileSizeMB * 1024 * 1024) {
+                  setErrors(prev => ({
+                    ...prev,
+                    [field.name]: `${field.label} must be <= ${field.maxFileSizeMB}MB`,
+                  }));
+                  return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = () => {
+                  const content = typeof reader.result === 'string' ? reader.result : '';
+                  handleChange(field.name, {
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    base64: content,
+                  });
+                  setErrors(prev => {
+                    const next = { ...prev };
+                    delete next[field.name];
+                    return next;
+                  });
+                };
+                reader.onerror = () => {
+                  setErrors(prev => ({
+                    ...prev,
+                    [field.name]: `Failed to read ${field.label}`,
+                  }));
+                };
+                if (field.fileAsBase64 === false) {
+                  reader.readAsText(file);
+                } else {
+                  reader.readAsDataURL(file);
+                }
+              }}
+              onBlur={() => handleBlur(field.name)}
+              className={baseInputClass}
+            />
+            {value && typeof value === 'object' ? (
+              <p className="text-xs text-on-surface-variant">
+                Selected: {truncateLabel(String(value.name || ''), 80)} ({Math.round((Number(value.size) || 0) / 1024)} KB)
+              </p>
+            ) : null}
+          </div>
+        );
+
       default:
         return (
           <input
@@ -275,6 +493,11 @@ export const EntityForm: React.FC<EntityFormProps> = ({
             onChange={(e) => handleChange(field.name, e.target.value)}
             onBlur={() => handleBlur(field.name)}
             placeholder={field.placeholder}
+            maxLength={
+              field.type === 'text' || field.type === 'url' || field.type === 'email' || field.type === 'password'
+                ? field.maxLength
+                : undefined
+            }
             className={baseInputClass}
           />
         );
@@ -304,7 +527,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
           <div className="space-y-6">
             {fields.map((field) => {
               // Check if field should be shown based on showWhen condition
-              if (field.showWhen && !field.showWhen(formData)) {
+              if (!isFieldVisible(field, formData)) {
                 return null;
               }
 

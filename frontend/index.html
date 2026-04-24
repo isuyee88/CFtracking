@@ -4,135 +4,284 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="CF Tracking - Real-time tracking and analytics dashboard" />
+    <meta
+      name="description"
+      content="CF Tracking - real-time traffic tracking and analytics dashboard"
+    />
     <meta name="theme-color" content="#ffffff" />
     <title>CF Tracking</title>
-    
-    <!-- DNS Prefetch for external resources -->
-    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
-    
-    <!-- Preconnect to Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    
-    <!-- Preload critical fonts -->
-    <link rel="preload" href="https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSg.woff2" as="font" type="font/woff2" crossorigin />
-    
-    <!-- Inline critical CSS for instant skeleton - no external blocking -->
     <style>
-      /* 系统字体作为后备，确保立即显示 */
       :root {
-        --font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        --font-display: Manrope, var(--font-sans);
+        color-scheme: light;
+        --boot-bg: #f7f9fc;
+        --boot-panel: #ffffff;
+        --boot-border: #e3e9f2;
+        --boot-line: #d9e2ef;
+        --boot-line-soft: #ecf1f7;
       }
-      /* 骨架屏动画 */
-      @keyframes shimmer {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
-      }
-      /* 初始骨架屏样式 - 匹配实际布局减少 CLS */
-      .skeleton-container {
-        padding: 24px;
-        background: #fafafa;
-        min-height: 100vh;
-        font-family: var(--font-sans);
+
+      * {
         box-sizing: border-box;
       }
-      /* 匹配 Dashboard 的 grid-cols-2 md:grid-cols-4 lg:grid-cols-7 */
-      .skeleton-grid {
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--boot-bg);
+      }
+
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      #root {
+        min-height: 100vh;
+      }
+
+      #app-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: var(--boot-bg);
+        transition: opacity 90ms ease, visibility 90ms ease;
+      }
+
+      #app-boot.boot-hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      .boot-shell {
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-        margin-bottom: 24px;
+        min-height: 100vh;
+        grid-template-columns: 256px minmax(0, 1fr);
       }
-      @media (min-width: 768px) {
-        .skeleton-grid {
-          grid-template-columns: repeat(4, 1fr);
-        }
+
+      .boot-sidebar {
+        padding: 24px 18px;
+        background: rgba(255, 255, 255, 0.8);
+        border-right: 1px solid rgba(227, 233, 242, 0.9);
       }
-      @media (min-width: 1024px) {
-        .skeleton-grid {
-          grid-template-columns: repeat(7, 1fr);
-        }
-      }
-      .skeleton-card {
-        background: #fff;
-        border-radius: 12px;
-        padding: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        min-height: 100px;
+
+      .boot-brand-row {
         display: flex;
-        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .boot-logo,
+      .boot-avatar,
+      .boot-line,
+      .boot-panel,
+      .boot-chip {
+        background: linear-gradient(90deg, var(--boot-line-soft), var(--boot-line), var(--boot-line-soft));
+        background-size: 200% 100%;
+        animation: boot-shimmer 1.35s linear infinite;
+      }
+
+      .boot-logo {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+      }
+
+      .boot-line {
+        height: 10px;
+        border-radius: 999px;
+      }
+
+      .boot-brand-copy {
+        display: grid;
+        gap: 8px;
+        width: 132px;
+      }
+
+      .boot-nav {
+        margin-top: 30px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .boot-nav-item {
+        height: 42px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(227, 233, 242, 0.8);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .boot-nav-item::before {
+        content: "";
+        position: absolute;
+        inset: 10px 14px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--boot-line-soft), var(--boot-line), var(--boot-line-soft));
+        background-size: 200% 100%;
+        animation: boot-shimmer 1.35s linear infinite;
+      }
+
+      .boot-main {
+        display: grid;
+        grid-template-rows: 64px minmax(0, 1fr);
+        min-width: 0;
+      }
+
+      .boot-header {
+        display: flex;
+        align-items: center;
         justify-content: space-between;
+        padding: 0 24px;
+        background: rgba(255, 255, 255, 0.72);
       }
-      .skeleton-line {
-        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+
+      .boot-search {
+        width: min(320px, 44vw);
+        height: 14px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--boot-line-soft), var(--boot-line), var(--boot-line-soft));
         background-size: 200% 100%;
-        animation: shimmer 1.5s infinite;
-        border-radius: 4px;
+        animation: boot-shimmer 1.35s linear infinite;
       }
-      .skeleton-box {
-        background: #fff;
+
+      .boot-header-tools {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .boot-chip {
+        width: 34px;
+        height: 34px;
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 24px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
       }
-      /* 图表区域固定高度 */
-      .skeleton-chart {
-        height: 300px;
-        background: linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%);
-        background-size: 200% 100%;
-        animation: shimmer 1.5s infinite;
-        border-radius: 8px;
-        margin-top: 16px;
+
+      .boot-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
       }
-      /* 表格区域固定高度 */
-      .skeleton-table {
-        height: 200px;
-        background: linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%);
+
+      .boot-content {
+        padding: 24px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .boot-hero {
+        height: 168px;
+        border-radius: 28px;
+        border: 1px solid rgba(227, 233, 242, 0.82);
+        background: var(--boot-panel);
+        box-shadow: 0 18px 42px rgba(15, 23, 42, 0.04);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .boot-hero::before {
+        content: "";
+        position: absolute;
+        inset: 22px;
+        border-radius: 22px;
+        background: linear-gradient(90deg, var(--boot-line-soft), var(--boot-line), var(--boot-line-soft));
         background-size: 200% 100%;
-        animation: shimmer 1.5s infinite;
-        border-radius: 8px;
-        margin-top: 16px;
+        animation: boot-shimmer 1.35s linear infinite;
+      }
+
+      .boot-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .boot-panel {
+        height: 120px;
+        border-radius: 22px;
+        border: 1px solid rgba(227, 233, 242, 0.78);
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.035);
+      }
+
+      @keyframes boot-shimmer {
+        from {
+          background-position: 200% 0;
+        }
+        to {
+          background-position: -200% 0;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .boot-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .boot-sidebar {
+          display: none;
+        }
+
+        .boot-header,
+        .boot-content {
+          padding-left: 18px;
+          padding-right: 18px;
+        }
+
+        .boot-hero {
+          height: 136px;
+          border-radius: 22px;
+        }
+
+        .boot-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
       }
     </style>
   </head>
   <body>
-    <!-- 内联骨架屏 - 在JS加载前显示，匹配实际布局 -->
-    <div id="root">
-      <div class="skeleton-container">
-        <!-- 7 个指标卡片 -->
-        <div class="skeleton-grid">
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-          <div class="skeleton-card"><div class="skeleton-line" style="height:12px;width:70%;margin-bottom:8px"></div><div class="skeleton-line" style="height:28px;width:50%;margin-bottom:8px"></div><div class="skeleton-line" style="height:12px;width:40%"></div></div>
-        </div>
-        <!-- 图表区域 -->
-        <div class="skeleton-box">
-          <div class="skeleton-line" style="height:16px;width:180px"></div>
-          <div class="skeleton-chart"></div>
-        </div>
-        <!-- 表格区域 -->
-        <div class="skeleton-box">
-          <div class="skeleton-line" style="height:16px;width:120px;margin-bottom:16px"></div>
-          <div class="skeleton-table"></div>
-        </div>
+    <div id="app-boot" aria-hidden="true">
+      <div class="boot-shell">
+        <aside class="boot-sidebar">
+          <div class="boot-brand-row">
+            <div class="boot-logo"></div>
+            <div class="boot-brand-copy">
+              <div class="boot-line" style="width: 92px"></div>
+              <div class="boot-line" style="width: 68px"></div>
+            </div>
+          </div>
+          <div class="boot-nav">
+            <div class="boot-nav-item"></div>
+            <div class="boot-nav-item"></div>
+            <div class="boot-nav-item"></div>
+            <div class="boot-nav-item"></div>
+            <div class="boot-nav-item"></div>
+            <div class="boot-nav-item"></div>
+          </div>
+        </aside>
+
+        <main class="boot-main">
+          <header class="boot-header">
+            <div class="boot-search"></div>
+            <div class="boot-header-tools">
+              <div class="boot-chip"></div>
+              <div class="boot-chip"></div>
+              <div class="boot-avatar"></div>
+            </div>
+          </header>
+
+          <div class="boot-content">
+            <section class="boot-hero"></section>
+            <section class="boot-grid">
+              <div class="boot-panel"></div>
+              <div class="boot-panel"></div>
+              <div class="boot-panel"></div>
+              <div class="boot-panel"></div>
+            </section>
+          </div>
+        </main>
       </div>
     </div>
-    <!-- 异步加载字体 - 使用 media="print" 技巧 -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'" />
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-    
-    <!-- 关键资源预加载提示 - 由 Vite 自动注入 -->
-    
-    <!-- 主入口脚本 -->
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

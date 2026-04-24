@@ -15,6 +15,9 @@ import { ClickRepository } from './click.repo';
 import { ConversionRepository } from './conversion.repo';
 import { BlacklistRepository } from './blacklist.repo';
 import { WhitelistRepository } from './whitelist.repo';
+import { DomainRepository } from './domain.repo';
+import { MultiOfferRepository } from './multi-offer.repo';
+import { AutoruleBindingRepository } from './autoruleBinding.repo';
 
 export type { D1Database } from '@cloudflare/workers-types';
 
@@ -29,6 +32,9 @@ export interface D1Repositories {
   conversion: ConversionRepository;
   blacklist: BlacklistRepository;
   whitelist: WhitelistRepository;
+  domain: DomainRepository;
+  multiOffer: MultiOfferRepository;
+  autoruleBinding: AutoruleBindingRepository;
 }
 
 export function getD1Connection(env: Env): D1Database {
@@ -47,6 +53,9 @@ export function createRepositories(db: D1Database): D1Repositories {
     conversion: new ConversionRepository(db),
     blacklist: new BlacklistRepository(db),
     whitelist: new WhitelistRepository(db),
+    domain: new DomainRepository(db),
+    multiOffer: new MultiOfferRepository(db),
+    autoruleBinding: new AutoruleBindingRepository(db),
   };
 }
 
@@ -60,4 +69,7 @@ export { ClickRepository } from './click.repo';
 export { ConversionRepository } from './conversion.repo';
 export { BlacklistRepository } from './blacklist.repo';
 export { WhitelistRepository } from './whitelist.repo';
+export { DomainRepository } from './domain.repo';
+export { MultiOfferRepository } from './multi-offer.repo';
+export { AutoruleBindingRepository } from './autoruleBinding.repo';
 

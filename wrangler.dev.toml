@@ -1,0 +1,125 @@
+name = "cf-tracking"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+
+[vars]
+ENVIRONMENT = "development"
+JWT_EXPIRES_IN = "24h"
+CDN_CACHE_TTL = "300"
+CACHE_TTL = "21600"
+ENABLED_REGIONS = "HK,CN"
+REALTIME_ENABLED = true
+SSE_ENABLED = true
+AUTH_MODE = "off"
+CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
+
+[[queues.producers]]
+queue = "cache-refresh-queue"
+binding = "CACHE_REFRESH_QUEUE"
+
+[[queues.consumers]]
+queue = "cache-refresh-queue"
+max_batch_size = 10
+max_batch_timeout = 5
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cf-tracking-db"
+database_id = "c20392f5-c14c-42fa-a3e7-fa9bdb5b4b76"
+migrations_dir = "schema/migrations"
+
+[[kv_namespaces]]
+binding = "UNIQUENESS_KV"
+id = "7cdc9c88e1964bff954835d91f98bd74"
+
+[durable_objects]
+[[durable_objects.bindings]]
+name = "SESSION_DO"
+class_name = "SessionDurableObject"
+
+[[durable_objects.bindings]]
+name = "COUNTER_DO"
+class_name = "CounterDurableObject"
+
+[[durable_objects.bindings]]
+name = "QUEUE_DO"
+class_name = "QueueDurableObject"
+
+[[durable_objects.bindings]]
+name = "UNIQUE_DO"
+class_name = "UniquenessDurableObject"
+
+[[durable_objects.bindings]]
+name = "USER_PREFERENCE_DO"
+class_name = "UserPreferenceDurableObject"
+
+[[durable_objects.bindings]]
+name = "CACHE_DO"
+class_name = "CacheDurableObject"
+
+[[durable_objects.bindings]]
+name = "EVENT_DO"
+class_name = "EventActor"
+
+[[durable_objects.bindings]]
+name = "STATS_DO"
+class_name = "StatsActor"
+
+[[durable_objects.bindings]]
+name = "TRACKING_STATS_DO"
+class_name = "TrackingStatsDO"
+
+[[durable_objects.sqlite_namespaces]]
+name = "TRACKING_STATS_DO_SQLITE"
+class_name = "TrackingStatsDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["UniquenessDurableObject"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["UserPreferenceDurableObject"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["CacheDurableObject"]
+
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["EventActor"]
+
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["StatsActor"]
+
+[[migrations]]
+tag = "v7"
+new_sqlite_classes = []
+
+[[migrations]]
+tag = "v8"
+new_sqlite_classes = []
+
+[[migrations]]
+tag = "v9"
+new_sqlite_classes = ["TrackingStatsDO"]
+
+[assets]
+directory = "./frontend/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/events/*", "/health", "/sw.js", "/__bootstrap/*", "/__bootstrap-object/*"]
+
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
+[observability]
+enabled = true
+
+[dev]
+port = 12342

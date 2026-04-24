@@ -7,6 +7,7 @@
 import { WhitelistRepository } from '@/handlers/d1/whitelist.repo';
 import { TrafficSourceRepository } from '@/handlers/d1/trafficSource.repo';
 import { getD1Connection } from '@/handlers/d1';
+import { GENERAL_TRAFFIC_SOURCE_ID } from '@/handlers/d1/trafficSource.repo';
 import { PropellerAdsAdapter } from '@/services/platform/propellerads';
 import type { Env } from '@/config/env';
 import type {
@@ -16,11 +17,16 @@ import type {
   WhitelistSyncResult,
   WhitelistCandidate,
   WhitelistType,
+  ListCondition,
+  ListConditionField,
+  ListConditionMode,
   CreateWhitelistDTO,
   UpdateWhitelistDTO,
 } from '@/types/whitelist';
 import type { TrafficSourceApiConfig } from '@/types/trafficSource';
 import { NotFoundError, ValidationError } from '@/middleware/error';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
+import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldLength';
 
 export class WhitelistService {
   private whitelistRepo: WhitelistRepository;
@@ -34,52 +40,70 @@ export class WhitelistService {
     this.trafficSourceRepo = new TrafficSourceRepository(db);
   }
 
+  private async resolveTrafficSourceOrThrow(trafficSourceId: string) {
+    if (trafficSourceId === GENERAL_TRAFFIC_SOURCE_ID) {
+      return this.trafficSourceRepo.ensureGeneralTrafficSource();
+    }
+
+    const resolved = await this.trafficSourceRepo.findByIdentifierWithStorageId(trafficSourceId);
+    if (!resolved) {
+      throw new NotFoundError('Traffic Source not found');
+    }
+
+    return resolved;
+  }
+
   /**
    * 创建单个白名单条目
    */
   async create(data: CreateWhitelistDTO): Promise<WhitelistEntry> {
-    const { trafficSourceId, type, value } = data;
+    const normalizedData = this.normalizeCreateInput(data);
+    const { trafficSourceId, type, value } = normalizedData;
 
-    // 验证流量平台是否存在
-    const trafficSource = await this.trafficSourceRepo.findById(trafficSourceId);
-    if (!trafficSource) {
-      throw new NotFoundError('Traffic Source not found');
-    }
+    const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
     // 验证值格式
-    this.validateEntryValue(type, value, data.ipMatchMode, data.uaMatchMode);
+    const hasConditionRules = this.hasConditionRules(normalizedData.conditions);
+    this.validateEntryValue(type, value, normalizedData.ipMatchMode, normalizedData.uaMatchMode, hasConditionRules);
+    this.validateConditionRules(type, normalizedData.matchMode, normalizedData.conditions);
 
     // 检查是否已存在
-    const existing = await this.whitelistRepo.findByValue(trafficSourceId, type, value);
-    if (existing) {
+    if (!hasConditionRules) {
+      const existing = await this.whitelistRepo.findByValue(storageId, type, value);
+      if (existing) {
       if (existing.status === 'active') {
         throw new ValidationError(`Entry already exists in whitelist: ${value}`);
       }
       // 如果已存在但已移除，重新激活
       const updated = await this.whitelistRepo.update(existing.id, {
         status: 'active',
-        reason: data.reason,
-        name: data.name,
-        ipMatchMode: data.ipMatchMode,
-        uaMatchMode: data.uaMatchMode,
-        syncToPlatform: data.syncToPlatform,
+        reason: normalizedData.reason,
+        name: normalizedData.name,
+        ipMatchMode: normalizedData.ipMatchMode,
+        uaMatchMode: normalizedData.uaMatchMode,
+        syncToPlatform: normalizedData.syncToPlatform,
+        matchMode: normalizedData.matchMode,
+        conditions: normalizedData.conditions,
       });
-      return updated!;
+        return updated!;
+      }
     }
 
     // 创建新条目
     const entry = await this.whitelistRepo.create({
-      trafficSourceId,
+      trafficSourceId: storageId,
       type,
       value,
-      name: data.name,
-      reason: data.reason,
+      name: normalizedData.name,
+      reason: normalizedData.reason,
       status: 'active',
       synced: false,
-      campaignId: data.campaignId,
-      ipMatchMode: data.ipMatchMode,
-      uaMatchMode: data.uaMatchMode,
-      syncToPlatform: data.syncToPlatform,
+      campaignId: normalizedData.campaignId,
+      ipMatchMode: normalizedData.ipMatchMode,
+      uaMatchMode: normalizedData.uaMatchMode,
+      syncToPlatform: normalizedData.syncToPlatform,
+      matchMode: normalizedData.matchMode,
+      conditions: normalizedData.conditions,
     });
 
     return entry;
@@ -89,12 +113,17 @@ export class WhitelistService {
    * 更新白名单条目
    */
   async update(id: string, data: UpdateWhitelistDTO): Promise<WhitelistEntry> {
+    const normalizedData = this.normalizeUpdateInput(data);
     const entry = await this.whitelistRepo.findById(id);
     if (!entry) {
       throw new NotFoundError('Whitelist entry not found');
     }
 
-    const updated = await this.whitelistRepo.update(id, data);
+    const effectiveConditions = normalizedData.conditions ?? entry.conditions;
+    const effectiveMatchMode = normalizedData.matchMode ?? entry.matchMode;
+    this.validateConditionRules(entry.type, effectiveMatchMode, effectiveConditions);
+
+    const updated = await this.whitelistRepo.update(id, normalizedData);
     if (!updated) {
       throw new NotFoundError('Whitelist entry not found');
     }
@@ -106,20 +135,17 @@ export class WhitelistService {
    * 批量添加白名单
    */
   async batchAdd(data: BatchWhitelistDTO): Promise<WhitelistEntry[]> {
-    const { trafficSourceId, type, items } = data;
+    const normalizedData = this.normalizeBatchInput(data);
+    const { trafficSourceId, type, items } = normalizedData;
 
-    // 验证流量平台是否存在
-    const trafficSource = await this.trafficSourceRepo.findById(trafficSourceId);
-    if (!trafficSource) {
-      throw new NotFoundError('Traffic Source not found');
-    }
+    const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
     if (!items || items.length === 0) {
       throw new ValidationError('No items to whitelist');
     }
 
     // 批量创建白名单条目
-    const entries = await this.whitelistRepo.batchCreate(trafficSourceId, type, items);
+    const entries = await this.whitelistRepo.batchCreate(storageId, type, items);
 
     return entries;
   }
@@ -132,10 +158,15 @@ export class WhitelistService {
     candidates: WhitelistCandidate[],
     reason?: string
   ): Promise<WhitelistEntry[]> {
+    const normalizedReason = normalizeOptionalString(reason as unknown, {
+      field: 'whitelist.reason',
+      maxLength: FIELD_MAX_LENGTH.REASON,
+    });
+
     const items = candidates.map((candidate) => ({
       value: candidate.value,
       name: candidate.name,
-      reason: reason || `ROI: ${candidate.metrics.roi.toFixed(2)}%, Revenue: $${candidate.metrics.revenue}`,
+      reason: normalizedReason || `ROI: ${candidate.metrics.roi.toFixed(2)}%, Revenue: $${candidate.metrics.revenue}`,
       campaignId: candidate.campaignId,
     }));
 
@@ -170,7 +201,16 @@ export class WhitelistService {
    * 查询白名单
    */
   async query(params: WhitelistQueryParams): Promise<WhitelistEntry[]> {
-    return this.whitelistRepo.findByParams(params);
+    if (!params.trafficSourceId) {
+      return this.whitelistRepo.findByParams(params);
+    }
+
+    const { storageId } = await this.resolveTrafficSourceOrThrow(params.trafficSourceId);
+
+    return this.whitelistRepo.findByParams({
+      ...params,
+      trafficSourceId: storageId,
+    });
   }
 
   /**
@@ -205,10 +245,7 @@ export class WhitelistService {
    * 同步白名单到流量平台
    */
   async syncToPlatform(trafficSourceId: string): Promise<WhitelistSyncResult> {
-    const trafficSource = await this.trafficSourceRepo.findById(trafficSourceId);
-    if (!trafficSource) {
-      throw new NotFoundError('Traffic Source not found');
-    }
+    const { trafficSource, storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
     if (!trafficSource.apiConfig) {
       return {
@@ -225,7 +262,7 @@ export class WhitelistService {
       };
     }
 
-    const apiConfig = JSON.parse(trafficSource.apiConfig) as TrafficSourceApiConfig;
+    const apiConfig = this.parseTrafficSourceApiConfig(trafficSource.apiConfig);
     if (!apiConfig.enabled) {
       return {
         success: false,
@@ -242,7 +279,7 @@ export class WhitelistService {
     }
 
     // 获取未同步的白名单
-    const unsyncedEntries = await this.whitelistRepo.findUnsynced(trafficSourceId);
+    const unsyncedEntries = await this.whitelistRepo.findUnsynced(storageId);
 
     if (unsyncedEntries.length === 0) {
       return {
@@ -356,7 +393,7 @@ export class WhitelistService {
       return;
     }
 
-    const apiConfig = JSON.parse(trafficSource.apiConfig) as TrafficSourceApiConfig;
+    const apiConfig = this.parseTrafficSourceApiConfig(trafficSource.apiConfig);
     if (!apiConfig.enabled) {
       return;
     }
@@ -378,13 +415,137 @@ export class WhitelistService {
   /**
    * 获取白名单统计
    */
+  private parseTrafficSourceApiConfig(config: TrafficSourceApiConfig | string): TrafficSourceApiConfig {
+    if (typeof config === 'string') {
+      return JSON.parse(config) as TrafficSourceApiConfig;
+    }
+    return config;
+  }
+
   async getStats(trafficSourceId: string): Promise<{
     total: number;
     active: number;
     synced: number;
     unsynced: number;
   }> {
-    return this.whitelistRepo.getStats(trafficSourceId);
+    const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
+
+    return this.whitelistRepo.getStats(storageId);
+  }
+
+  private normalizeCreateInput(data: CreateWhitelistDTO): CreateWhitelistDTO {
+    const type = data.type as WhitelistType;
+    const valueMaxLength = this.getWhitelistValueMaxLength(type);
+    const hasConditionRules = this.hasConditionRules(data.conditions);
+    const normalizedConditions = this.normalizeConditions(data.conditions, 'whitelist.conditions');
+    const normalizedMatchMode = this.normalizeConditionMode(data.matchMode, normalizedConditions);
+    const normalizedValue = hasConditionRules
+      ? normalizeOptionalString(data.value as unknown, {
+          field: 'whitelist.value',
+          maxLength: valueMaxLength,
+        }) || `rule:${crypto.randomUUID()}`
+      : normalizeRequiredString(data.value as unknown, {
+          field: 'whitelist.value',
+          maxLength: valueMaxLength,
+        });
+
+    return {
+      ...data,
+      trafficSourceId: normalizeRequiredString(data.trafficSourceId as unknown, {
+        field: 'whitelist.trafficSourceId',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      }),
+      value: this.normalizeEntryValue(type, normalizedValue),
+      name: normalizeOptionalString(data.name as unknown, {
+        field: 'whitelist.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      }),
+      reason: normalizeOptionalString(data.reason as unknown, {
+        field: 'whitelist.reason',
+        maxLength: FIELD_MAX_LENGTH.REASON,
+      }),
+      campaignId: normalizeOptionalString(data.campaignId as unknown, {
+        field: 'whitelist.campaignId',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      }),
+      matchMode: normalizedMatchMode,
+      conditions: normalizedConditions,
+    };
+  }
+
+  private normalizeUpdateInput(data: UpdateWhitelistDTO): UpdateWhitelistDTO {
+    const normalizedData: UpdateWhitelistDTO = { ...data };
+
+    if (data.name !== undefined) {
+      normalizedData.name = normalizeOptionalString(data.name as unknown, {
+        field: 'whitelist.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      });
+    }
+
+    if (data.reason !== undefined) {
+      normalizedData.reason = normalizeOptionalString(data.reason as unknown, {
+        field: 'whitelist.reason',
+        maxLength: FIELD_MAX_LENGTH.REASON,
+      });
+    }
+
+    if (data.conditions !== undefined) {
+      normalizedData.conditions = this.normalizeConditions(data.conditions, 'whitelist.conditions');
+    }
+
+    if (data.matchMode !== undefined || normalizedData.conditions !== undefined) {
+      normalizedData.matchMode = this.normalizeConditionMode(data.matchMode, normalizedData.conditions);
+    }
+
+    return normalizedData;
+  }
+
+  private normalizeBatchInput(data: BatchWhitelistDTO): BatchWhitelistDTO {
+    if (!Array.isArray(data.items)) {
+      throw new ValidationError('whitelist.items must be an array');
+    }
+
+    const normalizedTrafficSourceId = normalizeRequiredString(data.trafficSourceId as unknown, {
+      field: 'whitelist.trafficSourceId',
+      maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+    });
+    const type = data.type as WhitelistType;
+    const valueMaxLength = this.getWhitelistValueMaxLength(type);
+
+    return {
+      ...data,
+      trafficSourceId: normalizedTrafficSourceId,
+      items: data.items.map((item, index) => ({
+        ...item,
+        value: this.normalizeEntryValue(
+          type,
+          normalizeRequiredString(item.value as unknown, {
+            field: `whitelist.items[${index}].value`,
+            maxLength: valueMaxLength,
+          })
+        ),
+        name: normalizeOptionalString(item.name as unknown, {
+          field: `whitelist.items[${index}].name`,
+          maxLength: FIELD_MAX_LENGTH.NAME,
+        }),
+        reason: normalizeOptionalString(item.reason as unknown, {
+          field: `whitelist.items[${index}].reason`,
+          maxLength: FIELD_MAX_LENGTH.REASON,
+        }),
+        campaignId: normalizeOptionalString(item.campaignId as unknown, {
+          field: `whitelist.items[${index}].campaignId`,
+          maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+        }),
+      })),
+    };
+  }
+
+  private getWhitelistValueMaxLength(type: WhitelistType): number {
+    if (type === 'user_agent') {
+      return FIELD_MAX_LENGTH.USER_AGENT_VALUE;
+    }
+    return FIELD_MAX_LENGTH.TRAFFIC_ENTRY_VALUE;
   }
 
   /**
@@ -394,18 +555,34 @@ export class WhitelistService {
     type: WhitelistType,
     value: string,
     ipMatchMode?: string,
-    uaMatchMode?: string
+    uaMatchMode?: string,
+    hasConditionRules = false
   ): void {
     if (!value || value.trim() === '') {
+      if (hasConditionRules) {
+        return;
+      }
       throw new ValidationError('Value is required');
+    }
+
+    const normalizedValue = value.trim();
+    const maxLength = this.getWhitelistValueMaxLength(type);
+    if (normalizedValue.length > maxLength) {
+      throw new ValidationError(`Whitelist value exceeds max length ${maxLength}`);
     }
 
     switch (type) {
       case 'ip':
-        this.validateIpValue(value, ipMatchMode);
+        this.validateIpValue(normalizedValue, ipMatchMode);
         break;
       case 'user_agent':
-        this.validateUaValue(value, uaMatchMode);
+        this.validateUaValue(normalizedValue, uaMatchMode);
+        break;
+      case 'asn':
+        this.validateAsnValue(normalizedValue);
+        break;
+      case 'country':
+        this.validateCountryValue(normalizedValue);
         break;
       case 'zone':
       case 'creative':
@@ -413,6 +590,9 @@ export class WhitelistService {
       case 'sub_id':
       case 'geo':
       case 'device':
+      case 'isp':
+      case 'fingerprint':
+      case 'rule':
         // 这些类型只需要非空值
         break;
       default:
@@ -423,6 +603,129 @@ export class WhitelistService {
   /**
    * 验证IP地址格式
    */
+  private hasConditionRules(conditions?: ListCondition[]): boolean {
+    return Array.isArray(conditions) && conditions.length > 0;
+  }
+
+  private normalizeConditionMode(
+    mode: ListConditionMode | undefined,
+    conditions: ListCondition[] | undefined
+  ): ListConditionMode | undefined {
+    if (!this.hasConditionRules(conditions)) {
+      return undefined;
+    }
+    if (!mode) {
+      return 'all';
+    }
+    if (mode !== 'all' && mode !== 'any') {
+      throw new ValidationError("matchMode must be 'all' or 'any'");
+    }
+    return mode;
+  }
+
+  private normalizeConditions(
+    conditions: CreateWhitelistDTO['conditions'] | UpdateWhitelistDTO['conditions'] | undefined,
+    fieldPrefix: string
+  ): ListCondition[] | undefined {
+    if (conditions === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(conditions)) {
+      throw new ValidationError(`${fieldPrefix} must be an array`);
+    }
+    if (conditions.length === 0) {
+      return [];
+    }
+    return conditions.map((raw, index) => this.normalizeCondition(raw, `${fieldPrefix}[${index}]`));
+  }
+
+  private normalizeCondition(raw: ListCondition, fieldPrefix: string): ListCondition {
+    if (!raw || typeof raw !== 'object') {
+      throw new ValidationError(`${fieldPrefix} must be an object`);
+    }
+
+    const field = String(raw.field || '').trim() as ListConditionField;
+    const operator = String(raw.operator || '').trim().toLowerCase() as ListCondition['operator'];
+    const allowedFields: ListConditionField[] = [
+      'ip',
+      'asn',
+      'userAgent',
+      'zoneId',
+      'country',
+      'device',
+      'isp',
+      'fingerprint',
+      'utmSource',
+      'utmCampaign',
+      'browser',
+      'subId1',
+      'subId2',
+      'subId3',
+      'subId4',
+      'subId5',
+    ];
+    if (!allowedFields.includes(field)) {
+      throw new ValidationError(`${fieldPrefix}.field is invalid`);
+    }
+
+    const allowedOperators: ListCondition['operator'][] = [
+      'equals',
+      'contains',
+      'starts_with',
+      'ends_with',
+      'in',
+      'exists',
+    ];
+    if (!allowedOperators.includes(operator)) {
+      throw new ValidationError(`${fieldPrefix}.operator is invalid`);
+    }
+
+    if (operator === 'exists') {
+      return { field, operator };
+    }
+    if (operator === 'in') {
+      if (!Array.isArray(raw.value)) {
+        throw new ValidationError(`${fieldPrefix}.value must be an array for 'in' operator`);
+      }
+      const values = raw.value
+        .map((item, valueIndex) =>
+          normalizeRequiredString(item as unknown, {
+            field: `${fieldPrefix}.value[${valueIndex}]`,
+            maxLength: this.getConditionValueMaxLength(field),
+          })
+        )
+        .filter(Boolean);
+      if (values.length === 0) {
+        throw new ValidationError(`${fieldPrefix}.value requires at least one item`);
+      }
+      return { field, operator, value: values };
+    }
+
+    const value = normalizeRequiredString(raw.value as unknown, {
+      field: `${fieldPrefix}.value`,
+      maxLength: this.getConditionValueMaxLength(field),
+    });
+    return { field, operator, value };
+  }
+
+  private getConditionValueMaxLength(field: ListConditionField): number {
+    return field === 'userAgent' ? FIELD_MAX_LENGTH.USER_AGENT_VALUE : FIELD_MAX_LENGTH.TRAFFIC_ENTRY_VALUE;
+  }
+
+  private validateConditionRules(
+    type: WhitelistType,
+    matchMode: ListConditionMode | undefined,
+    conditions: ListCondition[] | undefined
+  ): void {
+    const hasConditions = this.hasConditionRules(conditions);
+    if (!hasConditions && matchMode !== undefined) {
+      throw new ValidationError('matchMode requires conditions');
+    }
+    if (type === 'rule' && !hasConditions) {
+      throw new ValidationError('Rule type requires at least one condition');
+    }
+  }
+
   private validateIpValue(value: string, matchMode?: string): void {
     const mode = matchMode || 'exact';
 
@@ -477,6 +780,29 @@ export class WhitelistService {
     if (mode !== 'exact' && mode !== 'contains') {
       throw new ValidationError(`Invalid UA match mode: ${mode}. Must be 'exact' or 'contains'`);
     }
+  }
+
+  private validateAsnValue(value: string): void {
+    const normalized = value.trim().toUpperCase();
+    const asnRegex = /^(AS)?\d+$/;
+    if (!asnRegex.test(normalized)) {
+      throw new ValidationError(`Invalid ASN format: ${value}. Expected format: AS12345 or 12345`);
+    }
+  }
+
+  private validateCountryValue(value: string): void {
+    const countryCodeRegex = /^[A-Z]{2}$/;
+    if (!countryCodeRegex.test(value.trim().toUpperCase())) {
+      throw new ValidationError(`Invalid country code: ${value}. Expected ISO 3166-1 alpha-2 like US`);
+    }
+  }
+
+  private normalizeEntryValue(type: WhitelistType, value: string): string {
+    if (type === 'country') {
+      return value.trim().toUpperCase();
+    }
+
+    return value;
   }
 
   /**

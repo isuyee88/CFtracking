@@ -1,68 +1,77 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useToast } from '../components/Toast';
-import { 
-  ArrowLeft, 
-  Edit3, 
-  Play, 
-  Pause, 
-  Trash2, 
-  Copy,
-  TrendingUp,
-  MousePointer,
-  ShoppingCart,
-  DollarSign,
-  Percent,
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import {
   Activity,
-  BarChart3,
-  Calendar,
-  Globe,
-  Target,
-  Link,
-  Settings,
-  X,
-  Check,
-  Save,
-  Plus,
-  Filter,
-  ChevronDown,
-  AlertCircle,
   AlertTriangle,
-  Bot,
-  Clock,
-  Smartphone,
-  MapPin,
-  Globe2,
-  Monitor,
-  Eye,
-  User,
-  Tag,
-  Search,
-  Shield,
-  Code,
-  FileCode,
+  ArrowLeft,
+  BarChart3,
+  CheckCircle2,
+  Code2,
+  Copy,
   ExternalLink,
+  FileText,
+  Filter,
+  GitBranch,
+  Globe,
+  KeyRound,
+  Link as LinkIcon,
   Loader2,
-  GitBranch
+  RefreshCw,
+  Save,
+  Settings2,
+  Shield,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { 
+import { DateRangePickerComponent, getDateRange, type DateRangeValue } from '@/components/DateRangePicker';
+import {
+  addLandingPageToFlow,
+  addOfferToFlow,
+  createFlow,
+  deleteFlow,
+  fetchCampaign,
+  fetchCampaignStats,
+  fetchConversions,
+  fetchFlows,
+  fetchLandings,
+  fetchOffers,
+  fetchTrackingScript,
+  fetchTrafficSources,
+  fetchTrendsReport,
+  regenerateCampaignToken,
+  updateCampaign,
+  updateFlow,
+} from '../services/api';
+import { useToast } from '../components/Toast';
+import { FlowDesigner, type FlowConnection, type FlowNode } from '../components/FlowDesigner';
+import CampaignRoutingWorkbench from '../components/CampaignRoutingWorkbench';
+import {
   ChartWrapper,
-  LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer,
-  LazyBarChart, LazyBar
+  LazyArea,
+  LazyAreaChart,
+  LazyCartesianGrid,
+  LazyLegend,
+  LazyResponsiveContainer,
+  LazyTooltip,
+  LazyXAxis,
+  LazyYAxis,
 } from '../components/ChartWrapper';
-import { fetchCampaign, updateCampaign, fetchCampaignStats, fetchFlows, createFlow, updateFlow, deleteFlow, addOfferToFlow, addLandingPageToFlow, fetchTrafficSources } from '../services/api';
-import { FlowDesigner } from '../components/FlowDesigner';
+import type { ParameterTemplate, TrafficSource } from '../types/trafficSource';
+import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Types
-// Backend Campaign data structure
+type CampaignTab = 'general' | 'routing' | 'tracking' | 'parameters' | 'postback' | 'notes';
+type CampaignStatusApi = 'active' | 'paused' | 'deleted';
+type FlowTypeApi = 'regular' | 'forced' | 'default';
+type FlowStatusApi = 'active' | 'paused' | 'deleted';
+type FlowNodeKind = 'landing' | 'offer';
+
 interface BackendCampaign {
   id: string;
+  displayId?: string;
   name: string;
   alias: string;
   domain: string;
@@ -70,214 +79,1011 @@ interface BackendCampaign {
   trafficSource: string | null;
   flowRotation: string;
   costModel: string;
+  costValue?: number;
+  currency?: string;
   trafficLoss: number;
+  uniquenessMethod?: string;
+  uniquenessParameter?: string | null;
   uniquenessTTL: number;
   visitorBinding: string;
-  status: 'active' | 'paused' | 'deleted';
+  apiToken?: string | null;
+  status: CampaignStatusApi;
   createdAt: string;
   updatedAt: string;
-  parameters: Record<string, any>;
+  parameters?: Record<string, unknown>;
 }
 
-interface Filter {
-  id: string;
-  type: string;
-  operator: string;
-  value: string;
-  isNot: boolean;
-}
-
-// Frontend Campaign display structure
-interface Campaign {
+interface BackendFlow {
   id: string;
   name: string;
-  status: 'Active' | 'Paused' | 'Deleted';
-  type: 'Redirect' | 'Direct';
-  group: string;
-  flow: string;
-  source: string;
-  trafficSourceId: string;
-  url: string;
-  clicks: number;
-  conversions: number;
-  revenue: string;
-  profit: string;
-  roi: string;
-  epc: string;
-  cpc: string;
-  cr: string;
-  budget: string;
-  spent: string;
-  targetGeo: string[];
-  devices: string[];
-  createdAt: string;
-  updatedAt: string;
-  filters: Filter[];
-  filterLogic: 'AND' | 'OR';
+  type?: FlowTypeApi;
+  status?: FlowStatusApi;
+  weight?: number;
+  actionType?: string;
+  actionConfig?: {
+    landingPageId?: string;
+    offerId?: string;
+    redirectUrl?: string;
+  };
+  filters?: unknown[];
 }
 
-// Transform backend data to frontend format
-const transformCampaign = (backend: BackendCampaign): Campaign => {
-  // Always use current domain from window location
-  // This ensures we use the actual domain the user is currently accessing
-  const currentDomain = window.location.host;
-  // Build real tracking URL using current domain
-  const trackingUrl = `https://${currentDomain}/${backend.alias}`;
+interface CampaignStats {
+  clicks: number;
+  uniqueClicks: number;
+  conversions: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  roi: number;
+  epc?: number;
+  cpa?: number;
+  cr: number;
+}
+
+interface DestinationItem {
+  id: string;
+  name: string;
+  url?: string;
+  group?: string | null;
+  payout?: number;
+  network?: string | null;
+}
+
+interface RecentConversion {
+  conversionId: string;
+  timestamp: string;
+  offerName: string;
+  status: string;
+  revenue: number;
+  payout: number;
+}
+
+interface Draft {
+  name: string;
+  alias: string;
+  domain: string;
+  group: string;
+  status: CampaignStatusApi;
+  trafficSourceId: string;
+  flowRotation: string;
+  trafficLoss: number;
+  costModel: string;
+  costValue: number;
+  currency: string;
+  uniquenessMethod: string;
+  uniquenessParameter: string;
+  uniquenessTTL: number;
+  visitorBinding: string;
+  postbackUrl: string;
+  postbackStatuses: string;
+  sendRevenue: boolean;
+  sendCampaignToken: boolean;
+  notes: string;
+  parameterTokens: string;
+}
+
+interface ReadinessCheck {
+  id: string;
+  label: string;
+  description: string;
+  state: 'ok' | 'warning' | 'error';
+}
+
+const TABS = [
+  { id: 'general', label: 'General', icon: Settings2 },
+  { id: 'routing', label: 'Routing', icon: GitBranch },
+  { id: 'tracking', label: 'Tracking', icon: Code2 },
+  { id: 'parameters', label: 'Parameters', icon: Filter },
+  { id: 'postback', label: 'Postback', icon: LinkIcon },
+  { id: 'notes', label: 'Notes', icon: FileText },
+] as const;
+
+const FLOW_TYPE_OPTIONS: Array<{ value: FlowTypeApi; label: string }> = [
+  { value: 'regular', label: 'Regular Flow' },
+  { value: 'forced', label: 'Forced Flow' },
+  { value: 'default', label: 'Default Flow' },
+];
+
+const FLOW_STATUS_OPTIONS: Array<{ value: FlowStatusApi; label: string }> = [
+  { value: 'active', label: 'Active' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'deleted', label: 'Deleted' },
+];
+
+function parseSourceParameters(parameters?: TrafficSource['parameters']): ParameterTemplate[] {
+  if (!parameters) {
+    return [];
+  }
+
+  if (Array.isArray(parameters)) {
+    return parameters;
+  }
+
+  if (typeof parameters === 'string') {
+    try {
+      const parsed = JSON.parse(parameters);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function formatCurrency(value: number, currency = 'USD') {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
+function formatPercent(value: number) {
+  return `${Number(value || 0).toFixed(2)}%`;
+}
+
+function formatDateLabel(value?: string) {
+  if (!value) {
+    return '-';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString();
+}
+
+function buildCampaignUrl(domain: string, alias: string) {
+  return `${domain.startsWith('http') ? domain : `https://${domain}`}/${alias}`;
+}
+
+function toDraft(campaign: BackendCampaign): Draft {
+  const parameters = campaign.parameters && typeof campaign.parameters === 'object' ? campaign.parameters : {};
+  const postback =
+    parameters.postback && typeof parameters.postback === 'object'
+      ? (parameters.postback as Record<string, unknown>)
+      : {};
 
   return {
-    id: backend.displayId || backend.id,
-    name: backend.name,
-    status: backend.status === 'active' ? 'Active' : backend.status === 'paused' ? 'Paused' : 'Deleted',
-    type: 'Redirect',
-    group: backend.group || 'Default',
-    flow: backend.flowRotation || 'Default',
-    source: backend.trafficSource || 'Direct',
-    trafficSourceId: backend.trafficSource || '',
-    url: trackingUrl,
-    clicks: 0,
-    conversions: 0,
-    revenue: '$0.00',
-    profit: '$0.00',
-    roi: '0%',
-    epc: '$0.00',
-    cpc: '$0.00',
-    cr: '0%',
-    budget: '$0.00',
-    spent: '$0.00',
-    targetGeo: [],
-    devices: [],
-    createdAt: backend.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-    updatedAt: backend.updatedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-    filters: [],
-    filterLogic: 'AND'
+    name: campaign.name,
+    alias: campaign.alias,
+    domain: campaign.domain,
+    group: campaign.group || 'Default',
+    status: campaign.status,
+    trafficSourceId: campaign.trafficSource || '',
+    flowRotation: campaign.flowRotation || 'position',
+    trafficLoss: Number(campaign.trafficLoss || 0),
+    costModel: campaign.costModel || 'cpc',
+    costValue: Number(campaign.costValue || 0),
+    currency: campaign.currency || 'USD',
+    uniquenessMethod: campaign.uniquenessMethod || 'none',
+    uniquenessParameter: campaign.uniquenessParameter || '',
+    uniquenessTTL: Number(campaign.uniquenessTTL || 86400),
+    visitorBinding: campaign.visitorBinding || 'none',
+    postbackUrl: typeof postback.url === 'string' ? postback.url : '',
+    postbackStatuses: Array.isArray(postback.statuses)
+      ? postback.statuses.map(String).join(', ')
+      : 'sale',
+    sendRevenue: postback.sendRevenue !== false,
+    sendCampaignToken: Boolean(postback.sendCampaignToken),
+    notes: typeof parameters.notes === 'string' ? parameters.notes : '',
+    parameterTokens: Array.isArray(parameters.parameterTokens)
+      ? JSON.stringify(parameters.parameterTokens, null, 2)
+      : '[]',
   };
+}
+
+function toFlowNode(flow: BackendFlow): FlowNode {
+  const nodeType: FlowNodeKind = flow.actionType === 'show_landing' ? 'landing' : 'offer';
+  const itemId = nodeType === 'landing' ? flow.actionConfig?.landingPageId : flow.actionConfig?.offerId;
+
+  return {
+    id: String(flow.id),
+    type: nodeType,
+    name: String(flow.name || 'Unnamed flow'),
+    weight: Number(flow.weight || 0),
+    config: {
+      itemId: itemId || '',
+      flowType: flow.type || 'regular',
+      flowStatus: flow.status || 'active',
+      filtersCount: Array.isArray(flow.filters) ? flow.filters.length : 0,
+      redirectUrl: flow.actionConfig?.redirectUrl || '',
+    },
+  };
+}
+
+function buildFallbackTrackingScript(id: string, alias: string, domain: string) {
+  const baseUrl = domain.startsWith('http') ? domain : `https://${domain}`;
+
+  return `<script>
+window.KTracking = {
+  reportConversion: (payout, status) =>
+    fetch('${baseUrl}/api/tracking/script/conversion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        campaignId: '${id}',
+        clickId: new URLSearchParams(location.search).get('clickid'),
+        payout: payout || 0,
+        status: status || 'sale'
+      })
+    })
 };
+</script>
+<!-- Campaign alias: ${alias} -->`;
+}
 
-// Filter types based on Keitaro RawClick documentation
-const FILTER_TYPES = [
-  { value: 'country', label: 'Country', icon: Globe2, category: 'Geo' },
-  { value: 'region', label: 'Region/State', icon: MapPin, category: 'Geo' },
-  { value: 'city', label: 'City', icon: MapPin, category: 'Geo' },
-  { value: 'device_type', label: 'Device Type', icon: Smartphone, category: 'Device' },
-  { value: 'os', label: 'Operating System', icon: Monitor, category: 'Device' },
-  { value: 'browser', label: 'Browser', icon: Globe, category: 'Device' },
-  { value: 'ip', label: 'IP Address', icon: Target, category: 'Network' },
-  { value: 'referrer', label: 'Referrer', icon: Link, category: 'Referrer' },
-  { value: 'user_agent', label: 'User Agent', icon: Bot, category: 'User Agent' },
-  { value: 'time', label: 'Time Schedule', icon: Clock, category: 'Time' },
-  { value: 'bot', label: 'Bot Detection', icon: Bot, category: 'Detection' },
-];
+function buildFallbackKClientSnippet(id: string, domain: string) {
+  const baseUrl = domain.startsWith('http') ? domain : `https://${domain}`;
 
-const OPERATORS = [
-  { value: 'equals', label: 'Equals' },
-  { value: 'not_equals', label: 'Not Equals' },
-  { value: 'contains', label: 'Contains' },
-  { value: 'not_contains', label: 'Not Contains' },
-  { value: 'in_list', label: 'In List' },
-  { value: 'not_in_list', label: 'Not In List' },
-];
+  return `<script>
+fetch('${baseUrl}/api/tracking/kclient/process', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    campaignId: '${id}',
+    url: location.href,
+    referrer: document.referrer,
+    userAgent: navigator.userAgent,
+    visitorId: localStorage.getItem('visitor_id') || '',
+    timestamp: new Date().toISOString()
+  })
+}).then((response) => response.json()).then((result) => {
+  if (result?.action === 'redirect' && result?.url) {
+    location.href = result.url;
+  }
+});
+</script>`;
+}
 
-export const CampaignDetail = () => {
+function isFlowType(value: unknown): value is FlowTypeApi {
+  return value === 'regular' || value === 'forced' || value === 'default';
+}
+
+function isFlowStatus(value: unknown): value is FlowStatusApi {
+  return value === 'active' || value === 'paused' || value === 'deleted';
+}
+
+function parseParameterTokens(input: string) {
+  const parsed = JSON.parse(input || '[]');
+  if (!Array.isArray(parsed)) {
+    throw new Error('Parameter tokens must be a JSON array.');
+  }
+
+  return parsed;
+}
+
+function buildReadinessChecks(draft: Draft, flows: FlowNode[], hasApiToken: boolean): ReadinessCheck[] {
+  const regularFlows = flows.filter((flow) => flow.config?.flowType === 'regular');
+  const defaultFlows = flows.filter((flow) => flow.config?.flowType === 'default');
+  const forcedFlows = flows.filter((flow) => flow.config?.flowType === 'forced');
+  const regularWeight = regularFlows.reduce((sum, flow) => sum + Number(flow.weight || 0), 0);
+
+  return [
+    {
+      id: 'general',
+      label: 'General settings',
+      description: draft.name && draft.alias && draft.domain ? 'Campaign identity is complete.' : 'Name, alias, and domain are required.',
+      state: draft.name && draft.alias && draft.domain ? 'ok' : 'error',
+    },
+    {
+      id: 'traffic-source',
+      label: 'Traffic source binding',
+      description: draft.trafficSourceId ? 'Traffic source is connected.' : 'Traffic source is not assigned yet.',
+      state: draft.trafficSourceId ? 'ok' : 'warning',
+    },
+    {
+      id: 'regular-flows',
+      label: 'Regular routing',
+      description:
+        regularFlows.length > 0
+          ? `Regular flows total ${regularWeight}% weight.`
+          : 'At least one regular flow should be present.',
+      state: regularFlows.length > 0 ? (regularWeight === 100 ? 'ok' : 'warning') : 'error',
+    },
+    {
+      id: 'default-flow',
+      label: 'Default fallback',
+      description:
+        defaultFlows.length === 1
+          ? 'Fallback flow is defined.'
+          : defaultFlows.length === 0
+            ? 'No default flow configured.'
+            : 'Only one default flow should exist.',
+      state: defaultFlows.length === 1 ? 'ok' : defaultFlows.length === 0 ? 'warning' : 'error',
+    },
+    {
+      id: 'forced-flow',
+      label: 'Forced routing',
+      description:
+        forcedFlows.length > 0
+          ? `${forcedFlows.length} forced flow(s) configured.`
+          : 'No forced flow configured. Add one only when you need hard overrides.',
+      state: forcedFlows.length > 0 ? 'ok' : 'warning',
+    },
+    {
+      id: 'uniqueness',
+      label: 'Uniqueness strategy',
+      description:
+        draft.uniquenessMethod !== 'parameter' || draft.uniquenessParameter
+          ? `${draft.uniquenessMethod} / TTL ${draft.uniquenessTTL}s`
+          : 'Parameter-based uniqueness needs a parameter key.',
+      state: draft.uniquenessMethod !== 'parameter' || draft.uniquenessParameter ? 'ok' : 'error',
+    },
+    {
+      id: 'token',
+      label: 'API token',
+      description: hasApiToken ? 'Token is available for integrations.' : 'Rotate token before connecting external systems.',
+      state: hasApiToken ? 'ok' : 'warning',
+    },
+  ];
+}
+
+function getCheckClasses(state: ReadinessCheck['state']) {
+  if (state === 'ok') {
+    return 'border-secondary/20 bg-secondary-container/20 text-secondary';
+  }
+
+  if (state === 'error') {
+    return 'border-error/20 bg-error/10 text-error';
+  }
+
+  return 'border-warning/20 bg-warning/10 text-warning';
+}
+
+function getDestinationName(flow: FlowNode, landings: DestinationItem[], offers: DestinationItem[]) {
+  const itemId = String(flow.config?.itemId || '');
+  if (!itemId) {
+    return 'Unbound destination';
+  }
+
+  if (flow.type === 'landing') {
+    return landings.find((item) => item.id === itemId)?.name || itemId;
+  }
+
+  return offers.find((item) => item.id === itemId)?.name || itemId;
+}
+
+function normalizeScopeDateValue(value?: string) {
+  return typeof value === 'string' ? value.split('T')[0] || value : '';
+}
+
+export default function CampaignDetail() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState('overview');
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [editedCampaign, setEditedCampaign] = useState<Campaign | null>(null);
-  const [activeEditSection, setActiveEditSection] = useState('basic');
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage('campaign-detail');
+  const hasMatchingBootstrap = Boolean(
+    bootstrap &&
+      typeof bootstrap.scope?.id === 'string' &&
+      id &&
+      bootstrap.scope.id === id &&
+      bootstrap.data &&
+      typeof bootstrap.data === 'object'
+  );
+  const needsBootstrapRefresh = Boolean(
+    bootstrap &&
+      (!bootstrap.data ||
+        typeof bootstrap.data !== 'object' ||
+        !('flowSchemasById' in bootstrap.data) ||
+        !('flowLogsById' in bootstrap.data))
+  );
+
+  const [activeTab, setActiveTab] = useState<CampaignTab>('general');
+  const initialCampaign = hasMatchingBootstrap ? (bootstrap?.data?.campaign as BackendCampaign | null) || null : null;
+  const initialBackendFlows =
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.flows) ? (bootstrap.data.flows as BackendFlow[]) : [];
+  const [campaign, setCampaign] = useState<BackendCampaign | null>(initialCampaign);
+  const [draft, setDraft] = useState<Draft | null>(initialCampaign ? toDraft(initialCampaign) : null);
+  const [flows, setFlows] = useState<FlowNode[]>(initialBackendFlows.map(toFlowNode));
+  const [backendFlows, setBackendFlows] = useState<BackendFlow[]>(initialBackendFlows);
+  const [connections] = useState<FlowConnection[]>([]);
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>(
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.trafficSources)
+      ? (bootstrap.data.trafficSources as TrafficSource[])
+      : []
+  );
+  const [landings, setLandings] = useState<DestinationItem[]>(
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.landings)
+      ? (bootstrap.data.landings as DestinationItem[])
+      : []
+  );
+  const [offers, setOffers] = useState<DestinationItem[]>(
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.offers)
+      ? (bootstrap.data.offers as DestinationItem[])
+      : []
+  );
+  const [stats, setStats] = useState<CampaignStats | null>(
+    hasMatchingBootstrap ? ((bootstrap?.data?.stats as CampaignStats | null) || null) : null
+  );
+  const [chartData, setChartData] = useState<Array<Record<string, unknown>>>(
+    hasMatchingBootstrap && bootstrap?.data?.trends && Array.isArray((bootstrap.data.trends as any)?.data)
+      ? (bootstrap.data.trends as any).data.map((item: any) => ({
+          name: item.date,
+          clicks: Number(item.clicks || 0),
+          conversions: Number(item.conversions || 0),
+          revenue: Number(item.revenue || 0),
+          cost: Number(item.cost || 0),
+          profit: Number(item.profit || 0),
+          roi: Number(item.roi || 0),
+        }))
+      : []
+  );
+  const [recentConversions, setRecentConversions] = useState<RecentConversion[]>(
+    hasMatchingBootstrap && Array.isArray(bootstrap?.data?.conversions)
+      ? (bootstrap.data.conversions as RecentConversion[])
+      : []
+  );
+  const [trackingScript, setTrackingScript] = useState(
+    hasMatchingBootstrap && typeof (bootstrap?.data?.trackingScript as any)?.code === 'string'
+      ? (bootstrap?.data?.trackingScript as any).code
+      : ''
+  );
+  const [kclientScript, setKclientScript] = useState(
+    hasMatchingBootstrap && typeof (bootstrap?.data?.kclientScript as any)?.code === 'string'
+      ? (bootstrap?.data?.kclientScript as any).code
+      : ''
+  );
+  const [loading, setLoading] = useState(!hasMatchingBootstrap);
+  const [analyticsLoading, setAnalyticsLoading] = useState(!hasMatchingBootstrap);
+  const [saving, setSaving] = useState(false);
+  const [routingSaving, setRoutingSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<any>(null);
-  const [flows, setFlows] = useState<any[]>([]);
-  const [connections, setConnections] = useState<any[]>([]);
-  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => {
+    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const startDate = searchParams.get('startDate') || (typeof bootstrap?.scope?.startDate === 'string' ? bootstrap.scope.startDate : '');
+    const endDate = searchParams.get('endDate') || (typeof bootstrap?.scope?.endDate === 'string' ? bootstrap.scope.endDate : '');
 
-  // Fetch campaign data
-  useEffect(() => {
-    const loadCampaign = async () => {
-      try {
+    if (startDate && endDate) {
+      return { startDate, endDate };
+    }
+
+    return getDateRange('last7days');
+  });
+
+  const campaignKey = campaign?.displayId || campaign?.id || id || '';
+
+  const setField = useCallback(<K extends keyof Draft>(field: K, value: Draft[K]) => {
+    setDraft((current) => (current ? { ...current, [field]: value } : current));
+  }, []);
+
+  const loadBaseData = useCallback(async () => {
+    if (!id) {
+      return;
+    }
+
+    try {
+      if (!hasMatchingBootstrap && !campaign) {
         setLoading(true);
+      }
+      setError(null);
 
-        // Load campaign and traffic sources in parallel
-        const [campaign, sourcesData] = await Promise.all([
-          fetchCampaign(id!),
-          fetchTrafficSources(false).catch(() => []),
+      await loadBootstrapForLocation().catch(() => null);
+
+      const [campaignData, flowsData, sourcesData, landingsData, offersData] = await Promise.all([
+        fetchCampaign(id),
+        fetchFlows(id).catch(() => []),
+        fetchTrafficSources(false).catch(() => []),
+        fetchLandings(false).catch(() => []),
+        fetchOffers(false).catch(() => []),
+      ]);
+
+      if (!campaignData?.id) {
+        setError('Campaign not found');
+        return;
+      }
+
+      const normalizedFlows = Array.isArray(flowsData) ? (flowsData as BackendFlow[]) : [];
+      setCampaign(campaignData as BackendCampaign);
+      setDraft(toDraft(campaignData as BackendCampaign));
+      setBackendFlows(normalizedFlows);
+      setFlows(normalizedFlows.map(toFlowNode));
+      setTrafficSources(Array.isArray(sourcesData) ? (sourcesData as TrafficSource[]) : []);
+      setLandings(
+        Array.isArray(landingsData)
+          ? landingsData.map((item: any) => ({
+              id: String(item.id),
+              name: String(item.name || item.id),
+              url: typeof item.url === 'string' ? item.url : undefined,
+              group: typeof item.group === 'string' ? item.group : null,
+            }))
+          : []
+      );
+      setOffers(
+        Array.isArray(offersData)
+          ? offersData.map((item: any) => ({
+              id: String(item.id),
+              name: String(item.name || item.id),
+              payout: Number(item.payout || 0),
+              network: typeof item.network === 'string' ? item.network : null,
+            }))
+          : []
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load campaign');
+    } finally {
+      setLoading(false);
+    }
+  }, [campaign, hasMatchingBootstrap, id]);
+
+  useEffect(() => {
+    if (needsBootstrapRefresh) {
+      void loadBootstrapForLocation({ force: true })
+        .catch(() => null)
+        .then(() => {
+          void loadBaseData();
+        });
+      return;
+    }
+
+    void loadBaseData();
+  }, [loadBaseData, needsBootstrapRefresh, location.pathname]);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+
+    if (startDate && endDate) {
+      setDateRange({ startDate, endDate });
+      return;
+    }
+
+    if (typeof bootstrap?.scope?.startDate === 'string' && typeof bootstrap?.scope?.endDate === 'string') {
+      setDateRange({
+        startDate: bootstrap.scope.startDate,
+        endDate: bootstrap.scope.endDate,
+      });
+      return;
+    }
+
+    setDateRange(getDateRange('last7days'));
+  }, [bootstrap?.scope?.endDate, bootstrap?.scope?.startDate, location.search]);
+
+  useEffect(() => {
+    if (!campaignKey) {
+      return;
+    }
+
+    const loadScripts = async () => {
+      try {
+        await loadBootstrapForLocation().catch(() => null);
+
+        const [trackingResult, kclientResult] = await Promise.all([
+          fetchTrackingScript(campaignKey, 'tracking').catch(() => null),
+          fetchTrackingScript(campaignKey, 'kclient').catch(() => null),
         ]);
 
-        if (Array.isArray(sourcesData)) {
-          setTrafficSources(sourcesData);
-        }
-
-        console.log('[CampaignDetail] Fetched campaign:', {
-          urlParamId: id,
-          campaignId: campaign?.id,
-          campaignAlias: campaign?.alias,
-          campaignName: campaign?.name
-        });
-
-        if (campaign && campaign.id) {
-          const transformedCampaign = transformCampaign(campaign);
-          setCampaign(transformedCampaign);
-          console.log('[CampaignDetail] Transformed campaign:', {
-            id: transformedCampaign.id,
-            name: transformedCampaign.name
-          });
-
-          try {
-            const stats = await fetchCampaignStats(id!);
-            if (stats) {
-              setStats(stats);
-            }
-            
-            // Load flows for this campaign
-            const flowsData = await fetchFlows(id!);
-            console.log('[CampaignDetail] Loaded flows:', flowsData);
-            if (Array.isArray(flowsData)) {
-              setFlows(flowsData.map((flow: any) => ({
-                id: flow.id,
-                type: flow.actionType === 'show_landing' ? 'landing' : 'offer',
-                name: flow.name,
-                weight: flow.weight,
-                config: flow.actionConfig,
-              })));
-            }
-          } catch (statsErr) {
-            console.warn('Stats API not available:', statsErr);
-            setStats(null);
-          }
-        } else {
-          setError('Campaign not found');
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load campaign');
-      } finally {
-        setLoading(false);
+        setTrackingScript(typeof trackingResult?.code === 'string' ? trackingResult.code : '');
+        setKclientScript(typeof kclientResult?.code === 'string' ? kclientResult.code : '');
+      } catch {
+        setTrackingScript('');
+        setKclientScript('');
       }
     };
 
-    if (id) {
-      loadCampaign();
+    void loadScripts();
+  }, [campaignKey]);
+
+  useEffect(() => {
+    if (!campaignKey) {
+      return;
     }
-  }, [id]);
+
+    const loadAnalytics = async () => {
+      try {
+        setAnalyticsLoading(true);
+
+        const loadedBootstrap = await loadBootstrapForLocation().catch(() => null);
+        const detailBootstrap =
+          readBootstrapPage<Record<string, unknown>>('campaign-detail') ||
+          (loadedBootstrap?.page === 'campaign-detail'
+            ? (loadedBootstrap as typeof bootstrap)
+            : null);
+        const detailScope = detailBootstrap?.scope;
+        const hasExplicitRange =
+          typeof window !== 'undefined' &&
+          (new URLSearchParams(window.location.search).has('startDate') ||
+            new URLSearchParams(window.location.search).has('endDate'));
+
+        if (
+          !hasExplicitRange &&
+          detailBootstrap &&
+          typeof detailScope?.startDate === 'string' &&
+          typeof detailScope?.endDate === 'string'
+        ) {
+          const bootstrapRange = {
+            startDate: detailScope.startDate as string,
+            endDate: detailScope.endDate as string,
+          };
+
+          const needsRangeSync =
+            normalizeScopeDateValue(dateRange.startDate) !== normalizeScopeDateValue(bootstrapRange.startDate) ||
+            normalizeScopeDateValue(dateRange.endDate) !== normalizeScopeDateValue(bootstrapRange.endDate);
+
+          if (needsRangeSync) {
+            setDateRange(bootstrapRange);
+            return;
+          }
+
+          setDateRange((current) => {
+            if (
+              normalizeScopeDateValue(current.startDate) === normalizeScopeDateValue(bootstrapRange.startDate) &&
+              normalizeScopeDateValue(current.endDate) === normalizeScopeDateValue(bootstrapRange.endDate)
+            ) {
+              return current;
+            }
+
+            return bootstrapRange;
+          });
+        }
+
+        if (
+          detailBootstrap &&
+          normalizeScopeDateValue(typeof detailScope?.startDate === 'string' ? detailScope.startDate : '') ===
+            normalizeScopeDateValue(dateRange.startDate) &&
+          normalizeScopeDateValue(typeof detailScope?.endDate === 'string' ? detailScope.endDate : '') ===
+            normalizeScopeDateValue(dateRange.endDate)
+        ) {
+          const bootstrapData = detailBootstrap.data as Record<string, unknown> | undefined;
+          const bootstrapTrends = bootstrapData?.trends as any;
+          const bootstrapConversions = Array.isArray(bootstrapData?.conversions)
+            ? (bootstrapData.conversions as RecentConversion[])
+            : [];
+
+          setStats((bootstrapData?.stats as CampaignStats | null) || null);
+          setChartData(
+            Array.isArray(bootstrapTrends?.data)
+              ? bootstrapTrends.data.map((item: any) => ({
+                  name: item.date,
+                  clicks: item.clicks,
+                  conversions: item.conversions,
+                  revenue: item.revenue,
+                  cost: item.cost,
+                  profit: item.profit,
+                }))
+              : []
+          );
+          setRecentConversions(bootstrapConversions);
+          return;
+        }
+
+        const [statsData, trendsData, conversionsData] = await Promise.all([
+          fetchCampaignStats(campaignKey, {
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+          }).catch(() => null),
+          fetchTrendsReport({
+            campaignId: campaignKey,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+            interval: 'day',
+          }).catch(() => null),
+          fetchConversions({
+            campaignId: campaignKey,
+            pageSize: 6,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+          }).catch(() => null),
+        ]);
+
+        setStats(statsData as CampaignStats | null);
+        setChartData(
+          Array.isArray(trendsData?.data)
+            ? trendsData.data.map((item) => ({
+                name: item.date,
+                clicks: item.clicks,
+                conversions: item.conversions,
+                revenue: item.revenue,
+                cost: item.cost,
+                profit: item.profit,
+              }))
+            : []
+        );
+        setRecentConversions(Array.isArray(conversionsData?.list) ? (conversionsData.list as RecentConversion[]) : []);
+      } finally {
+        setAnalyticsLoading(false);
+      }
+    };
+
+    void loadAnalytics();
+  }, [campaignKey, dateRange.endDate, dateRange.startDate, location.search]);
+
+  const selectedSource = useMemo(
+    () => trafficSources.find((source) => source.id === draft?.trafficSourceId),
+    [draft?.trafficSourceId, trafficSources]
+  );
+
+  const macros = useMemo(
+    () => parseSourceParameters(selectedSource?.parameters),
+    [selectedSource?.parameters]
+  );
+
+  const campaignUrl = useMemo(
+    () => (draft ? buildCampaignUrl(draft.domain, draft.alias) : ''),
+    [draft]
+  );
+
+  const readinessChecks = useMemo(
+    () => (draft ? buildReadinessChecks(draft, flows, Boolean(campaign?.apiToken)) : []),
+    [campaign?.apiToken, draft, flows]
+  );
+
+  const readinessSummary = useMemo(() => {
+    const ok = readinessChecks.filter((item) => item.state === 'ok').length;
+    return `${ok}/${readinessChecks.length}`;
+  }, [readinessChecks]);
+
+  const performanceCards = useMemo(
+    () => [
+      { label: 'Clicks', value: Number(stats?.clicks || 0).toLocaleString() },
+      { label: 'Unique', value: Number(stats?.uniqueClicks || 0).toLocaleString() },
+      { label: 'Conv.', value: Number(stats?.conversions || 0).toLocaleString() },
+      { label: 'Revenue', value: formatCurrency(Number(stats?.revenue || 0), campaign?.currency || 'USD') },
+      { label: 'Cost', value: formatCurrency(Number(stats?.cost || 0), campaign?.currency || 'USD') },
+      { label: 'Profit', value: formatCurrency(Number(stats?.profit || 0), campaign?.currency || 'USD') },
+      { label: 'ROI', value: formatPercent(Number(stats?.roi || 0)) },
+      { label: 'CR', value: formatPercent(Number(stats?.cr || 0)) },
+    ],
+    [campaign?.currency, stats]
+  );
+
+  const flowSummary = useMemo(() => {
+    const regular = flows.filter((flow) => flow.config?.flowType === 'regular');
+    const forced = flows.filter((flow) => flow.config?.flowType === 'forced');
+    const fallback = flows.filter((flow) => flow.config?.flowType === 'default');
+
+    return {
+      regular,
+      forced,
+      fallback,
+      totalWeight: regular.reduce((sum, flow) => sum + Number(flow.weight || 0), 0),
+    };
+  }, [flows]);
+
+  const parsedTokens = useMemo(() => {
+    if (!draft) {
+      return [];
+    }
+
+    try {
+      return parseParameterTokens(draft.parameterTokens);
+    } catch {
+      return [];
+    }
+  }, [draft]);
+
+  const visibleTrackingScript = useMemo(() => {
+    if (!campaign || !draft) {
+      return '';
+    }
+
+    return trackingScript || buildFallbackTrackingScript(campaignKey, draft.alias, draft.domain);
+  }, [campaign, campaignKey, draft, trackingScript]);
+
+  const visibleKclientScript = useMemo(() => {
+    if (!campaign || !draft) {
+      return '';
+    }
+
+    return kclientScript || buildFallbackKClientSnippet(campaignKey, draft.domain);
+  }, [campaign, campaignKey, draft, kclientScript]);
+
+  const copyText = useCallback(
+    async (value: string, label: string) => {
+      try {
+        await navigator.clipboard.writeText(value);
+        toast.success(`${label} copied`, value);
+      } catch (err) {
+        toast.error('Copy failed', err instanceof Error ? err.message : 'Clipboard access failed');
+      }
+    },
+    [toast]
+  );
+
+  const saveDraft = useCallback(async () => {
+    if (!campaign || !draft) {
+      return;
+    }
+
+    if (!draft.name.trim() || !draft.alias.trim() || !draft.domain.trim()) {
+      toast.error('Save failed', 'Name, alias, and domain are required.');
+      return;
+    }
+
+    if (draft.uniquenessMethod === 'parameter' && !draft.uniquenessParameter.trim()) {
+      toast.error('Save failed', 'Parameter-based uniqueness requires a parameter key.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const parameterTokens = parseParameterTokens(draft.parameterTokens);
+      const updated = await updateCampaign(campaign.displayId || campaign.id, {
+        name: draft.name,
+        alias: draft.alias,
+        domain: draft.domain,
+        group: draft.group,
+        trafficSource: draft.trafficSourceId || null,
+        flowRotation: draft.flowRotation,
+        costModel: draft.costModel,
+        costValue: draft.costValue,
+        currency: draft.currency,
+        trafficLoss: draft.trafficLoss,
+        uniquenessMethod: draft.uniquenessMethod,
+        uniquenessParameter: draft.uniquenessMethod === 'parameter' ? draft.uniquenessParameter : null,
+        uniquenessTTL: draft.uniquenessTTL,
+        visitorBinding: draft.visitorBinding,
+        status: draft.status,
+        parameters: {
+          ...(campaign.parameters && typeof campaign.parameters === 'object' ? campaign.parameters : {}),
+          notes: draft.notes,
+          postback: {
+            url: draft.postbackUrl,
+            statuses: draft.postbackStatuses
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean),
+            sendRevenue: draft.sendRevenue,
+            sendCampaignToken: draft.sendCampaignToken,
+          },
+          parameterTokens,
+        },
+      });
+
+      setCampaign(updated as BackendCampaign);
+      setDraft(toDraft(updated as BackendCampaign));
+      toast.success('Campaign saved', 'General, parameters, and postback settings were updated.');
+    } catch (err) {
+      toast.error('Save failed', err instanceof Error ? err.message : 'Unable to save campaign');
+    } finally {
+      setSaving(false);
+    }
+  }, [campaign, draft, toast]);
+
+  const rotateToken = useCallback(async () => {
+    if (!campaign) {
+      return;
+    }
+
+    try {
+      const result = await regenerateCampaignToken(campaign.displayId || campaign.id);
+      const apiToken = typeof result?.apiToken === 'string' ? result.apiToken : '';
+      setCampaign((current) => (current ? { ...current, apiToken } : current));
+      toast.success('Token regenerated', 'Campaign API token has been rotated.');
+    } catch (err) {
+      toast.error('Token rotation failed', err instanceof Error ? err.message : 'Unable to rotate token');
+    }
+  }, [campaign, toast]);
+
+  const refreshRoutingFlows = useCallback(async () => {
+    setFlows(backendFlows.map(toFlowNode));
+  }, [backendFlows]);
+
+  const saveFlows = useCallback(
+    async (nextFlows: FlowNode[]) => {
+      if (!campaignKey) {
+        return;
+      }
+
+      const unsupported = nextFlows.filter((flow) => flow.type !== 'landing' && flow.type !== 'offer');
+      if (unsupported.length > 0) {
+        toast.error('Routing save failed', 'Only landing and offer nodes are supported in campaign routing.');
+        return;
+      }
+
+      try {
+        setRoutingSaving(true);
+
+        const existing = [...backendFlows];
+        const persistedBackendFlows: BackendFlow[] = [];
+        const persistedNodes: FlowNode[] = [];
+
+        for (const flow of nextFlows) {
+          const existingFlow = existing.find((item) => String(item.id) === flow.id || item.name === flow.name);
+          const flowType = isFlowType(flow.config?.flowType) ? flow.config?.flowType : existingFlow?.type || 'regular';
+          const flowStatus = isFlowStatus(flow.config?.flowStatus) ? flow.config?.flowStatus : existingFlow?.status || 'active';
+          const itemId = String(flow.config?.itemId || '');
+          const actionType = flow.type === 'landing' ? 'show_landing' : 'show_offer';
+          const actionConfig =
+            flow.type === 'landing'
+              ? { type: 'show_landing', landingPageId: itemId }
+              : { type: 'show_offer', offerId: itemId };
+
+          const payload = {
+            campaignId: campaignKey,
+            name: flow.name,
+            type: flowType,
+            weight: flow.weight,
+            status: flowStatus,
+            actionType,
+            actionConfig,
+            filters: Array.isArray(existingFlow?.filters) ? existingFlow.filters : [],
+          };
+
+          let flowId = '';
+          let persistedFlow: BackendFlow;
+          if (existingFlow) {
+            persistedFlow = (await updateFlow(String(existingFlow.id), payload)) as BackendFlow;
+            flowId = String(existingFlow.id);
+          } else {
+            persistedFlow = (await createFlow(payload)) as BackendFlow;
+            flowId = String(persistedFlow.id);
+          }
+
+          if (flow.type === 'offer' && itemId) {
+            await addOfferToFlow(flowId, itemId, flow.weight);
+          }
+
+          if (flow.type === 'landing' && itemId) {
+            await addLandingPageToFlow(flowId, itemId, flow.weight);
+          }
+
+          persistedBackendFlows.push({
+            ...persistedFlow,
+            id: flowId,
+            name: flow.name,
+            type: flowType,
+            status: flowStatus,
+            weight: flow.weight,
+            actionType,
+            actionConfig,
+            filters: Array.isArray(existingFlow?.filters) ? existingFlow.filters : [],
+          });
+
+          persistedNodes.push({
+            ...flow,
+            id: flowId,
+            weight: flow.weight,
+            config: {
+              ...flow.config,
+              itemId,
+              flowType,
+              flowStatus,
+            },
+          });
+        }
+
+        const nextNames = new Set(nextFlows.map((flow) => flow.name));
+        for (const flow of existing.filter((item) => !nextNames.has(String(item.name)))) {
+          await deleteFlow(String(flow.id));
+        }
+
+        setBackendFlows(persistedBackendFlows);
+        setFlows(persistedNodes);
+        toast.success('Routing saved', 'Regular, forced, and default flow policies were updated.');
+      } catch (err) {
+        toast.error('Routing save failed', err instanceof Error ? err.message : 'Unable to save routing');
+      } finally {
+        setRoutingSaving(false);
+      }
+    },
+    [backendFlows, campaignKey, toast]
+  );
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 size={48} className="animate-spin text-primary" />
+      <div className="flex h-96 items-center justify-center">
+        <Loader2 size={40} className="animate-spin text-primary" />
       </div>
     );
   }
 
-  if (error || !campaign) {
+  if (error || !campaign || !draft) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+      <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-4">
         <div className="text-6xl text-on-surface-variant/20">404</div>
         <h2 className="text-2xl font-display font-bold text-primary">Campaign Not Found</h2>
-        <p className="text-on-surface-variant">{error || 'The campaign you\'re looking for doesn\'t exist.'}</p>
-        <button 
+        <p className="text-on-surface-variant">{error || 'The campaign could not be loaded.'}</p>
+        <button
           onClick={() => navigate('/campaigns')}
-          className="modal-btn-secondary flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm"
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-6 py-3 text-xs font-bold uppercase tracking-widest"
         >
           <ArrowLeft size={18} />
           Back to Campaigns
@@ -286,500 +1092,104 @@ export const CampaignDetail = () => {
     );
   }
 
-  const handleEditClick = async () => {
-    // Load traffic sources when opening edit modal
-    try {
-      const data = await fetchTrafficSources(false);
-      if (Array.isArray(data)) {
-        setTrafficSources(data);
-      }
-    } catch (err) {
-      console.error('Failed to load traffic sources:', err);
-    }
-    setEditedCampaign({ ...campaign });
-    setIsEditModalOpen(true);
-    setActiveEditSection('basic');
-  };
-
-  const handleSave = async () => {
-    if (editedCampaign) {
-      try {
-        // 只发送需要更新的字段
-        const updateData = {
-          name: editedCampaign.name,
-          alias: editedCampaign.alias,
-          domain: editedCampaign.domain,
-          group: editedCampaign.group,
-          trafficSource: editedCampaign.source,
-          flowRotation: editedCampaign.flowRotation,
-          costModel: editedCampaign.costModel,
-          costValue: editedCampaign.costValue,
-          currency: editedCampaign.currency,
-          uniquenessMethod: editedCampaign.uniquenessMethod,
-          uniquenessParameter: editedCampaign.uniquenessParameter,
-          uniquenessTTL: editedCampaign.uniquenessTTL,
-          visitorBinding: editedCampaign.visitorBinding,
-          status: editedCampaign.status,
-          notes: editedCampaign.notes,
-        };
-
-        const response = await updateCampaign(campaign.id, updateData);
-        if (response) {
-          // 重新从后端获取最新数�?
-          const updatedCampaign = await fetchCampaign(id!);
-          if (updatedCampaign) {
-            setCampaign(transformCampaign(updatedCampaign));
-          }
-          setIsEditModalOpen(false);
-          toast.success('Campaign Updated', 'Campaign has been updated successfully.');
-        } else {
-          toast.error('Update Failed', 'Failed to update campaign');
-        }
-      } catch (err) {
-        console.error('Update campaign error:', err);
-        toast.error('Update Failed', err instanceof Error ? err.message : 'Failed to update campaign');
-      }
-    }
-  };
-
-  const handleCancel = () => {
-    setIsEditModalOpen(false);
-    setEditedCampaign(null);
-    setActiveEditSection('basic');
-  };
-
-  const handleCopyLink = async () => {
-    try {
-      const trackingUrl = campaign.url;
-      await navigator.clipboard.writeText(trackingUrl);
-      toast.success('URL Copied', 'Tracking URL has been copied to clipboard!');
-    } catch (err) {
-      console.error('Failed to copy URL:', err);
-      toast.error('Copy Failed', 'Failed to copy URL to clipboard');
-    }
-  };
-
-  const handleCopyUrl = async () => {
-    try {
-      const url = generateTrackingUrl();
-      await navigator.clipboard.writeText(url);
-      toast.success('URL Copied', 'Tracking URL has been copied to clipboard!');
-    } catch (err) {
-      console.error('Failed to copy URL:', err);
-      toast.error('Copy Failed', 'Failed to copy URL to clipboard');
-    }
-  };
-
-  // Generate tracking URL with traffic source parameters
-  const generateTrackingUrl = () => {
-    if (!campaign?.domain || !campaign?.alias) return campaign?.url || '';
-
-    let baseUrl = campaign.domain.startsWith('http') ? campaign.domain : `https://${campaign.domain}`;
-    baseUrl = baseUrl.replace(/\/$/, '');
-    let url = `${baseUrl}/${campaign.alias}`;
-
-    // Find the selected traffic source and append its parameters
-    const selectedSource = trafficSources.find(ts => ts.id === campaign.source);
-    const params = selectedSource?.parameters;
-
-    if (params && Array.isArray(params) && params.length > 0) {
-      const searchParams = new URLSearchParams();
-      params.forEach((p: any) => {
-        if (p.paramName && p.macro) {
-          searchParams.set(p.paramName, p.macro);
-        }
-      });
-      const queryString = searchParams.toString();
-      if (queryString) {
-        url = `${url}?${queryString}`;
-      }
-    }
-
-    return url;
-  };
-
-  const handleInputChange = (field: keyof Campaign, value: any) => {
-    if (editedCampaign) {
-      setEditedCampaign({ ...editedCampaign, [field]: value });
-    }
-  };
-
-  // Filter management functions
-  const addFilter = () => {
-    if (editedCampaign) {
-      const newFilter: Filter = {
-        id: Date.now().toString(),
-        type: 'country',
-        operator: 'equals',
-        value: '',
-        isNot: false
-      };
-      setEditedCampaign({
-        ...editedCampaign,
-        filters: [...(editedCampaign.filters || []), newFilter]
-      });
-    }
-  };
-
-  const updateFilter = (filterId: string, field: keyof Filter, value: any) => {
-    if (editedCampaign && editedCampaign.filters) {
-      setEditedCampaign({
-        ...editedCampaign,
-        filters: editedCampaign.filters.map(f => 
-          f.id === filterId ? { ...f, [field]: value } : f
-        )
-      });
-    }
-  };
-
-  const removeFilter = (filterId: string) => {
-    if (editedCampaign && editedCampaign.filters) {
-      setEditedCampaign({
-        ...editedCampaign,
-        filters: editedCampaign.filters.filter(f => f.id !== filterId)
-      });
-    }
-  };
-
-  const toggleFilterLogic = () => {
-    if (editedCampaign) {
-      setEditedCampaign({
-        ...editedCampaign,
-        filterLogic: editedCampaign.filterLogic === 'AND' ? 'OR' : 'AND'
-      });
-    }
-  };
-
-  // Generate Tracking Script code
-  const generateTrackingScript = (campaignId: string | number) => {
-    const domain = window.location.host;
-    return `<!-- CFTracking Tracking Script -->
-<script>
-(function() {
-  const CONFIG = {
-    campaignId: '${campaignId}',
-    workerUrl: 'https://${domain}'
-  };
-
-  function getUrlParams() {
-    const params = new URLSearchParams(window.location.search);
-    return {
-      clickId: params.get('clickid') || params.get('subid'),
-      subId1: params.get('subid1') || params.get('sub1'),
-      subId2: params.get('subid2') || params.get('sub2'),
-      subId3: params.get('subid3') || params.get('sub3'),
-    };
-  }
-
-  function getVisitorId() {
-    let visitorId = localStorage.getItem('cf_visitor_id');
-    if (!visitorId) {
-      visitorId = 'v_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-      localStorage.setItem('cf_visitor_id', visitorId);
-    }
-    return visitorId;
-  }
-
-  async function trackVisit() {
-    const params = getUrlParams();
-    const visitorId = getVisitorId();
-    
-    const trackData = {
-      campaignId: CONFIG.campaignId,
-      clickId: params.clickId,
-      visitorId: visitorId,
-      url: window.location.href,
-      referrer: document.referrer,
-      userAgent: navigator.userAgent,
-      subId1: params.subId1,
-      subId2: params.subId2,
-      subId3: params.subId3,
-      timestamp: new Date().toISOString()
-    };
-
-    try {
-      await fetch(CONFIG.workerUrl + '/api/tracking/script/track', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(trackData)
-      });
-    } catch (err) {
-      console.error('[CFTracking] Track error:', err);
-    }
-  }
-
-  window.KTracking = {
-    ready: function(callback) {
-      const params = getUrlParams();
-      callback(params.clickId, null);
-    },
-
-    reportConversion: async function(payout, status, params, callback) {
-      const urlParams = getUrlParams();
-      const conversionData = {
-        campaignId: CONFIG.campaignId,
-        clickId: urlParams.clickId,
-        payout: payout || 0,
-        status: status || 'lead',
-        tid: params?.tid || Math.floor(Math.random() * 1000000000).toString()
-      };
-
-      try {
-        await fetch(CONFIG.workerUrl + '/api/tracking/script/conversion', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(conversionData)
-        });
-        console.log('[CFTracking] Conversion reported:', status);
-        if (callback) callback();
-      } catch (err) {
-        console.error('[CFTracking] Conversion error:', err);
-      }
-    },
-
-    update: async function(params) {
-      console.log('[CFTracking] Update params:', params);
-    }
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', trackVisit);
-  } else {
-    trackVisit();
-  }
-})();
-</script>
-<!-- End CFTracking Tracking Script -->`;
-  };
-
-  // Generate KClient JS code
-  const generateKClientScript = (campaignId: string | number, base64: boolean) => {
-    const domain = window.location.host;
-    const script = `<!-- CFTracking KClient JS -->
-<script>
-(function() {
-  const CONFIG = {
-    campaignId: '${campaignId}',
-    workerUrl: 'https://${domain}'
-  };
-
-  function getVisitorId() {
-    let visitorId = localStorage.getItem('cf_kclient_vid');
-    if (!visitorId) {
-      visitorId = 'kc_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-      localStorage.setItem('cf_kclient_vid', visitorId);
-    }
-    return visitorId;
-  }
-
-  async function processTraffic() {
-    const visitorId = getVisitorId();
-    
-    const requestData = {
-      campaignId: CONFIG.campaignId,
-      visitorId: visitorId,
-      url: window.location.href,
-      referrer: document.referrer,
-      userAgent: navigator.userAgent,
-      timestamp: new Date().toISOString()
-    };
-
-    try {
-      const response = await fetch(CONFIG.workerUrl + '/api/tracking/kclient/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestData)
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.action === 'redirect' && result.url) {
-          window.location.href = result.url;
-        } else if (result.action === 'show_content' && result.content) {
-          document.open();
-          document.write(result.content);
-          document.close();
-        }
-      }
-    } catch (err) {
-      console.error('[CFTracking KClient] Process error:', err);
-    }
-  }
-
-  processTraffic();
-})();
-</script>
-<!-- End CFTracking KClient JS -->`;
-
-    if (base64) {
-      return `<!-- CFTracking KClient JS (Base64) -->
-<script>
-eval(atob('${btoa(script)}'));
-</script>`;
-    }
-    return script;
-  };
-
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: Activity },
-    { id: 'flow', label: 'Flow', icon: GitBranch },
-    { id: 'reports', label: 'Reports', icon: BarChart3 },
-    { id: 'filters', label: 'Filters', icon: Filter },
-    { id: 'tracking-code', label: 'Tracking Code', icon: Code },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
-
-  const editSections = [
-    { id: 'basic', label: 'Basic Info', icon: Settings },
-    { id: 'targeting', label: 'Targeting', icon: Globe },
-    { id: 'filters', label: 'Filters', icon: Filter },
-    { id: 'tracking', label: 'Tracking', icon: Link },
-  ];
-
-  // Use real stats data or fallback to empty arrays
-  const chartData = stats?.chartData || [];
-  const conversionData = stats?.conversionData || [];
-
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <button 
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-3">
+          <button
             onClick={() => navigate('/campaigns')}
-            className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+            className="inline-flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary"
           >
-            <ArrowLeft size={24} />
+            <ArrowLeft size={18} />
+            Back to Campaigns
           </button>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-display font-bold text-primary">{campaign.name}</h1>
-              <div className={cn(
-                "flex items-center gap-2 px-3 py-1 rounded-sm",
-                campaign.status === 'Active' ? "status-active" : "status-paused"
-              )}>
-                <div className={cn(
-                  "w-2 h-2 rounded-full",
-                  campaign.status === 'Active' ? "bg-green-500" : "bg-yellow-500"
-                )} />
-                <span className="text-[10px] font-bold uppercase tracking-widest">{campaign.status}</span>
-              </div>
-            </div>
-            <p className="text-sm text-on-surface-variant">{campaign.source} �?{campaign.type} �?{campaign.group}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-display font-bold text-primary">{draft.name}</h1>
+            <span
+              className={cn(
+                'inline-flex items-center gap-2 rounded-sm px-3 py-1 text-[10px] font-bold uppercase tracking-widest',
+                draft.status === 'active'
+                  ? 'bg-secondary-container/50 text-secondary'
+                  : draft.status === 'paused'
+                    ? 'bg-warning/10 text-warning'
+                    : 'bg-error/10 text-error'
+              )}
+            >
+              <Shield size={12} />
+              {draft.status}
+            </span>
+            <span className="text-xs font-mono text-on-surface-variant">{campaign.displayId || campaign.id}</span>
           </div>
+          <p className="text-sm text-on-surface-variant">
+            {draft.domain} / {draft.alias} / {draft.group}
+          </p>
         </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={handleCopyLink}
-            className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => void copyText(campaignUrl, 'Tracking URL')}
+            className="flex items-center gap-2 border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary transition-colors hover:bg-surface-container"
           >
             <Copy size={16} />
-            Copy Link
+            Copy URL
           </button>
-          {campaign.status === 'Active' ? (
-            <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
-              <Pause size={16} />
-              Pause
-            </button>
-          ) : (
-            <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
-              <Play size={16} />
-              Resume
-            </button>
-          )}
-          <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-error text-xs font-bold uppercase tracking-widest hover:bg-error/10 transition-colors">
-            <Trash2 size={16} />
-            Delete
-          </button>
-          <button 
-            onClick={handleEditClick}
-            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm"
+          <button
+            onClick={() => navigate('/reports')}
+            className="flex items-center gap-2 border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-surface transition-colors hover:bg-surface-container"
           >
-            <Edit3 size={18} />
-            Edit Campaign
+            <BarChart3 size={16} />
+            Reports
+          </button>
+          <button
+            onClick={() => navigate('/trends')}
+            className="flex items-center gap-2 border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-surface transition-colors hover:bg-surface-container"
+          >
+            <Activity size={16} />
+            Trends
+          </button>
+          <button
+            onClick={() => void saveDraft()}
+            disabled={saving}
+            className="btn-create flex items-center gap-2 rounded-sm px-6 py-3 text-xs font-bold uppercase tracking-widest disabled:opacity-60"
+          >
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            Save Campaign
           </button>
         </div>
       </div>
 
-      {/* Tracking URL */}
-      <div className="bg-surface-container-lowest p-4 whisper-shadow flex items-center justify-between gap-4">
-        <div 
-          className="flex-1 min-w-0 cursor-pointer group"
-          onClick={handleCopyUrl}
-          onDoubleClick={handleCopyUrl}
-          title="Click or double-click to copy"
-        >
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Tracking URL</span>
-          <p className="text-sm font-mono text-primary truncate group-hover:underline">{generateTrackingUrl()}</p>
-        </div>
-        <button 
-          onClick={handleCopyUrl}
-          className="flex items-center gap-2 px-4 py-3 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
-        >
-          <Copy size={16} />
-          Copy
-        </button>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-        <div className="bg-surface-container-lowest p-4 whisper-shadow">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Clicks</span>
-          <p className="text-2xl font-display font-bold text-primary">{campaign.clicks.toLocaleString()}</p>
-        </div>
-        <div className="bg-surface-container-lowest p-4 whisper-shadow">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Conv.</span>
-          <p className="text-2xl font-display font-bold text-secondary">{campaign.conversions.toLocaleString()}</p>
-        </div>
-        <div className="bg-surface-container-lowest p-4 whisper-shadow">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Revenue</span>
-          <p className="text-2xl font-display font-bold text-secondary">{campaign.revenue}</p>
-        </div>
-        <div className="bg-surface-container-lowest p-4 whisper-shadow">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Profit</span>
-          <p className={cn(
-            "text-2xl font-display font-bold",
-            campaign.profit.startsWith('-') ? "text-error" : "text-secondary"
-          )}>{campaign.profit}</p>
-        </div>
-        <div className="bg-surface-container-lowest p-4 whisper-shadow">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">ROI</span>
-          <p className={cn(
-            "text-2xl font-display font-bold",
-            campaign.roi.startsWith('-') ? "text-error" : "text-secondary"
-          )}>{campaign.roi}</p>
-        </div>
-        <div className="bg-surface-container-lowest p-4 whisper-shadow">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">EPC</span>
-          <p className="text-2xl font-display font-bold text-primary">{campaign.epc}</p>
-        </div>
-        <div className="bg-surface-container-lowest p-4 whisper-shadow">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">CPC</span>
-          <p className="text-2xl font-display font-bold text-primary">{campaign.cpc}</p>
-        </div>
-        <div className="bg-surface-container-lowest p-4 whisper-shadow">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">CR</span>
-          <p className="text-2xl font-display font-bold text-primary">{campaign.cr}</p>
+      <div className="rounded-sm bg-surface-container-lowest p-4 whisper-shadow">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+              Tracking URL
+            </div>
+            <div className="mt-2 break-all font-mono text-sm text-primary">{campaignUrl}</div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <QuickStat label="Flow Rotation" value={draft.flowRotation} />
+            <QuickStat label="Traffic Loss" value={`${draft.trafficLoss}%`} />
+            <QuickStat label="Visitor Binding" value={draft.visitorBinding} />
+            <QuickStat label="Readiness" value={readinessSummary} />
+          </div>
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="border-b border-outline-variant/20">
-        <div className="flex gap-1">
-          {tabs.map((tab) => {
+        <div className="flex flex-wrap gap-1">
+          {TABS.map((tab) => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  "flex items-center gap-2 px-6 py-4 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2",
+                  'flex items-center gap-2 border-b-2 px-5 py-4 text-[10px] font-bold uppercase tracking-widest transition-all',
                   activeTab === tab.id
-                    ? "border-primary text-primary"
-                    : "border-transparent text-on-surface-variant hover:text-primary"
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-on-surface-variant hover:text-primary'
                 )}
               >
-                <Icon size={18} />
+                <Icon size={16} />
                 {tab.label}
               </button>
             );
@@ -787,94 +1197,192 @@ eval(atob('${btoa(script)}'));
         </div>
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'overview' && (
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Main Chart */}
-          <div className="lg:col-span-2 bg-surface-container-lowest p-6 whisper-shadow">
-            <h3 className="text-sm font-bold text-primary uppercase tracking-widest mb-6">Performance Overview</h3>
-            <ChartWrapper height={320}>
-              <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                <LazyResponsiveContainer width="100%" height={300}>
-                  <LazyAreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--secondary))" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <LazyCartesianGrid strokeDasharray="3 3" stroke="hsl(var(--outline-variant))" />
-                    <LazyXAxis dataKey="name" stroke="hsl(var(--on-surface-variant))" fontSize={12} />
-                    <LazyYAxis stroke="hsl(var(--on-surface-variant))" fontSize={12} />
-                    <LazyTooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'hsl(var(--surface-container))',
-                        border: '1px solid hsl(var(--outline-variant))',
-                        borderRadius: '4px'
-                      }}
-                    />
-                    <LazyArea type="monotone" dataKey="revenue" stroke="hsl(var(--secondary))" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
-                    <LazyArea type="monotone" dataKey="profit" stroke="hsl(var(--primary))" fillOpacity={1} fill="url(#colorProfit)" strokeWidth={2} />
-                  </LazyAreaChart>
-                </LazyResponsiveContainer>
-              </Suspense>
-            </ChartWrapper>
-          </div>
-
-          {/* Side Panel */}
-          <div className="space-y-6">
-            {/* Campaign Info */}
-            <div className="bg-surface-container-lowest p-6 whisper-shadow">
-              <h3 className="text-sm font-bold text-primary uppercase tracking-widest mb-4">Campaign Details</h3>
-              <div className="space-y-4">
+      {activeTab === 'general' && (
+        <div className="space-y-6">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr),minmax(340px,1fr)]">
+            <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+              <div className="mb-6 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Flow</span>
-                  <p className="text-sm font-medium text-on-surface">{campaign.flow}</p>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-primary">General Configuration</h3>
+                  <p className="mt-2 text-sm text-on-surface-variant">
+                    Align the campaign identity, cost model, status, and publishing surface before routing traffic.
+                  </p>
                 </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Geography</span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {campaign.targetGeo.map((geo) => (
-                      <span key={geo} className="px-2 py-1 bg-surface-container text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-                        {geo}
-                      </span>
+                <Settings2 size={18} className="text-on-surface-variant" />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Campaign Name">
+                  <input value={draft.name} onChange={(event) => setField('name', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                </Field>
+                <Field label="Alias">
+                  <input value={draft.alias} onChange={(event) => setField('alias', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                </Field>
+                <Field label="Domain">
+                  <input value={draft.domain} onChange={(event) => setField('domain', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                </Field>
+                <Field label="Group">
+                  <input value={draft.group} onChange={(event) => setField('group', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                </Field>
+                <Field label="Status">
+                  <select value={draft.status} onChange={(event) => setField('status', event.target.value as CampaignStatusApi)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary">
+                    <option value="active">Active</option>
+                    <option value="paused">Paused</option>
+                    <option value="deleted">Deleted</option>
+                  </select>
+                </Field>
+                <Field label="Traffic Source">
+                  <select value={draft.trafficSourceId} onChange={(event) => setField('trafficSourceId', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary">
+                    <option value="">Select traffic source</option>
+                    {trafficSources.map((source) => (
+                      <option key={source.id} value={source.id}>
+                        {source.name}
+                      </option>
                     ))}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Devices</span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {campaign.devices.map((device) => (
-                      <span key={device} className="px-2 py-1 bg-surface-container text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-                        {device}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                  </select>
+                </Field>
+                <Field label="Cost Model">
+                  <select value={draft.costModel} onChange={(event) => setField('costModel', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary">
+                    <option value="cpc">CPC</option>
+                    <option value="cpm">CPM</option>
+                    <option value="cpa">CPA</option>
+                    <option value="cps">CPS</option>
+                    <option value="revshare">Revshare</option>
+                  </select>
+                </Field>
+                <Field label="Cost Value">
+                  <input type="number" min="0" step="0.01" value={draft.costValue} onChange={(event) => setField('costValue', Number(event.target.value))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                </Field>
+                <Field label="Currency">
+                  <input value={draft.currency} onChange={(event) => setField('currency', event.target.value.toUpperCase())} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                </Field>
               </div>
             </div>
 
-            {/* Budget */}
-            <div className="bg-surface-container-lowest p-6 whisper-shadow">
-              <h3 className="text-sm font-bold text-primary uppercase tracking-widest mb-4">Budget</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Total Budget</span>
-                  <span className="text-sm font-medium text-on-surface">{campaign.budget}</span>
+            <div className="space-y-6">
+              <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Launch Readiness</h3>
+                  <div className="text-sm font-bold text-on-surface">{readinessSummary}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Spent</span>
-                  <span className="text-sm font-medium text-on-surface">{campaign.spent}</span>
+                <div className="mt-4 space-y-3">
+                  {readinessChecks.map((check) => (
+                    <div key={check.id} className={cn('rounded-sm border p-4', getCheckClasses(check.state))}>
+                      <div className="flex items-start gap-3">
+                        {check.state === 'ok' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                        <div>
+                          <div className="text-sm font-semibold">{check.label}</div>
+                          <div className="mt-1 text-xs opacity-90">{check.description}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="h-2 bg-surface-container rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-primary rounded-full"
-                    style={{ width: `${Math.min((parseFloat(campaign.spent.replace(/[^0-9.]/g, '')) / parseFloat(campaign.budget.replace(/[^0-9.]/g, ''))) * 100, 100)}%` }}
-                  />
+              </div>
+
+              <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+                <h3 className="mb-4 text-sm font-bold uppercase tracking-widest text-primary">Operational Snapshot</h3>
+                <div className="space-y-4 text-sm">
+                  <InfoRow label="Traffic Source" value={selectedSource?.name || 'Direct / not assigned'} />
+                  <InfoRow label="Created" value={formatDateLabel(campaign.createdAt)} />
+                  <InfoRow label="Updated" value={formatDateLabel(campaign.updatedAt)} />
+                  <InfoRow label="Linked Destinations" value={`${flows.length} flows`} />
+                  <InfoRow label="API Token" value={campaign.apiToken ? 'Ready' : 'Missing'} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Performance Overview</h3>
+                <p className="mt-2 text-sm text-on-surface-variant">Campaign-level trend and conversion movement for the selected date range.</p>
+              </div>
+              <DateRangePickerComponent
+                value={dateRange}
+                onChange={(value) => {
+                  if (!value || !id) {
+                    return;
+                  }
+
+                  const searchParams = new URLSearchParams(window.location.search);
+                  searchParams.set('startDate', value.startDate);
+                  searchParams.set('endDate', value.endDate);
+                  searchParams.set('interval', searchParams.get('interval') || 'day');
+                  setDateRange(value);
+                  navigate(`/campaigns/${id}?${searchParams.toString()}`);
+                }}
+                showTime={false}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-8">
+              {performanceCards.map((card) => (
+                <QuickMetricCard key={card.label} label={card.label} value={card.value} />
+              ))}
+            </div>
+            <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.4fr),minmax(340px,1fr)]">
+              <div className="rounded-sm bg-surface-container p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="text-sm font-semibold text-on-surface">Trend</div>
+                  {analyticsLoading && <RefreshCw size={14} className="animate-spin text-on-surface-variant" />}
+                </div>
+                {chartData.length > 0 ? (
+                  <ChartWrapper height={320}>
+                    <Suspense fallback={<div className="flex h-full items-center justify-center">Loading chart...</div>}>
+                      <LazyResponsiveContainer width="100%" height={300}>
+                        <LazyAreaChart data={chartData}>
+                          <defs>
+                            <linearGradient id="campaignRevenue" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(var(--secondary))" stopOpacity={0.35} />
+                              <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <LazyCartesianGrid strokeDasharray="3 3" stroke="hsl(var(--outline-variant))" />
+                          <LazyXAxis dataKey="name" stroke="hsl(var(--on-surface-variant))" fontSize={12} />
+                          <LazyYAxis stroke="hsl(var(--on-surface-variant))" fontSize={12} />
+                          <LazyTooltip />
+                          <LazyLegend />
+                          <LazyArea type="monotone" dataKey="clicks" stroke="hsl(var(--primary))" fillOpacity={0} strokeWidth={2} />
+                          <LazyArea type="monotone" dataKey="revenue" stroke="hsl(var(--secondary))" fillOpacity={1} fill="url(#campaignRevenue)" strokeWidth={2} />
+                        </LazyAreaChart>
+                      </LazyResponsiveContainer>
+                    </Suspense>
+                  </ChartWrapper>
+                ) : (
+                  <div className="flex h-[280px] items-center justify-center text-sm text-on-surface-variant">
+                    No trend data returned for this range.
+                  </div>
+                )}
+              </div>
+              <div className="rounded-sm bg-surface-container p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="text-sm font-semibold text-on-surface">Recent Conversions</div>
+                  <button onClick={() => navigate('/conversions')} className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-primary">
+                    <ExternalLink size={12} />
+                    Open Log
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {recentConversions.length === 0 ? (
+                    <div className="rounded-sm border border-outline-variant/20 bg-surface px-4 py-5 text-sm text-on-surface-variant">
+                      No recent conversions for this range.
+                    </div>
+                  ) : (
+                    recentConversions.map((conversion) => (
+                      <div key={conversion.conversionId} className="rounded-sm border border-outline-variant/10 bg-surface px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-on-surface">{conversion.offerName || 'Offer'}</div>
+                            <div className="mt-1 text-xs text-on-surface-variant">{formatDateLabel(conversion.timestamp)}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-semibold text-primary">{formatCurrency(Number(conversion.revenue || 0), draft.currency)}</div>
+                            <div className="mt-1 text-[11px] uppercase tracking-widest text-on-surface-variant">{conversion.status}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -882,598 +1390,365 @@ eval(atob('${btoa(script)}'));
         </div>
       )}
 
-      {activeTab === 'flow' && (
-        <div className="space-y-4">
-          {/* Flow Configuration Warning */}
-          <div className="bg-warning/10 border border-warning p-4">
+      {activeTab === 'routing' && (
+        <div className="space-y-6">
+          <div className="rounded-sm border border-warning/30 bg-warning/10 p-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="text-warning" size={20} />
-              <div className="flex-1">
-                <h3 className="text-sm font-bold text-warning mb-2">Flow Configuration Required</h3>
-                <p className="text-sm text-on-surface mb-2">
-                  This campaign needs at least one Flow to properly redirect traffic to Offers or Landing Pages.
-                </p>
+              <AlertTriangle size={18} className="mt-0.5 text-warning" />
+              <div>
+                <h3 className="mb-2 text-sm font-bold text-warning">Keitaro-style routing policy</h3>
                 <p className="text-sm text-on-surface-variant">
-                  <strong>Current Issue:</strong> Without a Flow, all clicks will be redirected to the traffic-loss page instead of converting.
+                  Use regular flows for the main distribution, forced flows for hard overrides, and exactly one default flow for fallback behavior.
                 </p>
-                <ul className="text-xs text-on-surface-variant mt-2 space-y-1">
-                  <li>�?Click "Edit Flow" below to configure your first Flow</li>
-                  <li>�?Associate Offers or Landing Pages with the Flow</li>
-                  <li>�?Set up Filters if needed (optional)</li>
-                </ul>
               </div>
             </div>
           </div>
-          
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <QuickMetricCard label="Regular Flows" value={String(flowSummary.regular.length)} />
+            <QuickMetricCard label="Forced Flows" value={String(flowSummary.forced.length)} />
+            <QuickMetricCard label="Default Flows" value={String(flowSummary.fallback.length)} />
+            <QuickMetricCard label="Regular Weight" value={`${flowSummary.totalWeight}%`} />
+          </div>
+
+          <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Routing Policies</h3>
+                <p className="mt-2 text-sm text-on-surface-variant">
+                  Assign each flow to regular, forced, or default behavior, and keep its execution status aligned with launch needs.
+                </p>
+              </div>
+              <button onClick={() => void saveFlows(flows)} disabled={routingSaving} className="inline-flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary disabled:opacity-60">
+                {routingSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Save Routing
+              </button>
+            </div>
+            <div className="space-y-3">
+              {flows.length === 0 ? (
+                <div className="rounded-sm border border-outline-variant/20 bg-surface px-4 py-5 text-sm text-on-surface-variant">
+                  No flows configured yet. Add destinations below to start orchestration.
+                </div>
+              ) : (
+                flows.map((flow) => (
+                  <div key={flow.id} className="grid gap-3 rounded-sm border border-outline-variant/10 bg-surface p-4 lg:grid-cols-[minmax(0,1.4fr)_180px_180px]">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-on-surface">{flow.name}</span>
+                        <span className="rounded-sm bg-surface-container px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+                          {flow.type}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-on-surface-variant">
+                        Destination: {getDestinationName(flow, landings, offers)} · Weight {flow.weight}% · Filters {Number(flow.config?.filtersCount || 0)}
+                      </div>
+                    </div>
+                    <select value={isFlowType(flow.config?.flowType) ? flow.config?.flowType : 'regular'} onChange={(event) => setFlows((current) => current.map((item) => item.id === flow.id ? { ...item, config: { ...item.config, flowType: event.target.value as FlowTypeApi } } : item))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary">
+                      {FLOW_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select value={isFlowStatus(flow.config?.flowStatus) ? flow.config?.flowStatus : 'active'} onChange={(event) => setFlows((current) => current.map((item) => item.id === flow.id ? { ...item, config: { ...item.config, flowStatus: event.target.value as FlowStatusApi } } : item))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary">
+                      {FLOW_STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <CampaignRoutingWorkbench
+            campaignId={campaignKey}
+            flows={flows}
+            landings={landings.map((item) => ({ id: item.id, name: item.name }))}
+            offers={offers.map((item) => ({ id: item.id, name: item.name }))}
+            flowRotation={draft.flowRotation}
+            trafficLoss={draft.trafficLoss}
+            onRefreshFlows={refreshRoutingFlows}
+          />
+
           <FlowDesigner
-            campaignId={id || ''}
+            campaignId={campaignKey}
             initialFlows={flows}
             initialConnections={connections}
-            onSave={async (flows, connections) => {
-              try {
-                const campaignUUID = campaign?.id || id;
-                console.log('[FlowDesigner] Saving flows for campaign:', {
-                  displayId: id,
-                  uuid: campaignUUID,
-                  campaignName: campaign?.name,
-                  flowCount: flows.length
-                });
-                
-                console.log('[FlowDesigner] Flows to save:', flows.map(f => ({ id: f.id, name: f.name, type: f.type })));
-                
-                const existingFlows = await fetchFlows(id || '');
-                console.log('[FlowDesigner] Existing flows from API:', existingFlows);
-                
-                for (const flow of flows) {
-                  // 优先使用 flow.id 来匹配现有的 flow（更可靠�?
-                  // flow.id 可能�?offer/landing �?ID，也可能�?flow �?UUID
-                  const existingFlow = flow.id && typeof flow.id === 'string' && flow.id.includes('-') 
-                    ? existingFlows.find((f: any) => f.id === flow.id)
-                    : existingFlows.find((f: any) => f.name === flow.name);
-                  
-                  const flowData = {
-                    campaignId: campaignUUID,
-                    name: flow.name,
-                    type: 'regular',
-                    weight: flow.weight,
-                    status: 'active' as const,
-                    actionType: flow.type === 'landing' ? 'show_landing' : 'show_offer',
-                  };
-                  
-                  let flowId: string;
-                  if (existingFlow) {
-                    console.log('[FlowDesigner] Updating flow:', existingFlow.id, flow.name);
-                    // 只更新变化的字段，避免覆盖其他配�?
-                    const updatePayload = {
-                      ...existingFlow,
-                      ...flowData,
-                      // 保留原有�?actionConfig 等配�?
-                      actionConfig: existingFlow.actionConfig || {},
-                    };
-                    await updateFlow(existingFlow.id, updatePayload);
-                    flowId = existingFlow.id;
-                  } else {
-                    console.log('[FlowDesigner] Creating flow:', flow.name);
-                    const newFlow = await createFlow(flowData);
-                    flowId = newFlow.id;
-                  }
-                  
-                  // 关联 Offer �?Landing Page
-                  // 使用 flow.config.itemId 获取关联�?offer/landing ID
-                  const itemId = flow.config?.itemId || flow.id;
-                  if (flow.type === 'offer' && itemId) {
-                    console.log('[FlowDesigner] Adding offer to flow:', flowId, itemId);
-                    await addOfferToFlow(flowId, itemId, flow.weight);
-                  } else if (flow.type === 'landing' && itemId) {
-                    console.log('[FlowDesigner] Adding landing page to flow:', flowId, itemId);
-                    await addLandingPageToFlow(flowId, itemId, flow.weight);
-                  }
-                }
-                
-                // 删除不存在的 flow - 使用 flow ID 匹配更准�?
-                const flowIds = flows.map(f => f.id);
-                const flowNames = flows.map(f => f.name);
-                const flowsToDelete = existingFlows.filter((f: any) => !flowIds.includes(f.id) && !flowNames.includes(f.name));
-                console.log('[FlowDesigner] Flows to delete:', flowsToDelete.map(f => ({ id: f.id, name: f.name })));
-                for (const flowToDelete of flowsToDelete) {
-                  console.log('[FlowDesigner] Deleting flow:', flowToDelete.id, flowToDelete.name);
-                  await deleteFlow(flowToDelete.id);
-                }
-
-                toast.success('Flow Saved', 'Flow has been saved successfully.');
-                setActiveTab('overview');
-              } catch (err) {
-                console.error('Failed to save flow:', err);
-                toast.error('Save Failed', `Failed to save flow configuration: ${err instanceof Error ? err.message : 'Unknown error'}`);
-              }
+            onSave={(nextFlows) => {
+              void saveFlows(nextFlows);
             }}
-            onCancel={() => setActiveTab('overview')}
+            onCancel={() => setActiveTab('general')}
           />
         </div>
       )}
 
-      {activeTab === 'reports' && (
-        <div className="bg-surface-container-lowest p-8 whisper-shadow text-center">
-          <BarChart3 size={48} className="mx-auto text-on-surface-variant/30 mb-4" />
-          <h3 className="text-lg font-bold text-primary mb-2">Detailed Reports</h3>
-          <p className="text-sm text-on-surface-variant">Advanced reporting features coming soon.</p>
-        </div>
-      )}
-
-      {activeTab === 'filters' && (
-        <div className="bg-surface-container-lowest p-6 whisper-shadow">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-primary">Traffic Filters</h3>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Logic:</span>
-              <button
-                onClick={toggleFilterLogic}
-                className={cn(
-                  "px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-sm transition-all",
-                  campaign.filterLogic === 'AND' 
-                    ? "bg-primary text-on-primary" 
-                    : "bg-secondary text-on-secondary"
-                )}
-              >
-                {campaign.filterLogic}
-              </button>
-            </div>
-          </div>
-          
-          {campaign.filters.length === 0 ? (
-            <div className="text-center py-8 text-on-surface-variant">
-              <Filter size={48} className="mx-auto mb-4 opacity-30" />
-              <p>No filters configured</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {campaign.filters.map((filter, index) => (
-                <div key={filter.id} className="flex items-center gap-4 p-4 bg-surface rounded-sm">
-                  <span className="text-sm text-on-surface-variant w-8">{index + 1}</span>
-                  <div className="flex-1 grid grid-cols-4 gap-4">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Type</span>
-                      <p className="text-sm font-medium text-on-surface">
-                        {FILTER_TYPES.find(t => t.value === filter.type)?.label || filter.type}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Operator</span>
-                      <p className="text-sm font-medium text-on-surface">
-                        {OPERATORS.find(o => o.value === filter.operator)?.label || filter.operator}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Value</span>
-                      <p className="text-sm font-medium text-on-surface">{filter.value}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Condition</span>
-                      <p className="text-sm font-medium text-on-surface">
-                        {filter.isNot ? 'IS NOT' : 'IS'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          
-          <button
-            onClick={handleEditClick}
-            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm mx-auto mt-6"
-          >
-            <Plus size={18} />
-            Add Filter
-          </button>
-        </div>
-      )}
-
-      {activeTab === 'tracking-code' && (
-        <div className="space-y-6">
-          {/* Tracking Script Section */}
-          <div className="bg-surface-container-lowest p-6 whisper-shadow">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <FileCode size={24} className="text-primary" />
-                <div>
-                  <h3 className="text-lg font-bold text-primary">Tracking Script</h3>
-                  <p className="text-sm text-on-surface-variant">For Landing Pages and Offers</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  const code = generateTrackingScript(campaign.id);
-                  navigator.clipboard.writeText(code);
-                  toast.success('Code Copied', 'Tracking Script has been copied to clipboard!');
-                }}
-                className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
-              >
-                <Copy size={16} />
-                Copy Code
-              </button>
-            </div>
-            <div className="bg-surface p-4 rounded-sm border border-outline-variant/20">
-              <pre className="text-xs text-on-surface-variant overflow-x-auto whitespace-pre-wrap font-mono">
-                {generateTrackingScript(campaign.id)}
-              </pre>
-            </div>
-            <div className="mt-4 p-4 bg-secondary-container/30 rounded-sm">
-              <h4 className="text-sm font-bold text-secondary mb-2">Usage Instructions</h4>
-              <ol className="text-sm text-on-surface-variant space-y-1 list-decimal list-inside">
-                <li>Copy the code above</li>
-                <li>Paste it between the <code>&lt;head&gt;&lt;/head&gt;</code> tags of your landing page</li>
-                <li>The script will automatically track visits and conversions</li>
-              </ol>
-            </div>
-          </div>
-
-          {/* KClient JS Section */}
-          <div className="bg-surface-container-lowest p-6 whisper-shadow">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <Code size={24} className="text-primary" />
-                <div>
-                  <h3 className="text-lg font-bold text-primary">KClient JS</h3>
-                  <p className="text-sm text-on-surface-variant">For Remote Sites and Site Builders</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    const code = generateKClientScript(campaign.id, true);
-                    navigator.clipboard.writeText(code);
-                    toast.success('Code Copied', 'KClient JS (Base64) has been copied to clipboard!');
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
-                >
-                  <Copy size={16} />
-                  Copy Base64
-                </button>
-                <button
-                  onClick={() => {
-                    const code = generateKClientScript(campaign.id, false);
-                    navigator.clipboard.writeText(code);
-                    toast.success('Code Copied', 'KClient JS has been copied to clipboard!');
-                  }}
-                  className="modal-btn-primary flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-sm"
-                >
-                  <Copy size={16} />
-                  Copy Code
-                </button>
-              </div>
-            </div>
-            <div className="bg-surface p-4 rounded-sm border border-outline-variant/20">
-              <pre className="text-xs text-on-surface-variant overflow-x-auto whitespace-pre-wrap font-mono">
-                {generateKClientScript(campaign.id, false)}
-              </pre>
-            </div>
-            <div className="mt-4 p-4 bg-secondary-container/30 rounded-sm">
-              <h4 className="text-sm font-bold text-secondary mb-2">Supported Platforms</h4>
-              <div className="flex flex-wrap gap-2">
-                {['Shopify', 'Taplink', 'Tilda', 'Flexbe', 'GitHub Pages', 'WordPress'].map(platform => (
-                  <span key={platform} className="px-3 py-1 bg-surface text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm">
-                    {platform}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Conversion Tracking Examples */}
-          <div className="bg-surface-container-lowest p-6 whisper-shadow">
-            <div className="flex items-center gap-3 mb-4">
-              <ExternalLink size={24} className="text-primary" />
+      {activeTab === 'tracking' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+            <div className="mb-4 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-bold text-primary">Conversion Tracking Examples</h3>
-                <p className="text-sm text-on-surface-variant">How to send conversions from your page</p>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Tracking Endpoint</h3>
+                <p className="mt-2 text-sm text-on-surface-variant">
+                  Campaign URL, API token, and raw integration snippet for partner or site deployment.
+                </p>
               </div>
+              <button onClick={() => void rotateToken()} className="inline-flex items-center gap-2 rounded-sm border border-outline-variant px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:bg-surface">
+                <KeyRound size={14} />
+                Rotate
+              </button>
             </div>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="bg-surface p-4 rounded-sm border border-outline-variant/20">
-                <h4 className="text-sm font-bold text-primary mb-2">Button Click</h4>
-                <pre className="text-xs text-on-surface-variant overflow-x-auto font-mono bg-surface-container p-2 rounded">
-{`<a onclick="KTracking.reportConversion(10, 'lead')" 
-   href="https://offer.com">
-   Buy Now
-</a>`}
-                </pre>
+
+            <div className="space-y-4">
+              <SnippetCard label="Campaign URL" value={campaignUrl} onCopy={() => void copyText(campaignUrl, 'Campaign URL')} />
+              <SnippetCard label="API Token" value={campaign.apiToken || 'Not available'} onCopy={() => campaign.apiToken && void copyText(campaign.apiToken, 'API Token')} />
+              <SnippetCard label="Tracking Script" value={visibleTrackingScript} multiline onCopy={() => void copyText(visibleTrackingScript, 'Tracking script')} />
+            </div>
+          </div>
+
+          <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Macros & Remote Snippet</h3>
+                <p className="mt-2 text-sm text-on-surface-variant">
+                  Traffic-source macros and the KClient loader for remote pages.
+                </p>
               </div>
-              <div className="bg-surface p-4 rounded-sm border border-outline-variant/20">
-                <h4 className="text-sm font-bold text-primary mb-2">Thank You Page</h4>
-                <pre className="text-xs text-on-surface-variant overflow-x-auto font-mono bg-surface-container p-2 rounded">
-{`<script>
-  KTracking.reportConversion(25, 'sale', {
-    sub_id_1: 'order-123',
-    sub_id_2: 'John Doe'
-  });
-</script>`}
-                </pre>
+              <Globe size={18} className="text-on-surface-variant" />
+            </div>
+            <div className="space-y-3">
+              {macros.length === 0 ? (
+                <div className="rounded-sm bg-surface-container p-4 text-sm text-on-surface-variant">
+                  No traffic source parameters are configured yet.
+                </div>
+              ) : (
+                macros.map((parameter) => (
+                  <div key={`${parameter.alias}-${parameter.paramName}`} className="rounded-sm bg-surface-container p-4">
+                    <div className="text-sm font-semibold text-on-surface">{parameter.alias}</div>
+                    <div className="mt-1 text-xs text-on-surface-variant">
+                      {parameter.paramName} → {parameter.macro}
+                    </div>
+                  </div>
+                ))
+              )}
+              <SnippetCard label="KClient Snippet" value={visibleKclientScript} multiline onCopy={() => void copyText(visibleKclientScript, 'KClient snippet')} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'parameters' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Traffic & Uniqueness</h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Flow Rotation">
+                <select value={draft.flowRotation} onChange={(event) => setField('flowRotation', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary">
+                  <option value="position">Position</option>
+                  <option value="weight">Weight</option>
+                </select>
+              </Field>
+              <Field label="Traffic Loss %">
+                <input type="number" min="0" max="100" value={draft.trafficLoss} onChange={(event) => setField('trafficLoss', Number(event.target.value))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+              </Field>
+              <Field label="Visitor Binding">
+                <select value={draft.visitorBinding} onChange={(event) => setField('visitorBinding', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary">
+                  <option value="none">None</option>
+                  <option value="cookie">Cookie</option>
+                  <option value="ip">IP</option>
+                </select>
+              </Field>
+              <Field label="Uniqueness Method">
+                <select value={draft.uniquenessMethod} onChange={(event) => setField('uniquenessMethod', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary">
+                  <option value="none">None</option>
+                  <option value="ip">IP</option>
+                  <option value="ip_ua">IP + UA</option>
+                  <option value="cookie">Cookie</option>
+                  <option value="parameter">Parameter</option>
+                </select>
+              </Field>
+              <Field label="Uniqueness TTL">
+                <input type="number" min="0" value={draft.uniquenessTTL} onChange={(event) => setField('uniquenessTTL', Number(event.target.value))} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+              </Field>
+              {draft.uniquenessMethod === 'parameter' && (
+                <Field label="Uniqueness Parameter" className="md:col-span-2">
+                  <input value={draft.uniquenessParameter} onChange={(event) => setField('uniquenessParameter', event.target.value)} className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+                </Field>
+              )}
+            </div>
+            <div className="rounded-sm bg-surface-container p-4 text-sm text-on-surface-variant">
+              Current strategy: <span className="font-semibold text-on-surface">{draft.uniquenessMethod}</span> / TTL {draft.uniquenessTTL}s / binding {draft.visitorBinding}
+            </div>
+            <button onClick={() => void saveDraft()} disabled={saving} className="modal-btn-primary inline-flex items-center gap-2 rounded-sm px-5 py-3 text-xs font-bold uppercase tracking-widest disabled:opacity-60">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Save Parameters
+            </button>
+          </div>
+
+          <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Parameter Tokens</h3>
+            <textarea rows={12} value={draft.parameterTokens} onChange={(event) => setField('parameterTokens', event.target.value)} className="w-full resize-none border border-outline-variant bg-surface px-4 py-3 font-mono text-xs outline-none focus:border-primary" />
+            <div className="rounded-sm bg-surface-container p-4">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Parsed Preview</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {parsedTokens.length === 0 ? (
+                  <span className="text-sm text-on-surface-variant">No token mappings parsed.</span>
+                ) : (
+                  parsedTokens.map((token: any, index: number) => (
+                    <span key={`${token.name || 'token'}-${index}`} className="rounded-sm bg-surface px-3 py-2 text-xs text-on-surface">
+                      {token.name || 'token'} → {token.token || '-'}
+                    </span>
+                  ))
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {activeTab === 'settings' && (
-        <div className="bg-surface-container-lowest p-8 whisper-shadow text-center">
-          <Settings size={48} className="mx-auto text-on-surface-variant/30 mb-4" />
-          <h3 className="text-lg font-bold text-primary mb-2">Campaign Settings</h3>
-          <p className="text-sm text-on-surface-variant">Advanced settings coming soon.</p>
+      {activeTab === 'postback' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-primary">S2S Postback</h3>
+            <Field label="Postback URL">
+              <input value={draft.postbackUrl} onChange={(event) => setField('postbackUrl', event.target.value)} placeholder="https://partner.example.com/postback" className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+            </Field>
+            <Field label="Statuses">
+              <input value={draft.postbackStatuses} onChange={(event) => setField('postbackStatuses', event.target.value)} placeholder="sale, lead" className="w-full border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" />
+            </Field>
+            <label className="flex items-center gap-3 rounded-sm bg-surface-container p-4">
+              <input type="checkbox" checked={draft.sendRevenue} onChange={(event) => setField('sendRevenue', event.target.checked)} />
+              <span className="text-sm text-on-surface-variant">Send revenue value</span>
+            </label>
+            <label className="flex items-center gap-3 rounded-sm bg-surface-container p-4">
+              <input type="checkbox" checked={draft.sendCampaignToken} onChange={(event) => setField('sendCampaignToken', event.target.checked)} />
+              <span className="text-sm text-on-surface-variant">Attach campaign API token</span>
+            </label>
+            <button onClick={() => void saveDraft()} disabled={saving} className="modal-btn-primary inline-flex items-center gap-2 rounded-sm px-5 py-3 text-xs font-bold uppercase tracking-widest disabled:opacity-60">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Save Postback
+            </button>
+          </div>
+
+          <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+            <h3 className="mb-4 text-sm font-bold uppercase tracking-widest text-primary">Suggested Template</h3>
+            <pre className="overflow-x-auto rounded-sm bg-surface p-4 text-xs text-on-surface-variant whitespace-pre-wrap">{`GET ${draft.postbackUrl || 'https://partner.example.com/postback'}?status={status}&payout={payout}&clickid={clickid}${draft.sendCampaignToken ? `&token=${campaign.apiToken || ''}` : ''}`}</pre>
+            <div className="mt-4 rounded-sm bg-secondary-container/20 p-4 text-sm text-on-surface-variant">
+              Keep postback statuses aligned with your affiliate network definitions and your default flow fallback plan.
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Edit Modal */}
-      {isEditModalOpen && editedCampaign && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface-container-lowest w-full max-w-4xl max-h-[90vh] overflow-y-auto whisper-shadow">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-outline-variant/20">
-              <h2 className="text-xl font-display font-bold text-primary">Edit Campaign</h2>
-              <button 
-                onClick={handleCancel}
-                className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-              >
-                <X size={20} />
-              </button>
+      {activeTab === 'notes' && (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr),minmax(320px,1fr)]">
+          <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow space-y-4">
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Campaign Notes</h3>
+              <p className="mt-2 text-sm text-on-surface-variant">
+                Document QA checkpoints, domain ownership, launch gates, and handoff details.
+              </p>
             </div>
+            <textarea rows={14} value={draft.notes} onChange={(event) => setField('notes', event.target.value)} className="w-full resize-none border border-outline-variant bg-surface px-4 py-3 outline-none focus:border-primary" placeholder="Document domain ownership, QA checkpoints, fallback behavior, and launch notes..." />
+            <button onClick={() => void saveDraft()} disabled={saving} className="modal-btn-primary inline-flex items-center gap-2 rounded-sm px-5 py-3 text-xs font-bold uppercase tracking-widest disabled:opacity-60">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Save Notes
+            </button>
+          </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-6">
-              {/* Section Tabs */}
-              <div className="flex gap-2 border-b border-outline-variant/20 pb-4">
-                {editSections.map((section) => {
-                  const Icon = section.icon;
-                  return (
-                    <button
-                      key={section.id}
-                      onClick={() => setActiveEditSection(section.id)}
-                      className={cn(
-                        "flex items-center gap-2 px-6 py-4 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2",
-                        activeEditSection === section.id
-                          ? "border-primary text-primary"
-                          : "border-transparent text-on-surface-variant hover:text-primary"
-                      )}
-                    >
-                      <Icon size={18} />
-                      {section.label}
-                    </button>
-                  );
-                })}
+          <div className="space-y-6">
+            <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+              <h3 className="mb-4 text-sm font-bold uppercase tracking-widest text-primary">Routing Digest</h3>
+              <div className="space-y-3 text-sm">
+                <InfoRow label="Regular" value={`${flowSummary.regular.length} flows`} />
+                <InfoRow label="Forced" value={`${flowSummary.forced.length} flows`} />
+                <InfoRow label="Default" value={`${flowSummary.fallback.length} flows`} />
+                <InfoRow label="Traffic Loss" value={`${draft.trafficLoss}%`} />
               </div>
-
-              {/* Section Content */}
-              {activeEditSection === 'basic' && (
-                <div className="space-y-6">
-                  <h3 className="text-sm font-bold text-primary uppercase tracking-widest">Basic Information</h3>
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Campaign Name
-                      </label>
-                      <input
-                        type="text"
-                        value={editedCampaign.name}
-                        onChange={(e) => handleInputChange('name', e.target.value)}
-                        className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Traffic Source
-                      </label>
-                      <select
-                        value={editedCampaign.trafficSourceId || ''}
-                        onChange={(e) => handleInputChange('trafficSourceId', e.target.value)}
-                        className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-                      >
-                        <option value="">Select traffic source...</option>
-                        {trafficSources.length === 0 ? (
-                          <option disabled>Loading sources...</option>
-                        ) : (
-                          trafficSources.map(source => (
-                            <option key={source.id} value={source.id}>
-                              {source.name} ({source.type})
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Campaign Type
-                      </label>
-                      <select
-                        value={editedCampaign.type}
-                        onChange={(e) => handleInputChange('type', e.target.value)}
-                        className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-                      >
-                        <option value="Redirect">Redirect</option>
-                        <option value="Direct">Direct</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Campaign Group
-                      </label>
-                      <input
-                        type="text"
-                        value={editedCampaign.group}
-                        onChange={(e) => handleInputChange('group', e.target.value)}
-                        className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Flow
-                      </label>
-                      <input
-                        type="text"
-                        value={editedCampaign.flow}
-                        onChange={(e) => handleInputChange('flow', e.target.value)}
-                        className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeEditSection === 'targeting' && (
-                <div className="space-y-6">
-                  <h3 className="text-sm font-bold text-primary uppercase tracking-widest">Targeting</h3>
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Target Geography (comma-separated)
-                      </label>
-                      <input
-                        type="text"
-                        value={editedCampaign.targetGeo.join(', ')}
-                        onChange={(e) => handleInputChange('targetGeo', e.target.value.split(',').map(s => s.trim()))}
-                        className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Target Devices (comma-separated)
-                      </label>
-                      <input
-                        type="text"
-                        value={editedCampaign.devices.join(', ')}
-                        onChange={(e) => handleInputChange('devices', e.target.value.split(',').map(s => s.trim()))}
-                        className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeEditSection === 'filters' && (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-primary uppercase tracking-widest">Traffic Filters</h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Logic:</span>
-                      <button
-                        onClick={toggleFilterLogic}
-                        className={cn(
-                          "px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-sm transition-all",
-                          editedCampaign.filterLogic === 'AND' 
-                            ? "bg-primary text-on-primary" 
-                            : "bg-secondary text-on-secondary"
-                        )}
-                      >
-                        {editedCampaign.filterLogic}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    {editedCampaign.filters.map((filter, index) => (
-                      <div key={filter.id} className="flex items-center gap-3 p-4 bg-surface rounded-sm">
-                        <span className="text-sm text-on-surface-variant w-6">{index + 1}</span>
-                        <select
-                          value={filter.type}
-                          onChange={(e) => updateFilter(filter.id, 'type', e.target.value)}
-                          className="flex-1 px-3 py-2 bg-surface-container text-sm border border-outline-variant focus:border-primary outline-none"
-                        >
-                          {FILTER_TYPES.map((type) => (
-                            <option key={type.value} value={type.value}>{type.label}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={filter.isNot ? 'not' : 'is'}
-                          onChange={(e) => updateFilter(filter.id, 'isNot', e.target.value === 'not')}
-                          className="px-3 py-2 bg-surface-container text-sm border border-outline-variant focus:border-primary outline-none"
-                        >
-                          <option value="is">IS</option>
-                          <option value="not">IS NOT</option>
-                        </select>
-                        <select
-                          value={filter.operator}
-                          onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}
-                          className="flex-1 px-3 py-2 bg-surface-container text-sm border border-outline-variant focus:border-primary outline-none"
-                        >
-                          {OPERATORS.map((op) => (
-                            <option key={op.value} value={op.value}>{op.label}</option>
-                          ))}
-                        </select>
-                        <input
-                          type="text"
-                          value={filter.value}
-                          onChange={(e) => updateFilter(filter.id, 'value', e.target.value)}
-                          placeholder="Value"
-                          className="flex-1 px-3 py-2 bg-surface-container text-sm border border-outline-variant focus:border-primary outline-none"
-                        />
-                        <button
-                          onClick={() => removeFilter(filter.id)}
-                          className="p-2 text-error hover:bg-error/10 rounded-sm transition-colors"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <button
-                    onClick={addFilter}
-                    className="flex items-center gap-2 px-4 py-3 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors w-full justify-center"
-                  >
-                    <Plus size={16} />
-                    Add Filter
-                  </button>
-                </div>
-              )}
-
-              {activeEditSection === 'tracking' && (
-                <div className="space-y-6">
-                  <h3 className="text-sm font-bold text-primary uppercase tracking-widest">Tracking Settings</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Tracking URL
-                      </label>
-                      <input
-                        type="text"
-                        value={editedCampaign.url}
-                        onChange={(e) => handleInputChange('url', e.target.value)}
-                        className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all font-mono"
-                      />
-                    </div>
-                    <div className="p-4 bg-surface-container rounded-sm">
-                      <h4 className="text-sm font-bold text-primary mb-2">URL Parameters</h4>
-                      <div className="space-y-2 text-sm text-on-surface-variant">
-                        <p><code className="bg-surface px-2 py-1">sub_id_1</code> - Custom parameter 1</p>
-                        <p><code className="bg-surface px-2 py-1">sub_id_2</code> - Custom parameter 2</p>
-                        <p><code className="bg-surface px-2 py-1">sub_id_3</code> - Custom parameter 3</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-outline-variant/20">
-              <button
-                onClick={handleCancel}
-                className="px-6 py-3 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="modal-btn-primary flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest rounded-sm"
-              >
-                <Save size={16} />
-                Save Changes
-              </button>
+            <div className="rounded-sm bg-surface-container-lowest p-6 whisper-shadow">
+              <h3 className="mb-4 text-sm font-bold uppercase tracking-widest text-primary">Publishing Reminders</h3>
+              <ul className="space-y-3 text-sm text-on-surface-variant">
+                <li>Confirm forced flows only for real override scenarios.</li>
+                <li>Ensure a single default flow exists for fallback continuity.</li>
+                <li>Rotate token before external API integrations go live.</li>
+                <li>Keep uniqueness method aligned with traffic source macros.</li>
+              </ul>
             </div>
           </div>
         </div>
       )}
     </div>
   );
-};
+}
 
-export default CampaignDetail;
+function Field({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
+  return (
+    <div className={className}>
+      <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function QuickStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-sm bg-surface-container px-4 py-3">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</div>
+      <div className="mt-1 text-sm text-on-surface">{value}</div>
+    </div>
+  );
+}
+
+function QuickMetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-sm bg-surface-container-lowest p-4 whisper-shadow">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</div>
+      <div className="mt-2 text-2xl font-display font-bold text-primary">{value}</div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</div>
+      <div className="text-right text-on-surface">{value}</div>
+    </div>
+  );
+}
+
+function SnippetCard({
+  label,
+  value,
+  onCopy,
+  multiline = false,
+}: {
+  label: string;
+  value: string;
+  onCopy?: () => void;
+  multiline?: boolean;
+}) {
+  return (
+    <div className="rounded-sm bg-surface-container p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</div>
+        {onCopy && (
+          <button onClick={onCopy} className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-primary">
+            <Copy size={12} />
+            Copy
+          </button>
+        )}
+      </div>
+      {multiline ? (
+        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-on-surface-variant">{value}</pre>
+      ) : (
+        <div className="mt-2 break-all font-mono text-sm text-on-surface">{value}</div>
+      )}
+    </div>
+  );
+}

@@ -23,7 +23,7 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
   router.get('/campaigns', async (c) => {
     try {
       const request = parseExportRequest(c, 'campaigns');
-      const service = createExportService();
+      const service = createExportService(c.env);
       const result = await service.exportCampaigns(request);
       
       return createExportResponse(c, result);
@@ -39,7 +39,7 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
   router.get('/landing-pages', async (c) => {
     try {
       const request = parseExportRequest(c, 'landing-pages');
-      const service = createExportService();
+      const service = createExportService(c.env);
       const result = await service.exportLandingPages(request);
       
       return createExportResponse(c, result);
@@ -55,7 +55,7 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
   router.get('/offers', async (c) => {
     try {
       const request = parseExportRequest(c, 'offers');
-      const service = createExportService();
+      const service = createExportService(c.env);
       const result = await service.exportOffers(request);
       
       return createExportResponse(c, result);
@@ -71,7 +71,7 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
   router.get('/traffic-sources', async (c) => {
     try {
       const request = parseExportRequest(c, 'traffic-sources');
-      const service = createExportService();
+      const service = createExportService(c.env);
       const result = await service.exportTrafficSources(request);
       
       return createExportResponse(c, result);
@@ -87,7 +87,7 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
   router.get('/affiliate-networks', async (c) => {
     try {
       const request = parseExportRequest(c, 'affiliate-networks');
-      const service = createExportService();
+      const service = createExportService(c.env);
       const result = await service.exportAffiliateNetworks(request);
       
       return createExportResponse(c, result);
@@ -103,7 +103,7 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
   router.get('/clicks', async (c) => {
     try {
       const request = parseExportRequest(c, 'clicks');
-      const service = createExportService();
+      const service = createExportService(c.env);
       const result = await service.exportClicks(request);
       
       return createExportResponse(c, result);
@@ -119,7 +119,7 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
   router.get('/conversions', async (c) => {
     try {
       const request = parseExportRequest(c, 'conversions');
-      const service = createExportService();
+      const service = createExportService(c.env);
       const result = await service.exportConversions(request);
       
       return createExportResponse(c, result);
@@ -135,7 +135,7 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
   router.post('/custom', async (c) => {
     try {
       const body = await c.req.json();
-      const service = createExportService();
+      const service = createExportService(c.env);
       
       const request: ExportRequest = {
         entityType: body.entityType,
@@ -191,7 +191,7 @@ export function createExportRouter(): Hono<{ Bindings: Env }> {
   router.get('/fields/:entityType', async (c) => {
     try {
       const entityType = c.req.param('entityType');
-      const service = createExportService();
+      const service = createExportService(c.env);
       const fields = service.getAvailableFields(entityType);
       
       return c.json(success({ entityType, fields }));

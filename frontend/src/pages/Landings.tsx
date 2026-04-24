@@ -18,7 +18,6 @@ import {
   ExternalLink,
   Play,
   Pause,
-  Copy,
   Check,
   X,
   Loader2
@@ -27,12 +26,16 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
-import { fetchLandings, createLanding, updateLanding, deleteLanding } from '../services/api';
+import { fetchLandings, createLanding, updateLanding, deleteLanding, uploadHostedAsset } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatLandingPageForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 import { useToast } from '../components/Toast';
+import { readBootstrapPage } from '../services/bootstrap';
+import { useLocation } from 'react-router-dom';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -52,13 +55,57 @@ interface LandingPage {
   updatedAt: string;
 }
 
+type LandingHostingMode = 'hosted' | 'local' | 'zip';
+type HostedFileValue = { name?: string; type?: string; size?: number; base64?: string };
+type LandingFormData = Partial<LandingPage> & {
+  hostMode?: LandingHostingMode;
+  localHtml?: string;
+  zipFile?: HostedFileValue | null;
+};
+
+function encodeUtf8ToBase64(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+  }
+  return btoa(binary);
+}
+
+function inferLandingHostingMode(url: string | undefined): LandingHostingMode {
+  if (!url) {
+    return 'hosted';
+  }
+  if (url.includes('/hosted-assets/') && url.includes('mode=zip')) {
+    return 'zip';
+  }
+  if (url.includes('/hosted-assets/') && url.includes('mode=local')) {
+    return 'local';
+  }
+  return 'hosted';
+}
+
 const LANDING_FIELDS: FormField[] = [
+  {
+    name: 'hostMode',
+    label: 'Hosting Mode',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'hosted', label: 'Hosted URL' },
+      { value: 'local', label: 'Local HTML' },
+      { value: 'zip', label: 'ZIP Archive' },
+    ],
+    description: 'Choose how this landing page is hosted (remote URL, inline HTML, or ZIP archive).',
+  },
   {
     name: 'name',
     label: 'Landing Page Name',
     type: 'text',
     required: true,
-    placeholder: 'Enter landing page name'
+    placeholder: 'Enter landing page name',
+    maxLength: FIELD_MAX_LENGTH.NAME,
   },
   {
     name: 'url',
@@ -66,6 +113,8 @@ const LANDING_FIELDS: FormField[] = [
     type: 'url',
     required: true,
     placeholder: 'https://example.com/landing-page',
+    maxLength: FIELD_MAX_LENGTH.URL,
+    showWhen: (data) => (data.hostMode || 'hosted') === 'hosted',
     validation: (value) => {
       try {
         new URL(value);
@@ -76,10 +125,30 @@ const LANDING_FIELDS: FormField[] = [
     }
   },
   {
+    name: 'localHtml',
+    label: 'Local HTML',
+    type: 'textarea',
+    required: true,
+    placeholder: '<!DOCTYPE html><html><head>...</head><body>...</body></html>',
+    description: 'Paste full HTML document. System will host it as a managed landing asset.',
+    showWhen: (data) => data.hostMode === 'local',
+  },
+  {
+    name: 'zipFile',
+    label: 'ZIP Archive',
+    type: 'file',
+    required: true,
+    accept: '.zip,application/zip',
+    maxFileSizeMB: 8,
+    description: 'Upload a ZIP package. System stores archive and provides hosted asset URL.',
+    showWhen: (data) => data.hostMode === 'zip',
+  },
+  {
     name: 'group',
     label: 'Group',
     type: 'text',
-    placeholder: 'Select or create group'
+    placeholder: 'Select or create group',
+    maxLength: FIELD_MAX_LENGTH.GROUP,
   },
   {
     name: 'status',
@@ -95,23 +164,33 @@ const LANDING_FIELDS: FormField[] = [
     name: 'notes',
     label: 'Notes',
     type: 'textarea',
-    placeholder: 'Add notes about this landing page...'
+    placeholder: 'Add notes about this landing page...',
+    maxLength: FIELD_MAX_LENGTH.NOTES,
   }
 ];
 
 export const Landings = () => {
   const toast = useToast();
-  const [landings, setLandings] = useState<LandingPage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const bootstrap = readBootstrapPage<{ landings?: LandingPage[] }>('landings');
+  const hasBootstrap = Boolean(bootstrap);
+  const [landings, setLandings] = useState<LandingPage[]>(Array.isArray(bootstrap?.data?.landings) ? bootstrap.data.landings : []);
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   
   // Form modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
-  const [selectedLanding, setSelectedLanding] = useState<Partial<LandingPage> | undefined>(undefined);
+  const [selectedLanding, setSelectedLanding] = useState<LandingFormData | undefined>(undefined);
   
   // Search and filter state
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    return new URLSearchParams(window.location.search).get('search') || '';
+  });
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
   
   // Date range state
@@ -133,52 +212,26 @@ export const Landings = () => {
 
   // Fetch landings from API
   useEffect(() => {
+    setSearchTerm(new URLSearchParams(location.search).get('search') || '');
+  }, [location.search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, filterValues]);
+
+  useEffect(() => {
     const loadLandings = async () => {
       try {
         setLoading(true);
-        const data = await fetchLandings();
+        setError(null);
+        const data = await fetchLandings(true, {
+          startDate: dateRange.from,
+          endDate: dateRange.to,
+        });
         if (Array.isArray(data)) {
           setLandings(data);
         } else {
-          // Use mock data if API fails
-          setLandings([
-            {
-              id: 'lp1',
-              name: 'Landing Page A - Product Demo',
-              url: 'https://example.com/landing-a',
-              status: 'active',
-              group: 'Product',
-              campaignCount: 3,
-              clicks: 12450,
-              conversions: 623,
-              cr: 5.0,
-              updatedAt: '2024-01-15T10:30:00Z'
-            },
-            {
-              id: 'lp2',
-              name: 'Landing Page B - Lead Form',
-              url: 'https://example.com/landing-b',
-              status: 'active',
-              group: 'Lead Gen',
-              campaignCount: 2,
-              clicks: 8920,
-              conversions: 312,
-              cr: 3.5,
-              updatedAt: '2024-01-14T15:45:00Z'
-            },
-            {
-              id: 'lp3',
-              name: 'Landing Page C - Video Sales Letter',
-              url: 'https://example.com/landing-c',
-              status: 'paused',
-              group: 'VSL',
-              campaignCount: 1,
-              clicks: 5430,
-              conversions: 189,
-              cr: 3.5,
-              updatedAt: '2024-01-13T09:15:00Z'
-            }
-          ]);
+          setError('Failed to load landings');
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load landings');
@@ -188,29 +241,88 @@ export const Landings = () => {
     };
 
     loadLandings();
-  }, []);
+  }, [dateRange.from, dateRange.to, hasBootstrap]);
 
   const handleCreateLanding = () => {
     setFormMode('create');
-    setSelectedLanding(undefined);
+    setSelectedLanding({
+      hostMode: 'hosted',
+      status: 'active',
+    });
     setIsFormOpen(true);
   };
 
   const handleEditLanding = (landing: LandingPage) => {
     setFormMode('edit');
-    setSelectedLanding(landing);
+    setSelectedLanding({
+      ...landing,
+      hostMode: inferLandingHostingMode(landing.url),
+    });
     setIsFormOpen(true);
   };
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
+    const hostMode = (formData.hostMode || 'hosted') as LandingHostingMode;
+    const submitData: Record<string, any> = { ...formData };
+
+    if (hostMode === 'local') {
+      const html = typeof formData.localHtml === 'string' ? formData.localHtml.trim() : '';
+      if (!html) {
+        toast.error('Local HTML is required', 'Please provide HTML content before saving.');
+        return;
+      }
+
+      try {
+        const upload = await uploadHostedAsset({
+          entityType: 'landing',
+          mode: 'local',
+          name: submitData.name || 'landing-local',
+          fileName: `${(submitData.name || 'landing').replace(/\s+/g, '-').toLowerCase()}.html`,
+          mimeType: 'text/html; charset=utf-8',
+          contentBase64: encodeUtf8ToBase64(html),
+        });
+        submitData.url = upload.publicUrl;
+      } catch (err) {
+        toast.error('Failed to upload local HTML', err instanceof Error ? err.message : 'Unknown error');
+        return;
+      }
+    }
+
+    if (hostMode === 'zip') {
+      const zipFile = formData.zipFile as HostedFileValue | undefined;
+      if (!zipFile?.base64) {
+        toast.error('ZIP archive is required', 'Please select a ZIP file before saving.');
+        return;
+      }
+
+      try {
+        const upload = await uploadHostedAsset({
+          entityType: 'landing',
+          mode: 'zip',
+          name: submitData.name || 'landing-zip',
+          fileName: zipFile.name || `${(submitData.name || 'landing').replace(/\s+/g, '-').toLowerCase()}.zip`,
+          mimeType: zipFile.type || 'application/zip',
+          contentBase64: zipFile.base64,
+        });
+        submitData.url = upload.publicUrl;
+      } catch (err) {
+        toast.error('Failed to upload ZIP archive', err instanceof Error ? err.message : 'Unknown error');
+        return;
+      }
+    }
+
+    delete submitData.hostMode;
+    delete submitData.localHtml;
+    delete submitData.zipFile;
+
     try {
       if (formMode === 'create') {
-        const landing = await createLanding(formData);
+        const landing = await createLanding(submitData);
         if (landing && landing.id) {
           setLandings(prev => [...prev, landing]);
         }
       } else if (selectedLanding?.id) {
-        const landing = await updateLanding(selectedLanding.id, formData);
+        const landing = await updateLanding(selectedLanding.id, submitData);
         if (landing && landing.id) {
           setLandings(prev =>
             prev.map(lp => lp.id === selectedLanding.id ? landing : lp)
@@ -220,31 +332,7 @@ export const Landings = () => {
       setIsFormOpen(false);
     } catch (err) {
       toast.error('Failed to save landing page', err instanceof Error ? err.message : 'Unknown error');
-      // For demo, add to local state
-      if (formMode === 'create') {
-        const newLanding: LandingPage = {
-          id: `lp${Date.now()}`,
-          name: formData.name,
-          url: formData.url,
-          status: formData.status || 'active',
-          group: formData.group || 'Default',
-          campaignCount: 0,
-          clicks: 0,
-          conversions: 0,
-          cr: 0,
-          updatedAt: new Date().toISOString()
-        };
-        setLandings(prev => [...prev, newLanding]);
-      } else {
-        setLandings(prev => 
-          prev.map(lp => 
-            lp.id === selectedLanding?.id 
-              ? { ...lp, ...formData, updatedAt: new Date().toISOString() }
-              : lp
-          )
-        );
-      }
-      setIsFormOpen(false);
+      return;
     }
   };
 
@@ -257,7 +345,6 @@ export const Landings = () => {
       toast.success('Landing page deleted successfully');
     } catch (err) {
       toast.error('Failed to delete landing page', err instanceof Error ? err.message : 'Unknown error');
-      setLandings(prev => prev.filter(lp => lp.id !== id));
     }
   };
 
@@ -439,44 +526,52 @@ export const Landings = () => {
         </div>
       </div>
 
+      {error ? (
+        <div className="rounded-sm border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+          {error}
+        </div>
+      ) : null}
+
       {/* Toolbar */}
       <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          {selectedItems.size > 0 ? (
-            <>
-              <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
-              <button 
-                onClick={() => handleBulkAction('activate')}
-                className="btn-icon-create p-2 rounded transition-colors" 
-                title="Activate"
-              >
-                <Play size={18} />
-              </button>
-              <button 
-                onClick={() => handleBulkAction('pause')}
-                className="btn-icon-pause p-2 rounded transition-colors" 
-                title="Pause"
-              >
-                <Pause size={18} />
-              </button>
-              <button 
-                onClick={() => handleBulkAction('delete')}
-                className="btn-icon-delete p-2 rounded transition-colors" 
-                title="Delete"
-              >
-                <Trash2 size={18} />
-              </button>
-              <div className="h-6 w-px bg-outline-variant/20 mx-2" />
-            </>
-          ) : (
-            <>
-              <button className="btn-icon-create p-2 rounded transition-colors" title="Play"><Play size={18} /></button>
-              <button className="btn-icon-pause p-2 rounded transition-colors" title="Pause"><Pause size={18} /></button>
-              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors rounded" title="Copy"><Copy size={18} /></button>
-              <button className="btn-icon-delete p-2 rounded transition-colors" title="Delete"><Trash2 size={18} /></button>
-              <div className="h-6 w-px bg-outline-variant/20 mx-2" />
-            </>
+          {selectedItems.size > 0 && (
+            <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
           )}
+          <button 
+            onClick={() => handleBulkAction('activate')}
+            disabled={selectedItems.size === 0}
+            className={cn(
+              "btn-icon-create p-2 rounded transition-colors",
+              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
+            )}
+            title="Activate"
+          >
+            <Play size={18} />
+          </button>
+          <button 
+            onClick={() => handleBulkAction('pause')}
+            disabled={selectedItems.size === 0}
+            className={cn(
+              "btn-icon-pause p-2 rounded transition-colors",
+              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
+            )}
+            title="Pause"
+          >
+            <Pause size={18} />
+          </button>
+          <button 
+            onClick={() => handleBulkAction('delete')}
+            disabled={selectedItems.size === 0}
+            className={cn(
+              "btn-icon-delete p-2 rounded transition-colors",
+              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
+            )}
+            title="Delete"
+          >
+            <Trash2 size={18} />
+          </button>
+          <div className="h-6 w-px bg-outline-variant/20 mx-2" />
           <div className="relative flex-1 min-w-[300px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
             <input 
@@ -552,15 +647,20 @@ export const Landings = () => {
                   <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
                     <Image size={20} className="text-primary" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-primary">{row.name}</h3>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-primary truncate max-w-[220px]" title={row.name}>
+                      {truncateLabel(row.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                    </h3>
                     <a 
                       href={row.url} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-xs text-secondary hover:underline flex items-center gap-1"
+                      className="text-xs text-secondary hover:underline flex items-center gap-1 max-w-[220px]"
+                      title={row.url}
                     >
-                      {row.url}
+                      <span className="truncate">
+                        {truncateLabel(row.url, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+                      </span>
                       <ExternalLink size={12} />
                     </a>
                   </div>
@@ -607,8 +707,11 @@ export const Landings = () => {
               showSorter: true,
               showFilter: true,
               render: (_, row) => (
-                <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm">
-                  {row.group || 'Default'}
+                <span
+                  className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm inline-block max-w-[120px] truncate"
+                  title={row.group || 'Default'}
+                >
+                  {truncateLabel(row.group || 'Default', DISPLAY_MAX_LENGTH.TAG_TEXT)}
                 </span>
               ),
             },

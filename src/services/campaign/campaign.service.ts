@@ -6,31 +6,41 @@
 
 import { CampaignRepository } from '@/handlers/d1/campaign.repo';
 import { TrafficRepository } from '@/handlers/d1/traffic.repo';
+import {
+  AutoruleBindingRepository,
+  type ReplaceRuleBindingInput,
+  type RuleBindingRecord,
+} from '@/handlers/d1/autoruleBinding.repo';
 import { getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
 import type { Campaign, CreateCampaignDTO, UpdateCampaignDTO, CampaignListQuery } from '@/types/campaign';
 import { DuplicateError, NotFoundError } from '@/middleware/error';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
+import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldLength';
 
 export class CampaignService {
   private repo: CampaignRepository;
   private trafficRepo: TrafficRepository;
+  private autoruleBindingRepo: AutoruleBindingRepository;
 
   constructor(env: Env) {
     const db = getD1Connection(env);
     this.repo = new CampaignRepository(db);
     this.trafficRepo = new TrafficRepository(db);
+    this.autoruleBindingRepo = new AutoruleBindingRepository(db);
   }
 
   /**
    * 创建 Campaign
    */
   async create(data: CreateCampaignDTO): Promise<Campaign> {
-    const exists = await this.repo.aliasExists(data.alias);
+    const normalizedData = this.normalizeCreateInput(data);
+    const exists = await this.repo.aliasExists(normalizedData.alias);
     if (exists) {
-      throw new DuplicateError(`Campaign with alias "${data.alias}" already exists`);
+      throw new DuplicateError(`Campaign with alias "${normalizedData.alias}" already exists`);
     }
 
-    return this.repo.create(data);
+    return this.repo.create(normalizedData);
   }
 
   /**
@@ -59,15 +69,16 @@ export class CampaignService {
     if (!existing) {
       throw new NotFoundError('Campaign not found');
     }
+    const normalizedData = this.normalizeUpdateInput(data, existing);
 
-    if (data.alias && data.alias !== existing.alias) {
-      const aliasExists = await this.repo.aliasExists(data.alias, id);
+    if (normalizedData.alias && normalizedData.alias !== existing.alias) {
+      const aliasExists = await this.repo.aliasExists(normalizedData.alias, id);
       if (aliasExists) {
-        throw new DuplicateError(`Campaign with alias "${data.alias}" already exists`);
+        throw new DuplicateError(`Campaign with alias "${normalizedData.alias}" already exists`);
       }
     }
 
-    const updated = await this.repo.update(id, data);
+    const updated = await this.repo.update(id, normalizedData);
     return updated!;
   }
 
@@ -165,5 +176,149 @@ export class CampaignService {
       cpa: metrics.cpa,
       cr: metrics.cr,
     };
+  }
+
+  private normalizeCreateInput(data: CreateCampaignDTO): CreateCampaignDTO {
+    return {
+      ...data,
+      name: normalizeRequiredString(data.name as unknown, {
+        field: 'campaign.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      }),
+      alias: normalizeRequiredString(data.alias as unknown, {
+        field: 'campaign.alias',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ALIAS,
+      }),
+      domain: normalizeRequiredString(data.domain as unknown, {
+        field: 'campaign.domain',
+        maxLength: FIELD_MAX_LENGTH.DOMAIN,
+      }),
+      group: normalizeOptionalString(data.group as unknown, {
+        field: 'campaign.group',
+        maxLength: FIELD_MAX_LENGTH.GROUP,
+      }),
+      trafficSource: normalizeOptionalString(data.trafficSource as unknown, {
+        field: 'campaign.trafficSource',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      }),
+      uniquenessParameter: normalizeOptionalString(data.uniquenessParameter as unknown, {
+        field: 'campaign.uniquenessParameter',
+        maxLength: FIELD_MAX_LENGTH.UNIQUE_PARAMETER,
+      }),
+    };
+  }
+
+  async getAutoruleBinding(campaignId: string): Promise<RuleBindingRecord | null> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleBindingRepo.getCampaignBinding(campaignId);
+  }
+
+  async getAutoruleBindings(campaignId: string): Promise<RuleBindingRecord[]> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleBindingRepo.getCampaignBindings(campaignId);
+  }
+
+  async setAutoruleBinding(campaignId: string, ruleId: string): Promise<RuleBindingRecord> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleBindingRepo.setCampaignBinding(campaignId, ruleId);
+  }
+
+  async replaceAutoruleBindings(
+    campaignId: string,
+    bindings: ReplaceRuleBindingInput[]
+  ): Promise<RuleBindingRecord[]> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleBindingRepo.replaceCampaignBindings(campaignId, bindings);
+  }
+
+  async clearAutoruleBinding(campaignId: string): Promise<void> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    await this.autoruleBindingRepo.clearCampaignBinding(campaignId);
+  }
+
+  async clearAutoruleBindings(campaignId: string): Promise<void> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    await this.autoruleBindingRepo.clearCampaignBindings(campaignId);
+  }
+
+  private normalizeUpdateInput(data: UpdateCampaignDTO, existing: Campaign): UpdateCampaignDTO {
+    const normalizedData: UpdateCampaignDTO = { ...data };
+
+    if (data.name !== undefined && data.name !== existing.name) {
+      normalizedData.name = normalizeRequiredString(data.name as unknown, {
+        field: 'campaign.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      });
+    } else if (data.name !== undefined) {
+      delete normalizedData.name;
+    }
+
+    if (data.alias !== undefined && data.alias !== existing.alias) {
+      normalizedData.alias = normalizeRequiredString(data.alias as unknown, {
+        field: 'campaign.alias',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ALIAS,
+      });
+    } else if (data.alias !== undefined) {
+      delete normalizedData.alias;
+    }
+
+    if (data.domain !== undefined && data.domain !== existing.domain) {
+      normalizedData.domain = normalizeRequiredString(data.domain as unknown, {
+        field: 'campaign.domain',
+        maxLength: FIELD_MAX_LENGTH.DOMAIN,
+      });
+    } else if (data.domain !== undefined) {
+      delete normalizedData.domain;
+    }
+
+    if (data.group !== undefined && data.group !== existing.group) {
+      normalizedData.group = normalizeOptionalString(data.group as unknown, {
+        field: 'campaign.group',
+        maxLength: FIELD_MAX_LENGTH.GROUP,
+      });
+    } else if (data.group !== undefined) {
+      delete normalizedData.group;
+    }
+
+    if (data.trafficSource !== undefined && data.trafficSource !== existing.trafficSource) {
+      normalizedData.trafficSource = normalizeOptionalString(data.trafficSource as unknown, {
+        field: 'campaign.trafficSource',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      });
+    } else if (data.trafficSource !== undefined) {
+      delete normalizedData.trafficSource;
+    }
+
+    if (
+      data.uniquenessParameter !== undefined &&
+      data.uniquenessParameter !== existing.uniquenessParameter
+    ) {
+      normalizedData.uniquenessParameter = normalizeOptionalString(data.uniquenessParameter as unknown, {
+        field: 'campaign.uniquenessParameter',
+        maxLength: FIELD_MAX_LENGTH.UNIQUE_PARAMETER,
+      });
+    } else if (data.uniquenessParameter !== undefined) {
+      delete normalizedData.uniquenessParameter;
+    }
+
+    return normalizedData;
   }
 }

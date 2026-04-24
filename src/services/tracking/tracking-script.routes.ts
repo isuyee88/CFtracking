@@ -1,7 +1,11 @@
 /**
  * @fileoverview Tracking Script API 路由
- * @description 处理客户端跟踪脚本的 HTTP 请求
+ * @description 处理客户端跟踪脚本的 HTTP 请求，包括点击追踪和转化上报
  * @module services/tracking/tracking-script.routes
+ * 
+ * 数据流:
+ * 1. 点击追踪: 写入 TrackingStatsDO + 触发缓存刷新
+ * 2. 转化上报: 写入 TrackingStatsDO + 持久化到 D1 conversions 表 + 触发缓存刷新
  */
 
 import { Hono } from 'hono';
@@ -11,16 +15,19 @@ import { createClickService } from './click.service';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
 import { generateClickId, generateVisitorId } from '@/utils/crypto';
+import { ConversionRepository } from '@/handlers/d1/conversion.repo';
+import { createCacheUpdateRoutes } from '@/services/cache/cache-update-service';
 
 export function createTrackingScriptRouter() {
   const router = new Hono<{ Bindings: Env }>();
   const scriptService = createTrackingScriptService({} as Env);
 
   /**
-   * GET /api/tracking/script/code
+   * GET /code
    * 获取跟踪脚本代码
+   * 完整路径: /api/tracking/script/code
    */
-  router.get('/script/code', async (c) => {
+  router.get('/code', async (c) => {
     try {
       const campaignId = c.req.query('campaignId');
       const domain = c.req.query('domain') || new URL(c.req.url).host;
@@ -60,13 +67,14 @@ export function createTrackingScriptRouter() {
   });
 
   /**
-   * POST /api/tracking/script/track
+   * POST /track
    * 处理页面访问跟踪
+   * 完整路径: /api/tracking/script/track
    * 
    * 数据写入格式与 AnalyticsService.trackClick() 保持一致
    * 确保所有点击事件在 Analytics Engine 中使用相同的字段映射
    */
-  router.post('/script/track', async (c) => {
+  router.post('/track', async (c) => {
     try {
       const body = await c.req.json<{
         campaignId: string;
@@ -133,6 +141,25 @@ export function createTrackingScriptRouter() {
         }),
       });
 
+      // P0-003: 触发缓存刷新和 SSE 推送
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            const cacheUpdate = createCacheUpdateRoutes(c.env);
+            
+            // 触发点击数据变更
+            await cacheUpdate.onDataChanged('click', clickId, 'create');
+            
+            // 如果有关联的 campaign，也触发 campaign 更新
+            if (body.campaignId) {
+              await cacheUpdate.onDataChanged('campaign', body.campaignId, 'update');
+            }
+          } catch (error) {
+            console.error('[TrackingScript] Cache update failed:', error);
+          }
+        })()
+      );
+
       return c.json(success({
         tracked: true,
         clickId,
@@ -149,10 +176,14 @@ export function createTrackingScriptRouter() {
   });
 
   /**
-   * POST /api/tracking/script/conversion
+   * POST /conversion
    * 处理转化上报
+   * 完整路径: /api/tracking/script/conversion
+   * 
+   * P0-001: 持久化转化记录到 D1 conversions 表
+   * P0-003: 触发缓存刷新和 SSE 推送
    */
-  router.post('/script/conversion', async (c) => {
+  router.post('/conversion', async (c) => {
     try {
       const body = await c.req.json<{
         campaignId: string;
@@ -169,8 +200,24 @@ export function createTrackingScriptRouter() {
 
       // 创建转化记录
       const conversionId = body.tid || crypto.randomUUID();
+      const now = new Date().toISOString();
 
-      // 写入 TrackingStatsDO
+      // P0-001: 持久化转化记录到 D1 conversions 表
+      const conversionRepo = new ConversionRepository(c.env.DB);
+      await conversionRepo.saveConversion({
+        conversionId,
+        clickId: body.clickId || '',
+        campaignId: body.campaignId,
+        offerId: '',
+        timestamp: now,
+        revenue: body.payout || 0,
+        payout: body.payout || 0,
+        currency: 'USD',
+        conversionType: body.status || 'lead',
+        offerName: null,
+      });
+
+      // 写入 TrackingStatsDO (实时统计)
       const trackingDO = c.env.TRACKING_STATS_DO.get(
         c.env.TRACKING_STATS_DO.idFromName('global-stats')
       );
@@ -185,6 +232,30 @@ export function createTrackingScriptRouter() {
           revenue: body.payout || 0,
         }),
       });
+
+      // P0-003: 触发缓存刷新和 SSE 推送
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            const cacheUpdate = createCacheUpdateRoutes(c.env);
+            
+            // 触发转化数据变更
+            await cacheUpdate.onDataChanged('conversion', conversionId, 'create');
+            
+            // 如果有关联的 click，也触发 click 更新
+            if (body.clickId) {
+              await cacheUpdate.onDataChanged('click', body.clickId, 'update');
+            }
+            
+            // 如果有关联的 campaign，也触发 campaign 更新
+            if (body.campaignId) {
+              await cacheUpdate.onDataChanged('campaign', body.campaignId, 'update');
+            }
+          } catch (error) {
+            console.error('[TrackingScript] Cache update failed:', error);
+          }
+        })()
+      );
 
       return c.json(success({
         conversionId: conversionId,
@@ -201,10 +272,11 @@ export function createTrackingScriptRouter() {
   });
 
   /**
-   * POST /api/tracking/script/update
+   * POST /update
    * 更新点击参数
+   * 完整路径: /api/tracking/script/update
    */
-  router.post('/script/update', async (c) => {
+  router.post('/update', async (c) => {
     try {
       const body = await c.req.json<{
         campaignId: string;
@@ -215,11 +287,6 @@ export function createTrackingScriptRouter() {
       if (!body.campaignId || !body.clickId) {
         return c.json(error('campaignId and clickId are required'), HTTP_STATUS.BAD_REQUEST);
       }
-
-      // 写入 TrackingStatsDO（这里简化处理，实际可能需要更复杂的逻辑）
-      const trackingDO = c.env.TRACKING_STATS_DO.get(
-        c.env.TRACKING_STATS_DO.idFromName('global-stats')
-      );
 
       return c.json(success({
         updated: true,
@@ -236,10 +303,11 @@ export function createTrackingScriptRouter() {
   });
 
   /**
-   * POST /api/tracking/kclient/process
+   * POST /process
    * KClient JS 流量处理
+   * 完整路径: /api/tracking/kclient/process
    */
-  router.post('/kclient/process', async (c) => {
+  router.post('/process', async (c) => {
     try {
       const body = await c.req.json<{
         campaignId: string;

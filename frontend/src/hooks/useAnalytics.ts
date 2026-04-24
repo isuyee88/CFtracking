@@ -142,7 +142,7 @@ export function useAnalytics(options: UseAnalyticsOptions = {}): UseAnalyticsRet
 
   const fetchClicks = useCallback(async () => {
     try {
-      const result = await fetchRecentClicks(50);
+      const result = await fetchRecentClicks(50, timeRange);
       setRecentClicks({
         list: result || [],
         total: Array.isArray(result) ? result.length : 0,
@@ -150,7 +150,7 @@ export function useAnalytics(options: UseAnalyticsOptions = {}): UseAnalyticsRet
     } catch (err) {
       console.error('[useAnalytics] Recent clicks fetch error:', err);
     }
-  }, []);
+  }, [timeRange]);
 
   const refetch = useCallback(async () => {
     await fetchData();

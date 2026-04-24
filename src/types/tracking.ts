@@ -23,12 +23,40 @@ export interface ClickData {
   isp: string | null;
   connectionType: string | null;
   visitorId: string;
+  // Sub ID 追踪参数 (支持1-30个, 对标Keitaro完整Sub ID支持)
   subId1: string | null;
   subId2: string | null;
   subId3: string | null;
   subId4: string | null;
   subId5: string | null;
+  subId6?: string | null;
+  subId7?: string | null;
+  subId8?: string | null;
+  subId9?: string | null;
+  subId10?: string | null;
+  subId11?: string | null;
+  subId12?: string | null;
+  subId13?: string | null;
+  subId14?: string | null;
+  subId15?: string | null;
+  subId16?: string | null;
+  subId17?: string | null;
+  subId18?: string | null;
+  subId19?: string | null;
+  subId20?: string | null;
+  subId21?: string | null;
+  subId22?: string | null;
+  subId23?: string | null;
+  subId24?: string | null;
+  subId25?: string | null;
+  subId26?: string | null;
+  subId27?: string | null;
+  subId28?: string | null;
+  subId29?: string | null;
+  subId30?: string | null;
   cost: number;
+  isUnique?: boolean;
+  redirectUrl?: string | null;
   // UTM 参数
   utmSource?: string | null;
   utmMedium?: string | null;
@@ -97,6 +125,12 @@ export interface ClickData {
   isProxy?: boolean;
   isSuspicious?: boolean;
   riskReasons?: string[];
+  // Realtime autorule decision fields
+  ruleMatched?: number;
+  ruleBlocked?: number;
+  matchedRuleId?: string | null;
+  matchedRuleLayer?: 'flow' | 'campaign' | 'whitelist' | 'blacklist' | null;
+  matchedRuleReason?: string | null;
 }
 
 export interface ConversionData {

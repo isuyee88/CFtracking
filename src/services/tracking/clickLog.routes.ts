@@ -14,10 +14,21 @@
 import { Hono } from 'hono';
 import { ClickRepository } from '@/handlers/d1/click.repo';
 import { getD1Connection } from '@/handlers/d1';
-import { getTrackingStatsStub } from '@/handlers/do';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
+import { createDashboardQueryService } from '@/services/analytics/dashboard-query.service';
+
+function isWithinThreeMonths(dateString: string): boolean {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  return date >= threeMonthsAgo;
+}
 
 export function createClickLogRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -56,7 +67,7 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
       };
 
       if (startDate && isWithinThreeMonths(startDate)) {
-        const analyticsQuery = createAnalyticsQueryService(c.env);
+        const analyticsQuery = createDashboardQueryService(c.env);
         const aeResult = await analyticsQuery.getRecentClicks({
           limit: pageSize,
           campaignId: params.campaignId,
@@ -64,27 +75,29 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
           device: params.device,
         });
 
-        const formattedList = aeResult.list.map((item) => ({
-          clickId: item.clickId,
-          campaignId: item.campaignId,
-          flowId: item.flowId,
-          landingPageId: item.landingPageId,
-          offerId: item.offerId,
-          timestamp: item.timestamp,
+        const formattedList = aeResult.list.map((item: Record<string, unknown>) => ({
+          clickId: item.event_id || item.clickId,
+          campaignId: item.campaign || item.campaignId,
+          flowId: item.stream || item.flowId,
+          landingPageId: item.landing || item.landingPageId,
+          offerId: item.offer || item.offerId,
+          timestamp: item.datetime || item.timestamp,
           ip: item.ip,
-          userAgent: '',
-          referer: item.referer,
+          userAgent: item.user_agent || item.userAgent || '',
+          referer: item.referrer || item.referer,
           country: item.country,
           city: item.city,
-          device: item.device,
+          device: item.device_type || item.device,
           browser: item.browser,
           os: item.os,
-          isp: '',
-          connectionType: null,
-          visitorId: item.visitorId,
-          subId1: item.subId1,
-          subId2: item.subId2,
-          subId3: item.subId3,
+          isp: item.isp || '',
+          connectionType: item.connection_type || item.connectionType || null,
+          visitorId: item.visitor_code || item.visitorId,
+          subId1: item.sub1 || item.subId1,
+          subId2: item.sub2 || item.subId2,
+          subId3: item.sub3 || item.subId3,
+          subId4: item.sub4 || item.subId4,
+          subId5: item.sub5 || item.subId5,
           cost: item.cost,
         }));
 
@@ -142,15 +155,15 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
       }
 
       if (isWithinThreeMonths(startDate)) {
-        const analyticsQuery = createAnalyticsQueryService(c.env);
+        const analyticsQuery = createDashboardQueryService(c.env);
         const aeResult = await analyticsQuery.getRecentClicks({
           limit: 1000,
           campaignId,
         });
 
-        const uniqueVisitors = new Set(aeResult.list.map(c => c.visitorId)).size;
-        const countries = new Set(aeResult.list.map(c => c.country)).size;
-        const devices = new Set(aeResult.list.map(c => c.device)).size;
+        const uniqueVisitors = new Set(aeResult.list.map((item: Record<string, unknown>) => item.visitorId)).size;
+        const countries = new Set(aeResult.list.map((item: Record<string, unknown>) => item.country)).size;
+        const devices = new Set(aeResult.list.map((item: Record<string, unknown>) => item.device)).size;
 
         return c.json(success({
           totalClicks: aeResult.total,

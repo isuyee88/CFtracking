@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   ChartWrapper,
   LazyLineChart, LazyLine, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyLegend, LazyResponsiveContainer, 
@@ -15,7 +16,10 @@ import {
 import { Calendar, TrendingUp, TrendingDown, Minus, Filter, Download, RefreshCw, ChevronDown, AlertCircle } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { fetchTrendsReport, fetchCampaigns, type TrendsReport } from '../services/api';
+import { fetchTrendsReport, type TrendsReport } from '../services/api';
+import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -233,25 +237,41 @@ const MemoizedAreaChart = React.memo(({ data, dataKeys, colors, gradients, title
 MemoizedAreaChart.displayName = 'MemoizedAreaChart';
 
 export const Trends = () => {
-  const [report, setReport] = useState<TrendsReport | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentQuery = searchParams.toString();
+  const bootstrap = readBootstrapPage<{ report?: TrendsReport; campaigns?: Array<{ id: string; name: string }> }>('trends');
+  const [report, setReport] = useState<TrendsReport | null>((bootstrap?.data?.report as TrendsReport) || null);
+  const [loading, setLoading] = useState(!bootstrap?.data?.report);
   const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState({
-    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
+    startDate:
+      typeof bootstrap?.scope?.startDate === 'string'
+        ? bootstrap.scope.startDate
+        : new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    endDate:
+      typeof bootstrap?.scope?.endDate === 'string'
+        ? bootstrap.scope.endDate
+        : new Date().toISOString().split('T')[0],
   });
-  const [interval, setInterval] = useState<'hour' | 'day' | 'week' | 'month'>('day');
+  const [interval, setInterval] = useState<'hour' | 'day' | 'week' | 'month'>(
+    (bootstrap?.scope?.interval as 'hour' | 'day' | 'week' | 'month') || 'day'
+  );
   const [selectedPreset, setSelectedPreset] = useState<string>('Last 7 days');
   const [showDateDropdown, setShowDateDropdown] = useState(false);
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [tempDateRange, setTempDateRange] = useState(dateRange);
-  const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string }>>(
+    Array.isArray(bootstrap?.data?.campaigns) ? bootstrap.data.campaigns : []
+  );
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(
+    typeof bootstrap?.scope?.campaignId === 'string' ? bootstrap.scope.campaignId : ''
+  );
   const [activeChart, setActiveChart] = useState<'clicks' | 'revenue' | 'roi' | 'epc'>('clicks');
   const [isMobile, setIsMobile] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [selectedDimensions, setSelectedDimensions] = useState<string[]>(['country', 'device', 'os', 'browser']);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const skipInitialBootstrapLoadRef = useRef(Boolean(bootstrap?.data?.report));
 
   // Detect mobile viewport
   useEffect(() => {
@@ -261,16 +281,6 @@ export const Trends = () => {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  // Load campaigns for filter
-  useEffect(() => {
-    fetchCampaigns()
-      .then(data => {
-        const list = Array.isArray(data) ? data : data?.list || [];
-        setCampaigns(list.map((c: any) => ({ id: c.id || c.campaignId, name: c.name || c.campaignName })));
-      })
-      .catch(err => console.error('Failed to load campaigns:', err));
   }, []);
 
   // Close dropdown when clicking outside
@@ -324,26 +334,56 @@ export const Trends = () => {
 
   // Fetch data when dateRange or interval changes
   useEffect(() => {
+    if (skipInitialBootstrapLoadRef.current) {
+      skipInitialBootstrapLoadRef.current = false;
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    
-    fetchTrendsReport({
-      startDate: dateRange.startDate,
-      endDate: dateRange.endDate,
-      interval,
-      campaignId: selectedCampaignId || undefined,
-    })
-      .then(data => {
+
+    const loadReport = async () => {
+      try {
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('startDate', dateRange.startDate);
+        nextUrl.searchParams.set('endDate', dateRange.endDate);
+        nextUrl.searchParams.set('interval', interval);
+        if (selectedCampaignId) {
+          nextUrl.searchParams.set('campaignId', selectedCampaignId);
+        } else {
+          nextUrl.searchParams.delete('campaignId');
+        }
+
+        const nextQuery = nextUrl.searchParams.toString();
+        if (nextQuery !== currentQuery) {
+          setSearchParams(nextUrl.searchParams, { replace: true });
+          return;
+        }
+
+        const bundle = await loadBootstrapForLocation({ url: nextUrl, force: true }).catch(() => null);
+        if (bundle?.page === 'trends') {
+          setReport((bundle.data?.report as TrendsReport) || null);
+          setCampaigns(Array.isArray(bundle.data?.campaigns) ? bundle.data.campaigns as Array<{ id: string; name: string }> : []);
+          return;
+        }
+
+        const data = await fetchTrendsReport({
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          interval,
+          campaignId: selectedCampaignId || undefined,
+        });
         setReport(data);
-      })
-      .catch(err => {
+      } catch (err) {
         console.error('Failed to fetch trends:', err);
         setError(err instanceof Error ? err.message : 'Failed to load trends data');
-      })
-      .finally(() => {
+      } finally {
         setLoading(false);
-      });
-  }, [dateRange, interval, selectedCampaignId]);
+      }
+    };
+
+    void loadReport();
+  }, [currentQuery, dateRange, interval, selectedCampaignId, setSearchParams]);
 
   // Memoize data transformations to prevent re-calculation on every render
   // Must be called before any conditional returns
@@ -368,6 +408,14 @@ export const Trends = () => {
     })) || [],
     [report?.breakdowns?.device]
   );
+
+  const selectedCampaignName = useMemo(() => {
+    if (!selectedCampaignId) {
+      return 'All Campaigns';
+    }
+    const campaign = campaigns.find(item => item.id === selectedCampaignId);
+    return campaign?.name || selectedCampaignId;
+  }, [campaigns, selectedCampaignId]);
 
   // Conditional rendering after all hooks
   if (loading) {
@@ -549,11 +597,14 @@ export const Trends = () => {
         <select
           value={selectedCampaignId}
           onChange={(e) => setSelectedCampaignId(e.target.value)}
-          className="px-3 py-2 bg-surface-container border border-border-default rounded-md text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+          className="w-[280px] min-w-[220px] px-3 py-2 bg-surface-container border border-border-default rounded-md text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+          title={selectedCampaignName}
         >
           <option value="">All Campaigns</option>
           {campaigns.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+            <option key={c.id} value={c.id} title={c.name}>
+              {truncateLabel(c.name, DISPLAY_MAX_LENGTH.CAMPAIGN_OPTION_LABEL)}
+            </option>
           ))}
         </select>
         

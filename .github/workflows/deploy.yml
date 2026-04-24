@@ -33,7 +33,7 @@ jobs:
           echo "=== Building frontend ==="
           npm run build:frontend
         env:
-          NODE_ENV: production
+          NODE_ENV: development
           
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3

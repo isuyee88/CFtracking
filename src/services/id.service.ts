@@ -15,7 +15,7 @@
 
 import type { D1Database } from '@/handlers/d1/index';
 
-export type IdPrefix = 'c' | 'f' | 'lp' | 'o' | 'ts' | 'an' | 'r';
+export type IdPrefix = 'c' | 'f' | 'lp' | 'o' | 'ts' | 'an' | 'r' | 'd';
 
 export const ID_PREFIXES: Record<string, IdPrefix> = {
   campaigns: 'c',
@@ -25,6 +25,7 @@ export const ID_PREFIXES: Record<string, IdPrefix> = {
   trafficSources: 'ts',
   affiliateNetworks: 'an',
   rules: 'r',
+  domains: 'd',
 } as const;
 
 export class IdService {
@@ -117,6 +118,7 @@ export class IdService {
       case 'f': return 'flows';
       case 'o': return 'offers';
       case 'r': return 'rules';
+      case 'd': return 'domains';
       default: return null;
     }
   }

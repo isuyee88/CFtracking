@@ -14,6 +14,13 @@ export abstract class PlatformAdapter<TConfig = Record<string, unknown>> {
   }
 
   /**
+   * 动态更新平台配置
+   */
+  configure(config: TConfig): void {
+    this.config = config;
+  }
+
+  /**
    * 获取平台信息
    */
   abstract getInfo(): PlatformInfo;
