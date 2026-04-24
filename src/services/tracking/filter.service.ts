@@ -3,17 +3,17 @@
  * @description 处理 Flow 的过滤逻辑，根据请求条件筛选合适的 Flow
  * @module services/tracking/filter.service.ts
  *
- * 输入: Flow 列表和点击请求信息
- * 输出: 过滤后的 Flow 列表或单个 Flow
+ * 输入: Flow 列表和点击请求信�?
+ * 输出: 过滤后的 Flow 列表或单�?Flow
  *
- * 逻辑交互: 被 click.service.ts 调用
+ * 逻辑交互: �?click.service.ts 调用
  *
  * 优先级链 (对标Keitaro标准):
- *   1. Forced Flow (强制流程) - 如果存在且规则匹配, 直接返回 (最高优先级)
+ *   1. Forced Flow (强制流程) - 如果存在且规则匹�? 直接返回 (最高优先级)
  *   2. Regular Flows (常规流程) - 按权重随机选择
  *   3. Default Flow (默认流程) - 兜底返回 (无需规则匹配)
  *
- * 前后端交互: 无直接交互
+ * 前后端交�? 无直接交�?
  */
 
 import type { Flow } from '@/types/flow';
@@ -27,12 +27,12 @@ export interface FilterCheckResult {
 }
 
 /**
- * Filter 服务类
+ * Filter 服务�?
  * 实现Keitaro标准的Flow选择优先级链
  */
 export class FilterService {
   /**
-   * 选择匹配的 Flow (按Keitaro标准优先级)
+   * 选择匹配�?Flow (按Keitaro标准优先�?
    *
    * 优先级链:
    *   1. Forced Flow (强制流程) - 如果有且规则匹配, 直接返回
@@ -43,17 +43,17 @@ export class FilterService {
    * @param request 点击请求数据
    * @returns 匹配的Flow, 或null (无匹配且无Default)
    */
-  selectMatchingFlow(flows: Flow[], request: ClickRequest): Flow | null {
+  selectMatchingFlow(flows: Flow[], request: ClickRequest, rotation: string = 'weight'): Flow | null {
     if (!flows || flows.length === 0) {
       console.log('[FilterService] No flows provided');
       return null;
     }
 
-    // Step 1: 优先检查 Forced Flow (强制流程)
+    // Step 1: 优先检�?Forced Flow (强制流程)
     const forcedFlows = flows.filter(f => f.type === 'forced');
     for (const flow of forcedFlows) {
       if (this.checkFilters(flow, request)) {
-        console.log(`[FilterService] ✓ Matched FORCED flow: ${flow.id} (${flow.name})`);
+        console.log(`[FilterService] �?Matched FORCED flow: ${flow.id} (${flow.name})`);
         return flow;
       }
     }
@@ -63,7 +63,6 @@ export class FilterService {
       console.log(`[FilterService] ${forcedFlows.length} forced flow(s) checked but none matched`);
     }
 
-    // Step 2: 筛选匹配的 Regular Flows (常规流程)
     const matchedRegularFlows: Flow[] = [];
     for (const flow of flows) {
       if (flow.type === 'regular' && this.checkFilters(flow, request)) {
@@ -71,10 +70,17 @@ export class FilterService {
       }
     }
 
-    // 如果有匹配的 Regular Flows, 按权重选择
     if (matchedRegularFlows.length > 0) {
-      const selectedFlow = this.selectByWeight(matchedRegularFlows)!; // 非空断言: length>0保证非null
-      console.log(`[FilterService] ✓ Matched REGULAR flow: ${selectedFlow.id} (${selectedFlow.name}) [from ${matchedRegularFlows.length} candidates]`);
+      const selectedFlow =
+        rotation === 'position'
+          ? (matchedRegularFlows[0] ?? null)
+          : rotation === 'random'
+            ? this.selectRandom(matchedRegularFlows)
+            : this.selectByWeight(matchedRegularFlows);
+      if (!selectedFlow) {
+        return null;
+      }
+      console.log(`[FilterService] ??Matched REGULAR flow: ${selectedFlow.id} (${selectedFlow.name}) [from ${matchedRegularFlows.length} candidates, rotation=${rotation}]`);
       return selectedFlow;
     }
 
@@ -85,8 +91,8 @@ export class FilterService {
       return defaultFlow;
     }
 
-    // 无任何匹配
-    console.log('[FilterService] ✗ No matching flow found (no forced/regular matched, no default)');
+    // 无任何匹�?
+    console.log('[FilterService] �?No matching flow found (no forced/regular matched, no default)');
     return null;
   }
 
@@ -101,7 +107,7 @@ export class FilterService {
   }
 
   /**
-   * 根据 Flow 自身的 filters 检查是否匹配
+   * 根据 Flow 自身�?filters 检查是否匹�?
    */
   private checkFlowByFilters(flow: Flow, request: ClickRequest): boolean {
     // 如果 Flow 没有 filters 或为空数组，默认通过
@@ -109,7 +115,7 @@ export class FilterService {
       return true;
     }
 
-    // 评估所有 filter 条件 (AND逻辑: 所有条件都必须满足)
+    // 评估所�?filter 条件 (AND逻辑: 所有条件都必须满足)
     for (const filter of flow.filters) {
       const result = this.evaluateFlowFilter(filter, request);
       if (!result) {
@@ -132,7 +138,7 @@ export class FilterService {
   }
 
   /**
-   * 从请求中获取字段值
+   * 从请求中获取字段�?
    */
   private getFieldValue(field: string, request: ClickRequest): unknown {
     if (!field || typeof field !== 'string') {
@@ -164,7 +170,7 @@ export class FilterService {
       }
     }
 
-    // 从 URL 参数中获取
+    // �?URL 参数中获�?
     if (request.urlParams) {
       return request.urlParams.get(field) || undefined;
     }
@@ -193,5 +199,14 @@ export class FilterService {
     }
 
     return flows[flows.length - 1] ?? null;
+  }
+
+  private selectRandom(flows: Flow[]): Flow | null {
+    if (flows.length === 0) {
+      return null;
+    }
+
+    const index = Math.floor(Math.random() * flows.length);
+    return flows[index] ?? null;
   }
 }

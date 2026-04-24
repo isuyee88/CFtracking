@@ -6,6 +6,11 @@
 
 import { CampaignRepository } from '@/handlers/d1/campaign.repo';
 import { TrafficRepository } from '@/handlers/d1/traffic.repo';
+import {
+  AutoruleBindingRepository,
+  type ReplaceRuleBindingInput,
+  type RuleBindingRecord,
+} from '@/handlers/d1/autoruleBinding.repo';
 import { getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
 import type { Campaign, CreateCampaignDTO, UpdateCampaignDTO, CampaignListQuery } from '@/types/campaign';
@@ -16,11 +21,13 @@ import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldL
 export class CampaignService {
   private repo: CampaignRepository;
   private trafficRepo: TrafficRepository;
+  private autoruleBindingRepo: AutoruleBindingRepository;
 
   constructor(env: Env) {
     const db = getD1Connection(env);
     this.repo = new CampaignRepository(db);
     this.trafficRepo = new TrafficRepository(db);
+    this.autoruleBindingRepo = new AutoruleBindingRepository(db);
   }
 
   /**
@@ -199,6 +206,57 @@ export class CampaignService {
         maxLength: FIELD_MAX_LENGTH.UNIQUE_PARAMETER,
       }),
     };
+  }
+
+  async getAutoruleBinding(campaignId: string): Promise<RuleBindingRecord | null> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleBindingRepo.getCampaignBinding(campaignId);
+  }
+
+  async getAutoruleBindings(campaignId: string): Promise<RuleBindingRecord[]> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleBindingRepo.getCampaignBindings(campaignId);
+  }
+
+  async setAutoruleBinding(campaignId: string, ruleId: string): Promise<RuleBindingRecord> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleBindingRepo.setCampaignBinding(campaignId, ruleId);
+  }
+
+  async replaceAutoruleBindings(
+    campaignId: string,
+    bindings: ReplaceRuleBindingInput[]
+  ): Promise<RuleBindingRecord[]> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    return this.autoruleBindingRepo.replaceCampaignBindings(campaignId, bindings);
+  }
+
+  async clearAutoruleBinding(campaignId: string): Promise<void> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    await this.autoruleBindingRepo.clearCampaignBinding(campaignId);
+  }
+
+  async clearAutoruleBindings(campaignId: string): Promise<void> {
+    const existing = await this.repo.findById(campaignId);
+    if (!existing) {
+      throw new NotFoundError('Campaign not found');
+    }
+    await this.autoruleBindingRepo.clearCampaignBindings(campaignId);
   }
 
   private normalizeUpdateInput(data: UpdateCampaignDTO, existing: Campaign): UpdateCampaignDTO {

@@ -1,18 +1,18 @@
 /**
  * @fileoverview 点击追踪服务
- * @description 处理点击追踪的业务逻辑，集成去重、Flow 过滤和 Action 执行
+ * @description 处理点击追踪的业务逻辑，集成去重、Flow 过滤�?Action 执行
  * @module services/tracking/click.service
  * 
- * 输入: 点击请求（包含 campaign、IP、UA 等）
- * 输出: 点击结果（包含重定向 URL、去重状态、Flow 信息）
+ * 输入: 点击请求（包�?campaign、IP、UA 等）
+ * 输出: 点击结果（包含重定向 URL、去重状态、Flow 信息�?
  * 逻辑交互: 
- *   - 调用 UniquenessService 进行去重检查
+ *   - 调用 UniquenessService 进行去重检�?
  *   - 调用 FilterService 进行 Flow 过滤
  *   - 调用 FlowRepository 获取 Flow 配置
  *   - 调用 CampaignRepository 获取 Campaign 配置
  *   - 调用 OfferRepository 获取 Offer 配置
  *   - 调用 LandingPageRepository 获取 Landing Page 配置
- * 前后端交互: 通过 tracking.routes.ts 处理 HTTP 请求
+ * 前后端交�? 通过 tracking.routes.ts 处理 HTTP 请求
  */
 
 import { FlowRepository } from '@/handlers/d1/flow.repo';
@@ -27,6 +27,8 @@ import { UniquenessService, type UniquenessMethod } from './uniqueness.service';
 import { FilterService } from './filter.service';
 import { FlowActionService } from './flow-action.service';
 import { MultiOfferEngine } from '@/services/flow/multi-offer.engine';
+import { RealtimeRuleEngineService } from '@/services/autorule/realtime-rule-engine.service';
+import { createTurnstileService } from '@/services/proxyDetection/turnstile.service';
 
 import type { Env } from '@/config/env';
 import type { ClickData } from '@/types/tracking';
@@ -54,7 +56,7 @@ export interface ClickRequest {
   device?: string;
   browser?: string;
   os?: string;
-  // Sub ID 追踪参数 (支持1-30个, 对标Keitaro完整Sub ID支持)
+  // Sub ID 追踪参数 (支持1-30�? 对标Keitaro完整Sub ID支持)
   subId1?: string;
   subId2?: string;
   subId3?: string;
@@ -88,7 +90,7 @@ export interface ClickRequest {
   cost?: number;
   /** 去重方法 */
   uniquenessMethod?: UniquenessMethod;
-  /** 参数去重时的参数名 */
+  /** 参数去重时的参数�?*/
   uniquenessParameter?: string;
   /** 去重有效期（秒） */
   uniquenessTTL?: number;
@@ -115,18 +117,28 @@ export interface ClickResult {
   isUnique: boolean;
   /** 去重方法 */
   uniquenessMethod: UniquenessMethod;
-  /** 是否需要设置 Cookie */
+  /** 是否需要设�?Cookie */
   shouldSetCookie: boolean;
   /** 已存在的 clickId（如果重复） */
   existingClickId: string | null;
   /** 流量损失标记 */
   isTrafficLoss: boolean;
-  /** 执行的操作类型 */
-  actionType: 'redirect' | 'show_offer' | 'show_landing' | 'traffic_loss';
-  /** 重定向类型 */
+  /** 执行的操作类�?*/
+  actionType: 'redirect' | 'show_offer' | 'show_landing' | 'traffic_loss' | 'challenge';
+  /** 重定向类�?*/
   redirectType?: 'http' | 'meta' | 'js' | 'js_blank' | 'double' | 'remote';
   /** 响应 body（用于非 HTTP 重定向） */
   responseBody?: string;
+  ruleDecision?: {
+    action: 'allow' | 'block' | 'challenge' | 'redirect';
+    matched: boolean;
+    bound: boolean;
+    matchedRuleId?: string;
+    matchedLayer?: 'flow' | 'campaign' | 'whitelist' | 'blacklist';
+    reason?: string;
+    redirectUrl?: string;
+  };
+  skipPersistence?: boolean;
 }
 
 /**
@@ -151,6 +163,7 @@ export class ClickService {
   private filterService: FilterService;
   private flowActionService: FlowActionService;
   private multiOfferEngine: MultiOfferEngine;
+  private realtimeRuleEngine: RealtimeRuleEngineService;
   private env: Env;
 
   constructor(env: Env) {
@@ -166,17 +179,18 @@ export class ClickService {
     this.filterService = new FilterService();
     this.flowActionService = new FlowActionService();
     this.multiOfferEngine = new MultiOfferEngine(env as unknown as { UNIQUENESS_KV?: KVNamespace; [key: string]: unknown });
+    this.realtimeRuleEngine = new RealtimeRuleEngineService(env);
     this.env = env;
   }
 
   /**
    * 处理点击请求
-   * 核心流程：
+   * 核心流程�?
    * 1. 获取 Campaign 配置
-   * 2. 执行去重检查
+   * 2. 执行去重检�?
    * 3. 选择 Flow
    * 4. 执行 Filters
-   * 5. 选择 Landing Page 和 Offer
+   * 5. 选择 Landing Page �?Offer
    * 6. 执行 Action
    * 7. 记录分析数据
    */
@@ -194,15 +208,12 @@ export class ClickService {
       
       // 3. 构建基础 URL
       const baseUrl = this.buildBaseUrl(campaign, request);
-      
-      // 4. 执行去重检查
-      const uniquenessResult = await this.checkUniqueness(request, clickId, campaign);
-      
-      // 5. 获取并选择 Flow
+
+      // 4. 获取并选择 Flow
       const flows = await this.flowRepo.findByCampaignIdAndStatus(campaign.id, 'active');
       console.log('[ClickService] Found flows:', flows.length, 'for campaign:', campaign.id, 'Campaign alias:', request.campaignId);
       
-      const selectedFlow = await this.selectFlow(flows, request);
+      const selectedFlow = await this.selectFlow(flows, request, campaign.flowRotation);
       console.log('[ClickService] Selected flow:', selectedFlow?.id || 'No flow selected');
       console.log('[ClickService] Selected flow details:', selectedFlow ? {
         id: selectedFlow.id,
@@ -211,12 +222,144 @@ export class ClickService {
         filters: selectedFlow.filters?.length || 0
       } : null);
 
-      // 如果没有 Flow，记录警告信息
+      // 如果没有 Flow，记录警告信�?
       if (flows.length === 0) {
         console.warn(`[ClickService] Campaign ${campaign.id} (${campaign.name}) has NO active flows configured!`);
       }
       
-      // 6. 选择 Landing Page 和 Offer
+      // 5. 评估名单�?autorules
+      const autoruleDecision = await this.applyTrustedChallengeBypass(
+        await this.realtimeRuleEngine.evaluate({
+          campaignId: campaign.id,
+          flowId: selectedFlow?.id || null,
+          context: this.buildAutoruleContext(request, campaign, selectedFlow?.id || null),
+        }),
+        request
+      );
+
+      if (autoruleDecision.action === 'challenge') {
+        const redirectUrl = await this.buildChallengeRedirectUrl(clickId, visitorId, request, baseUrl);
+        return {
+          clickId,
+          visitorId,
+          redirectUrl,
+          flowId: selectedFlow?.id || null,
+          landingPageId: null,
+          offerId: null,
+          isUnique: false,
+          uniquenessMethod: campaign.uniquenessMethod,
+          shouldSetCookie: false,
+          existingClickId: null,
+          isTrafficLoss: false,
+          actionType: 'challenge',
+          redirectType: 'http',
+          ruleDecision: autoruleDecision,
+          skipPersistence: true,
+        };
+      }
+
+      // 6. ִ��ȥ�ؼ��
+      const uniquenessResult = await this.checkUniqueness(request, clickId, campaign);
+
+      if (autoruleDecision.action === 'block') {
+        const redirectUrl = await this.executeAction(
+          { type: 'traffic_loss' },
+          clickId,
+          visitorId,
+          request,
+          baseUrl
+        );
+
+        const clickData = this.buildClickData({
+          clickId,
+          campaign,
+          flow: selectedFlow,
+          landingPage: null,
+          offer: null,
+          visitorId,
+          request,
+          redirectUrl,
+          isUnique: uniquenessResult.isUnique,
+          ruleDecision: autoruleDecision,
+        });
+
+        await this.clickRepo.saveClick(clickData);
+
+        await this.trackAnalytics({
+          clickId,
+          campaign,
+          flow: selectedFlow,
+          request,
+          isUnique: uniquenessResult.isUnique,
+        });
+
+        return {
+          clickId,
+          visitorId,
+          redirectUrl,
+          flowId: selectedFlow?.id || null,
+          landingPageId: null,
+          offerId: null,
+          isUnique: uniquenessResult.isUnique,
+          uniquenessMethod: uniquenessResult.method,
+          shouldSetCookie: uniquenessResult.shouldSetCookie,
+          existingClickId: uniquenessResult.existingClickId,
+          isTrafficLoss: true,
+          actionType: 'traffic_loss',
+          redirectType: 'http',
+          ruleDecision: autoruleDecision,
+        };
+      }
+
+      if (autoruleDecision.action === 'redirect') {
+        const redirectUrl = await this.buildAutoruleRedirectUrl(
+          autoruleDecision,
+          clickId,
+          visitorId,
+          request,
+          baseUrl
+        );
+        const clickData = this.buildClickData({
+          clickId,
+          campaign,
+          flow: selectedFlow,
+          landingPage: null,
+          offer: null,
+          visitorId,
+          request,
+          redirectUrl,
+          isUnique: uniquenessResult.isUnique,
+          ruleDecision: autoruleDecision,
+        });
+
+        await this.clickRepo.saveClick(clickData);
+
+        await this.trackAnalytics({
+          clickId,
+          campaign,
+          flow: selectedFlow,
+          request,
+          isUnique: uniquenessResult.isUnique,
+        });
+
+        return {
+          clickId,
+          visitorId,
+          redirectUrl,
+          flowId: selectedFlow?.id || null,
+          landingPageId: null,
+          offerId: null,
+          isUnique: uniquenessResult.isUnique,
+          uniquenessMethod: uniquenessResult.method,
+          shouldSetCookie: uniquenessResult.shouldSetCookie,
+          existingClickId: uniquenessResult.existingClickId,
+          isTrafficLoss: false,
+          actionType: 'redirect',
+          redirectType: 'http',
+          ruleDecision: autoruleDecision,
+        };
+      }
+
       let selectedLP: LandingPage | null = null;
       let selectedOffer: Offer | null = null;
       
@@ -225,7 +368,7 @@ export class ClickService {
         selectedOffer = await this.selectOffer(selectedFlow, visitorId);
       }
       
-      // 7. 执行 Action 获取重定向 URL
+      // 7. 执行 Action 获取重定�?URL
       const { redirectUrl, redirectType, responseBody } = await this.executeFlowAction(
         selectedFlow,
         selectedLP,
@@ -248,6 +391,8 @@ export class ClickService {
         visitorId,
         request,
         redirectUrl,
+        isUnique: uniquenessResult.isUnique,
+        ruleDecision: autoruleDecision,
       });
       
       await this.clickRepo.saveClick(clickData);
@@ -277,6 +422,7 @@ export class ClickService {
         actionType: selectedFlow?.actionType || 'traffic_loss',
         redirectType,
         responseBody,
+        ruleDecision: autoruleDecision,
       };
     } catch (err) {
       console.error('Handle click error:', err);
@@ -285,13 +431,13 @@ export class ClickService {
   }
 
   /**
-   * 解析 Campaign（支持 alias 或 id）
+   * 解析 Campaign（支�?alias �?id�?
    */
   private async resolveCampaign(campaignIdOrAlias: string) {
     // 先尝试按 ID 查找
     let campaign = await this.campaignRepo.findById(campaignIdOrAlias);
     
-    // 如果未找到，尝试按 alias 查找
+    // 如果未找到，尝试�?alias 查找
     if (!campaign) {
       campaign = await this.campaignRepo.findByAlias(campaignIdOrAlias);
     }
@@ -300,8 +446,8 @@ export class ClickService {
   }
 
   /**
-   * 执行去重检查
-   * 优先使用请求中的配置，否则使用 Campaign 的默认配置
+   * 执行去重检�?
+   * 优先使用请求中的配置，否则使�?Campaign 的默认配�?
    */
   private async checkUniqueness(
     request: ClickRequest,
@@ -313,7 +459,7 @@ export class ClickService {
       uniquenessParameter?: string | null;
     }
   ) {
-    // 优先使用请求中的配置，否则使用 Campaign 的默认配置
+    // 优先使用请求中的配置，否则使�?Campaign 的默认配�?
     const method = (request.uniquenessMethod || campaign.uniquenessMethod || 'none') as UniquenessMethod;
     const ttl = request.uniquenessTTL || campaign.uniquenessTTL || 86400;
     const uniquenessParameter = request.uniquenessParameter || campaign.uniquenessParameter || undefined;
@@ -348,15 +494,15 @@ export class ClickService {
 
   /**
    * 选择 Flow
-   * 先执行 Filters，再按权重选择
+   * 先执�?Filters，再按权重选择
    */
-  private async selectFlow(flows: Flow[], request: ClickRequest): Promise<Flow | null> {
+  private async selectFlow(flows: Flow[], request: ClickRequest, flowRotation?: string): Promise<Flow | null> {
     if (flows.length === 0) {
       return null;
     }
 
-    // 使用 FilterService 选择匹配的 Flow
-    return this.filterService.selectMatchingFlow(flows, request);
+    // 使用 FilterService 选择匹配�?Flow
+    return this.filterService.selectMatchingFlow(flows, request, flowRotation || 'weight');
   }
 
   /**
@@ -399,7 +545,7 @@ export class ClickService {
 
         case 'traffic_loss':
         default:
-          // 流量损失，返回空页面或默认 URL
+          // 流量损失，返回空页面或默�?URL
           return new URL(`/traffic-loss?${params.toString()}`, fullBaseUrl).toString();
       }
     } catch (err) {
@@ -411,7 +557,7 @@ export class ClickService {
 
   /**
    * 构建追踪参数
-   * 支持完整的Sub ID参数 (sub_id_1 到 sub_id_30)
+   * 支持完整的Sub ID参数 (sub_id_1 �?sub_id_30)
    */
   private buildTrackingParams(
     clickId: string,
@@ -423,7 +569,7 @@ export class ClickService {
     params.set('clickid', clickId);
     params.set('visitor', visitorId);
 
-    // 动态读取所有 Sub ID 参数 (1-30)
+    // 动态读取所�?Sub ID 参数 (1-30)
     for (let i = 1; i <= 30; i++) {
       const subIdValue = request[`subId${i}` as keyof ClickRequest] as string | undefined;
       if (subIdValue) {
@@ -435,7 +581,7 @@ export class ClickService {
   }
 
   /**
-   * 追加参数到 URL
+   * 追加参数�?URL
    */
   private appendParams(url: string, params: URLSearchParams): string {
     if (!url || typeof url !== 'string') {
@@ -464,14 +610,14 @@ export class ClickService {
 
   /**
    * 生成或获取访客ID
-   * 优先使用 Cloudflare TLS 指纹，其次使用 IP + User-Agent
+   * 优先使用 Cloudflare TLS 指纹，其次使�?IP + User-Agent
    */
   private async generateVisitorId(request: ClickRequest): Promise<string> {
     if (request.cfInfo) {
-      // 使用 Cloudflare TLS 指纹生成设备指纹 (准确率 ~95%)
+      // 使用 Cloudflare TLS 指纹生成设备指纹 (准确�?~95%)
       return request.existingVisitorId || await generateDeviceFingerprint(request.cfInfo);
     } else {
-      // 后备方案：使用 IP + User-Agent (准确率 ~70%)
+      // 后备方案：使�?IP + User-Agent (准确�?~70%)
       return request.existingVisitorId || await generateDeviceFingerprint({
         connectingIP: request.ip,
         userAgent: request.userAgent,
@@ -494,7 +640,7 @@ export class ClickService {
       return campaign.domain;
     }
 
-    // 其次使用原始请求的 origin
+    // 其次使用原始请求�?origin
     try {
       const originalUrl = request.urlParams ? request.urlParams.get('__originalUrl') : null;
       if (originalUrl && typeof originalUrl === 'string') {
@@ -527,7 +673,7 @@ export class ClickService {
 
   /**
    * 选择 Offer
-   * 优先使用 MultiOfferEngine，回退到传统方式
+   * 优先使用 MultiOfferEngine，回退到传统方�?
    */
   private async selectOffer(flow: Flow, visitorId: string): Promise<Offer | null> {
     // 尝试使用 MultiOfferEngine
@@ -574,7 +720,7 @@ export class ClickService {
       }
     }
 
-    // 回退到传统方式
+    // 回退到传统方�?
     const offerAssociations = await this.flowRepo.getOffers(flow.id);
     if (offerAssociations.length > 0) {
       const offerAssoc = this.selectByWeight(offerAssociations);
@@ -633,7 +779,7 @@ export class ClickService {
     baseUrl: string
   ): Promise<{ redirectUrl: string; redirectType: ClickResult['redirectType']; responseBody?: string }> {
     if (!flow) {
-      // 没有 Flow，执行流量损失
+      // 没有 Flow，执行流量损�?
       const redirectUrl = await this.executeAction(
         { type: 'traffic_loss' },
         clickId,
@@ -644,10 +790,16 @@ export class ClickService {
       return { redirectUrl, redirectType: 'http' };
     }
 
-    // 统一使用 FlowActionService，不区分是否有 offer
+    // 统一使用 FlowActionService，不区分是否�?offer
     const actionResult = await this.flowActionService.execute({
       flow,
-      request,
+      request: {
+        ...request,
+        __trackingClickId: clickId,
+        __trackingVisitorId: visitorId,
+      } as ClickRequest,
+      clickId,
+      visitorId,
       offer: offer || undefined,
       landingPage: landingPage || undefined,
     });
@@ -659,7 +811,7 @@ export class ClickService {
       hasBody: !!actionResult.body,
     });
 
-    // 如果 FlowActionService 返回 traffic_loss 或空 URL，构建 traffic-loss URL
+    // 如果 FlowActionService 返回 traffic_loss 或空 URL，构�?traffic-loss URL
     if (actionResult.actionType === 'traffic_loss' || !actionResult.redirectUrl) {
       const redirectUrl = await this.executeAction(
         { type: 'traffic_loss' },
@@ -690,8 +842,10 @@ export class ClickService {
     visitorId: string;
     request: ClickRequest;
     redirectUrl: string;
+    isUnique: boolean;
+    ruleDecision?: ClickResult['ruleDecision'];
   }): ClickData {
-    const { clickId, campaign, flow, landingPage, offer, visitorId, request, redirectUrl } = params;
+    const { clickId, campaign, flow, landingPage, offer, visitorId, request, redirectUrl, isUnique, ruleDecision } = params;
     const cfInfo = request.cfInfo;
     const bm = cfInfo?.botManagement;
     const tlsAuth = cfInfo?.tlsClientAuth;
@@ -715,23 +869,148 @@ export class ClickService {
       isp: cfInfo?.asOrganization || null,
       connectionType: null,
       visitorId,
-      // Sub ID 追踪参数 (支持1-30个)
+      // Sub ID 追踪参数 (支持1-30�?
       ...this.extractSubIds(request),
       cost: request.cost || 0,
+      isUnique,
       redirectUrl,
+      utmSource: request.urlParams?.get('utm_source') || null,
+      utmMedium: request.urlParams?.get('utm_medium') || null,
+      utmCampaign: request.urlParams?.get('utm_campaign') || null,
+      utmTerm: request.urlParams?.get('utm_term') || null,
+      utmContent: request.urlParams?.get('utm_content') || null,
       // Cloudflare 特定信息
       ...this.extractCloudflareInfo(cfInfo),
       // Bot Management
       ...this.extractBotManagementInfo(bm),
       // TLS Client Auth
       ...this.extractTLSClientAuthInfo(tlsAuth),
-      // 指纹和风险评估
+      // 指纹和风险评�?
       fingerprint: request.fingerprint ?? null,
       riskScore: request.riskAssessment?.riskScore ?? 0,
       isBot: request.riskAssessment?.isBot ?? false,
       isSuspicious: request.riskAssessment?.isSuspicious ?? false,
       riskReasons: request.riskAssessment?.reasons ?? [],
+      ruleMatched: ruleDecision?.matched ? 1 : 0,
+      ruleBlocked: ruleDecision?.action === 'block' ? 1 : 0,
+      matchedRuleId: ruleDecision?.matchedRuleId ?? null,
+      matchedRuleLayer: ruleDecision?.matchedLayer ?? null,
+      matchedRuleReason: ruleDecision?.reason ?? null,
     };
+  }
+
+  private buildAutoruleContext(
+    request: ClickRequest,
+    campaign: { id: string; trafficSource?: string | null },
+    flowId: string | null
+  ) {
+    const subIds = [
+      request.subId1, request.subId2, request.subId3, request.subId4, request.subId5,
+      request.subId6, request.subId7, request.subId8, request.subId9, request.subId10,
+      request.subId11, request.subId12, request.subId13, request.subId14, request.subId15,
+      request.subId16, request.subId17, request.subId18, request.subId19, request.subId20,
+      request.subId21, request.subId22, request.subId23, request.subId24, request.subId25,
+      request.subId26, request.subId27, request.subId28, request.subId29, request.subId30,
+    ].map((item) => String(item || '').trim()).filter(Boolean);
+
+    return {
+      campaignId: campaign.id,
+      flowId,
+      trafficSourceId: campaign.trafficSource || undefined,
+      ip: request.ip,
+      asn: request.cfInfo?.asn ?? undefined,
+      userAgent: request.userAgent,
+      zoneId: request.subId1,
+      country: request.country,
+      device: request.device,
+      browser: request.browser,
+      isp: request.cfInfo?.asOrganization || undefined,
+      fingerprint: request.fingerprint,
+      utmSource: request.urlParams?.get('utm_source') || undefined,
+      utmCampaign: request.urlParams?.get('utm_campaign') || undefined,
+      subIds,
+    };
+  }
+
+  private async applyTrustedChallengeBypass(
+    decision: NonNullable<ClickResult['ruleDecision']>,
+    request: ClickRequest
+  ): Promise<NonNullable<ClickResult['ruleDecision']>> {
+    if (decision.action !== 'challenge') {
+      return decision;
+    }
+
+    const turnstile = createTurnstileService(this.env);
+    const trusted = await turnstile.checkTrustState(request.ip, request.userAgent, request.fingerprint);
+
+    if (!trusted) {
+      return decision;
+    }
+
+    return {
+      ...decision,
+      action: 'allow',
+      reason: decision.reason ? `${decision.reason}:trusted_bypass` : 'trusted_bypass',
+    };
+  }
+
+  private async buildChallengeRedirectUrl(
+    clickId: string,
+    visitorId: string,
+    request: ClickRequest,
+    baseUrl: string
+  ): Promise<string> {
+    const turnstile = createTurnstileService(this.env);
+    const siteKey = turnstile.getSiteKey();
+
+    if (!siteKey) {
+      return this.executeAction({ type: 'traffic_loss' }, clickId, visitorId, request, baseUrl);
+    }
+
+    const sessionId = `autorule-${clickId}`;
+    await turnstile.createChallenge(sessionId, request.ip, request.userAgent, request.fingerprint);
+
+    const challengeUrl = new URL('/api/proxy-detection/challenge-html', this.normalizeBaseUrl(baseUrl));
+    challengeUrl.searchParams.set('sessionId', sessionId);
+    challengeUrl.searchParams.set('reason', 'Autorule challenge required');
+    challengeUrl.searchParams.set('redirect', this.buildChallengeReturnUrl(request, baseUrl));
+
+    return challengeUrl.toString();
+  }
+
+  private async buildAutoruleRedirectUrl(
+    decision: NonNullable<ClickResult['ruleDecision']>,
+    clickId: string,
+    visitorId: string,
+    request: ClickRequest,
+    baseUrl: string
+  ): Promise<string> {
+    if (decision.redirectUrl) {
+      return this.executeAction({ type: 'redirect', url: decision.redirectUrl }, clickId, visitorId, request, baseUrl);
+    }
+
+    return this.executeAction({ type: 'traffic_loss' }, clickId, visitorId, request, baseUrl);
+  }
+
+  private buildChallengeReturnUrl(request: ClickRequest, baseUrl: string): string {
+    const originalUrl = request.urlParams?.get('__originalUrl');
+    if (originalUrl) {
+      return originalUrl;
+    }
+
+    const params = new URLSearchParams(request.urlParams?.toString() || '');
+    params.delete('__originalUrl');
+    const fallbackUrl = new URL(`/click/${encodeURIComponent(request.campaignId)}`, this.normalizeBaseUrl(baseUrl));
+    fallbackUrl.search = params.toString();
+    return fallbackUrl.toString();
+  }
+
+  private normalizeBaseUrl(baseUrl: string): string {
+    const normalized = String(baseUrl || '').trim();
+    if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+      return normalized;
+    }
+    return normalized ? `https://${normalized}` : 'http://localhost';
   }
 
   /**
@@ -853,7 +1132,7 @@ export class ClickService {
   }
 
   /**
-   * 记录分析数据到 Durable Objects
+   * 记录分析数据�?Durable Objects
    */
   private async trackAnalytics(params: {
     clickId: string;
@@ -887,13 +1166,13 @@ export class ClickService {
       console.error('[ClickService] Failed to track click to Durable Objects:', err);
     }
 
-    // 更新计数器
+    // 更新计数�?
     await this.doService.incrementCounter(`campaign:${campaign.id}:today`, {
       clicks: 1,
       spend: request.cost || 0,
     });
 
-    // 如果不是唯一点击，更新重复点击计数
+    // 如果不是唯一点击，更新重复点击计�?
     if (!isUnique) {
       await this.doService.incrementCounter(`campaign:${campaign.id}:duplicates`, {
         clicks: 1,
@@ -903,8 +1182,10 @@ export class ClickService {
 }
 
 /**
- * 创建 ClickService 实例的工厂函数
+ * 创建 ClickService 实例的工厂函�?
  */
 export function createClickService(env: Env): ClickService {
   return new ClickService(env);
 }
+
+

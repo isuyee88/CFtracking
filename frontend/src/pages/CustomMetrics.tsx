@@ -1,25 +1,20 @@
-/**
- * @fileoverview Custom Metrics 管理页面
- * @description 自定义指标的创建、编辑、删除和预览
- * @module frontend/src/pages/CustomMetrics
- */
-
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Edit2, Trash2, Calculator, AlertCircle, Check, X } from 'lucide-react';
-
-interface CustomMetric {
-  id: string;
-  name: string;
-  displayName: string;
-  description: string | null;
-  formula: string;
-  dataType: 'number' | 'percentage' | 'currency';
-  format: string;
-  category: string;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+import {
+  createCustomMetric,
+  deleteCustomMetric,
+  fetchCustomMetrics,
+  previewCustomMetricFormula,
+  updateCustomMetric,
+  validateCustomMetricFormula,
+  type CreateCustomMetricPayload,
+  type CustomMetricDataType,
+  type CustomMetricDefinition,
+  type CustomMetricFormat,
+  type CustomMetricStatus,
+  type CustomMetricType,
+  type UpdateCustomMetricPayload,
+} from '@/services/api';
 
 interface MetricVariable {
   name: string;
@@ -27,208 +22,271 @@ interface MetricVariable {
   description: string;
 }
 
+interface MetricFormState {
+  name: string;
+  displayName: string;
+  description: string;
+  type: CustomMetricType;
+  formula: string;
+  dataType: CustomMetricDataType;
+  format: CustomMetricFormat;
+  decimals: number;
+  prefix: string;
+  suffix: string;
+  status: CustomMetricStatus;
+}
+
 const AVAILABLE_VARIABLES: MetricVariable[] = [
   { name: 'clicks', displayName: 'Clicks', description: 'Total clicks' },
-  { name: 'conversions', displayName: 'Conversions', description: 'Total conversions' },
-  { name: 'revenue', displayName: 'Revenue', description: 'Total revenue' },
-  { name: 'cost', displayName: 'Cost', description: 'Total cost' },
-  { name: 'profit', displayName: 'Profit', description: 'Revenue - Cost' },
   { name: 'impressions', displayName: 'Impressions', description: 'Total impressions' },
-  { name: 'visitors', displayName: 'Visitors', description: 'Unique visitors' },
-  { name: 'leads', displayName: 'Leads', description: 'Total leads' },
+  { name: 'conversions', displayName: 'Conversions', description: 'Approved conversions' },
+  { name: 'revenue', displayName: 'Revenue', description: 'Total revenue' },
+  { name: 'spend', displayName: 'Spend', description: 'Total spend' },
+  { name: 'cost', displayName: 'Cost', description: 'Alias of spend' },
+  { name: 'profit', displayName: 'Profit', description: 'Revenue minus spend' },
+  { name: 'unique_visitors', displayName: 'Unique Visitors', description: 'Distinct visitors' },
+  { name: 'fraud_clicks', displayName: 'Fraud Clicks', description: 'Flagged fraudulent clicks' },
+  { name: 'avg_fraud_score', displayName: 'Avg Fraud Score', description: 'Average fraud score' },
+  { name: 'blacklist_rate', displayName: 'Blacklist Rate', description: 'Percent of blacklisted traffic' },
 ];
 
-const DATA_TYPES = [
+const DATA_TYPES: Array<{ value: CustomMetricDataType; label: string }> = [
   { value: 'number', label: 'Number' },
-  { value: 'percentage', label: 'Percentage' },
+  { value: 'percent', label: 'Percent' },
   { value: 'currency', label: 'Currency' },
 ];
 
-const CATEGORIES = [
-  { value: 'performance', label: 'Performance' },
-  { value: 'financial', label: 'Financial' },
-  { value: 'quality', label: 'Quality' },
+const METRIC_TYPES: Array<{ value: CustomMetricType; label: string }> = [
+  { value: 'calculated', label: 'Calculated' },
+  { value: 'aggregated', label: 'Aggregated' },
+];
+
+const FORMAT_OPTIONS: Array<{ value: CustomMetricFormat; label: string }> = [
+  { value: 'number', label: 'Number' },
+  { value: 'percent', label: 'Percent' },
+  { value: 'currency', label: 'Currency' },
   { value: 'custom', label: 'Custom' },
 ];
 
+const STATUS_OPTIONS: Array<{ value: CustomMetricStatus; label: string }> = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+];
+
+const INITIAL_FORM_STATE: MetricFormState = {
+  name: '',
+  displayName: '',
+  description: '',
+  type: 'calculated',
+  formula: '',
+  dataType: 'number',
+  format: 'number',
+  decimals: 2,
+  prefix: '',
+  suffix: '',
+  status: 'active',
+};
+
+const INITIAL_PREVIEW_CONTEXT: Record<string, number> = {
+  clicks: 1000,
+  impressions: 6000,
+  conversions: 80,
+  revenue: 960,
+  spend: 480,
+  cost: 480,
+  profit: 480,
+  unique_visitors: 820,
+  fraud_clicks: 42,
+  avg_fraud_score: 3.1,
+  blacklist_rate: 4.8,
+};
+
+function normalizeOptionalString(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function toFormState(metric?: CustomMetricDefinition | null): MetricFormState {
+  if (!metric) {
+    return { ...INITIAL_FORM_STATE };
+  }
+
+  return {
+    name: metric.name,
+    displayName: metric.displayName,
+    description: metric.description || '',
+    type: metric.type,
+    formula: metric.formula,
+    dataType: metric.dataType,
+    format: metric.format,
+    decimals: metric.decimals,
+    prefix: metric.prefix || '',
+    suffix: metric.suffix || '',
+    status: metric.status,
+  };
+}
+
 export default function CustomMetrics() {
-  const [metrics, setMetrics] = useState<CustomMetric[]>([]);
+  const [metrics, setMetrics] = useState<CustomMetricDefinition[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [editingMetric, setEditingMetric] = useState<CustomMetric | null>(null);
+  const [editingMetric, setEditingMetric] = useState<CustomMetricDefinition | null>(null);
   const [previewResult, setPreviewResult] = useState<{ value: number; formatted: string } | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState<MetricFormState>({ ...INITIAL_FORM_STATE });
+  const [previewContext, setPreviewContext] = useState<Record<string, number>>({ ...INITIAL_PREVIEW_CONTEXT });
 
-  const [formData, setFormData] = useState({
-    name: '',
-    displayName: '',
-    description: '',
-    formula: '',
-    dataType: 'number' as 'number' | 'percentage' | 'currency',
-    format: '',
-    category: 'custom',
-    enabled: true,
-  });
+  const refreshMetrics = async () => {
+    setLoading(true);
+    setError(null);
 
-  const [previewContext, setPreviewContext] = useState({
-    clicks: 1000,
-    conversions: 50,
-    revenue: 500,
-    cost: 200,
-    profit: 300,
-    impressions: 5000,
-    visitors: 800,
-    leads: 30,
-  });
-
-  useEffect(() => {
-    fetchMetrics();
-  }, []);
-
-  const fetchMetrics = async () => {
     try {
-      const response = await fetch('/api/custom-metrics');
-      const data = await response.json();
-      if (data.success) {
-        setMetrics(data.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch metrics:', error);
+      const result = await fetchCustomMetrics({ page: 1, pageSize: 200 });
+      setMetrics(result.list.filter((metric) => metric.status !== 'deleted'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
     } finally {
       setLoading(false);
     }
   };
 
-  const validateFormula = async (formula: string): Promise<boolean> => {
-    if (!formula.trim()) return false;
-    try {
-      const response = await fetch('/api/custom-metrics/validate-formula', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ formula }),
-      });
-      const data = await response.json();
-      if (data.success && data.data.valid) {
-        setValidationError(null);
-        return true;
-      } else {
-        setValidationError(data.data?.error || 'Invalid formula');
-        return false;
-      }
-    } catch {
-      setValidationError('Failed to validate formula');
-      return false;
-    }
-  };
+  useEffect(() => {
+    void refreshMetrics();
+  }, []);
 
-  const previewFormula = async () => {
-    if (!formData.formula.trim()) return;
-    try {
-      const response = await fetch('/api/custom-metrics/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ formula: formData.formula, context: previewContext }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setPreviewResult({
-          value: data.data.value,
-          formatted: data.data.formatted,
-        });
-      }
-    } catch (error) {
-      console.error('Preview failed:', error);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const isValid = await validateFormula(formData.formula);
-    if (!isValid) return;
-
-    try {
-      const url = editingMetric 
-        ? `/api/custom-metrics/${editingMetric.id}`
-        : '/api/custom-metrics';
-      const method = editingMetric ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        fetchMetrics();
-        closeModal();
-      }
-    } catch (error) {
-      console.error('Failed to save metric:', error);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this metric?')) return;
-    
-    try {
-      await fetch(`/api/custom-metrics/${id}`, { method: 'DELETE' });
-      fetchMetrics();
-    } catch (error) {
-      console.error('Failed to delete metric:', error);
-    }
-  };
-
-  const openModal = (metric?: CustomMetric) => {
-    if (metric) {
-      setEditingMetric(metric);
-      setFormData({
-        name: metric.name,
-        displayName: metric.displayName,
-        description: metric.description || '',
-        formula: metric.formula,
-        dataType: metric.dataType,
-        format: metric.format,
-        category: metric.category,
-        enabled: metric.enabled,
-      });
-    } else {
-      setEditingMetric(null);
-      setFormData({
-        name: '',
-        displayName: '',
-        description: '',
-        formula: '',
-        dataType: 'number',
-        format: '',
-        category: 'custom',
-        enabled: true,
-      });
-    }
-    setShowModal(true);
+  const openModal = (metric?: CustomMetricDefinition) => {
+    const next = toFormState(metric || null);
+    setEditingMetric(metric || null);
+    setFormData(next);
     setValidationError(null);
     setPreviewResult(null);
+    setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setEditingMetric(null);
+    setFormData({ ...INITIAL_FORM_STATE });
     setValidationError(null);
     setPreviewResult(null);
   };
 
+  const validateFormula = async (formula: string): Promise<boolean> => {
+    if (!formula.trim()) {
+      setValidationError('Formula is required');
+      return false;
+    }
+
+    try {
+      const result = await validateCustomMetricFormula(formula);
+      if (result.valid) {
+        setValidationError(null);
+        return true;
+      }
+
+      setValidationError(result.error || 'Invalid formula');
+      return false;
+    } catch (err) {
+      setValidationError(err instanceof Error ? err.message : 'Failed to validate formula');
+      return false;
+    }
+  };
+
+  const previewFormula = async () => {
+    if (!formData.formula.trim()) {
+      return;
+    }
+
+    try {
+      const result = await previewCustomMetricFormula(formData.formula, previewContext);
+      setPreviewResult({
+        value: result.value,
+        formatted: result.formatted,
+      });
+      setValidationError(result.error || null);
+    } catch (err) {
+      setValidationError(err instanceof Error ? err.message : 'Failed to preview formula');
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+
+    try {
+      const valid = await validateFormula(formData.formula);
+      if (!valid) {
+        return;
+      }
+
+      if (editingMetric) {
+        const payload: UpdateCustomMetricPayload = {
+          displayName: formData.displayName.trim(),
+          description: normalizeOptionalString(formData.description),
+          formula: formData.formula.trim(),
+          dataType: formData.dataType,
+          format: formData.format,
+          decimals: Math.max(0, Math.min(10, Number(formData.decimals) || 0)),
+          prefix: normalizeOptionalString(formData.prefix),
+          suffix: normalizeOptionalString(formData.suffix),
+          status: formData.status,
+        };
+        await updateCustomMetric(editingMetric.id, payload);
+      } else {
+        const payload: CreateCustomMetricPayload = {
+          name: formData.name.trim(),
+          displayName: formData.displayName.trim(),
+          description: normalizeOptionalString(formData.description),
+          type: formData.type,
+          formula: formData.formula.trim(),
+          dataType: formData.dataType,
+          format: formData.format,
+          decimals: Math.max(0, Math.min(10, Number(formData.decimals) || 0)),
+          prefix: normalizeOptionalString(formData.prefix),
+          suffix: normalizeOptionalString(formData.suffix),
+        };
+        await createCustomMetric(payload);
+      }
+
+      await refreshMetrics();
+      closeModal();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save metric');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (metric: CustomMetricDefinition) => {
+    if (!window.confirm(`Delete metric "${metric.displayName}"?`)) {
+      return;
+    }
+
+    try {
+      await deleteCustomMetric(metric.id);
+      await refreshMetrics();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete metric');
+    }
+  };
+
   const insertVariable = (variable: string) => {
-    setFormData(prev => ({
-      ...prev,
-      formula: prev.formula + `{{${variable}}}`,
-    }));
+    setFormData((prev) => {
+      const needsSpacer = prev.formula.length > 0 && !prev.formula.endsWith(' ');
+      return {
+        ...prev,
+        formula: `${prev.formula}${needsSpacer ? ' ' : ''}${variable}`,
+      };
+    });
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -238,61 +296,70 @@ export default function CustomMetrics() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Custom Metrics</h1>
-          <p className="text-gray-600 mt-1">Create and manage custom calculation metrics</p>
+          <p className="mt-1 text-gray-600">Configure reusable metrics for Reports and Export flows.</p>
         </div>
         <button
           onClick={() => openModal()}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="h-4 w-4" />
           Add Metric
         </button>
       </div>
 
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       <div className="grid gap-4">
         {metrics.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg border">
-            <Calculator className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <div className="rounded-lg border bg-white py-12 text-center">
+            <Calculator className="mx-auto mb-4 h-12 w-12 text-gray-400" />
             <p className="text-gray-600">No custom metrics yet</p>
-            <p className="text-sm text-gray-500 mt-1">Create your first custom metric to get started</p>
+            <p className="mt-1 text-sm text-gray-500">Create your first metric and use it directly in Reports.</p>
           </div>
         ) : (
           metrics.map((metric) => (
-            <div key={metric.id} className="bg-white rounded-lg border p-4">
+            <div key={metric.id} className="rounded-lg border bg-white p-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-gray-900">{metric.displayName}</h3>
-                    <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
-                      {metric.name}
+                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{metric.name}</span>
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs ${
+                        metric.status === 'active'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-orange-100 text-orange-700'
+                      }`}
+                    >
+                      {metric.status === 'active' ? 'Active' : 'Inactive'}
                     </span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      metric.enabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {metric.enabled ? 'Enabled' : 'Disabled'}
-                    </span>
+                    <span className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{metric.type}</span>
                   </div>
-                  {metric.description && (
-                    <p className="text-sm text-gray-600 mt-1">{metric.description}</p>
-                  )}
-                  <div className="mt-2 flex items-center gap-4 text-sm text-gray-500">
-                    <span className="font-mono bg-gray-50 px-2 py-1 rounded">{metric.formula}</span>
-                    <span>Type: {metric.dataType}</span>
-                    <span>Category: {metric.category}</span>
+                  {metric.description && <p className="mt-1 text-sm text-gray-600">{metric.description}</p>}
+                  <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                    <span className="rounded bg-gray-50 px-2 py-1 font-mono">{metric.formula}</span>
+                    <span>Format: {metric.format}</span>
+                    <span>Decimals: {metric.decimals}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => openModal(metric)}
-                    className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
+                    className="rounded p-2 text-gray-600 hover:bg-blue-50 hover:text-blue-600"
+                    disabled={metric.isSystem}
                   >
-                    <Edit2 className="w-4 h-4" />
+                    <Edit2 className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => handleDelete(metric.id)}
-                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded"
+                    onClick={() => void handleDelete(metric)}
+                    className="rounded p-2 text-gray-600 hover:bg-red-50 hover:text-red-600"
+                    disabled={metric.isSystem}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               </div>
@@ -302,180 +369,220 @@ export default function CustomMetrics() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">
-                {editingMetric ? 'Edit Metric' : 'Create Metric'}
-              </h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">{editingMetric ? 'Edit Metric' : 'Create Metric'}</h2>
               <button onClick={closeModal} className="text-gray-500 hover:text-gray-700">
-                <X className="w-5 h-5" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Name (ID)
-                  </label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Name (ID)</label>
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., roi_percentage"
+                    onChange={(event) => setFormData((prev) => ({ ...prev, name: event.target.value }))}
+                    className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. traffic_quality_index"
+                    disabled={Boolean(editingMetric)}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Display Name
-                  </label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Display Name</label>
                   <input
                     type="text"
                     value={formData.displayName}
-                    onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., ROI Percentage"
+                    onChange={(event) => setFormData((prev) => ({ ...prev, displayName: event.target.value }))}
+                    className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. Traffic Quality Index"
                     required
                   />
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Type</label>
+                  <select
+                    value={formData.type}
+                    onChange={(event) =>
+                      setFormData((prev) => ({ ...prev, type: event.target.value as CustomMetricType }))
+                    }
+                    className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    disabled={Boolean(editingMetric)}
+                  >
+                    {METRIC_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                  <select
+                    value={formData.status}
+                    onChange={(event) =>
+                      setFormData((prev) => ({ ...prev, status: event.target.value as CustomMetricStatus }))
+                    }
+                    className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status.value} value={status.value}>
+                        {status.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
                 <textarea
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  onChange={(event) => setFormData((prev) => ({ ...prev, description: event.target.value }))}
+                  className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
                   rows={2}
-                  placeholder="Describe what this metric calculates"
+                  placeholder="What does this metric represent?"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Formula
-                </label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Formula</label>
                 <textarea
                   value={formData.formula}
-                  onChange={(e) => setFormData({ ...formData, formula: e.target.value })}
-                  className={`w-full px-3 py-2 border rounded-lg font-mono focus:ring-2 focus:ring-blue-500 ${
+                  onChange={(event) => setFormData((prev) => ({ ...prev, formula: event.target.value }))}
+                  className={`w-full rounded-lg border px-3 py-2 font-mono focus:ring-2 focus:ring-blue-500 ${
                     validationError ? 'border-red-500' : ''
                   }`}
                   rows={3}
-                  placeholder="e.g., ({{revenue}} - {{cost}}) / {{cost}} * 100"
+                  placeholder="e.g. (revenue - spend) / clicks"
                   required
                 />
                 {validationError && (
-                  <p className="text-sm text-red-600 mt-1 flex items-center gap-1">
-                    <AlertCircle className="w-4 h-4" />
+                  <p className="mt-1 flex items-center gap-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4" />
                     {validationError}
                   </p>
                 )}
                 <div className="mt-2">
-                  <p className="text-xs text-gray-500 mb-1">Available variables (click to insert):</p>
+                  <p className="mb-1 text-xs text-gray-500">Available variables (click to insert):</p>
                   <div className="flex flex-wrap gap-1">
-                    {AVAILABLE_VARIABLES.map((v) => (
+                    {AVAILABLE_VARIABLES.map((variable) => (
                       <button
-                        key={v.name}
+                        key={variable.name}
                         type="button"
-                        onClick={() => insertVariable(v.name)}
-                        className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
-                        title={v.description}
+                        onClick={() => insertVariable(variable.name)}
+                        className="rounded bg-gray-100 px-2 py-1 text-xs hover:bg-gray-200"
+                        title={variable.description}
                       >
-                        {v.displayName}
+                        {variable.displayName}
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Data Type
-                  </label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Data Type</label>
                   <select
                     value={formData.dataType}
-                    onChange={(e) => setFormData({ ...formData, dataType: e.target.value as 'number' | 'percentage' | 'currency' })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    onChange={(event) =>
+                      setFormData((prev) => ({ ...prev, dataType: event.target.value as CustomMetricDataType }))
+                    }
+                    className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
                   >
-                    {DATA_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>{t.label}</option>
+                    {DATA_TYPES.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Category
-                  </label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Format</label>
                   <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    value={formData.format}
+                    onChange={(event) =>
+                      setFormData((prev) => ({ ...prev, format: event.target.value as CustomMetricFormat }))
+                    }
+                    className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
                   >
-                    {CATEGORIES.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
+                    {FORMAT_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
                     ))}
                   </select>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Format (optional)
-                </label>
-                <input
-                  type="text"
-                  value={formData.format}
-                  onChange={(e) => setFormData({ ...formData, format: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 0.00% or $0,0.00"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="enabled"
-                  checked={formData.enabled}
-                  onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                  className="rounded"
-                />
-                <label htmlFor="enabled" className="text-sm text-gray-700">Enabled</label>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Decimals</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={formData.decimals}
+                    onChange={(event) =>
+                      setFormData((prev) => ({ ...prev, decimals: Number(event.target.value) || 0 }))
+                    }
+                    className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Prefix / Suffix</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={formData.prefix}
+                      onChange={(event) => setFormData((prev) => ({ ...prev, prefix: event.target.value }))}
+                      className="w-full rounded-lg border px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                      placeholder="$"
+                    />
+                    <input
+                      type="text"
+                      value={formData.suffix}
+                      onChange={(event) => setFormData((prev) => ({ ...prev, suffix: event.target.value }))}
+                      className="w-full rounded-lg border px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                      placeholder="%"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="border-t pt-4">
-                <div className="flex items-center justify-between mb-2">
+                <div className="mb-2 flex items-center justify-between">
                   <h3 className="font-medium text-gray-900">Preview</h3>
-                  <button
-                    type="button"
-                    onClick={previewFormula}
-                    className="text-sm text-blue-600 hover:text-blue-700"
-                  >
+                  <button type="button" onClick={previewFormula} className="text-sm text-blue-600 hover:text-blue-700">
                     Calculate Preview
                   </button>
                 </div>
-                <div className="grid grid-cols-4 gap-2 mb-2">
+                <div className="mb-2 grid grid-cols-4 gap-2">
                   {Object.entries(previewContext).map(([key, value]) => (
                     <div key={key}>
                       <label className="text-xs text-gray-500">{key}</label>
                       <input
                         type="number"
                         value={value}
-                        onChange={(e) => setPreviewContext({ ...previewContext, [key]: Number(e.target.value) })}
-                        className="w-full px-2 py-1 border rounded text-sm"
+                        onChange={(event) =>
+                          setPreviewContext((prev) => ({
+                            ...prev,
+                            [key]: Number(event.target.value),
+                          }))
+                        }
+                        className="w-full rounded border px-2 py-1 text-sm"
                       />
                     </div>
                   ))}
                 </div>
                 {previewResult && (
-                  <div className="bg-green-50 border border-green-200 rounded p-3 flex items-center gap-2">
-                    <Check className="w-5 h-5 text-green-600" />
+                  <div className="flex items-center gap-2 rounded border border-green-200 bg-green-50 p-3">
+                    <Check className="h-5 w-5 text-green-600" />
                     <span className="font-mono text-green-800">
                       Result: {previewResult.formatted} ({previewResult.value})
                     </span>
@@ -483,19 +590,16 @@ export default function CustomMetrics() {
                 )}
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-                >
+              <div className="flex justify-end gap-3 border-t pt-4">
+                <button type="button" onClick={closeModal} className="rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100">
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  disabled={saving}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {editingMetric ? 'Update' : 'Create'}
+                  {saving ? 'Saving...' : editingMetric ? 'Update' : 'Create'}
                 </button>
               </div>
             </form>

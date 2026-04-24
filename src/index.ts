@@ -1,12 +1,12 @@
-/**
- * @fileoverview Workers 入口文件
- * @description Cloudflare Workers 主入口，处理所有 HTTP 请求和定时任务
+﻿/**
+ * @fileoverview Workers 鍏ュ彛鏂囦欢
+ * @description Cloudflare Workers 涓诲叆鍙ｏ紝澶勭悊鎵€鏈?HTTP 璇锋眰鍜屽畾鏃朵换鍔?
  * @module index
  * 
- * SSR 动态渲染：
- * - 页面请求时从 Durable Objects 获取初始数据
- * - 注入数据到 HTML，实现首屏即时渲染
- * - 客户端 Hydration 恢复交互
+ * SSR 鍔ㄦ€佹覆鏌擄細
+ * - 椤甸潰璇锋眰鏃朵粠 Durable Objects 鑾峰彇鍒濆鏁版嵁
+ * - 娉ㄥ叆鏁版嵁鍒?HTML锛屽疄鐜伴灞忓嵆鏃舵覆鏌?
+ * - 瀹㈡埛绔?Hydration 鎭㈠浜や簰
  */
 
 import { Hono } from 'hono';
@@ -17,7 +17,7 @@ import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
 import { AppError } from '@/middleware/error';
 
-// 定义 Hono 应用的变量类型
+// 瀹氫箟 Hono 搴旂敤鐨勫彉閲忕被鍨?
 type Variables = {
   user?: {
     userId: string;
@@ -46,7 +46,7 @@ import { matchAdminPage } from '@/services/page/admin-page-bundle';
 import { getWorkerVersionInfo } from '@/services/cache/version-utils';
 import { appendServerTiming, durationMs, nowMs } from '@/utils/server-timing';
 
-// 导出 Durable Objects（Cloudflare Workers 要求）
+// 瀵煎嚭 Durable Objects锛圕loudflare Workers 瑕佹眰锛?
 export {
   SessionDurableObject,
   CounterDurableObject,
@@ -345,7 +345,7 @@ async function serveCompressionDemo(request: Request, env: Env): Promise<Respons
 
 app.use('*', logger());
 
-// 调试：打印 Cloudflare cf 对象的所有字段，用于研究日志中的 fingerprint 字段
+// 璋冭瘯锛氭墦鍗?Cloudflare cf 瀵硅薄鐨勬墍鏈夊瓧娈碉紝鐢ㄤ簬鐮旂┒鏃ュ織涓殑 fingerprint 瀛楁
 app.use('/api/tracking/*', async (c, next) => {
   const cf = c.req.raw.cf;
   if (cf) {
@@ -363,7 +363,7 @@ app.use('/api/tracking/*', async (c, next) => {
     console.log('[DEBUG] cf.connectingIP:', cf.connectingIP);
     console.log('[DEBUG] cf.clientTrustScore:', cf.clientTrustScore);
     console.log('[DEBUG] cf.isEUCountry:', cf.isEUCountry);
-    // 打印所有嵌套对象
+    // 鎵撳嵃鎵€鏈夊祵濂楀璞?
     for (const key of Object.keys(cf)) {
       const value = (cf as Record<string, unknown>)[key];
       if (typeof value === 'object' && value !== null) {
@@ -375,7 +375,7 @@ app.use('/api/tracking/*', async (c, next) => {
   await next();
 });
 
-// CORS 配置 - 限制允许的域名
+// CORS 閰嶇疆 - 闄愬埗鍏佽鐨勫煙鍚?
 const ALLOWED_ORIGINS = [
   'https://cf-tracking.suyee88.workers.dev',
   'https://cf-tracking.pages.dev',
@@ -388,17 +388,17 @@ app.use(
   '*',
   cors({
     origin: (origin) => {
-      // 允许无 origin 的请求（如移动应用、Postman 等）
+      // 鍏佽鏃?origin 鐨勮姹傦紙濡傜Щ鍔ㄥ簲鐢ㄣ€丳ostman 绛夛級
       if (!origin) return '*';
-      // 检查是否在允许列表中
+      // 妫€鏌ユ槸鍚﹀湪鍏佽鍒楄〃涓?
       if (ALLOWED_ORIGINS.includes(origin)) {
         return origin;
       }
-      // 生产环境检查主域名
+      // 鐢熶骇鐜妫€鏌ヤ富鍩熷悕
       if (origin.endsWith('.suyee88.workers.dev') || origin.endsWith('.pages.dev')) {
         return origin;
       }
-      // 拒绝其他来源
+      // 鎷掔粷鍏朵粬鏉ユ簮
       return null;
     },
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -409,7 +409,7 @@ app.use(
   })
 );
 
-// 添加版本和部署信息到响应头
+// 娣诲姞鐗堟湰鍜岄儴缃蹭俊鎭埌鍝嶅簲澶?
 app.use('*', async (c, next) => {
   await next();
   
@@ -424,8 +424,8 @@ app.use('*', async (c, next) => {
   }
 });
 
-// API 认证保护 - 排除公开端点
-// 注意：跟踪链接和转化 postback 必须公开，否则联盟营销无法正常工作
+// API 璁よ瘉淇濇姢 - 鎺掗櫎鍏紑绔偣
+// 娉ㄦ剰锛氳窡韪摼鎺ュ拰杞寲 postback 蹇呴』鍏紑锛屽惁鍒欒仈鐩熻惀閿€鏃犳硶姝ｅ父宸ヤ綔
 const PUBLIC_PATHS = [
   '/health',
   '/sw.js',
@@ -487,7 +487,7 @@ function resolveAuthMode(env: Env): AuthMode {
 app.use('/api/*', async (c, next) => {
   const path = c.req.path;
   
-  // 检查是否是公开路径
+  // 妫€鏌ユ槸鍚︽槸鍏紑璺緞
   const isPublicPath = PUBLIC_PATHS.some(publicPath => path.startsWith(publicPath));
 
   if (isPublicPath) {
@@ -504,17 +504,17 @@ app.use('/api/*', async (c, next) => {
     return next();
   }
 
-  // ⚠️ 安全增强：移除 BYPASS_AUTH 绕过逻辑
-  // 生产环境强制要求所有 API 必须通过认证
-  // 开发环境可通过 wrangler dev 的本地环境变量临时启用（不推荐）
+  // 鈿狅笍 瀹夊叏澧炲己锛氱Щ闄?BYPASS_AUTH 缁曡繃閫昏緫
+  // 鐢熶骇鐜寮哄埗瑕佹眰鎵€鏈?API 蹇呴』閫氳繃璁よ瘉
+  // 寮€鍙戠幆澧冨彲閫氳繃 wrangler dev 鐨勬湰鍦扮幆澧冨彉閲忎复鏃跺惎鐢紙涓嶆帹鑽愶級
   // const bypassAuth = c.env.BYPASS_AUTH === 'true' || c.env.BYPASS_AUTH === true;
   // if (bypassAuth) {
-  //   console.warn('⚠️ [SECURITY] BYPASS_AUTH 已启用 - 生产环境禁止使用此模式');
+  //   console.warn('鈿狅笍 [SECURITY] BYPASS_AUTH 宸插惎鐢?- 鐢熶骇鐜绂佹浣跨敤姝ゆā寮?);
   //   c.set('user', { userId: 'test-user', email: 'test@example.com', exp: Date.now() / 1000 + 3600 });
   //   return next();
   // }
 
-  // 强制应用认证中间件（不可绕过）
+  // 寮哄埗搴旂敤璁よ瘉涓棿浠讹紙涓嶅彲缁曡繃锛?
   const authHeader = c.req.header('Authorization');
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -525,7 +525,7 @@ app.use('/api/*', async (c, next) => {
   const token = authHeader.substring(7);
   const secret = c.env.JWT_SECRET;
   
-  // 验证 JWT
+  // 楠岃瘉 JWT
   try {
     const parts = token.split('.');
     if (parts.length !== 3) {
@@ -535,7 +535,7 @@ app.use('/api/*', async (c, next) => {
     
     const [headerB64, payloadB64, signatureB64] = parts;
     
-    // 确保 JWT 部分存在
+    // 纭繚 JWT 閮ㄥ垎瀛樺湪
     if (!payloadB64 || !signatureB64) {
       c.status(401);
       return c.json({ success: false, error: 'Invalid token structure', code: 'UNAUTHORIZED' });
@@ -544,13 +544,13 @@ app.use('/api/*', async (c, next) => {
     const payloadJson = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'));
     const payload = JSON.parse(payloadJson);
     
-    // 检查过期时间
+    // 妫€鏌ヨ繃鏈熸椂闂?
     if (payload.exp && payload.exp < Date.now() / 1000) {
       c.status(401);
       return c.json({ success: false, error: 'Token expired', code: 'UNAUTHORIZED' });
     }
     
-    // 验证签名 (使用 Web Crypto API)
+    // 楠岃瘉绛惧悕 (浣跨敤 Web Crypto API)
     const encoder = new TextEncoder();
     const keyData = encoder.encode(secret);
     const signingKey = await crypto.subtle.importKey(
@@ -561,7 +561,7 @@ app.use('/api/*', async (c, next) => {
       ['verify']
     );
     
-    // Base64URL 解码签名
+    // Base64URL 瑙ｇ爜绛惧悕
     const base64 = signatureB64.replace(/-/g, '+').replace(/_/g, '/');
     const padding = '='.repeat((4 - (base64.length % 4)) % 4);
     const binaryString = atob(base64 + padding);
@@ -578,7 +578,7 @@ app.use('/api/*', async (c, next) => {
       return c.json({ success: false, error: 'Invalid token signature', code: 'UNAUTHORIZED' });
     }
     
-    // 设置用户信息到上下文
+    // 璁剧疆鐢ㄦ埛淇℃伅鍒颁笂涓嬫枃
     c.set('user', payload as { userId: string; email: string; exp: number });
     return next();
   } catch (error) {
@@ -706,10 +706,13 @@ import { createLandingPageRouter } from '@/services/landingPage/lp.routes';
 import { createLPPreloadRouter } from '@/services/landingPage/lp.preload.routes';
 import { createOfferRouter } from '@/services/offer/offer.routes';
 import { createTrafficSourceRouter } from '@/services/trafficSource/trafficSource.routes';
+import { createHostedAssetApiRouter } from '@/services/hostedAsset/hostedAsset.api.routes';
+import { createHostedAssetPublicRouter } from '@/services/hostedAsset/hostedAsset.public.routes';
 import { createAffiliateNetworkRouter } from '@/services/affiliateNetwork/affiliateNetwork.routes';
 import { createRuleRouter } from '@/services/rule/rule.routes';
 import { createPlatformRouter } from '@/services/platform/platform.routes';
 import { createTrackingRouter } from '@/services/tracking/tracking.routes';
+import { resolvePublicTrackingAlias } from '@/services/tracking/public-tracking-path';
 import { createAggregationRouter } from '@/services/analytics/aggregation.routes';
 import { createAnalyticsRouter } from '@/services/analytics/analytics.routes';
 import { createClickLogRouter } from '@/services/tracking/clickLog.routes';
@@ -733,7 +736,6 @@ import { registerFlowRuleRoutes } from '@/services/flow/flowRule.routes';
 import { registerReportRoutes } from '@/services/analytics/report.routes';
 import { createCacheUpdateRoutes } from '@/services/cache/cache-update-service';
 import { createSSECacheNotification } from '@/services/cache/sse-cache-notification';
-// Phase 1: 自动化优化系统路由
 import roiRoutes from '@/services/auto-optimization/roi.routes';
 import autoRulesRoutes from '@/services/auto-optimization/rules.routes';
 import operationsRoutes from '@/services/auto-optimization/operations.routes';
@@ -742,7 +744,6 @@ import authRoutes from '@/routes/auth.routes';
 import postbackRoutes from '@/routes/postback.routes';
 import postbackInboundRoutes from '@/routes/postback-inbound.routes';
 import proxyDetectionRoutes from '@/routes/proxyDetection.routes';
-import trafficFilterRoutes from '@/routes/trafficFilter.routes';
 import {
   serveAdminPageBootstrap,
   serveAdminPageBootstrapObject,
@@ -784,6 +785,7 @@ const RESERVED_MUTATION_SEGMENTS = new Set([
   'equalize',
   'test',
   'test-connection',
+  'macro-preview',
   'clone',
   'regenerate-token',
   'sync',
@@ -908,6 +910,7 @@ app.route('/api/landing-pages', createLandingPageRouter());
 app.route('/api/lp-preload', createLPPreloadRouter());
 app.route('/api/offers', createOfferRouter());
 app.route('/api/traffic-sources', createTrafficSourceRouter());
+app.route('/api/hosted-assets', createHostedAssetApiRouter());
 app.route('/api/affiliate-networks', createAffiliateNetworkRouter());
 app.route('/api/rules', createRuleRouter());
 app.route('/api/platforms', createPlatformRouter());
@@ -934,30 +937,32 @@ app.route('/api/param-mapping', registerParamMappingRoutes());
 app.route('/api/flow-rules', registerFlowRuleRoutes());
 app.route('/api/reports', registerReportRoutes());
 app.route('/api/proxy-detection', proxyDetectionRoutes);
-app.route('/api/traffic-filter', trafficFilterRoutes);
 
-// Phase 1: 自动化优化系统API路由
+
+
+// Phase 1: 鑷姩鍖栦紭鍖栫郴缁烝PI璺敱
 app.route('/api/auto-optimization', roiRoutes);
 app.route('/api/auto-optimization', autoRulesRoutes);
 app.route('/api/auto-optimization', operationsRoutes);
 app.route('/api/auto-optimization', approvalRoutes);
 
-// 认证路由（必须在认证中间件之前注册，因为登录接口不需要认证）
+// 璁よ瘉璺敱锛堝繀椤诲湪璁よ瘉涓棿浠朵箣鍓嶆敞鍐岋紝鍥犱负鐧诲綍鎺ュ彛涓嶉渶瑕佽璇侊級
 app.route('/api/auth', authRoutes);
 
-// Postback管理路由 (历史查询、统计、重试等)
+// Postback绠＄悊璺敱 (鍘嗗彶鏌ヨ銆佺粺璁°€侀噸璇曠瓑)
 app.route('/api/postbacks', postbackRoutes);
 
-// S2S Inbound Postback接收路由 (外部平台回传)
+// S2S Inbound Postback鎺ユ敹璺敱 (澶栭儴骞冲彴鍥炰紶)
 app.route('/api/webhook', postbackInboundRoutes);
+app.route('/hosted-assets', createHostedAssetPublicRouter());
 
-// 缓存更新API (延迟初始化)
+// 缂撳瓨鏇存柊API (寤惰繜鍒濆鍖?
 app.get('/api/cache-update', async (c) => {
   const cacheUpdateRoutes = createCacheUpdateRoutes(c.env);
   return cacheUpdateRoutes.handle(c.req.raw);
 });
 
-// SSE缓存更新通知端点
+// SSE缂撳瓨鏇存柊閫氱煡绔偣
 app.get('/api/cache/events', async (c) => {
   const userId = c.req.query('userId') || 'anonymous';
   const sseService = createSSECacheNotification(c.env);
@@ -1076,14 +1081,18 @@ async function serveSpaShellHtml(request: Request, env: Env): Promise<Response> 
   });
 }
 
-// 导出 app 供 SSR Worker 使用
+// 瀵煎嚭 app 渚?SSR Worker 浣跨敤
 export { app }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === '/traffic-filter' || url.pathname.startsWith('/traffic-filter/')) {
+      return Response.redirect(new URL('/blacklist', url.origin).toString(), 302);
+    }
     
-    // 记录部署版本信息
+    // 璁板綍閮ㄧ讲鐗堟湰淇℃伅
     if (env.CF_VERSION_METADATA) {
       console.log('[Deployment] Version info:', {
         versionId: env.CF_VERSION_METADATA.id,
@@ -1092,7 +1101,7 @@ export default {
       });
     }
     
-    // 处理 API 请求（包括 /api/* 和 /health）
+    // 澶勭悊 API 璇锋眰锛堝寘鎷?/api/* 鍜?/health锛?
     if (isAppControlRequest(url.pathname)) {
       return app.fetch(request, env, ctx);
     }
@@ -1105,35 +1114,25 @@ export default {
       return serveCompressionDemo(request, env);
     }
 
+    const campaignAlias = resolvePublicTrackingAlias(url.pathname);
+    if (campaignAlias) {
+      console.log('[Tracking] Campaign alias:', campaignAlias, 'Original URL:', request.url);
+      const trackingUrl = new URL('/api/tracking/click/' + campaignAlias, url.origin);
+      trackingUrl.search = url.search;
+      console.log('[Tracking] Tracking URL:', trackingUrl.toString());
+      const trackingRequest = new Request(trackingUrl.toString(), {
+        method: request.method,
+        headers: request.headers,
+        redirect: 'manual'
+      });
+      return app.fetch(trackingRequest, env, ctx);
+    }
+
     if (isHtmlPageRequest(request, url.pathname)) {
       return serveSpaShellHtml(request, env);
     }
     
-    // 处理直接通过域名访问的追踪请求
-    // 格式：http://custom-domain.com/:campaignAlias
-    // 注意：排除静态资源文件（.html, .svg, .png, .ico, .css, .js, .woff2 等）
-    if (url.pathname.length > 1 && !url.pathname.startsWith('/__')) {
-      const isStaticResource = /\.(html?|svg|png|ico|jpg|jpeg|gif|css|js|woff2|ttf|eot|otf|webmanifest)$/i.test(url.pathname);
-      
-      if (!isStaticResource) {
-        const pathParts = url.pathname.split('/').filter(Boolean);
-        if (pathParts.length === 1) {
-          const campaignAlias = pathParts[0];
-          console.log('[Tracking] Campaign alias:', campaignAlias, 'Original URL:', request.url);
-          const trackingUrl = new URL('/api/tracking/click/' + campaignAlias, url.origin);
-          trackingUrl.search = url.search;
-          console.log('[Tracking] Tracking URL:', trackingUrl.toString());
-          const trackingRequest = new Request(trackingUrl.toString(), {
-            method: request.method,
-            headers: request.headers,
-            redirect: 'manual'
-          });
-          return app.fetch(trackingRequest, env, ctx);
-        }
-      }
-    }
-    
-    // 所有其他请求（静态资源）直接交给 ASSETS 处理
+    // 鎵€鏈夊叾浠栬姹傦紙闈欐€佽祫婧愶級鐩存帴浜ょ粰 ASSETS 澶勭悊
     return env.ASSETS.fetch(request);
   },
   async queue(batch: MessageBatch<CacheRefreshMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
@@ -1141,11 +1140,11 @@ export default {
   },
 
   /**
-   * 定时任务处理器 - Cron Trigger
-   * - 每5分钟: 刷新实时缓存数据 + 平台规则评估
-   * - 每小时: 刷新小时缓存数据
-   * - 每天0点: 刷新每日缓存数据
-   * - 每天凌晨2点: 执行数据聚合
+   * 瀹氭椂浠诲姟澶勭悊鍣?- Cron Trigger
+   * - 姣?鍒嗛挓: 鍒锋柊瀹炴椂缂撳瓨鏁版嵁 + 骞冲彴瑙勫垯璇勪及
+   * - 姣忓皬鏃? 鍒锋柊灏忔椂缂撳瓨鏁版嵁
+   * - 姣忓ぉ0鐐? 鍒锋柊姣忔棩缂撳瓨鏁版嵁
+   * - 姣忓ぉ鍑屾櫒2鐐? 鎵ц鏁版嵁鑱氬悎
    */
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     console.log(`[Cron] Starting scheduled task at ${new Date().toISOString()}`);
@@ -1154,16 +1153,16 @@ export default {
     const cronExpression = event.cron;
     const cacheUpdate = createCacheUpdateRoutes(env);
 
-    // 每5分钟: 刷新实时数据 + 平台规则评估
+    // 姣?鍒嗛挓: 鍒锋柊瀹炴椂鏁版嵁 + 骞冲彴瑙勫垯璇勪及
     if (cronExpression === '*/5 * * * *') {
-      // 刷新实时缓存
+      // 鍒锋柊瀹炴椂缂撳瓨
       ctx.waitUntil(
         cacheUpdate.handleScheduled(event).catch(err => 
           console.error(`[Cron] Cache refresh failed:`, err)
         )
       );
       
-      // 平台规则评估
+      // 骞冲彴瑙勫垯璇勪及
       ctx.waitUntil(
         (async () => {
           try {
@@ -1176,7 +1175,7 @@ export default {
       );
     }
 
-    // 每小时: 刷新小时缓存数据
+    // 姣忓皬鏃? 鍒锋柊灏忔椂缂撳瓨鏁版嵁
     if (cronExpression === '0 * * * *') {
       ctx.waitUntil(
         cacheUpdate.handleScheduled(event).catch(err => 
@@ -1185,7 +1184,7 @@ export default {
       );
     }
 
-    // 每天0点: 刷新每日缓存数据
+    // 姣忓ぉ0鐐? 鍒锋柊姣忔棩缂撳瓨鏁版嵁
     if (cronExpression === '0 0 * * *') {
       ctx.waitUntil(
         cacheUpdate.handleScheduled(event).catch(err => 
@@ -1194,7 +1193,7 @@ export default {
       );
     }
 
-    // 每天凌晨2点: 执行数据聚合
+    // 姣忓ぉ鍑屾櫒2鐐? 鎵ц鏁版嵁鑱氬悎
     if (cronExpression === '0 2 * * *') {
       ctx.waitUntil(
         (async () => {
@@ -1216,5 +1215,6 @@ export default {
     }
   },
 };
+
 
 

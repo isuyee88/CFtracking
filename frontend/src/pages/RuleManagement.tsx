@@ -13,7 +13,6 @@ import {
   Trash2, 
   Edit3, 
   X,
-  ChevronDown,
   Search,
   RefreshCw,
   AlertCircle,
@@ -25,7 +24,13 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { 
   fetchRules, createRule, updateRule, deleteRule, enableRule, disableRule,
-  type Rule, type CreateRuleDTO, type UpdateRuleDTO 
+  fetchRuleConflicts,
+  runRuleTestBench,
+  type Rule,
+  type CreateRuleDTO,
+  type UpdateRuleDTO,
+  type RuleConflictReport,
+  type RuleTestBenchResult,
 } from '../services/api';
 import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
 
@@ -53,6 +58,14 @@ export const RuleManagement = () => {
   );
   const [total, setTotal] = useState(Number(bootstrap?.data?.meta?.total || 0));
   const [saving, setSaving] = useState(false);
+  const [conflictReport, setConflictReport] = useState<RuleConflictReport | null>(null);
+  const [conflictLoading, setConflictLoading] = useState(false);
+  const [testBenchInput, setTestBenchInput] = useState<string>(
+    '{\n  "roi": -0.25,\n  "clicks": 120,\n  "conversions": 1,\n  "country": "US"\n}'
+  );
+  const [testBenchRunning, setTestBenchRunning] = useState(false);
+  const [testBenchResult, setTestBenchResult] = useState<RuleTestBenchResult | null>(null);
+  const [testBenchError, setTestBenchError] = useState<string | null>(null);
   const skipInitialBootstrapLoadRef = useRef(Boolean(bootstrap?.data?.rules));
 
   const [formData, setFormData] = useState({
@@ -109,6 +122,19 @@ export const RuleManagement = () => {
     }
   }, [currentQuery, selectedStatus, selectedType, setSearchParams]);
 
+  const loadConflictReport = useCallback(async () => {
+    setConflictLoading(true);
+    try {
+      const report = await fetchRuleConflicts();
+      setConflictReport(report);
+    } catch (err) {
+      console.error('Failed to load rule conflict report:', err);
+      setConflictReport(null);
+    } finally {
+      setConflictLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (skipInitialBootstrapLoadRef.current) {
       skipInitialBootstrapLoadRef.current = false;
@@ -117,6 +143,10 @@ export const RuleManagement = () => {
 
     loadRules();
   }, [loadRules]);
+
+  useEffect(() => {
+    void loadConflictReport();
+  }, [loadConflictReport, rules.length]);
 
   const filteredRules = rules.filter(rule => 
     rule.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -159,6 +189,7 @@ export const RuleManagement = () => {
       await deleteRule(id);
       setRules(prev => prev.filter(r => r.id !== id));
       setTotal(prev => prev - 1);
+      await loadConflictReport();
     } catch (err) {
       console.error('Failed to delete rule:', err);
       alert('Failed to delete rule');
@@ -169,6 +200,7 @@ export const RuleManagement = () => {
     try {
       const updated = rule.enabled ? await disableRule(rule.id) : await enableRule(rule.id);
       setRules(prev => prev.map(r => r.id === rule.id ? updated : r));
+      await loadConflictReport();
     } catch (err) {
       console.error('Failed to toggle rule status:', err);
       alert('Failed to toggle rule status');
@@ -211,11 +243,33 @@ export const RuleManagement = () => {
       }
 
       setIsModalOpen(false);
+      await loadConflictReport();
     } catch (err) {
       console.error('Failed to save rule:', err);
       alert(err instanceof Error ? err.message : 'Failed to save rule');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRunTestBench = async () => {
+    setTestBenchRunning(true);
+    setTestBenchError(null);
+    try {
+      const parsed = JSON.parse(testBenchInput);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setTestBenchError('Test context must be a JSON object.');
+        return;
+      }
+
+      const result = await runRuleTestBench({
+        context: parsed as Record<string, unknown>,
+      });
+      setTestBenchResult(result);
+    } catch (err) {
+      setTestBenchError(err instanceof Error ? err.message : 'Failed to run test bench');
+    } finally {
+      setTestBenchRunning(false);
     }
   };
 
@@ -247,8 +301,8 @@ export const RuleManagement = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-display font-bold text-fg-default">Rule Management</h2>
-          <p className="text-sm text-fg-muted">Automate campaign optimization with intelligent rules</p>
+          <h2 className="text-2xl font-display font-bold text-fg-default">Autorules</h2>
+          <p className="text-sm text-fg-muted">Automate traffic governance and campaign optimization with reusable rules</p>
         </div>
         <div className="flex items-center gap-2">
           <button 
@@ -305,6 +359,121 @@ export const RuleManagement = () => {
           <div className="h-6 w-px bg-border-default" />
           <span className="text-xs text-fg-muted">{total} total</span>
         </div>
+      </div>
+
+      {/* Conflict Detection */}
+      <div className="bg-surface rounded-lg border border-border-default p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold uppercase tracking-widest text-fg-default">Rule Conflict Detection</h3>
+            <p className="text-xs text-fg-muted mt-1">
+              Detect duplicate priorities, overlapping conditions, and contradictory actions.
+            </p>
+          </div>
+          <button
+            onClick={() => void loadConflictReport()}
+            className="px-3 py-1.5 text-xs border border-border-default rounded hover:bg-surface-container"
+            disabled={conflictLoading}
+          >
+            {conflictLoading ? 'Checking...' : 'Recheck'}
+          </button>
+        </div>
+        {conflictReport ? (
+          <>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
+              <span>Total active rules: {conflictReport.totalRules}</span>
+              <span>Conflicts: {conflictReport.conflictCount}</span>
+              <span>High severity: {conflictReport.highSeverityCount}</span>
+            </div>
+            {conflictReport.conflicts.length > 0 ? (
+              <div className="space-y-2">
+                {conflictReport.conflicts.map((conflict, index) => (
+                  <div
+                    key={`${conflict.type}-${conflict.priority}-${index}`}
+                    className={cn(
+                      'rounded border px-3 py-2 text-sm',
+                      conflict.severity === 'high'
+                        ? 'border-danger/30 bg-danger/10 text-danger'
+                        : 'border-warning/30 bg-warning/10 text-warning'
+                    )}
+                  >
+                    <div className="font-medium">
+                      [{conflict.type}] priority {conflict.priority}
+                    </div>
+                    <div className="mt-1 text-xs opacity-90">{conflict.details}</div>
+                    <div className="mt-1 text-xs">Rules: {conflict.ruleNames.join(', ')}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+                No conflict detected in active rules.
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-sm text-fg-muted">Conflict report unavailable.</div>
+        )}
+      </div>
+
+      {/* Decision Path Test Bench */}
+      <div className="bg-surface rounded-lg border border-border-default p-4 space-y-3">
+        <div>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-fg-default">Decision Path Test Bench</h3>
+          <p className="text-xs text-fg-muted mt-1">
+            Simulate runtime context to inspect matched rules and winning action path.
+          </p>
+        </div>
+        <textarea
+          rows={7}
+          value={testBenchInput}
+          onChange={(event) => setTestBenchInput(event.target.value)}
+          className="w-full rounded border border-border-default bg-surface-container px-3 py-2 text-xs font-mono text-fg-default focus:outline-none focus:border-accent-fg"
+          placeholder='{"roi": -0.2, "clicks": 120, "country": "US"}'
+        />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void handleRunTestBench()}
+            disabled={testBenchRunning}
+            className="px-3 py-1.5 text-xs bg-accent-fg text-white rounded hover:bg-accent-fg/90 disabled:opacity-50"
+          >
+            {testBenchRunning ? 'Running...' : 'Run Test Bench'}
+          </button>
+          {testBenchError ? <span className="text-xs text-danger">{testBenchError}</span> : null}
+        </div>
+
+        {testBenchResult ? (
+          <div className="space-y-2 rounded border border-border-default p-3 bg-surface-container">
+            <div className="text-xs text-fg-muted">Evaluated at: {new Date(testBenchResult.evaluatedAt).toLocaleString()}</div>
+            <div className="text-sm">
+              Winner:{' '}
+              {testBenchResult.winner ? (
+                <span className="font-medium text-success">
+                  {testBenchResult.winner.ruleName} (P{testBenchResult.winner.priority}) → {testBenchResult.winner.actionSummary}
+                </span>
+              ) : (
+                <span className="text-warning">No rule matched.</span>
+              )}
+            </div>
+            <div className="space-y-1">
+              {testBenchResult.ruleResults.map((result) => (
+                <div
+                  key={result.ruleId}
+                  className={cn(
+                    'rounded border px-2 py-1 text-xs',
+                    result.matched
+                      ? 'border-success/30 bg-success/10 text-success'
+                      : result.skipped
+                        ? 'border-border-default bg-surface text-fg-muted'
+                        : 'border-border-default bg-surface-container-low text-fg-default'
+                  )}
+                >
+                  {result.ruleName} (P{result.priority}) - {result.skipped ? result.reason : result.matched ? 'Matched' : 'Not matched'}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Rules Table */}

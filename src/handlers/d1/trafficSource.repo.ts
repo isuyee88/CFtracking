@@ -9,6 +9,9 @@ import type { D1Database } from './index';
 import type { TrafficSource, CreateTrafficSourceDTO, UpdateTrafficSourceDTO } from '@/types/trafficSource';
 import { IdService } from '@/services/id.service';
 
+export const GENERAL_TRAFFIC_SOURCE_ID = 'general';
+export const GENERAL_TRAFFIC_SOURCE_NAME = 'General Traffic Source';
+
 export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
   private idService: IdService;
 
@@ -72,6 +75,42 @@ export class TrafficSourceRepository extends BaseRepository<TrafficSource> {
       trafficSource: this.transform(result),
       storageId: result.id,
     };
+  }
+
+  async ensureGeneralTrafficSource(): Promise<{ trafficSource: TrafficSource; storageId: string }> {
+    const existing = await this.findByIdentifierWithStorageId(GENERAL_TRAFFIC_SOURCE_ID);
+    if (existing) {
+      return existing;
+    }
+
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(`
+        INSERT OR IGNORE INTO trafficSources (
+          id, name, type, status, postbackUrl, costModel, costValue, currency, parameters, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        GENERAL_TRAFFIC_SOURCE_ID,
+        GENERAL_TRAFFIC_SOURCE_NAME,
+        'other',
+        'active',
+        null,
+        'cpc',
+        0,
+        'USD',
+        '{}',
+        now,
+        now
+      )
+      .run();
+
+    const ensured = await this.findByIdentifierWithStorageId(GENERAL_TRAFFIC_SOURCE_ID);
+    if (!ensured) {
+      throw new Error('Failed to create general traffic source');
+    }
+
+    return ensured;
   }
 
   /**

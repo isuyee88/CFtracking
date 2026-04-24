@@ -6,7 +6,10 @@
 
 import React, { useState } from 'react';
 import { Check, X, Loader2, Plug } from 'lucide-react';
-import { testTrafficSourceConnection } from '../services/api';
+import {
+  testTrafficSourceConnection,
+  type TrafficSourceApiConnectionDiagnostics,
+} from '../services/api';
 
 interface ApiConfigFormProps {
   apiBaseUrl: string;
@@ -25,6 +28,7 @@ interface TestResult {
     balance?: number;
     currency?: string;
   };
+  diagnostics?: TrafficSourceApiConnectionDiagnostics;
 }
 
 export const ApiConfigForm: React.FC<ApiConfigFormProps> = ({
@@ -59,13 +63,16 @@ export const ApiConfigForm: React.FC<ApiConfigFormProps> = ({
       if (response.success) {
         setTestResult({
           success: true,
-          message: response.data?.message || 'Connection successful!',
-          details: response.data?.details,
+          message: response.message || 'Connection successful!',
+          details: response.details,
+          diagnostics: response.diagnostics,
         });
       } else {
         setTestResult({
           success: false,
-          message: response.error?.message || 'Connection failed',
+          message: response.message || 'Connection failed',
+          details: response.details,
+          diagnostics: response.diagnostics,
         });
       }
     } catch (error) {
@@ -166,6 +173,20 @@ export const ApiConfigForm: React.FC<ApiConfigFormProps> = ({
               </p>
             )}
           </div>
+        </div>
+      )}
+
+      {testResult?.diagnostics && (
+        <div className="p-3 bg-surface-container/40 rounded-sm text-xs text-on-surface-variant space-y-1">
+          {testResult.diagnostics.platformType && <p>Platform: {testResult.diagnostics.platformType}</p>}
+          {testResult.diagnostics.baseUrl && <p>Base URL: {testResult.diagnostics.baseUrl}</p>}
+          {testResult.diagnostics.httpStatus !== undefined && (
+            <p>HTTP Status: {testResult.diagnostics.httpStatus}</p>
+          )}
+          {testResult.diagnostics.durationMs !== undefined && (
+            <p>Latency: {testResult.diagnostics.durationMs}ms</p>
+          )}
+          {testResult.diagnostics.hint && <p className="text-warning">Hint: {testResult.diagnostics.hint}</p>}
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CheckCircle2,
   ChevronDown,
@@ -10,6 +10,7 @@ import {
   Search,
   TrendingUp,
   Wallet,
+  X,
 } from 'lucide-react';
 import { getDateRange, QuickDateRangePicker, type DateRangeValue } from '@/components/DateRangePicker';
 import { GroupByFilter, filterByGroupBy } from '@/components/GroupByFilter';
@@ -17,6 +18,7 @@ import type { GroupByOption, GroupByState } from '@/types/filter';
 import {
   fetchConversions,
   fetchConversionStats,
+  createExportTask,
   updateConversionStatus,
   type ConversionLogItem,
   type ConversionLogParams,
@@ -46,6 +48,8 @@ const EMPTY_STATS: ConversionStats = {
   totalPayout: 0,
 };
 
+const CONVERSIONS_LOG_FILTER_STORAGE_KEY = 'cftracking.conversions-log.filters.v1';
+
 function cn(...inputs: Array<string | false | null | undefined>) {
   return inputs.filter(Boolean).join(' ');
 }
@@ -64,6 +68,7 @@ function formatTime(value: string) {
 }
 
 export default function ConversionsLog() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentQuery = searchParams.toString();
   const bootstrap = readBootstrapPage<{
@@ -71,14 +76,22 @@ export default function ConversionsLog() {
     stats?: ConversionStats;
     pagination?: { page?: number; pageSize?: number; total?: number; totalPages?: number };
   }>('conversions');
-  const [searchQuery, setSearchQuery] = useState('');
+  const initialSearchFromUrl = searchParams.get('search') || '';
+  const initialStatusFromUrl = searchParams.get('status') as 'all' | ConversionStatus | null;
+  const initialPageFromUrl = Number(searchParams.get('page') || 0);
+  const initialPageSizeFromUrl = Number(searchParams.get('pageSize') || 0);
+  const initialStartDateFromUrl = searchParams.get('startDate') || '';
+  const initialEndDateFromUrl = searchParams.get('endDate') || '';
+  const [searchQuery, setSearchQuery] = useState(initialSearchFromUrl);
   const [statusFilter, setStatusFilter] = useState<'all' | ConversionStatus>(
-    (bootstrap?.scope?.status as 'all' | ConversionStatus) || 'all'
+    initialStatusFromUrl || (bootstrap?.scope?.status as 'all' | ConversionStatus) || 'all'
   );
   const [datePreset, setDatePreset] = useState('last7days');
   const [dateRange, setDateRange] = useState<DateRangeValue>(
-    typeof bootstrap?.scope?.startDate === 'string' && typeof bootstrap?.scope?.endDate === 'string'
-      ? { startDate: bootstrap.scope.startDate, endDate: bootstrap.scope.endDate }
+    initialStartDateFromUrl && initialEndDateFromUrl
+      ? { startDate: initialStartDateFromUrl, endDate: initialEndDateFromUrl }
+      : typeof bootstrap?.scope?.startDate === 'string' && typeof bootstrap?.scope?.endDate === 'string'
+        ? { startDate: bootstrap.scope.startDate, endDate: bootstrap.scope.endDate }
       : getDateRange('last7days')
   );
   const [groupByStates, setGroupByStates] = useState<GroupByState[]>([]);
@@ -88,15 +101,77 @@ export default function ConversionsLog() {
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
   const [stats, setStats] = useState<ConversionStats>((bootstrap?.data?.stats as ConversionStats) || EMPTY_STATS);
   const [loading, setLoading] = useState(false);
+  const [queueingFormat, setQueueingFormat] = useState<'csv' | 'excel' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const skipInitialBootstrapLoadRef = useRef(Boolean(bootstrap?.data?.conversions));
   const [pagination, setPagination] = useState({
-    page: Number(bootstrap?.data?.pagination?.page || 1),
-    pageSize: Number(bootstrap?.data?.pagination?.pageSize || 20),
+    page: initialPageFromUrl > 0 ? initialPageFromUrl : Number(bootstrap?.data?.pagination?.page || 1),
+    pageSize: initialPageSizeFromUrl > 0 ? initialPageSizeFromUrl : Number(bootstrap?.data?.pagination?.pageSize || 20),
     total: Number(bootstrap?.data?.pagination?.total || 0),
     totalPages: Number(bootstrap?.data?.pagination?.totalPages || 0),
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(CONVERSIONS_LOG_FILTER_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const persisted = JSON.parse(raw) as {
+        searchQuery?: string;
+        statusFilter?: 'all' | ConversionStatus;
+        groupByStates?: GroupByState[];
+        pageSize?: number;
+        dateRange?: DateRangeValue;
+      };
+
+      if (!initialSearchFromUrl && typeof persisted.searchQuery === 'string') {
+        setSearchQuery(persisted.searchQuery);
+      }
+      if (!initialStatusFromUrl && persisted.statusFilter) {
+        setStatusFilter(persisted.statusFilter);
+      }
+      if (!initialPageSizeFromUrl && typeof persisted.pageSize === 'number' && persisted.pageSize > 0) {
+        setPagination((current) => ({ ...current, pageSize: persisted.pageSize }));
+      }
+      if (Array.isArray(persisted.groupByStates)) {
+        setGroupByStates(persisted.groupByStates);
+      }
+      if (!initialStartDateFromUrl && !initialEndDateFromUrl && persisted.dateRange?.startDate && persisted.dateRange?.endDate) {
+        setDateRange(persisted.dateRange);
+      }
+    } catch {
+      // Ignore localStorage failures in restricted contexts.
+    }
+  }, [initialEndDateFromUrl, initialPageSizeFromUrl, initialSearchFromUrl, initialStartDateFromUrl, initialStatusFromUrl]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        CONVERSIONS_LOG_FILTER_STORAGE_KEY,
+        JSON.stringify({
+          searchQuery,
+          statusFilter,
+          groupByStates,
+          pageSize: pagination.pageSize,
+          dateRange,
+        })
+      );
+    } catch {
+      // Ignore localStorage failures in restricted contexts.
+    }
+  }, [dateRange, groupByStates, pagination.pageSize, searchQuery, statusFilter]);
 
   const loadConversions = useCallback(async () => {
     setLoading(true);
@@ -227,6 +302,100 @@ export default function ConversionsLog() {
     window.URL.revokeObjectURL(url);
   }, [displayedRows]);
 
+  const handleQueueExport = useCallback(
+    async (format: 'csv' | 'excel') => {
+      setQueueingFormat(format);
+      setError(null);
+      setNotice(null);
+
+      const dateOnlyStart = String(dateRange.startDate).split('T')[0] || '';
+      const dateOnlyEnd = String(dateRange.endDate).split('T')[0] || '';
+
+      try {
+        await createExportTask({
+          name: `conversions-log-${dateOnlyStart}-${dateOnlyEnd}-${format}`,
+          entityType: 'conversions',
+          format,
+          dateRange: {
+            startDate: dateOnlyStart,
+            endDate: dateOnlyEnd,
+          },
+          filters: {
+            search: searchQuery || undefined,
+            status: statusFilter === 'all' ? undefined : statusFilter,
+            groupBy: groupByStates,
+          },
+          fields: ['conversionId', 'clickId', 'campaignId', 'offerName', 'timestamp', 'status', 'revenue', 'payout'],
+        });
+        setNotice(`Queued ${format.toUpperCase()} export. Open Export Queue to monitor progress.`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to queue export task');
+      } finally {
+        setQueueingFormat(null);
+      }
+    },
+    [dateRange.endDate, dateRange.startDate, groupByStates, searchQuery, statusFilter]
+  );
+
+  const activeFilters = useMemo(() => {
+    const items: Array<{ key: string; label: string; value: string }> = [];
+    if (searchQuery.trim()) {
+      items.push({ key: 'search', label: 'Search', value: searchQuery.trim() });
+    }
+    if (statusFilter !== 'all') {
+      items.push({ key: 'status', label: 'Status', value: statusFilter });
+    }
+    if (dateRange.startDate && dateRange.endDate) {
+      items.push({
+        key: 'date',
+        label: 'Date',
+        value: `${String(dateRange.startDate).split('T')[0]} → ${String(dateRange.endDate).split('T')[0]}`,
+      });
+    }
+    groupByStates.forEach((group, index) => {
+      if (group.field && group.value) {
+        items.push({
+          key: `group-${index}`,
+          label: `Group ${index + 1}`,
+          value: `${group.field} = ${group.value}`,
+        });
+      }
+    });
+    return items;
+  }, [dateRange.endDate, dateRange.startDate, groupByStates, searchQuery, statusFilter]);
+
+  const removeActiveFilter = useCallback((key: string) => {
+    if (key === 'search') {
+      setSearchQuery('');
+      setPagination((current) => ({ ...current, page: 1 }));
+      return;
+    }
+    if (key === 'status') {
+      setStatusFilter('all');
+      setPagination((current) => ({ ...current, page: 1 }));
+      return;
+    }
+    if (key === 'date') {
+      setDatePreset('last7days');
+      setDateRange(getDateRange('last7days'));
+      setPagination((current) => ({ ...current, page: 1 }));
+      return;
+    }
+    if (key.startsWith('group-')) {
+      const index = Number(key.replace('group-', ''));
+      setGroupByStates((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    }
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setGroupByStates([]);
+    setDatePreset('last7days');
+    setDateRange(getDateRange('last7days'));
+    setPagination((current) => ({ ...current, page: 1 }));
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -240,15 +409,33 @@ export default function ConversionsLog() {
           </button>
           <button
             onClick={handleExport}
-            disabled={displayedRows.length === 0}
+            disabled={displayedRows.length === 0 || queueingFormat !== null}
             aria-label="Export conversions log"
             className="flex items-center gap-2 rounded-sm bg-secondary px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-primary disabled:opacity-50"
           >
             <Download size={16} />
             Export
           </button>
+          <button
+            onClick={() => void handleQueueExport('csv')}
+            disabled={displayedRows.length === 0 || queueingFormat !== null}
+            className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-surface disabled:opacity-50"
+          >
+            <Download size={16} />
+            {queueingFormat === 'csv' ? 'Queueing CSV...' : 'Queue CSV'}
+          </button>
+          <button
+            onClick={() => navigate('/exported-reports')}
+            className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-surface"
+          >
+            Export Queue
+          </button>
         </div>
       </div>
+
+      {notice ? (
+        <div className="rounded-sm border border-success/20 bg-success/10 p-3 text-sm text-success">{notice}</div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <StatCard icon={<CheckCircle2 size={20} />} label="Total Conversions" value={stats.totalConversions.toString()} tone="secondary" />
@@ -310,6 +497,31 @@ export default function ConversionsLog() {
           onChange={setGroupByStates}
           maxLevels={3}
         />
+
+        {activeFilters.length > 0 ? (
+          <div className="space-y-2 border-t border-outline-variant/10 pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Active Filters</span>
+              <button type="button" onClick={clearAllFilters} className="text-xs text-error hover:underline">
+                Clear all
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {activeFilters.map((filter) => (
+                <button
+                  type="button"
+                  key={filter.key}
+                  onClick={() => removeActiveFilter(filter.key)}
+                  className="inline-flex items-center gap-1 rounded-sm bg-surface-container px-2 py-1 text-xs text-on-surface hover:bg-surface"
+                >
+                  <span className="font-semibold">{filter.label}:</span>
+                  <span>{filter.value}</span>
+                  <X size={12} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {error && <div className="rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>}
@@ -351,9 +563,25 @@ export default function ConversionsLog() {
                       <td className="px-4 py-3 text-xs text-on-surface-variant">{row.offerName}</td>
                       <td className="px-4 py-3 text-xs font-mono font-bold text-primary">{formatCurrency(Number(row.revenue || 0), row.currency || 'USD')}</td>
                       <td className="px-4 py-3">
-                        <span className={cn('rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest', row.status === 'approved' ? 'bg-emerald-200 text-emerald-900' : row.status === 'pending' ? 'bg-amber-200 text-amber-900' : 'bg-error/15 text-error')}>
-                          {row.status}
-                        </span>
+                        <select
+                          value={row.status}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => void handleStatusUpdate(row.conversionId, event.target.value as ConversionStatus)}
+                          disabled={updatingId === row.conversionId}
+                          aria-label={`Update status for conversion ${row.conversionId}`}
+                          className={cn(
+                            'rounded-sm border px-2 py-1 text-[10px] font-bold uppercase tracking-widest',
+                            row.status === 'approved'
+                              ? 'border-emerald-300 bg-emerald-100 text-emerald-900'
+                              : row.status === 'pending'
+                                ? 'border-amber-300 bg-amber-100 text-amber-900'
+                                : 'border-error/30 bg-error/10 text-error'
+                          )}
+                        >
+                          <option value="approved">Approved</option>
+                          <option value="pending">Pending</option>
+                          <option value="rejected">Rejected</option>
+                        </select>
                       </td>
                     </tr>
                     {expandedRows.includes(row.conversionId) && (
@@ -375,20 +603,9 @@ export default function ConversionsLog() {
                             <div className="text-sm text-on-surface-variant">
                               Payout: <span className="font-mono font-bold text-secondary">{formatCurrency(Number(row.payout || 0), row.currency || 'USD')}</span>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <select
-                                value={row.status}
-                                onChange={(event) => void handleStatusUpdate(row.conversionId, event.target.value as ConversionStatus)}
-                                disabled={updatingId === row.conversionId}
-                                aria-label={`Update status for conversion ${row.conversionId}`}
-                                className="border border-outline-variant bg-surface px-3 py-2 text-sm"
-                              >
-                                <option value="approved">Approved</option>
-                                <option value="pending">Pending</option>
-                                <option value="rejected">Rejected</option>
-                              </select>
-                              {updatingId === row.conversionId && <span className="text-sm text-on-surface-variant">Updating...</span>}
-                            </div>
+                            {updatingId === row.conversionId ? (
+                              <span className="text-sm text-on-surface-variant">Updating status...</span>
+                            ) : null}
                           </div>
                         </td>
                       </tr>

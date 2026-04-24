@@ -29,7 +29,14 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
-import { fetchOffers, createOffer, updateOffer, deleteOffer, fetchAffiliateNetworks } from '../services/api';
+import {
+  fetchOffers,
+  createOffer,
+  updateOffer,
+  deleteOffer,
+  fetchAffiliateNetworks,
+  uploadHostedAsset,
+} from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatOfferForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
@@ -47,6 +54,13 @@ function cn(...inputs: ClassValue[]) {
 
 type RedirectType = 'http' | 'meta' | 'js' | 'js_blank' | 'double' | 'remote';
 type ActionType = 'local' | 'redirect' | 'preload' | 'action';
+type OfferHostingMode = 'hosted' | 'local' | 'zip';
+type HostedFileValue = { name?: string; type?: string; size?: number; base64?: string };
+type OfferFormData = Partial<Offer> & {
+  hostMode?: OfferHostingMode;
+  localHtml?: string;
+  zipFile?: HostedFileValue | null;
+};
 
 interface Offer {
   id: string;
@@ -71,7 +85,42 @@ interface Offer {
   updatedAt: string;
 }
 
+function encodeUtf8ToBase64(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+  }
+  return btoa(binary);
+}
+
+function inferOfferHostingMode(url: string | undefined): OfferHostingMode {
+  if (!url) {
+    return 'hosted';
+  }
+  if (url.includes('/hosted-assets/') && url.includes('mode=zip')) {
+    return 'zip';
+  }
+  if (url.includes('/hosted-assets/') && url.includes('mode=local')) {
+    return 'local';
+  }
+  return 'hosted';
+}
+
 const OFFER_FIELDS: FormField[] = [
+  {
+    name: 'hostMode',
+    label: 'Hosting Mode',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'hosted', label: 'Hosted URL' },
+      { value: 'local', label: 'Local HTML' },
+      { value: 'zip', label: 'ZIP Archive' },
+    ],
+    description: 'Choose how this offer is hosted (remote URL, inline HTML, or ZIP archive).',
+  },
   {
     name: 'name',
     label: 'Offer Name',
@@ -87,6 +136,7 @@ const OFFER_FIELDS: FormField[] = [
     required: true,
     placeholder: 'https://example.com/offer',
     maxLength: FIELD_MAX_LENGTH.URL,
+    showWhen: (data) => (data.hostMode || 'hosted') === 'hosted',
     validation: (value) => {
       try {
         new URL(value);
@@ -95,6 +145,25 @@ const OFFER_FIELDS: FormField[] = [
         return 'Please enter a valid URL';
       }
     }
+  },
+  {
+    name: 'localHtml',
+    label: 'Local Offer HTML',
+    type: 'textarea',
+    required: true,
+    placeholder: '<!DOCTYPE html><html>...</html>',
+    description: 'Paste full HTML offer page. System will host it as a managed asset.',
+    showWhen: (data) => data.hostMode === 'local',
+  },
+  {
+    name: 'zipFile',
+    label: 'ZIP Archive',
+    type: 'file',
+    required: true,
+    accept: '.zip,application/zip',
+    maxFileSizeMB: 8,
+    description: 'Upload ZIP package for managed archive hosting.',
+    showWhen: (data) => data.hostMode === 'zip',
   },
   {
     name: 'payout',
@@ -190,7 +259,7 @@ export const Offers = () => {
   // Form modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
-  const [selectedOffer, setSelectedOffer] = useState<Partial<Offer> | undefined>(undefined);
+  const [selectedOffer, setSelectedOffer] = useState<OfferFormData | undefined>(undefined);
   
   // Search and filter state
   const [searchTerm, setSearchTerm] = useState(() => {
@@ -280,25 +349,85 @@ export const Offers = () => {
 
   const handleCreateOffer = () => {
     setFormMode('create');
-    setSelectedOffer(undefined);
+    setSelectedOffer({
+      hostMode: 'hosted',
+      actionType: 'local',
+      status: 'active',
+    });
     setIsFormOpen(true);
   };
 
   const handleEditOffer = (offer: Offer) => {
     setFormMode('edit');
-    setSelectedOffer(offer);
+    setSelectedOffer({
+      ...offer,
+      hostMode: inferOfferHostingMode(offer.url),
+    });
     setIsFormOpen(true);
   };
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
+    const hostMode = (formData.hostMode || 'hosted') as OfferHostingMode;
+    const submitData: Record<string, any> = { ...formData };
+
+    if (hostMode === 'local') {
+      const html = typeof formData.localHtml === 'string' ? formData.localHtml.trim() : '';
+      if (!html) {
+        toast.error('Local Offer HTML is required', 'Please provide HTML content before saving.');
+        return;
+      }
+
+      try {
+        const upload = await uploadHostedAsset({
+          entityType: 'offer',
+          mode: 'local',
+          name: submitData.name || 'offer-local',
+          fileName: `${(submitData.name || 'offer').replace(/\s+/g, '-').toLowerCase()}.html`,
+          mimeType: 'text/html; charset=utf-8',
+          contentBase64: encodeUtf8ToBase64(html),
+        });
+        submitData.url = upload.publicUrl;
+      } catch (err) {
+        toast.error('Failed to upload local offer HTML', err instanceof Error ? err.message : 'Unknown error');
+        return;
+      }
+    }
+
+    if (hostMode === 'zip') {
+      const zipFile = formData.zipFile as HostedFileValue | undefined;
+      if (!zipFile?.base64) {
+        toast.error('ZIP archive is required', 'Please select a ZIP file before saving.');
+        return;
+      }
+
+      try {
+        const upload = await uploadHostedAsset({
+          entityType: 'offer',
+          mode: 'zip',
+          name: submitData.name || 'offer-zip',
+          fileName: zipFile.name || `${(submitData.name || 'offer').replace(/\s+/g, '-').toLowerCase()}.zip`,
+          mimeType: zipFile.type || 'application/zip',
+          contentBase64: zipFile.base64,
+        });
+        submitData.url = upload.publicUrl;
+      } catch (err) {
+        toast.error('Failed to upload offer ZIP archive', err instanceof Error ? err.message : 'Unknown error');
+        return;
+      }
+    }
+
+    delete submitData.hostMode;
+    delete submitData.localHtml;
+    delete submitData.zipFile;
+
     try {
       if (formMode === 'create') {
-        const offer = await createOffer(formData);
+        const offer = await createOffer(submitData);
         if (offer && offer.id) {
           setOffers(prev => [...prev, offer]);
         }
       } else if (selectedOffer?.id) {
-        const offer = await updateOffer(selectedOffer.id, formData);
+        const offer = await updateOffer(selectedOffer.id, submitData);
         if (offer && offer.id) {
           setOffers(prev =>
             prev.map(o => o.id === selectedOffer.id ? offer : o)

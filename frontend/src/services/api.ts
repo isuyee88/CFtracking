@@ -613,6 +613,217 @@ function getDeviceId(): string {
 }
 
 // 获取 Campaign 列表
+// ==================== Anti-Fraud API ====================
+
+export interface HumanVerificationConfig {
+  enabled: boolean;
+  provider: 'turnstile' | 'recaptcha';
+  mode: 'managed' | 'invisible' | 'checkbox';
+  tokenField: string;
+  onSuspicious: boolean;
+  onFraudulent: boolean;
+  bypassVerifiedBots: boolean;
+  failOpen: boolean;
+  scoreThreshold: number;
+  siteKey?: string;
+}
+
+export interface HumanVerificationTokenResult {
+  success: boolean;
+  provider: 'turnstile' | 'recaptcha';
+  challengeRequired: boolean;
+  score?: number;
+  action?: string;
+  hostname?: string;
+  challengeTs?: string;
+  errorCodes?: string[];
+  message?: string;
+}
+
+export interface AntiFraudDetectionEventPayload {
+  campaignId: string;
+  ip?: string;
+  userAgent?: string;
+  eventType?: 'impression' | 'click' | 'conversion';
+  url?: string;
+  timestamp?: string;
+  country?: string;
+  city?: string;
+  deviceType?: string;
+  screenResolution?: string;
+  referrer?: string;
+  context?: Record<string, unknown>;
+}
+
+export interface AntiFraudDetectionResult {
+  score: number;
+  status: 'clean' | 'suspicious' | 'fraudulent' | 'blocked';
+  action: 'allow' | 'log' | 'flag' | 'challenge' | 'block';
+  reasons: string[];
+  details: Record<string, unknown>;
+  blocked: boolean;
+  challengeRequired: boolean;
+  simulated?: boolean;
+}
+
+export interface AntiFraudBotListItem {
+  ip: string;
+  userAgent: string;
+  hits: number;
+  blockedHits: number;
+  suspiciousHits: number;
+  averageScore: number;
+  maxScore: number;
+  lastSeen: string;
+  category: 'bot' | 'automation' | 'datacenter' | 'unknown';
+}
+
+export interface AntiFraudBotListResult {
+  list: AntiFraudBotListItem[];
+  total: number;
+  summary: {
+    totalHits: number;
+    blockedHits: number;
+    suspiciousHits: number;
+    topCategory: string;
+  };
+}
+
+export interface AntiFraudGeoProfileItem {
+  country: string;
+  total: number;
+  risky: number;
+  blocked: number;
+  riskRate: number;
+  blockedRate: number;
+  avgScore: number;
+  recommendation: 'allow' | 'challenge' | 'block';
+}
+
+export interface AntiFraudGeoProfileResult {
+  list: AntiFraudGeoProfileItem[];
+  recommendations: {
+    block: string[];
+    challenge: string[];
+  };
+}
+
+export interface AntiFraudArchiveImportResult {
+  type: 'ip-blacklist' | 'bot-rules';
+  total: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  errors: Array<{
+    row: number;
+    reason: string;
+    value?: string;
+  }>;
+}
+
+export async function fetchAntiFraudConfig(): Promise<any> {
+  const response = await authenticatedFetch('/api/anti-fraud/config');
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<any>(payload);
+}
+
+export async function updateAntiFraudConfig(config: Record<string, unknown>): Promise<any> {
+  const response = await authenticatedFetch('/api/anti-fraud/config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<any>(payload);
+}
+
+export async function fetchHumanVerificationConfig(): Promise<HumanVerificationConfig> {
+  const response = await authenticatedFetch('/api/anti-fraud/human-verification/config');
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<HumanVerificationConfig>(payload);
+}
+
+export async function updateHumanVerificationConfig(
+  config: Partial<HumanVerificationConfig>
+): Promise<HumanVerificationConfig> {
+  const response = await authenticatedFetch('/api/anti-fraud/human-verification/config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<HumanVerificationConfig>(payload);
+}
+
+export async function verifyHumanVerificationToken(params: {
+  token: string;
+  provider?: 'turnstile' | 'recaptcha';
+  remoteip?: string;
+}): Promise<HumanVerificationTokenResult> {
+  const response = await authenticatedFetch('/api/anti-fraud/human-verification/verify', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<HumanVerificationTokenResult>(payload);
+}
+
+export async function simulateAntiFraudDetection(
+  payload: AntiFraudDetectionEventPayload
+): Promise<AntiFraudDetectionResult> {
+  const response = await authenticatedFetch('/api/anti-fraud/simulate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  const result = await handleRawJsonResponse(response);
+  return unwrapPayload<AntiFraudDetectionResult>(result);
+}
+
+export async function fetchAntiFraudBotList(params: {
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+} = {}): Promise<AntiFraudBotListResult> {
+  const query = buildQueryString({
+    startDate: params.startDate,
+    endDate: params.endDate,
+    limit: params.limit,
+  });
+  const response = await authenticatedFetch(`/api/anti-fraud/bot-list${query}`);
+  const result = await handleRawJsonResponse(response);
+  return unwrapPayload<AntiFraudBotListResult>(result);
+}
+
+export async function fetchAntiFraudGeoProfile(params: {
+  startDate?: string;
+  endDate?: string;
+  top?: number;
+  minEvents?: number;
+} = {}): Promise<AntiFraudGeoProfileResult> {
+  const query = buildQueryString({
+    startDate: params.startDate,
+    endDate: params.endDate,
+    top: params.top,
+    minEvents: params.minEvents,
+  });
+  const response = await authenticatedFetch(`/api/anti-fraud/geo-profile${query}`);
+  const result = await handleRawJsonResponse(response);
+  return unwrapPayload<AntiFraudGeoProfileResult>(result);
+}
+
+export async function importAntiFraudArchive(payload: {
+  type: 'ip-blacklist' | 'bot-rules';
+  format?: 'json' | 'csv';
+  payload?: string;
+  items?: unknown[];
+  createdBy?: string;
+}): Promise<AntiFraudArchiveImportResult> {
+  const response = await authenticatedFetch('/api/anti-fraud/archive-import', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  const result = await handleRawJsonResponse(response);
+  return unwrapPayload<AntiFraudArchiveImportResult>(result);
+}
+
 export async function fetchCampaigns() {
   const bootstrapCampaigns = readBootstrapValue<any[]>(
     ['campaigns', 'domains', 'trends'],
@@ -661,6 +872,47 @@ export async function updateCampaign(id: string | number, data: any) {
   const response = await authenticatedFetch(`/api/campaigns/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export interface AutoruleBindingRecord {
+  id?: string;
+  scope: 'campaign' | 'flow';
+  scopeId: string;
+  ruleId: string;
+  priority: number;
+  createdAt?: string;
+  updatedAt: string;
+}
+
+export interface AutoruleBindingInput {
+  ruleId: string;
+  priority: number;
+}
+
+export async function fetchCampaignAutoruleBindings(campaignId: string | number): Promise<AutoruleBindingRecord[]> {
+  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-bindings`);
+  const result = await handleResponse(response);
+  return Array.isArray(result.data) ? result.data as AutoruleBindingRecord[] : [];
+}
+
+export async function replaceCampaignAutoruleBindings(
+  campaignId: string | number,
+  bindings: AutoruleBindingInput[]
+): Promise<AutoruleBindingRecord[]> {
+  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-bindings`, {
+    method: 'PUT',
+    body: JSON.stringify({ bindings }),
+  });
+  const result = await handleResponse(response);
+  return Array.isArray(result.data) ? result.data as AutoruleBindingRecord[] : [];
+}
+
+export async function clearCampaignAutoruleBindings(campaignId: string | number) {
+  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-bindings`, {
+    method: 'DELETE',
   });
   const result = await handleResponse(response);
   return result.data;
@@ -793,6 +1045,59 @@ export async function deleteOffer(id: string | number) {
 
 // ==================== Traffic Sources API ====================
 
+export interface TrafficSourceApiConnectionDiagnostics {
+  checkedAt?: string;
+  durationMs?: number;
+  platformType?: string;
+  baseUrl?: string;
+  httpStatus?: number;
+  hint?: string;
+}
+
+export interface TrafficSourceApiConnectionResult {
+  success: boolean;
+  message: string;
+  details?: {
+    accountName?: string;
+    accountId?: string;
+    balance?: number;
+    currency?: string;
+    [key: string]: unknown;
+  };
+  diagnostics?: TrafficSourceApiConnectionDiagnostics;
+}
+
+export interface TrafficSourceMacroPreviewResult {
+  generatedAt: string;
+  sampleContext: Record<string, string>;
+  trackingQuery: string;
+  parameterPreview: Array<{
+    alias: string;
+    paramName: string;
+    macro: string;
+    resolvedValue: string;
+    queryPair: string;
+    unresolved: boolean;
+  }>;
+  postbackTemplate: string;
+  postbackPreview: string;
+  detectedMacros: string[];
+  unresolvedMacros: string[];
+}
+
+export interface HostedAssetUploadResult {
+  assetId: string;
+  entityType: 'landing' | 'offer';
+  mode: 'local' | 'zip';
+  name: string;
+  fileName: string;
+  mimeType: string;
+  byteSize: number;
+  publicUrl: string;
+  archiveUrl?: string;
+  createdAt: string;
+}
+
 export async function fetchTrafficSources(
   withStats = true,
   dateParams: { startDate?: string; endDate?: string } = {}
@@ -880,8 +1185,37 @@ export async function testTrafficSourceConnection(data: {
     method: 'POST',
     body: JSON.stringify(data),
   });
-  const result = await handleResponse(response);
-  return result.data;
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<TrafficSourceApiConnectionResult>(payload);
+}
+
+export async function previewTrafficSourceMacros(data: {
+  parameters?: Array<{ alias: string; paramName: string; macro: string }>;
+  postbackUrl?: string;
+  context?: Record<string, unknown>;
+}) {
+  const response = await authenticatedFetch('/api/traffic-sources/macro-preview', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<TrafficSourceMacroPreviewResult>(payload);
+}
+
+export async function uploadHostedAsset(data: {
+  entityType: 'landing' | 'offer';
+  mode: 'local' | 'zip';
+  name?: string;
+  fileName?: string;
+  mimeType?: string;
+  contentBase64: string;
+}) {
+  const response = await authenticatedFetch('/api/hosted-assets/upload', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  const payload = await handleRawJsonResponse(response);
+  return unwrapPayload<HostedAssetUploadResult>(payload);
 }
 
 // ==================== Affiliate Networks API ====================
@@ -1618,22 +1952,27 @@ export async function fetchEntityStats(
 
 export type ReportType = 'traffic' | 'conversion' | 'financial' | 'roi';
 export type ExportFormat = 'csv' | 'excel';
-export type ReportDimension = 'date' | 'campaign' | 'offer' | 'flow' | 'landing' | 'country' | 'device' | 'browser';
-export type ReportMetric =
-  | 'clicks'
-  | 'impressions'
-  | 'conversions'
-  | 'revenue'
-  | 'spend'
-  | 'cost'
-  | 'profit'
-  | 'roi'
-  | 'cr'
-  | 'margin'
-  | 'epc'
-  | 'cpc'
-  | 'unique_visitors';
+export type ReportDimension = string;
+export type ReportMetric = string;
 export type ReportFilterOperator = 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte';
+
+export interface ReportDimensionOption {
+  value: ReportDimension;
+  label: string;
+  hint?: string;
+}
+
+export interface ReportMetricOption {
+  value: ReportMetric;
+  label: string;
+  format: 'number' | 'currency' | 'percent';
+  isCustom?: boolean;
+}
+
+export interface ReportMetadata {
+  dimensions: ReportDimensionOption[];
+  metrics: ReportMetricOption[];
+}
 
 export interface ReportFilterCondition {
   field: ReportDimension | ReportMetric;
@@ -1658,9 +1997,47 @@ export interface ReportExportParams extends ReportParams {
   columns?: string[];
 }
 
+export type ExportTaskEntityType =
+  | 'campaigns'
+  | 'landing-pages'
+  | 'offers'
+  | 'traffic-sources'
+  | 'affiliate-networks'
+  | 'clicks'
+  | 'conversions'
+  | 'flows'
+  | 'reports';
+
+export interface CreateExportTaskParams {
+  name: string;
+  entityType: ExportTaskEntityType;
+  format: 'csv' | 'excel' | 'json';
+  filters?: Record<string, unknown>;
+  dateRange?: {
+    startDate: string;
+    endDate: string;
+  };
+  fields?: string[];
+  createdBy?: string;
+}
+
 export async function fetchReport(type: ReportType, params: ReportParams) {
   void type;
   return queryReport(params);
+}
+
+export async function fetchReportMetadata(): Promise<ReportMetadata> {
+  const response = await authenticatedFetch('/api/analytics/reports/metadata');
+  const payload = await handleRawJsonResponse<{
+    success?: boolean;
+    data?: Partial<ReportMetadata>;
+  }>(response);
+  const metadata = unwrapPayload<Partial<ReportMetadata>>(payload);
+
+  return {
+    dimensions: Array.isArray(metadata?.dimensions) ? metadata.dimensions : [],
+    metrics: Array.isArray(metadata?.metrics) ? metadata.metrics : [],
+  };
 }
 
 export async function queryReport(params: ReportParams) {
@@ -1689,6 +2066,13 @@ export async function exportReport(params: ReportExportParams): Promise<Blob> {
   return await response.blob();
 }
 
+export async function createExportTask(params: CreateExportTaskParams) {
+  return mutateJsonData('/api/export-tasks', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
 export function downloadReport(blob: Blob, filename: string) {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1698,6 +2082,182 @@ export function downloadReport(blob: Blob, filename: string) {
   a.click();
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
+}
+
+export type CustomMetricType = 'calculated' | 'aggregated';
+export type CustomMetricDataType = 'number' | 'currency' | 'percent';
+export type CustomMetricFormat = 'number' | 'currency' | 'percent' | 'custom';
+export type CustomMetricStatus = 'active' | 'inactive' | 'deleted';
+
+export interface CustomMetricDefinition {
+  id: string;
+  name: string;
+  displayName: string;
+  description?: string;
+  type: CustomMetricType;
+  formula: string;
+  dataType: CustomMetricDataType;
+  format: CustomMetricFormat;
+  decimals: number;
+  prefix?: string;
+  suffix?: string;
+  status: CustomMetricStatus;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomMetricListResult {
+  list: CustomMetricDefinition[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface CustomMetricListParams {
+  status?: CustomMetricStatus;
+  type?: CustomMetricType;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface CreateCustomMetricPayload {
+  name: string;
+  displayName: string;
+  description?: string;
+  type?: CustomMetricType;
+  formula: string;
+  dataType?: CustomMetricDataType;
+  format?: CustomMetricFormat;
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
+}
+
+export interface UpdateCustomMetricPayload {
+  displayName?: string;
+  description?: string;
+  formula?: string;
+  dataType?: CustomMetricDataType;
+  format?: CustomMetricFormat;
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
+  status?: CustomMetricStatus;
+}
+
+export interface CustomMetricFormulaValidation {
+  valid: boolean;
+  error?: string;
+  variables?: string[];
+}
+
+export interface CustomMetricPreviewResult {
+  value: number;
+  formatted: string;
+  error?: string;
+}
+
+export async function fetchCustomMetrics(params: CustomMetricListParams = {}): Promise<CustomMetricListResult> {
+  const query = buildQueryString({
+    status: params.status,
+    type: params.type,
+    search: params.search,
+    page: params.page,
+    pageSize: params.pageSize,
+  });
+
+  const response = await authenticatedFetch(`/api/custom-metrics${query}`);
+  const payload = await handleRawJsonResponse<{
+    success?: boolean;
+    data?: Partial<CustomMetricListResult>;
+  }>(response);
+  const data = unwrapPayload<Partial<CustomMetricListResult>>(payload);
+
+  return {
+    list: Array.isArray(data?.list) ? data.list : [],
+    total: Number(data?.total || 0),
+    page: Number(data?.page || params.page || 1),
+    pageSize: Number(data?.pageSize || params.pageSize || 20),
+  };
+}
+
+export async function fetchActiveCustomMetrics(): Promise<CustomMetricDefinition[]> {
+  const response = await authenticatedFetch('/api/custom-metrics/active');
+  const payload = await handleRawJsonResponse<{
+    success?: boolean;
+    data?: CustomMetricDefinition[];
+  }>(response);
+  const list = unwrapPayload<CustomMetricDefinition[] | undefined>(payload);
+  return Array.isArray(list) ? list : [];
+}
+
+export async function createCustomMetric(payload: CreateCustomMetricPayload): Promise<CustomMetricDefinition> {
+  const response = await authenticatedFetch('/api/custom-metrics', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  const result = await handleRawJsonResponse<{ success?: boolean; data?: CustomMetricDefinition }>(response);
+  return unwrapPayload<CustomMetricDefinition>(result);
+}
+
+export async function updateCustomMetric(
+  id: string,
+  payload: UpdateCustomMetricPayload
+): Promise<CustomMetricDefinition> {
+  const response = await authenticatedFetch(`/api/custom-metrics/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+  const result = await handleRawJsonResponse<{ success?: boolean; data?: CustomMetricDefinition }>(response);
+  return unwrapPayload<CustomMetricDefinition>(result);
+}
+
+export async function deleteCustomMetric(id: string): Promise<boolean> {
+  const response = await authenticatedFetch(`/api/custom-metrics/${id}`, {
+    method: 'DELETE',
+  });
+  const result = await handleRawJsonResponse<{ success?: boolean }>(response);
+  return Boolean(result?.success);
+}
+
+export async function validateCustomMetricFormula(formula: string): Promise<CustomMetricFormulaValidation> {
+  const response = await authenticatedFetch('/api/custom-metrics/validate-formula', {
+    method: 'POST',
+    body: JSON.stringify({ formula }),
+  });
+  const payload = await handleRawJsonResponse<{
+    success?: boolean;
+    data?: CustomMetricFormulaValidation;
+  }>(response);
+  const result = unwrapPayload<CustomMetricFormulaValidation>(payload);
+  return {
+    valid: Boolean(result?.valid),
+    error: result?.error,
+    variables: Array.isArray(result?.variables) ? result.variables : [],
+  };
+}
+
+export async function previewCustomMetricFormula(
+  formula: string,
+  context: Record<string, number>
+): Promise<CustomMetricPreviewResult> {
+  const response = await authenticatedFetch('/api/custom-metrics/preview', {
+    method: 'POST',
+    body: JSON.stringify({ formula, context }),
+  });
+  const payload = await handleRawJsonResponse<{
+    success?: boolean;
+    data?: CustomMetricPreviewResult;
+  }>(response);
+  const result = unwrapPayload<CustomMetricPreviewResult>(payload);
+
+  return {
+    value: Number(result?.value || 0),
+    formatted: String(result?.formatted || '0'),
+    error: result?.error,
+  };
 }
 
 // ==================== Clicks Log API ====================
@@ -2274,6 +2834,56 @@ export interface UpdateRuleDTO {
   actions?: Rule['actions'];
 }
 
+export interface RuleConflict {
+  type: 'duplicate_priority' | 'condition_overlap' | 'action_conflict';
+  severity: 'high' | 'medium';
+  priority: number;
+  ruleIds: string[];
+  ruleNames: string[];
+  details: string;
+  conditionSignature?: string;
+}
+
+export interface RuleConflictReport {
+  totalRules: number;
+  conflictCount: number;
+  highSeverityCount: number;
+  conflicts: RuleConflict[];
+}
+
+export interface RuleTestBenchConditionCheck {
+  metric: string;
+  operator: string;
+  expected: unknown;
+  actual: unknown;
+  matched: boolean;
+}
+
+export interface RuleTestBenchRuleResult {
+  ruleId: string;
+  ruleName: string;
+  priority: number;
+  enabled: boolean;
+  status: string;
+  skipped: boolean;
+  matched: boolean;
+  reason?: string;
+  conditionChecks: RuleTestBenchConditionCheck[];
+  actionSummary: string;
+}
+
+export interface RuleTestBenchResult {
+  evaluatedAt: string;
+  context: Record<string, unknown>;
+  winner: null | {
+    ruleId: string;
+    ruleName: string;
+    priority: number;
+    actionSummary: string;
+  };
+  ruleResults: RuleTestBenchRuleResult[];
+}
+
 export async function fetchRules(params: { page?: number; pageSize?: number; type?: string; status?: string } = {}) {
   const rulesBundle = readBootstrapPage('rules');
   if (
@@ -2358,6 +2968,26 @@ export async function disableRule(id: string): Promise<Rule> {
   });
   const result = await handleResponse(response);
   return result.data;
+}
+
+export async function fetchRuleConflicts(): Promise<RuleConflictReport> {
+  const response = await authenticatedFetch('/api/rules/conflicts');
+  const result = await handleResponse(response);
+  return result.data as RuleConflictReport;
+}
+
+export async function runRuleTestBench(payload: {
+  context: Record<string, unknown>;
+  includeDisabled?: boolean;
+  includePaused?: boolean;
+  ruleIds?: string[];
+}): Promise<RuleTestBenchResult> {
+  const response = await authenticatedFetch('/api/rules/test-bench', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  const result = await handleResponse(response);
+  return result.data as RuleTestBenchResult;
 }
 
 export async function getRuleExecutionHistory(id: string, limit: number = 50) {

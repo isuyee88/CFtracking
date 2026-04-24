@@ -19,15 +19,33 @@ function cn(...inputs: ClassValue[]) {
 export interface FormField {
   name: string;
   label: string;
-  type: 'text' | 'textarea' | 'select' | 'multiselect' | 'number' | 'url' | 'email' | 'password' | 'json' | 'checkbox';
+  type:
+    | 'text'
+    | 'textarea'
+    | 'select'
+    | 'multiselect'
+    | 'number'
+    | 'url'
+    | 'email'
+    | 'password'
+    | 'json'
+    | 'checkbox'
+    | 'file';
   required?: boolean;
   maxLength?: number;
   optionLabelMaxLength?: number;
   placeholder?: string;
   options?: { value: string; label: string }[];
+  accept?: string;
+  maxFileSizeMB?: number;
+  fileAsBase64?: boolean;
   description?: string;
   validation?: (value: any) => string | null;
   showWhen?: (data: Record<string, any>) => boolean;
+}
+
+function isFieldVisible(field: FormField, data: Record<string, any>): boolean {
+  return field.showWhen ? field.showWhen(data) : true;
 }
 
 interface EntityFormProps {
@@ -107,9 +125,23 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   const validateField = (name: string, value: any): boolean => {
     const field = fields.find(f => f.name === name);
     if (!field) return true;
+    if (!isFieldVisible(field, formData)) {
+      return true;
+    }
 
     // Required validation
     if (field.required) {
+      if (field.type === 'file') {
+        if (!value || typeof value !== 'object' || !value.base64) {
+          setErrors(prev => ({ ...prev, [name]: `${field.label} is required` }));
+          return false;
+        }
+      } else if (field.type === 'checkbox') {
+        if (!value) {
+          setErrors(prev => ({ ...prev, [name]: `${field.label} is required` }));
+          return false;
+        }
+      } else
       if (field.type === 'multiselect') {
         if (!value || value.length === 0) {
           setErrors(prev => ({ ...prev, [name]: `${field.label} is required` }));
@@ -136,6 +168,9 @@ export const EntityForm: React.FC<EntityFormProps> = ({
   const validateForm = (): boolean => {
     let isValid = true;
     fields.forEach(field => {
+      if (!isFieldVisible(field, formData)) {
+        return;
+      }
       if (!validateField(field.name, formData[field.name])) {
         isValid = false;
       }
@@ -391,6 +426,65 @@ export const EntityForm: React.FC<EntityFormProps> = ({
           </label>
         );
 
+      case 'file':
+        return (
+          <div className="space-y-2">
+            <input
+              type="file"
+              accept={field.accept}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) {
+                  handleChange(field.name, null);
+                  return;
+                }
+
+                if (field.maxFileSizeMB && file.size > field.maxFileSizeMB * 1024 * 1024) {
+                  setErrors(prev => ({
+                    ...prev,
+                    [field.name]: `${field.label} must be <= ${field.maxFileSizeMB}MB`,
+                  }));
+                  return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = () => {
+                  const content = typeof reader.result === 'string' ? reader.result : '';
+                  handleChange(field.name, {
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    base64: content,
+                  });
+                  setErrors(prev => {
+                    const next = { ...prev };
+                    delete next[field.name];
+                    return next;
+                  });
+                };
+                reader.onerror = () => {
+                  setErrors(prev => ({
+                    ...prev,
+                    [field.name]: `Failed to read ${field.label}`,
+                  }));
+                };
+                if (field.fileAsBase64 === false) {
+                  reader.readAsText(file);
+                } else {
+                  reader.readAsDataURL(file);
+                }
+              }}
+              onBlur={() => handleBlur(field.name)}
+              className={baseInputClass}
+            />
+            {value && typeof value === 'object' ? (
+              <p className="text-xs text-on-surface-variant">
+                Selected: {truncateLabel(String(value.name || ''), 80)} ({Math.round((Number(value.size) || 0) / 1024)} KB)
+              </p>
+            ) : null}
+          </div>
+        );
+
       default:
         return (
           <input
@@ -433,7 +527,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
           <div className="space-y-6">
             {fields.map((field) => {
               // Check if field should be shown based on showWhen condition
-              if (field.showWhen && !field.showWhen(formData)) {
+              if (!isFieldVisible(field, formData)) {
                 return null;
               }
 

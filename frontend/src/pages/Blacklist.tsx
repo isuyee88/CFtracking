@@ -26,19 +26,39 @@ import {
   User,
   Hash,
   MapPin,
-  Monitor
+  Monitor,
+  Building2,
+  Fingerprint
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { readBootstrapPage } from '../services/bootstrap';
 import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
 import { clampInput, truncateLabel } from '../utils/text';
+import {
+  ListConditionsEditor,
+  type ListCondition,
+  type ListConditionMode,
+} from '../components/ListConditionsEditor';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-type BlacklistType = 'zone' | 'creative' | 'publisher' | 'sub_id' | 'geo' | 'device' | 'ip' | 'user_agent';
+type BlacklistType =
+  | 'zone'
+  | 'creative'
+  | 'publisher'
+  | 'sub_id'
+  | 'geo'
+  | 'country'
+  | 'device'
+  | 'ip'
+  | 'user_agent'
+  | 'asn'
+  | 'isp'
+  | 'fingerprint'
+  | 'rule';
 type IpMatchMode = 'exact' | 'cidr';
 type UaMatchMode = 'exact' | 'contains';
 
@@ -57,6 +77,8 @@ interface BlacklistEntry {
   ipMatchMode?: IpMatchMode;
   uaMatchMode?: UaMatchMode;
   syncToPlatform?: boolean;
+  matchMode?: ListConditionMode;
+  conditions?: ListCondition[];
   createdAt: string;
   updatedAt: string;
 }
@@ -72,11 +94,15 @@ interface FormData {
   value: string;
   name: string;
   reason: string;
-  campaignId: string;
   ipMatchMode: IpMatchMode;
   uaMatchMode: UaMatchMode;
   syncToPlatform: boolean;
+  matchMode: ListConditionMode;
+  conditions: ListCondition[];
 }
+
+const GENERAL_TRAFFIC_SOURCE_ID = 'general';
+const GENERAL_TRAFFIC_SOURCE_NAME = 'General Traffic Source';
 
 const initialFormData: FormData = {
   trafficSourceId: '',
@@ -84,10 +110,11 @@ const initialFormData: FormData = {
   value: '',
   name: '',
   reason: '',
-  campaignId: '',
   ipMatchMode: 'exact',
   uaMatchMode: 'exact',
   syncToPlatform: true,
+  matchMode: 'all',
+  conditions: [],
 };
 
 const typeOptions: { value: BlacklistType; label: string; icon: React.ReactNode }[] = [
@@ -95,14 +122,37 @@ const typeOptions: { value: BlacklistType; label: string; icon: React.ReactNode 
   { value: 'creative', label: 'Creative', icon: <Palette size={16} /> },
   { value: 'publisher', label: 'Publisher', icon: <User size={16} /> },
   { value: 'sub_id', label: 'Sub ID', icon: <Hash size={16} /> },
-  { value: 'geo', label: 'Geo', icon: <MapPin size={16} /> },
+  { value: 'country', label: 'Country', icon: <MapPin size={16} /> },
   { value: 'device', label: 'Device', icon: <Smartphone size={16} /> },
   { value: 'ip', label: 'IP Address', icon: <Monitor size={16} /> },
   { value: 'user_agent', label: 'User Agent', icon: <ExternalLink size={16} /> },
+  { value: 'asn', label: 'ASN', icon: <Hash size={16} /> },
+  { value: 'isp', label: 'ISP', icon: <Building2 size={16} /> },
+  { value: 'fingerprint', label: 'Fingerprint', icon: <Fingerprint size={16} /> },
+  { value: 'rule', label: 'Rule Group', icon: <Shield size={16} /> },
 ];
 
 const getBlacklistValueMaxLength = (type: BlacklistType) =>
   type === 'user_agent' ? FIELD_MAX_LENGTH.USER_AGENT_VALUE : FIELD_MAX_LENGTH.TRAFFIC_ENTRY_VALUE;
+
+const normalizeDisplayType = (type: string): BlacklistType | string => (type === 'geo' ? 'country' : type);
+
+const normalizeCountryInput = (type: BlacklistType, value: string) =>
+  type === 'country' ? value.toUpperCase() : value;
+
+const withGeneralTrafficSource = (sources: TrafficSource[]): TrafficSource[] => {
+  if (sources.some((source) => source.id === GENERAL_TRAFFIC_SOURCE_ID)) {
+    return sources;
+  }
+
+  return [
+    {
+      id: GENERAL_TRAFFIC_SOURCE_ID,
+      name: GENERAL_TRAFFIC_SOURCE_NAME,
+    },
+    ...sources,
+  ];
+};
 
 export const Blacklist = () => {
   const bootstrap = readBootstrapPage<{
@@ -112,7 +162,7 @@ export const Blacklist = () => {
   const hasBootstrap = Boolean(bootstrap);
   const [entries, setEntries] = useState<BlacklistEntry[]>(Array.isArray(bootstrap?.data?.entries) ? bootstrap.data.entries : []);
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>(
-    Array.isArray(bootstrap?.data?.trafficSources) ? bootstrap.data.trafficSources : []
+    withGeneralTrafficSource(Array.isArray(bootstrap?.data?.trafficSources) ? bootstrap.data.trafficSources : [])
   );
   const [loading, setLoading] = useState(!hasBootstrap);
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -133,8 +183,34 @@ export const Blacklist = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
+  const loadBootstrapData = () => {
+    const bundle = readBootstrapPage<{
+      entries?: BlacklistEntry[];
+      trafficSources?: TrafficSource[];
+    }>('blacklist');
+
+    return {
+      entries: Array.isArray(bundle?.data?.entries) ? bundle.data.entries : [],
+      trafficSources: withGeneralTrafficSource(
+        Array.isArray(bundle?.data?.trafficSources) ? bundle.data.trafficSources : []
+      ),
+    };
+  };
+
+  const clearFormError = (field: keyof FormData) => {
+    setFormErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  };
+
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, []);
 
   const fetchData = async () => {
@@ -142,15 +218,30 @@ export const Blacklist = () => {
       if (!hasBootstrap && entries.length === 0) {
         setLoading(true);
       }
-      const bundle = readBootstrapPage<{
-        entries?: BlacklistEntry[];
-        trafficSources?: TrafficSource[];
-      }>('blacklist');
 
-      setEntries(Array.isArray(bundle?.data?.entries) ? bundle.data.entries : []);
-      setTrafficSources(Array.isArray(bundle?.data?.trafficSources) ? bundle.data.trafficSources : []);
+      const [entriesResponse, trafficSourcesResponse] = await Promise.all([
+        fetch('/api/blacklist'),
+        fetch('/api/traffic-sources'),
+      ]);
+
+      if (!entriesResponse.ok || !trafficSourcesResponse.ok) {
+        throw new Error('Failed to fetch latest blacklist data');
+      }
+
+      const [entriesPayload, trafficSourcesPayload] = await Promise.all([
+        entriesResponse.json(),
+        trafficSourcesResponse.json(),
+      ]);
+
+      setEntries(Array.isArray(entriesPayload?.data) ? entriesPayload.data : []);
+      setTrafficSources(
+        withGeneralTrafficSource(Array.isArray(trafficSourcesPayload?.data) ? trafficSourcesPayload.data : [])
+      );
     } catch (err) {
       console.error('Failed to fetch blacklist:', err);
+      const fallback = loadBootstrapData();
+      setEntries(fallback.entries);
+      setTrafficSources(fallback.trafficSources);
     } finally {
       setLoading(false);
     }
@@ -165,7 +256,7 @@ export const Blacklist = () => {
       const data = await response.json();
       if (data.success) {
         alert(`Sync completed: ${data.data.synced} synced, ${data.data.failed} failed`);
-        window.location.reload();
+        await fetchData();
       }
     } catch (err) {
       console.error('Failed to sync:', err);
@@ -182,7 +273,7 @@ export const Blacklist = () => {
         method: 'DELETE'
       });
       if (response.ok) {
-        setEntries(prev => prev.filter(entry => entry.id !== id));
+        await fetchData();
       }
     } catch (err) {
       console.error('Failed to remove:', err);
@@ -198,18 +289,20 @@ export const Blacklist = () => {
   };
 
   const openEditModal = (entry: BlacklistEntry) => {
+    const displayType = normalizeDisplayType(entry.type) as BlacklistType;
     setIsEditMode(true);
     setEditingId(entry.id);
     setFormData({
       trafficSourceId: entry.trafficSourceId,
-      type: entry.type,
-      value: clampInput(entry.value, getBlacklistValueMaxLength(entry.type)),
+      type: displayType,
+      value: clampInput(normalizeCountryInput(displayType, entry.value), getBlacklistValueMaxLength(displayType)),
       name: clampInput(entry.name || '', FIELD_MAX_LENGTH.NAME),
       reason: clampInput(entry.reason || '', FIELD_MAX_LENGTH.REASON),
-      campaignId: clampInput(entry.campaignId || '', FIELD_MAX_LENGTH.CAMPAIGN_ID),
       ipMatchMode: entry.ipMatchMode || 'exact',
       uaMatchMode: entry.uaMatchMode || 'exact',
       syncToPlatform: entry.syncToPlatform !== false,
+      matchMode: entry.matchMode || 'all',
+      conditions: Array.isArray(entry.conditions) ? entry.conditions : [],
     });
     setFormErrors({});
     setIsModalOpen(true);
@@ -227,12 +320,17 @@ export const Blacklist = () => {
     if (!formData.trafficSourceId) {
       errors.trafficSourceId = 'Traffic source is required';
     }
-    if (!formData.value.trim()) {
+    const hasConditionRules = formData.conditions.length > 0;
+
+    if (!hasConditionRules && !formData.value.trim()) {
       errors.value = 'Value is required';
+    }
+    if (formData.type === 'rule' && !hasConditionRules) {
+      errors.conditions = 'Rule Group requires at least one condition';
     }
 
     // IP validation
-    if (formData.type === 'ip') {
+    if (!hasConditionRules && formData.type === 'ip') {
       if (formData.ipMatchMode === 'cidr') {
         const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
         if (!cidrRegex.test(formData.value)) {
@@ -247,8 +345,22 @@ export const Blacklist = () => {
     }
 
     // UA validation
-    if (formData.type === 'user_agent' && formData.value.length > 1000) {
+    if (!hasConditionRules && formData.type === 'user_agent' && formData.value.length > 1000) {
       errors.value = 'User Agent too long (max 1000 characters)';
+    }
+
+    if (!hasConditionRules && formData.type === 'asn') {
+      const asnRegex = /^(AS)?\d+$/i;
+      if (!asnRegex.test(formData.value.trim())) {
+        errors.value = 'Invalid ASN format. Expected: AS12345 or 12345';
+      }
+    }
+
+    if (!hasConditionRules && formData.type === 'country') {
+      const countryCodeRegex = /^[a-z]{2}$/i;
+      if (!countryCodeRegex.test(formData.value.trim())) {
+        errors.value = 'Invalid country code. Expected ISO 3166-1 alpha-2 like US';
+      }
     }
 
     setFormErrors(errors);
@@ -269,7 +381,6 @@ export const Blacklist = () => {
         ...formData,
         name: formData.name || undefined,
         reason: formData.reason || undefined,
-        campaignId: formData.campaignId || undefined,
       };
 
       const response = await fetch(url, {
@@ -279,19 +390,12 @@ export const Blacklist = () => {
       });
 
       if (response.ok) {
-        const result = await response.json();
-        const savedEntry = result?.data;
-        if (savedEntry?.id) {
-          setEntries(prev =>
-            isEditMode
-              ? prev.map(entry => entry.id === savedEntry.id ? savedEntry : entry)
-              : [savedEntry, ...prev]
-          );
-        }
+        await response.json().catch(() => null);
+        await fetchData();
         closeModal();
       } else {
         const error = await response.json();
-        alert(error.message || 'Failed to save blacklist entry');
+        alert(error?.error?.message || error?.message || 'Failed to save blacklist entry');
       }
     } catch (err) {
       console.error('Failed to save:', err);
@@ -306,12 +410,12 @@ export const Blacklist = () => {
   };
 
   const getTypeLabel = (type: string) => {
-    const option = typeOptions.find(opt => opt.value === type);
+    const option = typeOptions.find(opt => opt.value === normalizeDisplayType(type));
     return option?.label || type;
   };
 
   const getTypeIcon = (type: string) => {
-    const option = typeOptions.find(opt => opt.value === type);
+    const option = typeOptions.find(opt => opt.value === normalizeDisplayType(type));
     return option?.icon || <Globe size={16} />;
   };
 
@@ -325,7 +429,7 @@ export const Blacklist = () => {
     const matchesSynced = filterSynced === 'all' || 
       (filterSynced === 'synced' && entry.synced) ||
       (filterSynced === 'unsynced' && !entry.synced);
-    const matchesType = filterType === 'all' || entry.type === filterType;
+    const matchesType = filterType === 'all' || normalizeDisplayType(entry.type) === filterType;
     return matchesSearch && matchesSource && matchesSynced && matchesType;
   });
 
@@ -523,6 +627,11 @@ export const Blacklist = () => {
                       {entry.type === 'user_agent' && entry.uaMatchMode && (
                         <p className="text-xs text-on-surface-variant/60">Mode: {entry.uaMatchMode}</p>
                       )}
+                      {Array.isArray(entry.conditions) && entry.conditions.length > 0 && (
+                        <p className="text-xs text-on-surface-variant/60">
+                          Rule: {(entry.matchMode || 'all').toUpperCase()} / {entry.conditions.length} conditions
+                        </p>
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-4">
@@ -668,7 +777,10 @@ export const Blacklist = () => {
                   </label>
                   <select
                     value={formData.trafficSourceId}
-                    onChange={(e) => setFormData({ ...formData, trafficSourceId: e.target.value })}
+                    onChange={(e) => {
+                      clearFormError('trafficSourceId');
+                      setFormData({ ...formData, trafficSourceId: e.target.value });
+                    }}
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
                     disabled={isEditMode}
                   >
@@ -693,10 +805,12 @@ export const Blacklist = () => {
                     value={formData.type}
                     onChange={(e) => {
                       const nextType = e.target.value as BlacklistType;
+                      clearFormError('value');
+                      clearFormError('conditions');
                       setFormData({
                         ...formData,
                         type: nextType,
-                        value: clampInput(formData.value, getBlacklistValueMaxLength(nextType)),
+                        value: clampInput(normalizeCountryInput(nextType, formData.value), getBlacklistValueMaxLength(nextType)),
                       });
                     }}
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
@@ -711,13 +825,34 @@ export const Blacklist = () => {
                 {/* Value */}
                 <div>
                   <label className="block text-sm font-medium text-on-surface mb-1">
-                    Value <span className="text-error">*</span>
+                    Value {formData.conditions.length === 0 && <span className="text-error">*</span>}
                   </label>
                   <input
                     type="text"
                     value={formData.value}
-                    onChange={(e) => setFormData({ ...formData, value: clampInput(e.target.value, getBlacklistValueMaxLength(formData.type)) })}
-                    placeholder={formData.type === 'ip' ? '192.168.1.1' : formData.type === 'user_agent' ? 'Mozilla/5.0...' : 'Enter value'}
+                    onChange={(e) => {
+                      clearFormError('value');
+                      setFormData({
+                        ...formData,
+                        value: clampInput(
+                          normalizeCountryInput(formData.type, e.target.value),
+                          getBlacklistValueMaxLength(formData.type),
+                        ),
+                      });
+                    }}
+                    placeholder={
+                      formData.type === 'ip'
+                        ? '192.168.1.1'
+                        : formData.type === 'user_agent'
+                          ? 'Mozilla/5.0...'
+                          : formData.type === 'asn'
+                            ? 'AS12345'
+                            : formData.type === 'country'
+                              ? 'US'
+                            : formData.type === 'rule'
+                              ? 'Optional label for this rule group'
+                            : 'Enter value'
+                    }
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
                     disabled={isEditMode}
                     maxLength={getBlacklistValueMaxLength(formData.type)}
@@ -735,10 +870,38 @@ export const Blacklist = () => {
                       Enter User Agent string or pattern
                     </p>
                   )}
+                  {formData.type === 'country' && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Enter ISO 3166-1 alpha-2 country code, for example US or DE
+                    </p>
+                  )}
+                  {formData.conditions.length > 0 && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Value becomes optional when rule conditions are configured.
+                    </p>
+                  )}
                 </div>
 
+                <ListConditionsEditor
+                  title="Rule Editor"
+                  matchMode={formData.matchMode}
+                  conditions={formData.conditions}
+                  onMatchModeChange={(mode) => {
+                    clearFormError('conditions');
+                    setFormData({ ...formData, matchMode: mode });
+                  }}
+                  onConditionsChange={(conditions) => {
+                    clearFormError('conditions');
+                    clearFormError('value');
+                    setFormData({ ...formData, conditions });
+                  }}
+                />
+                {formErrors.conditions && (
+                  <p className="text-xs text-error -mt-2">{formErrors.conditions}</p>
+                )}
+
                 {/* IP Match Mode */}
-                {formData.type === 'ip' && (
+                {formData.type === 'ip' && formData.conditions.length === 0 && (
                   <div>
                     <label className="block text-sm font-medium text-on-surface mb-1">
                       Match Mode
@@ -769,7 +932,7 @@ export const Blacklist = () => {
                 )}
 
                 {/* UA Match Mode */}
-                {formData.type === 'user_agent' && (
+                {formData.type === 'user_agent' && formData.conditions.length === 0 && (
                   <div>
                     <label className="block text-sm font-medium text-on-surface mb-1">
                       Match Mode
@@ -800,7 +963,7 @@ export const Blacklist = () => {
                 )}
 
                 {/* Sync to Platform */}
-                {(formData.type === 'ip' || formData.type === 'user_agent') && (
+                {(formData.type === 'ip' || formData.type === 'user_agent') && formData.conditions.length === 0 && (
                   <div>
                     <label className="flex items-center gap-2">
                       <input
@@ -841,21 +1004,6 @@ export const Blacklist = () => {
                     rows={3}
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none resize-none"
                     maxLength={FIELD_MAX_LENGTH.REASON}
-                  />
-                </div>
-
-                {/* Campaign ID */}
-                <div>
-                  <label className="block text-sm font-medium text-on-surface mb-1">
-                    Campaign ID (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.campaignId}
-                    onChange={(e) => setFormData({ ...formData, campaignId: clampInput(e.target.value, FIELD_MAX_LENGTH.CAMPAIGN_ID) })}
-                    placeholder="Associated campaign ID"
-                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
-                    maxLength={FIELD_MAX_LENGTH.CAMPAIGN_ID}
                   />
                 </div>
 

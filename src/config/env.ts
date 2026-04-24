@@ -40,6 +40,8 @@ export interface Env {
   /** Cloudflare Turnstile 配置 */
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
+  RECAPTCHA_SITE_KEY?: string;
+  RECAPTCHA_SECRET_KEY?: string;
   
   CACHE_REFRESH_QUEUE: Queue;
   

@@ -18,7 +18,7 @@
     "verify:frontend": "npm run install:frontend && npm --prefix frontend run lint",
     "verify": "npm run typecheck && npm run test:run && npm run verify:frontend",
     "deploy": "npm run verify && npm run build:frontend && node scripts/generate-deploy-message.js && wrangler deploy --keep-vars --message \"$(Get-Content -Raw dist/deploy-message.txt)\"",
-    "deploy:stable": "cross-env NODE_OPTIONS=--require=./.wrangler-dns-bootstrap.cjs npm run deploy",
+    "deploy:stable": "node scripts/deploy-stable.mjs",
     "deploy:bash": "npm run verify && npm run build:frontend && node scripts/generate-deploy-message.js && wrangler deploy --keep-vars --message $(cat dist/deploy-message.txt)",
     "deploy:with-commit": "npm run verify && npm run build:frontend && node scripts/deploy-with-git-commit.js",
     "network:bootstrap": "powershell -ExecutionPolicy Bypass -File ./scripts/network-bootstrap.ps1",

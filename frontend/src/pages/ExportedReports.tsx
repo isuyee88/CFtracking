@@ -85,6 +85,8 @@ const STATUS_CONFIG: Record<
   },
 };
 
+const EXPORT_TASK_DRAFT_STORAGE_KEY = 'cftracking.export-task-draft.v1';
+
 export default function ExportedReports() {
   const [tasks, setTasks] = useState<ExportTask[]>([]);
   const [stats, setStats] = useState<ExportTaskStats | null>(null);
@@ -365,7 +367,55 @@ function CreateExportModal({
   const [name, setName] = useState('');
   const [entityType, setEntityType] = useState('campaigns');
   const [format, setFormat] = useState<'csv' | 'excel' | 'json'>('csv');
+  const [filters, setFilters] = useState<Record<string, unknown> | undefined>(undefined);
+  const [dateRange, setDateRange] = useState<{ startDate: string; endDate: string } | undefined>(undefined);
+  const [fields, setFields] = useState<string[] | undefined>(undefined);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const raw = window.sessionStorage.getItem(EXPORT_TASK_DRAFT_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const draft = JSON.parse(raw) as {
+        name?: string;
+        entityType?: string;
+        format?: 'csv' | 'excel' | 'json';
+        filters?: Record<string, unknown>;
+        dateRange?: { startDate: string; endDate: string };
+        fields?: string[];
+      };
+
+      if (draft.name) {
+        setName(draft.name);
+      }
+      if (draft.entityType) {
+        setEntityType(draft.entityType);
+      }
+      if (draft.format) {
+        setFormat(draft.format);
+      }
+      if (draft.filters && typeof draft.filters === 'object') {
+        setFilters(draft.filters);
+      }
+      if (draft.dateRange?.startDate && draft.dateRange?.endDate) {
+        setDateRange(draft.dateRange);
+      }
+      if (Array.isArray(draft.fields)) {
+        setFields(draft.fields);
+      }
+
+      window.sessionStorage.removeItem(EXPORT_TASK_DRAFT_STORAGE_KEY);
+    } catch {
+      // Ignore session storage failures in restricted contexts.
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -379,6 +429,9 @@ function CreateExportModal({
           name: name || `${entityType}-export-${new Date().toISOString().split('T')[0]}`,
           entityType,
           format,
+          filters,
+          dateRange,
+          fields,
         }),
       });
 
@@ -428,6 +481,7 @@ function CreateExportModal({
               <option value="clicks">Clicks Log</option>
               <option value="conversions">Conversions Log</option>
               <option value="flows">Flows</option>
+              <option value="reports">Reports</option>
             </select>
           </div>
 

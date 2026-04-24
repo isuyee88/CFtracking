@@ -22,7 +22,6 @@ import {
   Search,
   Bell,
   TrendingUp,
-  ShieldCheck,
   Wallet,
   Sun,
   Moon,
@@ -239,7 +238,6 @@ export const Layout = () => {
       title: "Tools",
       items: [
         { icon: Zap, label: "Autorules", to: "/rules" },
-        { icon: ShieldCheck, label: "Traffic Filter", to: "/traffic-filter" },
         { icon: Shield, label: "Blacklist", to: "/blacklist" },
         { icon: ThumbsUp, label: "Whitelist", to: "/whitelist" },
         { icon: Target, label: "Target", to: "/target" },
@@ -448,7 +446,7 @@ export const Layout = () => {
         </Link>
         <Link to="/rules" onClick={handleNavigation('/rules')} className={cn("mobile-nav-item", location.pathname === "/rules" && "active")} title="Autorules">
           <Shield size={20} aria-hidden="true" />
-          <span>Rules</span>
+          <span>Autorules</span>
         </Link>
         <Link to="/auto-optimization" onClick={handleNavigation('/auto-optimization')} className={cn("mobile-nav-item", location.pathname.startsWith("/auto-optimization") && "active")} title="Auto Optimization">
           <Brain size={20} aria-hidden="true" />

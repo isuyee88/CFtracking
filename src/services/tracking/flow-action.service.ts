@@ -1,12 +1,12 @@
-/**
- * @fileoverview Flow Action 服务
- * @description 处理 Flow 的动作执行逻辑，支持多种动作类型和重定向方式
+﻿/**
+ * @fileoverview Flow Action 鏈嶅姟
+ * @description 澶勭悊 Flow 鐨勫姩浣滄墽琛岄€昏緫锛屾敮鎸佸绉嶅姩浣滅被鍨嬪拰閲嶅畾鍚戞柟寮?
  * @module services/tracking/flow-action.service
  *
- * 输入: Flow action 配置和点击请求信息
- * 输出: 动作执行结果（重定向 URL、Offer 等）
- * 逻辑交互: 被 click.service.ts 调用
- * 前后端交互: 无直接交互
+ * 杈撳叆: Flow action 閰嶇疆鍜岀偣鍑昏姹備俊鎭?
+ * 杈撳嚭: 鍔ㄤ綔鎵ц缁撴灉锛堥噸瀹氬悜 URL銆丱ffer 绛夛級
+ * 閫昏緫浜や簰: 琚?click.service.ts 璋冪敤
+ * 鍓嶅悗绔氦浜? 鏃犵洿鎺ヤ氦浜?
  */
 
 import type { Flow, FlowActionType, FlowActionConfig } from '@/types/flow';
@@ -28,60 +28,64 @@ export interface FlowActionResult {
 export interface FlowActionContext {
   flow: Flow;
   request: ClickRequest;
+  clickId?: string;
+  visitorId?: string;
   offer?: Offer;
   landingPage?: LandingPage;
 }
 
 /**
- * Flow Action 服务类
- * 处理不同类型的 Flow 动作
+ * Flow Action 鏈嶅姟绫?
+ * 澶勭悊涓嶅悓绫诲瀷鐨?Flow 鍔ㄤ綔
  */
 export class FlowActionService {
   /**
-   * 执行 Flow 动作
+   * 鎵ц Flow 鍔ㄤ綔
    */
   async execute(context: FlowActionContext): Promise<FlowActionResult> {
-    const { flow, request, offer, landingPage } = context;
-    const actionConfig = flow.actionConfig || { type: flow.actionType || 'redirect' };
+    const { flow, request, offer, landingPage, clickId, visitorId } = context;
+    const actionConfig = this.normalizeActionConfig(flow);
+    const trackingParams = this.buildTrackingParams(request, clickId, visitorId);
 
     switch (actionConfig.type) {
       case 'redirect':
-        return this.executeRedirect(actionConfig, request);
+        return this.executeRedirect(actionConfig, request, trackingParams);
 
       case 'show_offer':
-        return this.executeShowOffer(actionConfig, offer, request);
+        return this.executeShowOffer(actionConfig, offer, request, trackingParams);
 
       case 'show_landing':
-        return this.executeShowLanding(actionConfig, landingPage, request);
+        return this.executeShowLanding(actionConfig, landingPage, request, trackingParams);
 
       case 'traffic_loss':
         return this.executeTrafficLoss();
 
       default:
-        return this.executeRedirect(actionConfig, request);
+        return this.executeRedirect(actionConfig, request, trackingParams);
     }
   }
 
   /**
-   * 执行重定向动作
-   * P0-002 修复: 无有效 URL 时返回 traffic-loss 而不是 about:blank
+   * 鎵ц閲嶅畾鍚戝姩浣?
+   * P0-002 淇: 鏃犳湁鏁?URL 鏃惰繑鍥?traffic-loss 鑰屼笉鏄?about:blank
    */
   private executeRedirect(
     config: FlowActionConfig,
-    request: ClickRequest
+    _request: ClickRequest,
+    trackingParams: URLSearchParams
   ): FlowActionResult {
     let redirectUrl = config.redirectUrl || '';
 
-    // 如果没有配置 URL，检查是否有其他目标
+    // 濡傛灉娌℃湁閰嶇疆 URL锛屾鏌ユ槸鍚︽湁鍏朵粬鐩爣
     if (!redirectUrl) {
       console.warn('[FlowActionService] No redirectUrl configured, falling back to traffic_loss');
       return this.executeTrafficLoss();
     }
 
-    // 替换 URL 中的参数占位符
-    redirectUrl = this.replaceUrlParams(redirectUrl, request);
+    // 鏇挎崲 URL 涓殑鍙傛暟鍗犱綅绗?    redirectUrl = this.replaceUrlParams(redirectUrl, request);
+    redirectUrl = this.appendTrackingParams(redirectUrl, trackingParams);
 
-    // 如果替换后 URL 为空，返回 traffic-loss
+    // 濡傛灉鏇挎崲鍚?URL 涓虹┖锛岃繑鍥?traffic-loss
     if (!redirectUrl || redirectUrl === 'about:blank') {
       console.warn('[FlowActionService] Invalid redirectUrl after param replacement, falling back to traffic_loss');
       return this.executeTrafficLoss();
@@ -98,25 +102,26 @@ export class FlowActionService {
   }
 
   /**
-   * 执行显示 Offer 动作
+   * 鎵ц鏄剧ず Offer 鍔ㄤ綔
    */
   private executeShowOffer(
     _config: FlowActionConfig,
     offer: Offer | undefined,
-    request: ClickRequest
+    _request: ClickRequest,
+    trackingParams: URLSearchParams
   ): FlowActionResult {
     if (!offer) {
       return this.executeTrafficLoss();
     }
 
-    const redirectUrl = this.replaceUrlParams(offer.url, request);
+    const redirectUrl = this.appendTrackingParams(this.replaceUrlParams(offer.url, _request), trackingParams);
     const redirectType = offer.redirectType || 'http';
 
     return this.buildRedirectResult(redirectType, redirectUrl, offer);
   }
 
   /**
-   * 根据重定向类型构建结果
+   * 鏍规嵁閲嶅畾鍚戠被鍨嬫瀯寤虹粨鏋?
    */
   private buildRedirectResult(
     redirectType: RedirectType,
@@ -202,7 +207,7 @@ export class FlowActionService {
   }
 
   /**
-   * 构建 Meta 重定向 HTML
+   * 鏋勫缓 Meta 閲嶅畾鍚?HTML
    */
   private buildMetaRedirectHtml(url: string): string {
     return `<!DOCTYPE html>
@@ -219,7 +224,7 @@ export class FlowActionService {
   }
 
   /**
-   * 构建 JS 重定向 HTML
+   * 鏋勫缓 JS 閲嶅畾鍚?HTML
    */
   private buildJsRedirectHtml(url: string): string {
     return `<!DOCTYPE html>
@@ -238,7 +243,7 @@ export class FlowActionService {
   }
 
   /**
-   * 构建 JS 清除 Referrer 重定向 HTML
+   * 鏋勫缓 JS 娓呴櫎 Referrer 閲嶅畾鍚?HTML
    */
   private buildJsBlankRedirectHtml(url: string): string {
     return `<!DOCTYPE html>
@@ -264,8 +269,8 @@ export class FlowActionService {
   }
 
   /**
-   * 构建双重 Meta 重定向 HTML
-   * 通过两次重定向来隐藏来源
+   * 鏋勫缓鍙岄噸 Meta 閲嶅畾鍚?HTML
+   * 閫氳繃涓ゆ閲嶅畾鍚戞潵闅愯棌鏉ユ簮
    */
   private buildDoubleMetaRedirectHtml(url: string): string {
     const intermediateUrl = 'about:blank';
@@ -295,7 +300,7 @@ export class FlowActionService {
   }
 
   /**
-   * HTML 转义
+   * HTML 杞箟
    */
   private escapeHtml(str: string): string {
     return str
@@ -307,7 +312,7 @@ export class FlowActionService {
   }
 
   /**
-   * JS 字符串转义
+   * JS 瀛楃涓茶浆涔?
    */
   private escapeJs(str: string): string {
     return str
@@ -319,19 +324,20 @@ export class FlowActionService {
   }
 
   /**
-   * 执行显示落地页动作
+   * 鎵ц鏄剧ず钀藉湴椤靛姩浣?
    */
   private executeShowLanding(
     _config: FlowActionConfig,
     landingPage: LandingPage | undefined,
-    request: ClickRequest
+    _request: ClickRequest,
+    trackingParams: URLSearchParams
   ): FlowActionResult {
     if (!landingPage) {
-      // 如果没有落地页，返回 traffic loss
+      // 濡傛灉娌℃湁钀藉湴椤碉紝杩斿洖 traffic loss
       return this.executeTrafficLoss();
     }
 
-    const redirectUrl = this.replaceUrlParams(landingPage.url, request);
+    const redirectUrl = this.appendTrackingParams(this.replaceUrlParams(landingPage.url, _request), trackingParams);
 
     return {
       actionType: 'show_landing',
@@ -345,7 +351,7 @@ export class FlowActionService {
   }
 
   /**
-   * 执行流量丢失动作
+   * 鎵ц娴侀噺涓㈠け鍔ㄤ綔
    */
   private executeTrafficLoss(): FlowActionResult {
     return {
@@ -355,13 +361,15 @@ export class FlowActionService {
   }
 
   /**
-   * 替换 URL 中的参数占位符
-   * 支持 {clickid}, {campaign}, {subid1}-{subid30} 等格式
+   * 鏇挎崲 URL 涓殑鍙傛暟鍗犱綅绗?
+   * 鏀寔 {clickid}, {campaign}, {subid1}-{subid30} 绛夋牸寮?
    */
   private replaceUrlParams(url: string, request: ClickRequest): string {
+    const trackingClickId = (request as ClickRequest & { __trackingClickId?: string }).__trackingClickId || '';
+    const trackingVisitorId = (request as ClickRequest & { __trackingVisitorId?: string }).__trackingVisitorId || '';
     const params = request.urlParams || new URLSearchParams();
 
-    // 基础参数替换
+    // 鍩虹鍙傛暟鏇挎崲
     const replacements: Record<string, string> = {
       '{campaign}': request.campaignId || '',
       '{campaign_id}': request.campaignId || '',
@@ -373,22 +381,25 @@ export class FlowActionService {
       '{browser}': request.browser || '',
       '{os}': request.os || '',
       '{useragent}': request.userAgent || '',
+      '{clickid}': trackingClickId,
+      '{click_id}': trackingClickId,
+      '{visitor}': trackingVisitorId,
     };
 
-    // 动态添加所有 Sub ID 参数 (支持1-30个)
+    // 鍔ㄦ€佹坊鍔犳墍鏈?Sub ID 鍙傛暟 (鏀寔1-30涓?
     for (let i = 1; i <= 30; i++) {
       const subIdValue = request[`subId${i}` as keyof ClickRequest] as string | undefined;
       replacements[`{subid${i}}`] = subIdValue || '';
       replacements[`{sub_id_${i}}`] = subIdValue || '';
     }
 
-    // 添加 URL 参数中的所有值
+    // 娣诲姞 URL 鍙傛暟涓殑鎵€鏈夊€?
     params.forEach((value, key) => {
       replacements[`{${key}}`] = value;
       replacements[`{${key.toLowerCase()}}`] = value;
     });
 
-    // 执行替换
+    // 鎵ц鏇挎崲
     let result = url;
     for (const [placeholder, value] of Object.entries(replacements)) {
       result = result.replace(new RegExp(placeholder, 'gi'), encodeURIComponent(value));
@@ -398,7 +409,7 @@ export class FlowActionService {
   }
 
   /**
-   * 验证动作配置
+   * 楠岃瘉鍔ㄤ綔閰嶇疆
    */
   validateActionConfig(config: FlowActionConfig): { valid: boolean; error?: string } {
     switch (config.type) {
@@ -421,7 +432,7 @@ export class FlowActionService {
         break;
 
       case 'traffic_loss':
-        // 无需额外配置
+        // 鏃犻渶棰濆閰嶇疆
         break;
 
       default:
@@ -430,7 +441,56 @@ export class FlowActionService {
 
     return { valid: true };
   }
+
+  private normalizeActionConfig(flow: Flow): FlowActionConfig {
+    return {
+      ...(flow.actionConfig || {}),
+      type: flow.actionConfig?.type || flow.actionType || 'redirect',
+    };
+  }
+
+  private buildTrackingParams(
+    request: ClickRequest,
+    clickId?: string,
+    visitorId?: string
+  ): URLSearchParams {
+    const params = new URLSearchParams();
+
+    if (clickId) {
+      params.set('clickid', clickId);
+    }
+
+    if (visitorId) {
+      params.set('visitor', visitorId);
+    }
+
+    for (let i = 1; i <= 30; i += 1) {
+      const subIdValue = request[`subId${i}` as keyof ClickRequest] as string | undefined;
+      if (subIdValue) {
+        params.set(`subid${i}`, subIdValue);
+      }
+    }
+
+    return params;
+  }
+
+  private appendTrackingParams(url: string, trackingParams: URLSearchParams): string {
+    if (!url || trackingParams.size === 0) {
+      return url;
+    }
+
+    try {
+      const parsed = new URL(url);
+      trackingParams.forEach((value, key) => {
+        parsed.searchParams.set(key, value);
+      });
+      return parsed.toString();
+    } catch {
+      const separator = url.includes('?') ? '&' : '?';
+      return `${url}${separator}${trackingParams.toString()}`;
+    }
+  }
 }
 
-// 导出单例
+// 瀵煎嚭鍗曚緥
 export const flowActionService = new FlowActionService();

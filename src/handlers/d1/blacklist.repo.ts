@@ -1,21 +1,60 @@
 /**
  * @fileoverview Blacklist 数据仓库
- * @description 封装黑名单相关的所有数据库操作
+ * @description 封装黑名单相关数据库操作（含条件规则字段）
  * @module handlers/d1/blacklist.repo
  */
 
 import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
-import type { BlacklistEntry, BlacklistQueryParams, BlacklistType } from '@/types/blacklist';
+import type {
+  BlacklistEntry,
+  BlacklistQueryParams,
+  BlacklistType,
+  ListCondition,
+  ListConditionMode,
+} from '@/types/blacklist';
 
 export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
   constructor(db: D1Database) {
     super(db, 'blacklist');
   }
 
-  /**
-   * 创建黑名单条目
-   */
+  private getTypeVariants(type: BlacklistType): BlacklistType[] {
+    if (type === 'country' || type === 'geo') {
+      return ['country', 'geo'];
+    }
+
+    return [type];
+  }
+
+  private mapEntry(row: Record<string, unknown> | null | undefined): BlacklistEntry | null {
+    if (!row) return null;
+
+    let conditions: ListCondition[] | undefined;
+    const rawConditions = row.conditionsJson;
+    if (typeof rawConditions === 'string' && rawConditions.trim()) {
+      try {
+        const parsed = JSON.parse(rawConditions);
+        if (Array.isArray(parsed)) {
+          conditions = parsed as ListCondition[];
+        }
+      } catch {
+        // Keep backward compatibility when historical payload is malformed.
+      }
+    }
+
+    return {
+      ...(row as unknown as BlacklistEntry),
+      synced: Boolean(row.synced),
+      syncToPlatform: row.syncToPlatform === undefined ? true : Boolean(row.syncToPlatform),
+      matchMode:
+        typeof row.conditionMode === 'string' && (row.conditionMode === 'all' || row.conditionMode === 'any')
+          ? (row.conditionMode as ListConditionMode)
+          : undefined,
+      conditions,
+    };
+  }
+
   async create(data: Omit<BlacklistEntry, 'id' | 'createdAt' | 'updatedAt'>): Promise<BlacklistEntry> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -24,8 +63,9 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
       .prepare(`
         INSERT INTO blacklist (
           id, trafficSourceId, type, value, name, reason, status, synced,
-          syncedAt, campaignId, ipMatchMode, uaMatchMode, syncToPlatform, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          syncedAt, campaignId, ipMatchMode, uaMatchMode, syncToPlatform,
+          conditionMode, conditionsJson, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         id,
@@ -41,8 +81,10 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
         data.ipMatchMode || null,
         data.uaMatchMode || null,
         data.syncToPlatform !== undefined ? (data.syncToPlatform ? 1 : 0) : 1,
+        data.matchMode || null,
+        data.conditions && data.conditions.length > 0 ? JSON.stringify(data.conditions) : null,
         now,
-        now
+        now,
       )
       .run();
 
@@ -50,9 +92,6 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
     return entry!;
   }
 
-  /**
-   * 批量创建黑名单条目
-   */
   async batchCreate(
     trafficSourceId: string,
     type: BlacklistType,
@@ -61,15 +100,13 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
       name?: string;
       reason?: string;
       campaignId?: string;
-    }>
+    }>,
   ): Promise<BlacklistEntry[]> {
     const entries: BlacklistEntry[] = [];
 
     for (const item of items) {
-      // 检查是否已存在
       const existing = await this.findByValue(trafficSourceId, type, item.value);
       if (existing) {
-        // 如果已存在但状态为 removed，则重新激活
         if (existing.status === 'removed') {
           await this.update(existing.id, {
             status: 'active',
@@ -98,9 +135,6 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
     return entries;
   }
 
-  /**
-   * 根据条件查询黑名单
-   */
   async findByParams(params: BlacklistQueryParams): Promise<BlacklistEntry[]> {
     const conditions: string[] = [];
     const values: unknown[] = [];
@@ -110,8 +144,9 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
       values.push(params.trafficSourceId);
     }
     if (params.type) {
-      conditions.push('type = ?');
-      values.push(params.type);
+      const typeVariants = this.getTypeVariants(params.type);
+      conditions.push(`(${typeVariants.map(() => 'type = ?').join(' OR ')})`);
+      values.push(...typeVariants);
     }
     if (params.status) {
       conditions.push('status = ?');
@@ -127,42 +162,34 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
     const result = await this.db
       .prepare(`SELECT * FROM blacklist ${whereClause} ORDER BY createdAt DESC`)
       .bind(...values)
       .all();
 
-    return (result.results as unknown as BlacklistEntry[]) || [];
+    return ((result.results as unknown as Record<string, unknown>[]) || [])
+      .map((row) => this.mapEntry(row))
+      .filter((item): item is BlacklistEntry => Boolean(item));
   }
 
-  /**
-   * 根据值查找黑名单条目
-   */
-  async findByValue(
-    trafficSourceId: string,
-    type: BlacklistType,
-    value: string
-  ): Promise<BlacklistEntry | null> {
+  async findByValue(trafficSourceId: string, type: BlacklistType, value: string): Promise<BlacklistEntry | null> {
+    const typeVariants = this.getTypeVariants(type);
+    const typeClause = `(${typeVariants.map(() => 'type = ?').join(' OR ')})`;
     const result = await this.db
-      .prepare(`
+      .prepare(
+        `
         SELECT * FROM blacklist
-        WHERE trafficSourceId = ? AND type = ? AND value = ?
+        WHERE trafficSourceId = ? AND ${typeClause} AND value = ?
         LIMIT 1
-      `)
-      .bind(trafficSourceId, type, value)
+      `,
+      )
+      .bind(trafficSourceId, ...typeVariants, value)
       .first();
 
-    return result as BlacklistEntry | null;
+    return this.mapEntry(result as unknown as Record<string, unknown> | null);
   }
 
-  /**
-   * 更新黑名单条目
-   */
-  async update(
-    id: string,
-    data: Partial<Omit<BlacklistEntry, 'id' | 'createdAt'>>
-  ): Promise<BlacklistEntry | null> {
+  async update(id: string, data: Partial<Omit<BlacklistEntry, 'id' | 'createdAt'>>): Promise<BlacklistEntry | null> {
     const fields: string[] = [];
     const values: unknown[] = [];
 
@@ -198,6 +225,14 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
       fields.push('syncToPlatform = ?');
       values.push(data.syncToPlatform ? 1 : 0);
     }
+    if (data.matchMode !== undefined) {
+      fields.push('conditionMode = ?');
+      values.push(data.matchMode);
+    }
+    if (data.conditions !== undefined) {
+      fields.push('conditionsJson = ?');
+      values.push(data.conditions && data.conditions.length > 0 ? JSON.stringify(data.conditions) : null);
+    }
 
     if (fields.length === 0) {
       return this.findById(id);
@@ -215,48 +250,39 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
     return this.findById(id);
   }
 
-  /**
-   * 标记为已同步
-   */
   async markSynced(id: string): Promise<void> {
     await this.db
-      .prepare(`
+      .prepare(
+        `
         UPDATE blacklist
         SET synced = 1, syncedAt = ?, updatedAt = ?
         WHERE id = ?
-      `)
+      `,
+      )
       .bind(new Date().toISOString(), new Date().toISOString(), id)
       .run();
   }
 
-  /**
-   * 获取未同步的黑名单条目
-   */
   async findUnsynced(trafficSourceId?: string): Promise<BlacklistEntry[]> {
-    let sql = 'SELECT * FROM blacklist WHERE synced = 0 AND status = \'active\'';
+    let sql = "SELECT * FROM blacklist WHERE synced = 0 AND status = 'active'";
     const values: unknown[] = [];
 
     if (trafficSourceId) {
       sql += ' AND trafficSourceId = ?';
       values.push(trafficSourceId);
     }
-
     sql += ' ORDER BY createdAt ASC';
 
     const result = await this.db.prepare(sql).bind(...values).all();
-    return (result.results as unknown as BlacklistEntry[]) || [];
+    return ((result.results as unknown as Record<string, unknown>[]) || [])
+      .map((row) => this.mapEntry(row))
+      .filter((item): item is BlacklistEntry => Boolean(item));
   }
 
-  /**
-   * 从黑名单中移除（软删除）
-   */
   async remove(id: string): Promise<BlacklistEntry | null> {
     return this.update(id, { status: 'removed', synced: false });
   }
 
-  /**
-   * 获取黑名单统计
-   */
   async getStats(trafficSourceId: string): Promise<{
     total: number;
     active: number;
@@ -264,7 +290,8 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
     unsynced: number;
   }> {
     const result = await this.db
-      .prepare(`
+      .prepare(
+        `
         SELECT
           COUNT(*) as total,
           SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
@@ -272,7 +299,8 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
           SUM(CASE WHEN synced = 0 AND status = 'active' THEN 1 ELSE 0 END) as unsynced
         FROM blacklist
         WHERE trafficSourceId = ?
-      `)
+      `,
+      )
       .bind(trafficSourceId)
       .first<{
         total: number;
@@ -287,5 +315,10 @@ export class BlacklistRepository extends BaseRepository<BlacklistEntry> {
       synced: result?.synced || 0,
       unsynced: result?.unsynced || 0,
     };
+  }
+
+  async findById(id: string): Promise<BlacklistEntry | null> {
+    const result = await this.db.prepare('SELECT * FROM blacklist WHERE id = ? LIMIT 1').bind(id).first();
+    return this.mapEntry(result as unknown as Record<string, unknown> | null);
   }
 }

@@ -47,7 +47,12 @@ app.post('/', async (c) => {
     const validated = CreateExportTaskSchema.parse(body);
     
     const service = createExportTaskService(c.env);
-    const task = await service.createTask(validated);
+    const task = await service.createTask(validated, false);
+    c.executionCtx.waitUntil(
+      service.startTaskExecution(task.id).catch((executionError) => {
+        console.error('Export task background execution failed:', executionError);
+      })
+    );
     
     return c.json({
       success: true,

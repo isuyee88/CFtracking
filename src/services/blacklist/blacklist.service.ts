@@ -1,12 +1,13 @@
-/**
- * @fileoverview Blacklist 业务服务
- * @description 处理黑名单相关的业务逻辑，包括批量添加和同步到流量平台
+﻿/**
+ * @fileoverview Blacklist 涓氬姟鏈嶅姟
+ * @description 澶勭悊榛戝悕鍗曠浉鍏崇殑涓氬姟閫昏緫锛屽寘鎷壒閲忔坊鍔犲拰鍚屾鍒版祦閲忓钩鍙?
  * @module services/blacklist/blacklist.service
  */
 
 import { BlacklistRepository } from '@/handlers/d1/blacklist.repo';
 import { TrafficSourceRepository } from '@/handlers/d1/trafficSource.repo';
 import { getD1Connection } from '@/handlers/d1';
+import { GENERAL_TRAFFIC_SOURCE_ID } from '@/handlers/d1/trafficSource.repo';
 import { PropellerAdsAdapter } from '@/services/platform/propellerads';
 import type { Env } from '@/config/env';
 import type {
@@ -16,6 +17,9 @@ import type {
   BlacklistSyncResult,
   BlacklistCandidate,
   BlacklistType,
+  ListCondition,
+  ListConditionField,
+  ListConditionMode,
   CreateBlacklistDTO,
   UpdateBlacklistDTO,
 } from '@/types/blacklist';
@@ -37,6 +41,10 @@ export class BlacklistService {
   }
 
   private async resolveTrafficSourceOrThrow(trafficSourceId: string) {
+    if (trafficSourceId === GENERAL_TRAFFIC_SOURCE_ID) {
+      return this.trafficSourceRepo.ensureGeneralTrafficSource();
+    }
+
     const resolved = await this.trafficSourceRepo.findByIdentifierWithStorageId(trafficSourceId);
     if (!resolved) {
       throw new NotFoundError('Traffic Source not found');
@@ -46,66 +54,71 @@ export class BlacklistService {
   }
 
   /**
-   * 创建单个黑名单条目
+   * 鍒涘缓鍗曚釜榛戝悕鍗曟潯鐩?
    */
   async create(data: CreateBlacklistDTO): Promise<BlacklistEntry> {
     const normalizedData = this.normalizeCreateInput(data);
-    data = normalizedData;
     const { trafficSourceId, type, value } = normalizedData;
+    const hasConditionRules = this.hasConditionRules(normalizedData.conditions);
 
     const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
-    // 验证值格式
-    this.validateEntryValue(type, value, data.ipMatchMode, data.uaMatchMode);
+    this.validateEntryValue(type, value, normalizedData.ipMatchMode, normalizedData.uaMatchMode, hasConditionRules);
+    this.validateConditionRules(type, normalizedData.matchMode, normalizedData.conditions);
 
-    // 检查是否已存在
-    const existing = await this.blacklistRepo.findByValue(storageId, type, value);
-    if (existing) {
-      if (existing.status === 'active') {
-        throw new ValidationError(`Entry already exists in blacklist: ${value}`);
+    if (!hasConditionRules) {
+      const existing = await this.blacklistRepo.findByValue(storageId, type, value);
+      if (existing) {
+        if (existing.status === 'active') {
+          throw new ValidationError(`Entry already exists in blacklist: ${value}`);
+        }
+        const updated = await this.blacklistRepo.update(existing.id, {
+          status: 'active',
+          reason: normalizedData.reason,
+          name: normalizedData.name,
+          ipMatchMode: normalizedData.ipMatchMode,
+          uaMatchMode: normalizedData.uaMatchMode,
+          syncToPlatform: normalizedData.syncToPlatform,
+          matchMode: normalizedData.matchMode,
+          conditions: normalizedData.conditions,
+        });
+        return updated!;
       }
-      // 如果已存在但已移除，重新激活
-      const updated = await this.blacklistRepo.update(existing.id, {
-        status: 'active',
-        reason: data.reason,
-        name: data.name,
-        ipMatchMode: data.ipMatchMode,
-        uaMatchMode: data.uaMatchMode,
-        syncToPlatform: data.syncToPlatform,
-      });
-      return updated!;
     }
 
-    // 创建新条目
     const entry = await this.blacklistRepo.create({
       trafficSourceId: storageId,
       type,
       value,
-      name: data.name,
-      reason: data.reason,
+      name: normalizedData.name,
+      reason: normalizedData.reason,
       status: 'active',
       synced: false,
-      campaignId: data.campaignId,
-      ipMatchMode: data.ipMatchMode,
-      uaMatchMode: data.uaMatchMode,
-      syncToPlatform: data.syncToPlatform,
+      campaignId: normalizedData.campaignId,
+      ipMatchMode: normalizedData.ipMatchMode,
+      uaMatchMode: normalizedData.uaMatchMode,
+      syncToPlatform: normalizedData.syncToPlatform,
+      matchMode: normalizedData.matchMode,
+      conditions: normalizedData.conditions,
     });
 
     return entry;
   }
-
   /**
-   * 更新黑名单条目
+   * 鏇存柊榛戝悕鍗曟潯鐩?
    */
   async update(id: string, data: UpdateBlacklistDTO): Promise<BlacklistEntry> {
     const normalizedData = this.normalizeUpdateInput(data);
-    data = normalizedData;
     const entry = await this.blacklistRepo.findById(id);
     if (!entry) {
       throw new NotFoundError('Blacklist entry not found');
     }
 
-    const updated = await this.blacklistRepo.update(id, data);
+    const effectiveConditions = normalizedData.conditions ?? entry.conditions;
+    const effectiveMatchMode = normalizedData.matchMode ?? entry.matchMode;
+    this.validateConditionRules(entry.type, effectiveMatchMode, effectiveConditions);
+
+    const updated = await this.blacklistRepo.update(id, normalizedData);
     if (!updated) {
       throw new NotFoundError('Blacklist entry not found');
     }
@@ -114,7 +127,7 @@ export class BlacklistService {
   }
 
   /**
-   * 批量添加黑名单
+   * 鎵归噺娣诲姞榛戝悕鍗?
    */
   async batchAdd(data: BatchBlacklistDTO): Promise<BlacklistEntry[]> {
     const normalizedData = this.normalizeBatchInput(data);
@@ -127,14 +140,14 @@ export class BlacklistService {
       throw new ValidationError('No items to blacklist');
     }
 
-    // 批量创建黑名单条目
+    // 鎵归噺鍒涘缓榛戝悕鍗曟潯鐩?
     const entries = await this.blacklistRepo.batchCreate(storageId, type, items);
 
     return entries;
   }
 
   /**
-   * 从报告候选项目中批量添加黑名单
+   * 浠庢姤鍛婂€欓€夐」鐩腑鎵归噺娣诲姞榛戝悕鍗?
    */
   async batchAddFromCandidates(
     trafficSourceId: string,
@@ -154,7 +167,7 @@ export class BlacklistService {
       campaignId: candidate.campaignId,
     }));
 
-    // 按类型分组处理
+    // 鎸夌被鍨嬪垎缁勫鐞?
     const groupedByType = items.reduce(
       (acc, item, index) => {
         const candidate = candidates[index];
@@ -182,7 +195,7 @@ export class BlacklistService {
   }
 
   /**
-   * 查询黑名单
+   * 鏌ヨ榛戝悕鍗?
    */
   async query(params: BlacklistQueryParams): Promise<BlacklistEntry[]> {
     if (!params.trafficSourceId) {
@@ -198,7 +211,7 @@ export class BlacklistService {
   }
 
   /**
-   * 获取黑名单详情
+   * 鑾峰彇榛戝悕鍗曡鎯?
    */
   async getById(id: string): Promise<BlacklistEntry> {
     const entry = await this.blacklistRepo.findById(id);
@@ -209,7 +222,7 @@ export class BlacklistService {
   }
 
   /**
-   * 从黑名单中移除
+   * 浠庨粦鍚嶅崟涓Щ闄?
    */
   async remove(id: string): Promise<BlacklistEntry> {
     const entry = await this.blacklistRepo.remove(id);
@@ -217,7 +230,7 @@ export class BlacklistService {
       throw new NotFoundError('Blacklist entry not found');
     }
 
-    // 如果已同步到平台，需要从平台移除
+    // 濡傛灉宸插悓姝ュ埌骞冲彴锛岄渶瑕佷粠骞冲彴绉婚櫎
     if (entry.synced) {
       await this.removeFromPlatform(entry);
     }
@@ -226,7 +239,7 @@ export class BlacklistService {
   }
 
   /**
-   * 同步黑名单到流量平台
+   * 鍚屾榛戝悕鍗曞埌娴侀噺骞冲彴
    */
   async syncToPlatform(trafficSourceId: string): Promise<BlacklistSyncResult> {
     const { trafficSource, storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
@@ -262,7 +275,7 @@ export class BlacklistService {
       };
     }
 
-    // 获取未同步的黑名单
+    // 鑾峰彇鏈悓姝ョ殑榛戝悕鍗?
     const unsyncedEntries = await this.blacklistRepo.findUnsynced(storageId);
 
     if (unsyncedEntries.length === 0) {
@@ -274,7 +287,7 @@ export class BlacklistService {
       };
     }
 
-    // 根据平台类型选择适配器
+    // 鏍规嵁骞冲彴绫诲瀷閫夋嫨閫傞厤鍣?
     const result: BlacklistSyncResult = {
       success: true,
       synced: 0,
@@ -282,7 +295,7 @@ export class BlacklistService {
       errors: [],
     };
 
-    // 目前只支持 PropellerAds
+    // 鐩墠鍙敮鎸?PropellerAds
     if (trafficSource.name.toLowerCase().includes('propeller')) {
       const adapter = new PropellerAdsAdapter({
         apiKey: apiConfig.apiKey,
@@ -335,13 +348,13 @@ export class BlacklistService {
   }
 
   /**
-   * 同步单个条目到 PropellerAds
+   * 鍚屾鍗曚釜鏉＄洰鍒?PropellerAds
    */
   private async syncEntryToPropellerAds(
     adapter: PropellerAdsAdapter,
     entry: BlacklistEntry
   ): Promise<{ success: boolean; message: string }> {
-    // 只支持 Zone 类型的黑名单
+    // 鍙敮鎸?Zone 绫诲瀷鐨勯粦鍚嶅崟
     if (entry.type !== 'zone') {
       return {
         success: false,
@@ -349,7 +362,7 @@ export class BlacklistService {
       };
     }
 
-    // 需要 campaignId 才能排除 Zone
+    // 闇€瑕?campaignId 鎵嶈兘鎺掗櫎 Zone
     if (!entry.campaignId) {
       return {
         success: false,
@@ -369,7 +382,7 @@ export class BlacklistService {
   }
 
   /**
-   * 从平台移除黑名单
+   * 浠庡钩鍙扮Щ闄ら粦鍚嶅崟
    */
   private async removeFromPlatform(entry: BlacklistEntry): Promise<void> {
     const trafficSource = await this.trafficSourceRepo.findById(entry.trafficSourceId);
@@ -397,7 +410,7 @@ export class BlacklistService {
   }
 
   /**
-   * 获取黑名单统计
+   * 鑾峰彇榛戝悕鍗曠粺璁?
    */
   private parseTrafficSourceApiConfig(config: TrafficSourceApiConfig | string): TrafficSourceApiConfig {
     if (typeof config === 'string') {
@@ -419,7 +432,19 @@ export class BlacklistService {
 
   private normalizeCreateInput(data: CreateBlacklistDTO): CreateBlacklistDTO {
     const type = data.type as BlacklistType;
+    const hasConditionRules = this.hasConditionRules(data.conditions);
     const valueMaxLength = this.getBlacklistValueMaxLength(type);
+    const normalizedConditions = this.normalizeConditions(data.conditions, 'blacklist.conditions');
+    const normalizedMatchMode = this.normalizeConditionMode(data.matchMode, normalizedConditions);
+    const normalizedValue = hasConditionRules
+      ? normalizeOptionalString(data.value as unknown, {
+          field: 'blacklist.value',
+          maxLength: valueMaxLength,
+        }) || `rule:${crypto.randomUUID()}`
+      : normalizeRequiredString(data.value as unknown, {
+          field: 'blacklist.value',
+          maxLength: valueMaxLength,
+        });
 
     return {
       ...data,
@@ -427,10 +452,7 @@ export class BlacklistService {
         field: 'blacklist.trafficSourceId',
         maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
       }),
-      value: normalizeRequiredString(data.value as unknown, {
-        field: 'blacklist.value',
-        maxLength: valueMaxLength,
-      }),
+      value: this.normalizeEntryValue(type, normalizedValue),
       name: normalizeOptionalString(data.name as unknown, {
         field: 'blacklist.name',
         maxLength: FIELD_MAX_LENGTH.NAME,
@@ -443,6 +465,8 @@ export class BlacklistService {
         field: 'blacklist.campaignId',
         maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
       }),
+      matchMode: normalizedMatchMode,
+      conditions: normalizedConditions,
     };
   }
 
@@ -461,6 +485,14 @@ export class BlacklistService {
         field: 'blacklist.reason',
         maxLength: FIELD_MAX_LENGTH.REASON,
       });
+    }
+
+    if (data.conditions !== undefined) {
+      normalizedData.conditions = this.normalizeConditions(data.conditions, 'blacklist.conditions');
+    }
+
+    if (data.matchMode !== undefined || normalizedData.conditions !== undefined) {
+      normalizedData.matchMode = this.normalizeConditionMode(data.matchMode, normalizedData.conditions);
     }
 
     return normalizedData;
@@ -483,10 +515,13 @@ export class BlacklistService {
       trafficSourceId: normalizedTrafficSourceId,
       items: data.items.map((item, index) => ({
         ...item,
-        value: normalizeRequiredString(item.value as unknown, {
-          field: `blacklist.items[${index}].value`,
-          maxLength: valueMaxLength,
-        }),
+        value: this.normalizeEntryValue(
+          type,
+          normalizeRequiredString(item.value as unknown, {
+            field: `blacklist.items[${index}].value`,
+            maxLength: valueMaxLength,
+          })
+        ),
         name: normalizeOptionalString(item.name as unknown, {
           field: `blacklist.items[${index}].name`,
           maxLength: FIELD_MAX_LENGTH.NAME,
@@ -511,15 +546,19 @@ export class BlacklistService {
   }
 
   /**
-   * 验证条目值格式
+   * 楠岃瘉鏉＄洰鍊兼牸寮?
    */
   private validateEntryValue(
     type: BlacklistType,
     value: string,
     ipMatchMode?: string,
-    uaMatchMode?: string
+    uaMatchMode?: string,
+    hasConditionRules = false
   ): void {
     if (!value || value.trim() === '') {
+      if (hasConditionRules) {
+        return;
+      }
       throw new ValidationError('Value is required');
     }
 
@@ -536,38 +575,177 @@ export class BlacklistService {
       case 'user_agent':
         this.validateUaValue(normalizedValue, uaMatchMode);
         break;
+      case 'asn':
+        this.validateAsnValue(normalizedValue);
+        break;
+      case 'country':
+        this.validateCountryValue(normalizedValue);
+        break;
       case 'zone':
       case 'creative':
       case 'publisher':
       case 'sub_id':
       case 'geo':
       case 'device':
-        // 这些类型只需要非空值
-        break;
+      case 'isp':
+      case 'fingerprint':
+      case 'rule':
+        // 杩欎簺绫诲瀷鍙渶瑕侀潪绌哄€?        break;
       default:
         throw new ValidationError(`Unsupported type: ${type}`);
     }
   }
 
+  private hasConditionRules(conditions?: ListCondition[]): boolean {
+    return Array.isArray(conditions) && conditions.length > 0;
+  }
+
+  private normalizeConditionMode(
+    mode: ListConditionMode | undefined,
+    conditions: ListCondition[] | undefined
+  ): ListConditionMode | undefined {
+    if (!this.hasConditionRules(conditions)) {
+      return undefined;
+    }
+
+    if (!mode) {
+      return 'all';
+    }
+
+    if (mode !== 'all' && mode !== 'any') {
+      throw new ValidationError("matchMode must be 'all' or 'any'");
+    }
+
+    return mode;
+  }
+
+  private normalizeConditions(
+    conditions: CreateBlacklistDTO['conditions'] | UpdateBlacklistDTO['conditions'] | undefined,
+    fieldPrefix: string
+  ): ListCondition[] | undefined {
+    if (conditions === undefined) {
+      return undefined;
+    }
+
+    if (!Array.isArray(conditions)) {
+      throw new ValidationError(`${fieldPrefix} must be an array`);
+    }
+
+    if (conditions.length === 0) {
+      return [];
+    }
+
+    return conditions.map((raw, index) => this.normalizeCondition(raw, `${fieldPrefix}[${index}]`));
+  }
+
+  private normalizeCondition(raw: ListCondition, fieldPrefix: string): ListCondition {
+    if (!raw || typeof raw !== 'object') {
+      throw new ValidationError(`${fieldPrefix} must be an object`);
+    }
+
+    const field = String(raw.field || '').trim() as ListConditionField;
+    const operator = String(raw.operator || '').trim().toLowerCase() as ListCondition['operator'];
+
+    const allowedFields: ListConditionField[] = [
+      'ip',
+      'asn',
+      'userAgent',
+      'zoneId',
+      'country',
+      'device',
+      'isp',
+      'fingerprint',
+      'utmSource',
+      'utmCampaign',
+      'browser',
+      'subId1',
+      'subId2',
+      'subId3',
+      'subId4',
+      'subId5',
+    ];
+    if (!allowedFields.includes(field)) {
+      throw new ValidationError(`${fieldPrefix}.field is invalid`);
+    }
+
+    const allowedOperators: ListCondition['operator'][] = [
+      'equals',
+      'contains',
+      'starts_with',
+      'ends_with',
+      'in',
+      'exists',
+    ];
+    if (!allowedOperators.includes(operator)) {
+      throw new ValidationError(`${fieldPrefix}.operator is invalid`);
+    }
+
+    if (operator === 'exists') {
+      return { field, operator };
+    }
+
+    if (operator === 'in') {
+      if (!Array.isArray(raw.value)) {
+        throw new ValidationError(`${fieldPrefix}.value must be an array for 'in' operator`);
+      }
+      const values = raw.value
+        .map((item, valueIndex) =>
+          normalizeRequiredString(item as unknown, {
+            field: `${fieldPrefix}.value[${valueIndex}]`,
+            maxLength: this.getConditionValueMaxLength(field),
+          })
+        )
+        .filter(Boolean);
+      if (values.length === 0) {
+        throw new ValidationError(`${fieldPrefix}.value requires at least one item`);
+      }
+      return { field, operator, value: values };
+    }
+
+    const value = normalizeRequiredString(raw.value as unknown, {
+      field: `${fieldPrefix}.value`,
+      maxLength: this.getConditionValueMaxLength(field),
+    });
+    return { field, operator, value };
+  }
+
+  private getConditionValueMaxLength(field: ListConditionField): number {
+    return field === 'userAgent' ? FIELD_MAX_LENGTH.USER_AGENT_VALUE : FIELD_MAX_LENGTH.TRAFFIC_ENTRY_VALUE;
+  }
+
+  private validateConditionRules(
+    type: BlacklistType,
+    matchMode: ListConditionMode | undefined,
+    conditions: ListCondition[] | undefined
+  ): void {
+    const hasConditions = this.hasConditionRules(conditions);
+    if (!hasConditions && matchMode !== undefined) {
+      throw new ValidationError('matchMode requires conditions');
+    }
+    if (type === 'rule' && !hasConditions) {
+      throw new ValidationError('Rule type requires at least one condition');
+    }
+  }
+
   /**
-   * 验证IP地址格式
+   * 楠岃瘉IP鍦板潃鏍煎紡
    */
   private validateIpValue(value: string, matchMode?: string): void {
     const mode = matchMode || 'exact';
 
     if (mode === 'cidr') {
-      // 验证CIDR格式: x.x.x.x/y
+      // 楠岃瘉CIDR鏍煎紡: x.x.x.x/y
       const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
       if (!cidrRegex.test(value)) {
         throw new ValidationError(`Invalid CIDR format: ${value}. Expected format: x.x.x.x/y`);
       }
-      // 验证IP部分
+      // 楠岃瘉IP閮ㄥ垎
       const [ip] = value.split('/');
       if (ip && !this.isValidIp(ip)) {
         throw new ValidationError(`Invalid IP address in CIDR: ${ip}`);
       }
     } else {
-      // 精确匹配模式
+      // 绮剧‘鍖归厤妯″紡
       if (!this.isValidIp(value)) {
         throw new ValidationError(`Invalid IP address: ${value}`);
       }
@@ -575,17 +753,17 @@ export class BlacklistService {
   }
 
   /**
-   * 验证是否是有效的IP地址
+   * 楠岃瘉鏄惁鏄湁鏁堢殑IP鍦板潃
    */
   private isValidIp(ip: string): boolean {
-    // IPv4验证
+    // IPv4楠岃瘉
     const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
     if (ipv4Regex.test(ip)) {
       const parts = ip.split('.').map(Number);
       return parts.every(part => part >= 0 && part <= 255);
     }
 
-    // IPv6验证（简化版）
+    // IPv6楠岃瘉锛堢畝鍖栫増锛?
     const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::$|^::1$|^([0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}$/;
     if (ipv6Regex.test(ip)) {
       return true;
@@ -595,7 +773,7 @@ export class BlacklistService {
   }
 
   /**
-   * 验证UA值
+   * 楠岃瘉UA鍊?
    */
   private validateUaValue(value: string, matchMode?: string): void {
     if (value.length > 1000) {
@@ -608,9 +786,32 @@ export class BlacklistService {
     }
   }
 
+  private validateAsnValue(value: string): void {
+    const normalized = value.trim().toUpperCase();
+    const asnRegex = /^(AS)?\d+$/;
+    if (!asnRegex.test(normalized)) {
+      throw new ValidationError(`Invalid ASN format: ${value}. Expected format: AS12345 or 12345`);
+    }
+  }
+
+  private validateCountryValue(value: string): void {
+    const countryCodeRegex = /^[A-Z]{2}$/;
+    if (!countryCodeRegex.test(value.trim().toUpperCase())) {
+      throw new ValidationError(`Invalid country code: ${value}. Expected ISO 3166-1 alpha-2 like US`);
+    }
+  }
+
+  private normalizeEntryValue(type: BlacklistType, value: string): string {
+    if (type === 'country') {
+      return value.trim().toUpperCase();
+    }
+
+    return value;
+  }
+
   /**
-   * 获取报告中的黑名单候选项目
-   * 根据统计数据找出表现不佳的 Zone/SubID
+   * 鑾峰彇鎶ュ憡涓殑榛戝悕鍗曞€欓€夐」鐩?
+   * 鏍规嵁缁熻鏁版嵁鎵惧嚭琛ㄧ幇涓嶄匠鐨?Zone/SubID
    */
   async getBlacklistCandidates(
     trafficSourceId: string,
@@ -623,8 +824,8 @@ export class BlacklistService {
   ): Promise<BlacklistCandidate[]> {
     const { minSpend = 10, maxRoi = -50, minClicks = 100 } = options;
 
-    // 从流量统计数据中找出表现不佳的项目
-    // 这里简化处理，实际应该查询详细的流量数据
+    // 浠庢祦閲忕粺璁℃暟鎹腑鎵惧嚭琛ㄧ幇涓嶄匠鐨勯」鐩?
+    // 杩欓噷绠€鍖栧鐞嗭紝瀹為檯搴旇鏌ヨ璇︾粏鐨勬祦閲忔暟鎹?
     const db = getD1Connection(this.env);
     const results = await db
       .prepare(
@@ -663,7 +864,7 @@ export class BlacklistService {
           value: row.value,
           name: `Zone ${row.value}`,
           metrics: {
-            impressions: 0, // 需要从其他表获取
+            impressions: 0, // 闇€瑕佷粠鍏朵粬琛ㄨ幏鍙?
             clicks: row.clicks,
             conversions: row.conversions,
             spend: row.spend,
@@ -675,7 +876,9 @@ export class BlacklistService {
       }
     }
 
-    // 按 ROI 排序
+    // 鎸?ROI 鎺掑簭
     return candidates.sort((a, b) => a.metrics.roi - b.metrics.roi);
   }
 }
+
+

@@ -5,7 +5,52 @@
  */
 
 export type WhitelistStatus = 'active' | 'removed';
-export type WhitelistType = 'zone' | 'creative' | 'publisher' | 'sub_id' | 'geo' | 'device' | 'ip' | 'user_agent';
+export type WhitelistType =
+  | 'zone'
+  | 'creative'
+  | 'publisher'
+  | 'sub_id'
+  | 'geo'
+  | 'country'
+  | 'device'
+  | 'ip'
+  | 'user_agent'
+  | 'asn'
+  | 'isp'
+  | 'fingerprint'
+  | 'rule';
+
+export type ListConditionMode = 'all' | 'any';
+export type ListConditionOperator =
+  | 'equals'
+  | 'contains'
+  | 'starts_with'
+  | 'ends_with'
+  | 'in'
+  | 'exists';
+export type ListConditionField =
+  | 'ip'
+  | 'asn'
+  | 'userAgent'
+  | 'zoneId'
+  | 'country'
+  | 'device'
+  | 'isp'
+  | 'fingerprint'
+  | 'utmSource'
+  | 'utmCampaign'
+  | 'browser'
+  | 'subId1'
+  | 'subId2'
+  | 'subId3'
+  | 'subId4'
+  | 'subId5';
+
+export interface ListCondition {
+  field: ListConditionField;
+  operator: ListConditionOperator;
+  value?: string | string[];
+}
 
 /**
  * IP匹配模式
@@ -35,6 +80,8 @@ export interface WhitelistEntry {
   ipMatchMode?: IpMatchMode; // 'exact' or 'cidr' for IP type
   uaMatchMode?: UaMatchMode; // 'exact' or 'contains' for UA type
   syncToPlatform?: boolean; // Whether to sync to traffic platform (for IP/UA)
+  matchMode?: ListConditionMode;
+  conditions?: ListCondition[];
   createdAt: string;
   updatedAt: string;
 }
@@ -52,6 +99,8 @@ export interface CreateWhitelistDTO {
   ipMatchMode?: IpMatchMode;
   uaMatchMode?: UaMatchMode;
   syncToPlatform?: boolean;
+  matchMode?: ListConditionMode;
+  conditions?: ListCondition[];
 }
 
 /**
@@ -64,6 +113,8 @@ export interface UpdateWhitelistDTO {
   ipMatchMode?: IpMatchMode;
   uaMatchMode?: UaMatchMode;
   syncToPlatform?: boolean;
+  matchMode?: ListConditionMode;
+  conditions?: ListCondition[];
 }
 
 /**

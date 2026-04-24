@@ -11,16 +11,21 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { DateRangePickerComponent, getDateRange, type DateRangeValue } from '@/components/DateRangePicker';
 import {
+  createExportTask,
   downloadReport,
   exportReport,
+  fetchReportMetadata,
   queryReport,
   type ExportFormat,
   type ReportDimension,
+  type ReportDimensionOption,
   type ReportFilterCondition,
   type ReportFilterOperator,
   type ReportMetric,
+  type ReportMetricOption,
   type ReportType,
 } from '../services/api';
 import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
@@ -49,7 +54,7 @@ type ReportRow = Record<string, string | number | null | undefined>;
 
 const SAVED_VIEWS_STORAGE_KEY = 'cftracking.report-builder.saved-views.v1';
 
-const DIMENSION_OPTIONS: Array<{ value: ReportDimension; label: string; hint: string }> = [
+const DEFAULT_DIMENSION_OPTIONS: ReportDimensionOption[] = [
   { value: 'campaign', label: 'Campaign', hint: 'Campaign performance leaderboard' },
   { value: 'offer', label: 'Offer', hint: 'Offer payout and conversion split' },
   { value: 'landing', label: 'Landing', hint: 'Landing page funnel breakdown' },
@@ -57,10 +62,17 @@ const DIMENSION_OPTIONS: Array<{ value: ReportDimension; label: string; hint: st
   { value: 'country', label: 'Country', hint: 'Geo segmentation' },
   { value: 'device', label: 'Device', hint: 'Desktop / mobile split' },
   { value: 'browser', label: 'Browser', hint: 'Browser quality and compatibility' },
+  { value: 'source', label: 'Source', hint: 'UTM source / traffic source signature' },
+  { value: 'zoneid', label: 'Zone ID', hint: 'Zone-level quality and fraud signal' },
+  { value: 'utm_source', label: 'UTM Source', hint: 'Campaign acquisition source' },
+  { value: 'utm_campaign', label: 'UTM Campaign', hint: 'UTM campaign token' },
+  { value: 'subid1', label: 'SubID1', hint: 'Primary sub identifier' },
+  { value: 'subid2', label: 'SubID2', hint: 'Secondary sub identifier' },
+  { value: 'subid3', label: 'SubID3', hint: 'Third-level sub identifier' },
   { value: 'date', label: 'Date', hint: 'Day-by-day trend table' },
 ];
 
-const METRIC_OPTIONS: Array<{ value: ReportMetric; label: string; format: 'number' | 'currency' | 'percent' }> = [
+const DEFAULT_METRIC_OPTIONS: ReportMetricOption[] = [
   { value: 'clicks', label: 'Clicks', format: 'number' },
   { value: 'impressions', label: 'Impressions', format: 'number' },
   { value: 'conversions', label: 'Conversions', format: 'number' },
@@ -74,12 +86,14 @@ const METRIC_OPTIONS: Array<{ value: ReportMetric; label: string; format: 'numbe
   { value: 'epc', label: 'EPC', format: 'currency' },
   { value: 'cpc', label: 'CPC', format: 'currency' },
   { value: 'unique_visitors', label: 'Unique Visitors', format: 'number' },
+  { value: 'fraud_clicks', label: 'Fraud Clicks', format: 'number' },
+  { value: 'bot_clicks', label: 'Bot Clicks', format: 'number' },
+  { value: 'avg_fraud_score', label: 'Avg Fraud Score', format: 'number' },
+  { value: 'blacklist_hits', label: 'Blacklist Hits', format: 'number' },
+  { value: 'blacklist_rate', label: 'Blacklist Rate', format: 'percent' },
+  { value: 'rule_hits', label: 'Rule Hits', format: 'number' },
+  { value: 'blocked', label: 'Blocked', format: 'number' },
 ];
-
-const FILTER_FIELD_OPTIONS = [
-  ...DIMENSION_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
-  ...METRIC_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
-] as Array<{ value: ReportDimension | ReportMetric; label: string }>;
 
 const FILTER_OPERATORS: Array<{ value: ReportFilterOperator; label: string }> = [
   { value: 'eq', label: 'Equals' },
@@ -145,6 +159,15 @@ const REPORT_TEMPLATES: Array<{
     metrics: ['clicks', 'conversions', 'revenue', 'roi', 'epc'],
     sortBy: 'roi',
   },
+  {
+    id: 'fraud-source-scan',
+    title: 'Fraud Source Scan',
+    description: 'Source / zone / subID fraud exposure with blacklist ratio',
+    reportType: 'traffic',
+    groupBy: ['campaign', 'source', 'zoneid'],
+    metrics: ['clicks', 'fraud_clicks', 'avg_fraud_score', 'blacklist_rate', 'rule_hits', 'blocked'],
+    sortBy: 'fraud_clicks',
+  },
 ];
 
 const DEFAULT_CONFIG: BuilderConfig = {
@@ -176,9 +199,9 @@ function cloneConfig(config: BuilderConfig): BuilderConfig {
   };
 }
 
-function formatMetricValue(metric: ReportMetric, value: unknown) {
+function formatMetricValue(metric: ReportMetric, value: unknown, metricOptions: ReportMetricOption[]) {
   const numericValue = Number(value ?? 0);
-  const option = METRIC_OPTIONS.find((item) => item.value === metric);
+  const option = metricOptions.find((item) => item.value === metric);
 
   if (!option) {
     return String(value ?? '-');
@@ -199,21 +222,25 @@ function formatMetricValue(metric: ReportMetric, value: unknown) {
   return numericValue.toLocaleString();
 }
 
-function formatCellValue(key: string, value: unknown) {
-  if (METRIC_OPTIONS.some((option) => option.value === key)) {
-    return formatMetricValue(key as ReportMetric, value);
+function formatCellValue(key: string, value: unknown, metricOptions: ReportMetricOption[]) {
+  if (metricOptions.some((option) => option.value === key)) {
+    return formatMetricValue(key as ReportMetric, value, metricOptions);
   }
 
   return String(value ?? '-');
 }
 
-function getColumnLabel(key: string) {
-  const dimension = DIMENSION_OPTIONS.find((option) => option.value === key);
+function getColumnLabel(
+  key: string,
+  dimensionOptions: ReportDimensionOption[],
+  metricOptions: ReportMetricOption[]
+) {
+  const dimension = dimensionOptions.find((option) => option.value === key);
   if (dimension) {
     return dimension.label;
   }
 
-  const metric = METRIC_OPTIONS.find((option) => option.value === key);
+  const metric = metricOptions.find((option) => option.value === key);
   if (metric) {
     return metric.label;
   }
@@ -225,8 +252,8 @@ function getColumnLabel(key: string) {
   return key;
 }
 
-function isMetricColumn(key: string) {
-  return METRIC_OPTIONS.some((option) => option.value === key);
+function isMetricColumn(key: string, metricOptions: ReportMetricOption[]) {
+  return metricOptions.some((option) => option.value === key);
 }
 
 function compareReportValues(a: unknown, b: unknown) {
@@ -274,6 +301,50 @@ function writeSavedViews(views: SavedView[]) {
   window.localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(views));
 }
 
+function mergeDimensionOptions(remote: ReportDimensionOption[]) {
+  const merged = new Map<string, ReportDimensionOption>();
+
+  for (const item of DEFAULT_DIMENSION_OPTIONS) {
+    merged.set(item.value, item);
+  }
+
+  for (const item of remote) {
+    if (!item?.value) {
+      continue;
+    }
+    merged.set(item.value, {
+      value: item.value,
+      label: item.label || item.value,
+      hint: item.hint || '',
+    });
+  }
+
+  return Array.from(merged.values());
+}
+
+function mergeMetricOptions(remote: ReportMetricOption[]) {
+  const merged = new Map<string, ReportMetricOption>();
+
+  for (const item of DEFAULT_METRIC_OPTIONS) {
+    merged.set(item.value, item);
+  }
+
+  for (const item of remote) {
+    if (!item?.value) {
+      continue;
+    }
+
+    merged.set(item.value, {
+      value: item.value,
+      label: item.label || item.value,
+      format: item.format || 'number',
+      isCustom: Boolean(item.isCustom),
+    });
+  }
+
+  return Array.from(merged.values());
+}
+
 function createFilterDraft(): ReportFilterCondition {
   return {
     field: 'campaign',
@@ -283,6 +354,7 @@ function createFilterDraft(): ReportFilterCondition {
 }
 
 export default function Reports() {
+  const navigate = useNavigate();
   const [dateRange, setDateRange] = useState<DateRangeValue>({
     startDate: DEFAULT_CONFIG.startDate,
     endDate: DEFAULT_CONFIG.endDate,
@@ -293,14 +365,47 @@ export default function Reports() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [queueingFormat, setQueueingFormat] = useState<ExportFormat | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [viewName, setViewName] = useState('');
   const [activeTemplateId, setActiveTemplateId] = useState<string>('traffic-command');
+  const [dimensionOptions, setDimensionOptions] = useState<ReportDimensionOption[]>(DEFAULT_DIMENSION_OPTIONS);
+  const [metricOptions, setMetricOptions] = useState<ReportMetricOption[]>(DEFAULT_METRIC_OPTIONS);
   const deferredSearchQuery = React.useDeferredValue(searchQuery);
 
   useEffect(() => {
     setSavedViews(readSavedViews());
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadMetadata = async () => {
+      try {
+        const metadata = await fetchReportMetadata();
+        if (!active) {
+          return;
+        }
+
+        setDimensionOptions(mergeDimensionOptions(metadata.dimensions || []));
+        setMetricOptions(mergeMetricOptions(metadata.metrics || []));
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setDimensionOptions(DEFAULT_DIMENSION_OPTIONS);
+        setMetricOptions(DEFAULT_METRIC_OPTIONS);
+      }
+    };
+
+    void loadMetadata();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -310,6 +415,15 @@ export default function Reports() {
       endDate: normalizeDateValue(dateRange.endDate),
     }));
   }, [dateRange.endDate, dateRange.startDate]);
+
+  const filterFieldOptions = useMemo(
+    () =>
+      [
+        ...dimensionOptions.map((option) => ({ value: option.value, label: option.label })),
+        ...metricOptions.map((option) => ({ value: option.value, label: option.label })),
+      ] as Array<{ value: ReportDimension | ReportMetric; label: string }>,
+    [dimensionOptions, metricOptions]
+  );
 
   const runReport = useCallback(async (config?: BuilderConfig) => {
     const nextConfig = cloneConfig(config || builder);
@@ -369,21 +483,21 @@ export default function Reports() {
 
   const resultColumns = useMemo<VirtualTableColumn<ReportRow>[]>(() => (
     visibleColumns.map((column) => {
-      const metricColumn = isMetricColumn(column);
+      const metricColumn = isMetricColumn(column, metricOptions);
 
       return {
         key: column,
-        label: getColumnLabel(column),
+        label: getColumnLabel(column, dimensionOptions, metricOptions),
         dataIndex: column,
         width: metricColumn ? 156 : 196,
         align: metricColumn ? 'right' : 'left',
         sorter: (left, right) => compareReportValues(left[column], right[column]),
         showFilter: false,
-        render: (value) => formatCellValue(column, value),
+        render: (value) => formatCellValue(column, value, metricOptions),
         className: metricColumn ? 'font-mono' : undefined,
       };
     })
-  ), [visibleColumns]);
+  ), [dimensionOptions, metricOptions, visibleColumns]);
 
   const reportTableHeight = useMemo(() => (
     Math.min(Math.max(filteredRows.length, 6) * 48 + 48, 640)
@@ -398,11 +512,11 @@ export default function Reports() {
       const value = isRatio && filteredRows.length > 0 ? total / filteredRows.length : total;
 
       return {
-        label: getColumnLabel(metric),
-        value: formatMetricValue(metric, value),
+        label: getColumnLabel(metric, dimensionOptions, metricOptions),
+        value: formatMetricValue(metric, value, metricOptions),
       };
     });
-  }, [appliedConfig.metrics, filteredRows]);
+  }, [appliedConfig.metrics, dimensionOptions, filteredRows, metricOptions]);
 
   const isDirty = useMemo(() => JSON.stringify(builder) !== JSON.stringify(appliedConfig), [appliedConfig, builder]);
 
@@ -517,6 +631,7 @@ export default function Reports() {
   const handleExport = useCallback(async (format: ExportFormat) => {
     setExporting(true);
     setError(null);
+    setNotice(null);
 
     try {
       const blob = await exportReport({
@@ -539,6 +654,53 @@ export default function Reports() {
       setError(err instanceof Error ? err.message : 'Failed to export report');
     } finally {
       setExporting(false);
+    }
+  }, [appliedConfig, visibleColumns]);
+
+  const handleQueueExport = useCallback(async (format: ExportFormat) => {
+    setQueueingFormat(format);
+    setError(null);
+    setNotice(null);
+
+    const normalizedFilters = appliedConfig.filters.filter((filter) => String(filter.value).trim().length > 0);
+    const today = new Date().toISOString().split('T')[0] || '';
+
+    const payload = {
+      name: `${appliedConfig.reportType}-report-${today}-${format}`,
+      entityType: 'reports' as const,
+      format,
+      dateRange: {
+        startDate: appliedConfig.startDate,
+        endDate: appliedConfig.endDate,
+      },
+      fields: visibleColumns,
+      filters: {
+        reportType: appliedConfig.reportType,
+        groupBy: appliedConfig.groupBy,
+        metrics: appliedConfig.metrics,
+        filters: normalizedFilters,
+        limit: appliedConfig.limit,
+        sortBy: appliedConfig.sortBy,
+        sortOrder: appliedConfig.sortOrder,
+        columns: visibleColumns,
+      },
+    };
+
+    try {
+      await createExportTask(payload);
+      setNotice(`Queued ${format.toUpperCase()} export. You can monitor progress in Exported Reports.`);
+
+      if (typeof window !== 'undefined') {
+        try {
+          window.sessionStorage.setItem('cftracking.export-task-draft.v1', JSON.stringify(payload));
+        } catch {
+          // Ignore session storage failures in restricted contexts.
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to queue export task');
+    } finally {
+      setQueueingFormat(null);
     }
   }, [appliedConfig, visibleColumns]);
 
@@ -569,7 +731,7 @@ export default function Reports() {
           >
             {[...builder.groupBy, ...builder.metrics].map((field) => (
               <option key={field} value={field}>
-                Sort by {getColumnLabel(field)}
+                Sort by {getColumnLabel(field, dimensionOptions, metricOptions)}
               </option>
             ))}
             {builder.groupBy.length === 0 && builder.metrics.length === 0 && <option value="clicks">Sort by Clicks</option>}
@@ -650,7 +812,12 @@ export default function Reports() {
                   <button onClick={() => loadSavedView(view)} className="text-left">
                     <div className="text-sm font-medium text-on-surface">{view.name}</div>
                     <div className="text-xs text-on-surface-variant">
-                      {view.config.groupBy.map(getColumnLabel).join(' / ') || 'Summary'} · {view.config.metrics.map(getColumnLabel).join(', ')}
+                      {view.config.groupBy
+                        .map((field) => getColumnLabel(field, dimensionOptions, metricOptions))
+                        .join(' / ') || 'Summary'} ·{' '}
+                      {view.config.metrics
+                        .map((field) => getColumnLabel(field, dimensionOptions, metricOptions))
+                        .join(', ')}
                     </div>
                   </button>
                   <button
@@ -671,7 +838,7 @@ export default function Reports() {
         <section className="rounded-sm border border-outline-variant bg-surface p-5">
           <div className="mb-3 text-sm font-semibold text-on-surface">Dimensions</div>
           <div className="flex flex-wrap gap-2">
-            {DIMENSION_OPTIONS.map((option) => {
+            {dimensionOptions.map((option) => {
               const active = builder.groupBy.includes(option.value);
               return (
                 <button
@@ -695,7 +862,7 @@ export default function Reports() {
         <section className="rounded-sm border border-outline-variant bg-surface p-5">
           <div className="mb-3 text-sm font-semibold text-on-surface">Metrics</div>
           <div className="flex flex-wrap gap-2">
-            {METRIC_OPTIONS.map((option) => {
+            {metricOptions.map((option) => {
               const active = builder.metrics.includes(option.value);
               return (
                 <button
@@ -735,7 +902,7 @@ export default function Reports() {
                     }
                     className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
                   >
-                    {FILTER_FIELD_OPTIONS.map((option) => (
+                    {filterFieldOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -820,7 +987,7 @@ export default function Reports() {
         </button>
         <button
           onClick={() => void handleExport('csv')}
-          disabled={exporting}
+          disabled={exporting || queueingFormat !== null}
           className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
         >
           <Download size={16} />
@@ -828,11 +995,34 @@ export default function Reports() {
         </button>
         <button
           onClick={() => void handleExport('excel')}
-          disabled={exporting}
+          disabled={exporting || queueingFormat !== null}
           className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
         >
           <Download size={16} />
           Export Excel
+        </button>
+        <button
+          onClick={() => void handleQueueExport('csv')}
+          disabled={exporting || queueingFormat !== null}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <Plus size={16} />
+          {queueingFormat === 'csv' ? 'Queueing CSV...' : 'Queue CSV'}
+        </button>
+        <button
+          onClick={() => void handleQueueExport('excel')}
+          disabled={exporting || queueingFormat !== null}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <Plus size={16} />
+          {queueingFormat === 'excel' ? 'Queueing Excel...' : 'Queue Excel'}
+        </button>
+        <button
+          onClick={() => navigate('/exported-reports')}
+          className="flex items-center gap-2 rounded-sm border border-outline-variant px-4 py-2 text-sm text-on-surface"
+        >
+          <BarChart3 size={16} />
+          Open Export Queue
         </button>
         <div className="ml-auto flex items-center gap-2 rounded-sm border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface-variant">
           <Search size={14} />
@@ -850,6 +1040,10 @@ export default function Reports() {
         <div className="mb-4 rounded-sm border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-on-surface">
           Builder settings changed but not yet applied. Click <strong>Run Report</strong> to refresh the dataset.
         </div>
+      )}
+
+      {notice && (
+        <div className="mb-4 rounded-sm border border-success/20 bg-success/10 p-4 text-sm text-success">{notice}</div>
       )}
 
       {error && <div className="mb-4 rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>}

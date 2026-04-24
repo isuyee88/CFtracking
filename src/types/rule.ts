@@ -4,7 +4,14 @@
  * @module types/rule
  */
 
-export type RuleType = 'performance' | 'budget' | 'fraud' | 'time';
+export type RuleType =
+  | 'performance'
+  | 'budget'
+  | 'fraud'
+  | 'time'
+  | 'campaign'
+  | 'platform'
+  | 'flow';
 export type RuleStatus = 'active' | 'paused' | 'deleted';
 export type ComparisonOperator = '>' | '<' | '>=' | '<=' | '==' | '!=' | 'contains';
 export type AggregationType = 'avg' | 'sum' | 'min' | 'max' | 'count';
@@ -15,7 +22,13 @@ export type ActionType =
   | 'send_alert'
   | 'adjust_budget'
   | 'exclude_zone'
-  | 'include_zone';
+  | 'include_zone'
+  | 'allow'
+  | 'block'
+  | 'challenge'
+  | 'redirect';
+
+export type AutoruleDecisionAction = 'allow' | 'block' | 'challenge' | 'redirect';
 
 export interface Condition {
   metric: string;
@@ -33,14 +46,77 @@ export interface Action {
   retry: number;
 }
 
+export interface FunctionCondition {
+  fn: 'in_blacklist' | 'in_whitelist';
+  args: string[];
+}
+
+export interface EqCondition {
+  eq: [string, string | number | boolean | null];
+}
+
+export interface InCondition {
+  in: [string, Array<string | number | boolean>];
+}
+
+export interface ContainsCondition {
+  contains: [string, string];
+}
+
+export interface ExistsCondition {
+  exists: [string];
+}
+
+export interface NotCondition {
+  not: RuleExpressionNode;
+}
+
+export interface AllCondition {
+  all: RuleExpressionNode[];
+}
+
+export interface AnyCondition {
+  any: RuleExpressionNode[];
+}
+
+export type RuleExpressionNode =
+  | FunctionCondition
+  | EqCondition
+  | InCondition
+  | ContainsCondition
+  | ExistsCondition
+  | NotCondition
+  | AllCondition
+  | AnyCondition;
+
+export interface RuleSetRuleNode {
+  id: string;
+  priority: number;
+  when: RuleExpressionNode;
+  then: {
+    action: AutoruleDecisionAction;
+    reason?: string;
+  };
+}
+
+export interface RuleSetCondition {
+  version: '1.0';
+  name?: string;
+  mode?: 'first_match';
+  rules: RuleSetRuleNode[];
+  default?: {
+    action: AutoruleDecisionAction;
+  };
+}
+
 export interface Rule {
   id: string;
   displayId?: string;
-  campaignId: string;
+  campaignId?: string;
   name: string;
   description: string | null;
   type: RuleType;
-  conditions: Condition[];
+  conditions: Condition[] | RuleSetCondition | RuleExpressionNode;
   actions: Action[];
   priority: number;
   enabled: boolean;
@@ -53,7 +129,7 @@ export interface CreateRuleDTO {
   name: string;
   description?: string;
   type: RuleType;
-  conditions: Condition[];
+  conditions: Condition[] | RuleSetCondition | RuleExpressionNode;
   actions: Action[];
   priority?: number;
   enabled?: boolean;
@@ -63,7 +139,7 @@ export interface UpdateRuleDTO {
   name?: string;
   description?: string;
   type?: RuleType;
-  conditions?: Condition[];
+  conditions?: Condition[] | RuleSetCondition | RuleExpressionNode;
   actions?: Action[];
   priority?: number;
   enabled?: boolean;

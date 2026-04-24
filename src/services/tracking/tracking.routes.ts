@@ -27,6 +27,7 @@ import { validateRequired } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
 import { extractCloudflareInfo, getClientIP, generateFingerprint, assessRisk } from '@/utils/cloudflare';
+import { createCacheUpdateRoutes } from '@/services/cache/cache-update-service';
 
 export function createTrackingRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -156,6 +157,20 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
       }
 
       // HTTP 重定向
+      if (!result.skipPersistence) {
+        c.executionCtx.waitUntil(
+          (async () => {
+            try {
+              const cacheUpdate = createCacheUpdateRoutes(c.env);
+              await cacheUpdate.onDataChanged('click', result.clickId, 'create');
+              await cacheUpdate.onDataChanged('campaign', campaignAlias, 'update');
+            } catch (cacheError) {
+              console.error('[Tracking] Failed to trigger cache update after click:', cacheError);
+            }
+          })()
+        );
+      }
+
       const response = c.redirect(result.redirectUrl, 302);
       
       // 如果需要设置 Cookie，添加 Set-Cookie 头
@@ -219,6 +234,20 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
       });
 
       // 构建响应
+      if (!result.skipPersistence) {
+        c.executionCtx.waitUntil(
+          (async () => {
+            try {
+              const cacheUpdate = createCacheUpdateRoutes(c.env);
+              await cacheUpdate.onDataChanged('click', result.clickId, 'create');
+              await cacheUpdate.onDataChanged('campaign', String(body.campaignId), 'update');
+            } catch (cacheError) {
+              console.error('[Tracking] Failed to trigger cache update after click POST:', cacheError);
+            }
+          })()
+        );
+      }
+
       const response = c.json(success(result), HTTP_STATUS.CREATED);
       
       // 如果需要设置 Cookie，添加 Set-Cookie 头
@@ -259,6 +288,19 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
     const service = new ConversionService(c.env);
     const result = await service.handleConversion(body);
 
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const cacheUpdate = createCacheUpdateRoutes(c.env);
+          await cacheUpdate.onDataChanged('conversion', result.conversionId, 'create');
+          await cacheUpdate.onDataChanged('click', String(body.clickId), 'update');
+          await cacheUpdate.onDataChanged('campaign', String(body.campaignId), 'update');
+        } catch (cacheError) {
+          console.error('[Tracking] Failed to trigger cache update after conversion:', cacheError);
+        }
+      })()
+    );
+
     return c.json(success(result), HTTP_STATUS.CREATED);
   });
 
@@ -281,6 +323,22 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
       payout: revenue,
     });
 
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const cacheUpdate = createCacheUpdateRoutes(c.env);
+          await cacheUpdate.onDataChanged('conversion', result.conversionId, 'create');
+          await cacheUpdate.onDataChanged('click', String(clickId), 'update');
+          const campaignId = c.req.query('campaign_id');
+          if (campaignId) {
+            await cacheUpdate.onDataChanged('campaign', campaignId, 'update');
+          }
+        } catch (cacheError) {
+          console.error('[Tracking] Failed to trigger cache update after postback conversion:', cacheError);
+        }
+      })()
+    );
+
     return c.json(success(result));
   });
 
@@ -293,6 +351,22 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
 
     const service = new ConversionService(c.env);
     const results = await service.handleBatchConversions(body.conversions);
+
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const cacheUpdate = createCacheUpdateRoutes(c.env);
+          for (const item of results) {
+            if (!item?.conversionId) {
+              continue;
+            }
+            await cacheUpdate.onDataChanged('conversion', item.conversionId, 'create');
+          }
+        } catch (cacheError) {
+          console.error('[Tracking] Failed to trigger cache update after batch conversions:', cacheError);
+        }
+      })()
+    );
 
     return c.json(success(results));
   });

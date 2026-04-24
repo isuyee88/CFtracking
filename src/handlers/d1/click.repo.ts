@@ -43,7 +43,9 @@ export interface ClickListResult {
   pageSize: number;
 }
 
-const CLICK_COLUMNS = [
+const GOVERNANCE_COLUMN_NAMES = ['matchedRuleId', 'matchedRuleLayer', 'matchedRuleReason'] as const;
+
+const BASE_CLICK_COLUMNS = [
   'clickId', 'campaignId', 'flowId', 'landingPageId', 'offerId',
   'timestamp', 'ip', 'userAgent', 'referer', 'country', 'city',
   'device', 'browser', 'os', 'isp', 'connectionType', 'visitorId',
@@ -53,13 +55,17 @@ const CLICK_COLUMNS = [
   'subId16', 'subId17', 'subId18', 'subId19', 'subId20',
   'subId21', 'subId22', 'subId23', 'subId24', 'subId25',
   'subId26', 'subId27', 'subId28', 'subId29', 'subId30',
-  'cost',
-].join(', ');
+  'cost', 'isUnique', 'redirectUrl',
+  'utmSource', 'utmMedium', 'utmCampaign', 'utmTerm', 'utmContent',
+  'fingerprint', 'riskScore', 'isBot', 'isSuspicious', 'riskReasons',
+  'ruleMatched', 'ruleBlocked',
+];
 
 const QUERY_TIMEOUT_MS = 5000;
 
 export class ClickRepository extends BaseRepository<ClickData> {
   private readonly queryCache: QueryCache;
+  private clickColumnsPromise: Promise<string[]> | null = null;
 
   constructor(db: D1Database) {
     super(db, 'clicks');
@@ -68,6 +74,8 @@ export class ClickRepository extends BaseRepository<ClickData> {
 
   async saveClick(data: ClickData): Promise<void> {
     const now = new Date().toISOString();
+    const availableColumns = await this.getClickColumns();
+    const supportsGovernanceColumns = GOVERNANCE_COLUMN_NAMES.every((column) => availableColumns.includes(column));
 
     const columns = [
       'id', 'clickId', 'campaignId', 'flowId', 'landingPageId', 'offerId',
@@ -79,10 +87,19 @@ export class ClickRepository extends BaseRepository<ClickData> {
       'subId16', 'subId17', 'subId18', 'subId19', 'subId20',
       'subId21', 'subId22', 'subId23', 'subId24', 'subId25',
       'subId26', 'subId27', 'subId28', 'subId29', 'subId30',
-      'cost', 'isUnique', 'redirectUrl', 'createdAt',
+      'cost', 'isUnique', 'redirectUrl',
+      'utmSource', 'utmMedium', 'utmCampaign', 'utmTerm', 'utmContent',
+      'fingerprint', 'riskScore', 'isBot', 'isSuspicious', 'riskReasons',
+      'ruleMatched', 'ruleBlocked',
+      'createdAt',
     ];
 
+    if (supportsGovernanceColumns) {
+      columns.splice(columns.length - 1, 0, ...GOVERNANCE_COLUMN_NAMES);
+    }
+
     const placeholders = columns.map(() => '?').join(', ');
+    const normalizedRiskReasons = this.normalizeRiskReasons(data, supportsGovernanceColumns);
 
     const values = [
       data.clickId,
@@ -134,10 +151,32 @@ export class ClickRepository extends BaseRepository<ClickData> {
       data.subId29 ?? null,
       data.subId30 ?? null,
       data.cost ?? 0,
-      1,
+      (data.isUnique ?? true) ? 1 : 0,
       data.redirectUrl ?? null,
+      data.utmSource ?? null,
+      data.utmMedium ?? null,
+      data.utmCampaign ?? null,
+      data.utmTerm ?? null,
+      data.utmContent ?? null,
+      data.fingerprint ?? null,
+      data.riskScore ?? 0,
+      data.isBot ? 1 : 0,
+      data.isSuspicious ? 1 : 0,
+      normalizedRiskReasons,
+      data.ruleMatched ? 1 : 0,
+      data.ruleBlocked ? 1 : 0,
       now,
     ];
+
+    if (supportsGovernanceColumns) {
+      values.splice(
+        values.length - 1,
+        0,
+        data.matchedRuleId ?? null,
+        data.matchedRuleLayer ?? null,
+        data.matchedRuleReason ?? null,
+      );
+    }
 
     try {
       const sql = `INSERT INTO clicks (${columns.join(', ')}) VALUES (${placeholders})`;
@@ -266,9 +305,10 @@ export class ClickRepository extends BaseRepository<ClickData> {
       ? countStmt.bind(...allValues)
       : countStmt).first();
     const total = (countResult?.total as number) || 0;
+    const clickColumns = await this.getSelectableColumns();
 
     const listSql = `
-      SELECT ${CLICK_COLUMNS}
+      SELECT ${clickColumns}
       FROM clicks c
       ${whereClause}
       ORDER BY c.timestamp DESC
@@ -293,10 +333,11 @@ export class ClickRepository extends BaseRepository<ClickData> {
     if (cached) {
       return cached;
     }
+    const clickColumns = await this.getSelectableColumns();
 
     const result = await this.db
       .prepare(`
-        SELECT ${CLICK_COLUMNS}
+        SELECT ${clickColumns}
         FROM clicks
         WHERE clickId = ?
       `)
@@ -313,7 +354,8 @@ export class ClickRepository extends BaseRepository<ClickData> {
   async getRecentClicks(limit: number = 50, afterTimestamp?: string): Promise<ClickData[]> {
     const cacheKey = `query:clicks:recent:${limit}:${afterTimestamp ?? 'all'}`;
     return this.queryCache.getOrFetch(cacheKey, async () => {
-      let sql = `SELECT ${CLICK_COLUMNS} FROM clicks`;
+      const clickColumns = await this.getSelectableColumns();
+      let sql = `SELECT ${clickColumns} FROM clicks`;
       const values: (string | number)[] = [];
 
       if (afterTimestamp) {
@@ -372,9 +414,10 @@ export class ClickRepository extends BaseRepository<ClickData> {
   async findByVisitorId(visitorId: string, limit: number = 100): Promise<ClickData[]> {
     const cacheKey = `query:clicks:visitor:${visitorId}:${limit}`;
     return this.queryCache.getOrFetch(cacheKey, async () => {
+      const clickColumns = await this.getSelectableColumns();
       const result = await this.db
         .prepare(`
-          SELECT ${CLICK_COLUMNS}
+          SELECT ${clickColumns}
           FROM clicks
           WHERE visitorId = ?
           ORDER BY timestamp DESC
@@ -406,5 +449,48 @@ export class ClickRepository extends BaseRepository<ClickData> {
         setTimeout(() => reject(new Error(`Query timeout after ${ms}ms`)), ms),
       ),
     ]);
+  }
+
+  private async getClickColumns(): Promise<string[]> {
+    if (!this.clickColumnsPromise) {
+      this.clickColumnsPromise = this.db
+        .prepare('PRAGMA table_info(clicks)')
+        .all<{ name: string }>()
+        .then((result) => (result.results || [])
+          .map((item) => item.name)
+          .filter((name): name is string => typeof name === 'string' && name.length > 0));
+    }
+
+    return this.clickColumnsPromise;
+  }
+
+  private async getSelectableColumns(): Promise<string> {
+    const availableColumns = await this.getClickColumns();
+    return [
+      ...BASE_CLICK_COLUMNS,
+      ...GOVERNANCE_COLUMN_NAMES.filter((column) => availableColumns.includes(column)),
+    ].join(', ');
+  }
+
+  private normalizeRiskReasons(data: ClickData, supportsGovernanceColumns: boolean): string | null {
+    const reasons = Array.isArray(data.riskReasons)
+      ? data.riskReasons.filter((reason): reason is string => typeof reason === 'string' && reason.trim().length > 0)
+      : [];
+
+    if (!supportsGovernanceColumns) {
+      this.pushUniqueReason(reasons, data.matchedRuleLayer ? `governance_layer:${data.matchedRuleLayer}` : null);
+      this.pushUniqueReason(reasons, data.matchedRuleId ? `governance_rule:${data.matchedRuleId}` : null);
+      this.pushUniqueReason(reasons, data.matchedRuleReason ? `governance_reason:${data.matchedRuleReason}` : null);
+    }
+
+    return reasons.length > 0 ? JSON.stringify(reasons) : null;
+  }
+
+  private pushUniqueReason(reasons: string[], value: string | null): void {
+    if (!value || reasons.includes(value)) {
+      return;
+    }
+
+    reasons.push(value);
   }
 }

@@ -38,6 +38,8 @@ import {
 import { BrowserIcon, OSIcon } from '../components/BrandIcon';
 import { useSSECacheUpdate } from '../hooks/useSSECacheUpdate';
 import { SSEEventType, type SSEEvent } from '@/services/cache/sse-cache-notification';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -55,7 +57,7 @@ const LazyDashboardPreferencesModal = lazy(() =>
   }))
 );
 
-const DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH = 42;
+const DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH = 36;
 
 function formatCampaignFilterLabel(name: string): string {
   const normalized = String(name || '').trim();
@@ -63,12 +65,11 @@ function formatCampaignFilterLabel(name: string): string {
     return '-';
   }
 
-  const chars = Array.from(normalized);
-  if (chars.length <= DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH) {
-    return normalized;
-  }
-
-  return `${chars.slice(0, DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH - 1).join('')}…`;
+  const maxLength = Math.min(
+    DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH,
+    DISPLAY_MAX_LENGTH.CAMPAIGN_OPTION_LABEL
+  );
+  return truncateLabel(normalized, maxLength);
 }
 
 function getDashboardEntityDrilldown(entityKey: string, row: Record<string, any>) {

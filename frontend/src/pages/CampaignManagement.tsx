@@ -3,12 +3,10 @@ import {
   Zap, 
   Plus, 
   Search, 
-  MoreHorizontal, 
   ArrowUpRight, 
   Play, 
   Pause, 
   Trash2, 
-  Copy, 
   Edit3,
   Check,
   X,
@@ -18,8 +16,18 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { fetchCampaigns, fetchCampaign, createCampaign, updateCampaign, deleteCampaign, fetchEntityStats } from '../services/api';
+import {
+  fetchCampaigns,
+  fetchCampaign,
+  createCampaign,
+  updateCampaign,
+  deleteCampaign,
+  fetchEntityStats,
+  fetchCampaignAutoruleBindings,
+  replaceCampaignAutoruleBindings,
+} from '../services/api';
 import { CampaignForm } from '../components/CampaignForm';
+import { CampaignAutoruleBindingsModal } from '../components/CampaignAutoruleBindingsModal';
 import { ExportButton } from '../components/ExportButton';
 import { formatCampaignForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
@@ -29,6 +37,8 @@ import { useToast } from '../components/Toast';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { loadBootstrapForLocation, normalizeRangeParam, readBootstrapPage } from '../services/bootstrap';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -83,7 +93,7 @@ function getCurrentRangePreset(fallback: string): string {
 
 const CAMPAIGN_ROW_HEIGHT = 72;
 const CAMPAIGN_HEADER_HEIGHT = 72;
-const CAMPAIGN_NAME_DISPLAY_LIMIT = 28;
+const CAMPAIGN_NAME_DISPLAY_LIMIT = 30;
 
 function getCampaignTableHeight(rowCount: number): number {
   if (rowCount <= 0) {
@@ -95,10 +105,12 @@ function getCampaignTableHeight(rowCount: number): number {
 }
 
 function truncateCampaignName(name: string): string {
-  if (name.length <= CAMPAIGN_NAME_DISPLAY_LIMIT) {
-    return name;
+  const normalizedName = String(name || '').trim();
+  if (!normalizedName) {
+    return '-';
   }
-  return `${name.slice(0, CAMPAIGN_NAME_DISPLAY_LIMIT - 1)}…`;
+  const maxLength = Math.min(CAMPAIGN_NAME_DISPLAY_LIMIT, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT);
+  return truncateLabel(normalizedName, maxLength);
 }
 
 // Backend Campaign data structure
@@ -250,6 +262,8 @@ export const CampaignManagement = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [selectedCampaign, setSelectedCampaign] = useState<Record<string, any> | undefined>(undefined);
+  const [isAutoruleModalOpen, setIsAutoruleModalOpen] = useState(false);
+  const [selectedCampaignForAutorules, setSelectedCampaignForAutorules] = useState<Campaign | null>(null);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -358,8 +372,14 @@ export const CampaignManagement = () => {
     setFormMode('edit');
 
     try {
-      const fullCampaign = await fetchCampaign(campaign.id);
-      setSelectedCampaign(mapBackendCampaignToFormData(fullCampaign));
+      const [fullCampaign, autoruleBindings] = await Promise.all([
+        fetchCampaign(campaign.id),
+        fetchCampaignAutoruleBindings(campaign.id),
+      ]);
+      setSelectedCampaign({
+        ...mapBackendCampaignToFormData(fullCampaign),
+        autoruleBindings,
+      });
     } catch (err) {
       toast.error('Failed to load campaign', err instanceof Error ? err.message : 'Unknown error');
       return;
@@ -367,20 +387,29 @@ export const CampaignManagement = () => {
 
     setIsFormOpen(true);
   };
+
+  const handleConfigureAutorules = (campaign: Campaign) => {
+    setSelectedCampaignForAutorules(campaign);
+    setIsAutoruleModalOpen(true);
+  };
   
   const handleFormSubmit = async (formData: any) => {
     try {
+      const { autoruleBindings = [], ...campaignPayload } = formData || {};
+
       if (formMode === 'create') {
-        const campaign = await createCampaign(formData);
+        const campaign = await createCampaign(campaignPayload);
         // createCampaign returns the campaign object directly
         if (campaign && campaign.id) {
+          await replaceCampaignAutoruleBindings(campaign.id, autoruleBindings);
           const newCampaign = transformCampaign(campaign);
           setCampaigns(prev => [...prev, newCampaign]);
           toast.success('Campaign Created', `Campaign "${formData.name}" has been created successfully.`);
         }
       } else if (selectedCampaign?.id) {
-        const campaign = await updateCampaign(selectedCampaign.id, formData);
+        const campaign = await updateCampaign(selectedCampaign.id, campaignPayload);
         if (campaign && campaign.id) {
+          await replaceCampaignAutoruleBindings(selectedCampaign.id, autoruleBindings);
           await loadCampaignsWithStats();
           toast.success('Campaign Updated', `Campaign "${formData.name}" has been updated successfully.`);
         }
@@ -444,6 +473,24 @@ export const CampaignManagement = () => {
     } catch (err) {
       console.error('Bulk action failed:', err);
       toast.error('Action Failed', err instanceof Error ? err.message : 'Failed to perform bulk action.');
+    }
+  };
+
+  const handleQuickStatusAction = async (campaign: Campaign, action: 'activate' | 'pause') => {
+    const nextStatus = action === 'activate' ? 'active' : 'paused';
+    try {
+      await updateCampaign(campaign.id, { status: nextStatus });
+      setCampaigns((prev) =>
+        prev.map((item) =>
+          item.id === campaign.id ? { ...item, status: action === 'activate' ? 'Active' : 'Paused' } : item
+        )
+      );
+      toast.success(
+        'Campaign Updated',
+        `${campaign.name} has been ${action === 'activate' ? 'activated' : 'paused'}.`
+      );
+    } catch (err) {
+      toast.error('Update Failed', err instanceof Error ? err.message : 'Failed to update campaign status.');
     }
   };
 
@@ -517,6 +564,23 @@ export const CampaignManagement = () => {
         initialData={selectedCampaign}
         mode={formMode}
       />
+      <CampaignAutoruleBindingsModal
+        isOpen={isAutoruleModalOpen}
+        campaignId={selectedCampaignForAutorules?.id || null}
+        campaignName={selectedCampaignForAutorules?.name}
+        onClose={() => {
+          setIsAutoruleModalOpen(false);
+          setSelectedCampaignForAutorules(null);
+        }}
+        onSaved={(bindings) => {
+          toast.success(
+            'Autorules Updated',
+            bindings.length > 0
+              ? `${selectedCampaignForAutorules?.name || 'Campaign'} now has ${bindings.length} autorule binding(s).`
+              : `${selectedCampaignForAutorules?.name || 'Campaign'} autorule bindings cleared.`
+          );
+        }}
+      />
       
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -524,9 +588,9 @@ export const CampaignManagement = () => {
           <h1 className="text-3xl font-display font-bold text-fg-default">Campaign Management</h1>
           <p className="text-sm text-fg-muted">Manage your tracking campaigns and traffic distribution</p>
         </div>
-        <div className="flex gap-3 items-center">
+        <div className="flex flex-wrap gap-3 items-center">
           {/* Date Range Picker */}
-          <div className="w-[280px]">
+          <div className="w-[280px] min-w-[220px]">
             <QuickDateRangePicker
               value={initialDateRange.pickerValue}
               onChange={(preset, range) => {
@@ -545,7 +609,7 @@ export const CampaignManagement = () => {
             />
           </div>
           <ExportButton 
-            data={campaigns.map(formatCampaignForExport)}
+            data={filteredCampaigns.map(formatCampaignForExport)}
             filename="campaigns"
             label="Export"
           />
@@ -572,7 +636,7 @@ export const CampaignManagement = () => {
 
       {/* Toolbar */}
       <div className="card p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           {selectedItems.size > 0 ? (
             <>
               <span className="text-sm text-fg-muted mr-2">{selectedItems.size} selected</span>
@@ -600,15 +664,9 @@ export const CampaignManagement = () => {
               <div className="h-6 w-px bg-border-default mx-2" />
             </>
           ) : (
-            <>
-              <button className="btn-icon-create p-2 rounded transition-colors" title="Play"><Play size={18} /></button>
-              <button className="btn-icon-pause p-2 rounded transition-colors" title="Pause"><Pause size={18} /></button>
-              <button className="p-2 text-fg-muted hover:text-accent-fg transition-colors rounded" title="Copy"><Copy size={18} /></button>
-              <button className="btn-icon-delete p-2 rounded transition-colors" title="Delete"><Trash2 size={18} /></button>
-              <div className="h-6 w-px bg-border-default mx-2" />
-            </>
+            <span className="text-sm text-fg-subtle">Select rows to use bulk actions</span>
           )}
-          <div className="relative flex-1 min-w-[300px]">
+          <div className="relative flex-1 min-w-0 md:min-w-[260px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" size={16} />
             <input 
               type="text" 
@@ -681,15 +739,20 @@ export const CampaignManagement = () => {
                   <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
                     <Zap size={20} className="text-primary" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <button 
                       onClick={() => handleCampaignClick(row.id)}
-                      className="font-bold text-high-contrast hover:text-secondary cursor-pointer link-primary"
+                      className="font-bold text-high-contrast hover:text-secondary cursor-pointer link-primary truncate inline-block max-w-[220px]"
                       title={row.name}
                     >
                       {truncateCampaignName(row.name)}
                     </button>
-                    <p className="text-xs text-medium-contrast">ID: {row.displayId || row.id}</p>
+                    <p
+                      className="text-xs text-medium-contrast truncate max-w-[220px]"
+                      title={`ID: ${row.displayId || row.id}`}
+                    >
+                      ID: {truncateLabel(row.displayId || row.id, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+                    </p>
                   </div>
                 </div>
               ),
@@ -737,8 +800,11 @@ export const CampaignManagement = () => {
               sorter: (a: any, b: any) => a.group.localeCompare(b.group),
               showSorter: true,
               render: (_: any, row: any) => (
-                <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-medium-contrast rounded-sm">
-                  {row.group}
+                <span
+                  className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-medium-contrast rounded-sm inline-block max-w-[110px] truncate"
+                  title={row.group}
+                >
+                  {truncateLabel(row.group, DISPLAY_MAX_LENGTH.TAG_TEXT)}
                 </span>
               ),
             },
@@ -828,10 +894,27 @@ export const CampaignManagement = () => {
             {
               key: 'actions',
               label: '',
-              width: '80px',
+              width: '120px',
               align: 'center',
               render: (_: any, row: any) => (
                 <div className="flex items-center gap-1">
+                  {row.status === 'Active' ? (
+                    <button
+                      onClick={() => void handleQuickStatusAction(row, 'pause')}
+                      className="p-2 text-warning hover:text-warning/80 transition-colors"
+                      title="Pause"
+                    >
+                      <Pause size={16} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => void handleQuickStatusAction(row, 'activate')}
+                      className="p-2 text-secondary hover:text-secondary/80 transition-colors"
+                      title="Activate"
+                    >
+                      <Play size={16} />
+                    </button>
+                  )}
                   <button 
                     onClick={() => handleEditCampaign(row)}
                     className="p-2 text-on-surface-variant hover:text-primary transition-colors"
@@ -839,8 +922,12 @@ export const CampaignManagement = () => {
                   >
                     <Edit3 size={16} />
                   </button>
-                  <button className="p-2 text-on-surface-variant hover:text-primary transition-colors">
-                    <MoreHorizontal size={18} />
+                  <button
+                    onClick={() => handleConfigureAutorules(row)}
+                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    title="Autorules"
+                  >
+                    <Zap size={16} />
                   </button>
                 </div>
               ),

@@ -34,6 +34,7 @@ import { ETagCacheManager } from '@/services/cache/etag-cache-manager';
 import { CacheKeyBuilder } from '@/services/cache/unified-cache-manager';
 import type { ReportDimension, ReportFilter, ReportMetric } from '@/handlers/d1/traffic.repo';
 import { getWorkerVersionInfo } from '@/services/cache/version-utils';
+import { createCustomMetricService } from '@/services/customMetric/customMetric.service';
 
 function normalizeCampaignId(value: string | undefined | null) {
   if (!value) {
@@ -303,6 +304,41 @@ export function createAnalyticsRouter() {
     }
   });
 
+  router.get('/reports/metadata', async (c) => {
+    try {
+      const dashboardQuery = createDashboardQueryService(c.env);
+      const customMetricService = createCustomMetricService(c.env);
+
+      const [baseMetadata, activeCustomMetrics] = await Promise.all([
+        dashboardQuery.getReportMetadata(),
+        customMetricService.getActiveMetrics(),
+      ]);
+
+      const existingMetricNames = new Set(baseMetadata.metrics.map((item) => item.value));
+      const customMetricDefinitions = activeCustomMetrics
+        .filter((metric) => !existingMetricNames.has(metric.name))
+        .map((metric) => ({
+          value: metric.name,
+          label: metric.displayName,
+          format: mapCustomMetricFormat(metric.format, metric.dataType),
+          isCustom: true,
+        }));
+
+      return c.json(
+        success({
+          dimensions: baseMetadata.dimensions,
+          metrics: [...baseMetadata.metrics, ...customMetricDefinitions],
+        })
+      );
+    } catch (err) {
+      console.error('[Analytics API] Report metadata error:', err);
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to fetch report metadata'),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
   /**
    * GET /api/analytics/reports/:type
    * 鑾峰彇鎸囧畾绫诲瀷鐨勭粺璁℃姤琛?
@@ -546,6 +582,31 @@ function normalizeFilters(value: unknown): ReportFilter[] {
       (typeof candidate.value === 'string' || typeof candidate.value === 'number')
     );
   });
+}
+
+function mapCustomMetricFormat(
+  format: 'number' | 'currency' | 'percent' | 'custom',
+  dataType: 'number' | 'currency' | 'percent'
+): 'number' | 'currency' | 'percent' {
+  if (format === 'currency') {
+    return 'currency';
+  }
+
+  if (format === 'percent') {
+    return 'percent';
+  }
+
+  if (format === 'custom') {
+    if (dataType === 'currency') {
+      return 'currency';
+    }
+
+    if (dataType === 'percent') {
+      return 'percent';
+    }
+  }
+
+  return 'number';
 }
 
 function generateCSV(data: any[], columns?: string[]): string {

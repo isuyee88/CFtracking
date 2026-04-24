@@ -55,6 +55,7 @@ export interface ClickData {
   subId29?: string | null;
   subId30?: string | null;
   cost: number;
+  isUnique?: boolean;
   redirectUrl?: string | null;
   // UTM 参数
   utmSource?: string | null;
@@ -124,6 +125,12 @@ export interface ClickData {
   isProxy?: boolean;
   isSuspicious?: boolean;
   riskReasons?: string[];
+  // Realtime autorule decision fields
+  ruleMatched?: number;
+  ruleBlocked?: number;
+  matchedRuleId?: string | null;
+  matchedRuleLayer?: 'flow' | 'campaign' | 'whitelist' | 'blacklist' | null;
+  matchedRuleReason?: string | null;
 }
 
 export interface ConversionData {

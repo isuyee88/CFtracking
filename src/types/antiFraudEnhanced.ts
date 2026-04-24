@@ -8,6 +8,8 @@ export type FraudSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type FraudAction = 'allow' | 'log' | 'flag' | 'challenge' | 'block';
 export type BotRuleType = 'user_agent' | 'js_detection' | 'cf_bot_score' | 'behavior' | 'custom';
 export type AnomalyPatternType = 'velocity' | 'conversion' | 'geo' | 'device' | 'referrer' | 'custom';
+export type HumanVerificationProvider = 'turnstile' | 'recaptcha';
+export type HumanVerificationMode = 'managed' | 'invisible' | 'checkbox';
 
 export interface IPBlacklistEntry {
   id: string;
@@ -149,6 +151,17 @@ export interface EnhancedAntiFraudConfig {
     fraudulent: FraudAction;
     block: FraudAction;
   };
+  humanVerification: {
+    enabled: boolean;
+    provider: HumanVerificationProvider;
+    mode: HumanVerificationMode;
+    tokenField: string;
+    onSuspicious: boolean;
+    onFraudulent: boolean;
+    bypassVerifiedBots: boolean;
+    failOpen: boolean;
+    scoreThreshold: number;
+  };
 }
 
 export interface EnhancedFraudDetectionResult {
@@ -197,4 +210,124 @@ export interface AnomalyCheckResult {
   score: number;
   matchedPatterns: TrafficAnomalyPattern[];
   details: Record<string, any>;
+}
+
+export interface CloudflareSignalContext {
+  rayId?: string | null;
+  asn?: number | null;
+  asOrganization?: string | null;
+  colo?: string | null;
+  country?: string | null;
+  city?: string | null;
+  region?: string | null;
+  timezone?: string | null;
+  httpProtocol?: string | null;
+  tlsVersion?: string | null;
+  tlsCipher?: string | null;
+  tlsClientCiphersSha1?: string | null;
+  tlsClientExtensionsSha1?: string | null;
+  isEUCountry?: boolean;
+  requestPriority?: string | null;
+}
+
+export interface EnhancedFraudDetectionEventInput {
+  id?: string;
+  campaignId: string;
+  ip: string;
+  userAgent: string;
+  eventType: 'impression' | 'click' | 'conversion';
+  url: string;
+  timestamp: string;
+  country?: string;
+  city?: string;
+  deviceType?: string;
+  screenResolution?: string;
+  referrer?: string;
+  cfBotManagement?: {
+    score: number | null;
+    verifiedBot: boolean;
+    staticResource: boolean;
+    jsDetectionPassed: boolean | null;
+  };
+  cloudflare?: CloudflareSignalContext;
+}
+
+export interface BotListItem {
+  ip: string;
+  userAgent: string;
+  hits: number;
+  blockedHits: number;
+  suspiciousHits: number;
+  averageScore: number;
+  maxScore: number;
+  lastSeen: string;
+  category: 'bot' | 'automation' | 'datacenter' | 'unknown';
+}
+
+export interface BotListResult {
+  list: BotListItem[];
+  total: number;
+  summary: {
+    totalHits: number;
+    blockedHits: number;
+    suspiciousHits: number;
+    topCategory: string;
+  };
+}
+
+export interface GeoProfileItem {
+  country: string;
+  total: number;
+  risky: number;
+  blocked: number;
+  riskRate: number;
+  blockedRate: number;
+  avgScore: number;
+  recommendation: 'allow' | 'challenge' | 'block';
+}
+
+export interface GeoProfileResult {
+  list: GeoProfileItem[];
+  recommendations: {
+    block: string[];
+    challenge: string[];
+  };
+}
+
+export interface ArchiveImportResult {
+  type: 'ip-blacklist' | 'bot-rules';
+  total: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  errors: Array<{
+    row: number;
+    reason: string;
+    value?: string;
+  }>;
+}
+
+export interface HumanVerificationPublicConfig {
+  enabled: boolean;
+  provider: HumanVerificationProvider;
+  mode: HumanVerificationMode;
+  tokenField: string;
+  onSuspicious: boolean;
+  onFraudulent: boolean;
+  bypassVerifiedBots: boolean;
+  failOpen: boolean;
+  scoreThreshold: number;
+  siteKey?: string;
+}
+
+export interface HumanVerificationVerifyResult {
+  success: boolean;
+  provider: HumanVerificationProvider;
+  challengeRequired: boolean;
+  score?: number;
+  action?: string;
+  hostname?: string;
+  challengeTs?: string;
+  errorCodes?: string[];
+  message?: string;
 }

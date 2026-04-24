@@ -7,6 +7,7 @@
 import { WhitelistRepository } from '@/handlers/d1/whitelist.repo';
 import { TrafficSourceRepository } from '@/handlers/d1/trafficSource.repo';
 import { getD1Connection } from '@/handlers/d1';
+import { GENERAL_TRAFFIC_SOURCE_ID } from '@/handlers/d1/trafficSource.repo';
 import { PropellerAdsAdapter } from '@/services/platform/propellerads';
 import type { Env } from '@/config/env';
 import type {
@@ -16,6 +17,9 @@ import type {
   WhitelistSyncResult,
   WhitelistCandidate,
   WhitelistType,
+  ListCondition,
+  ListConditionField,
+  ListConditionMode,
   CreateWhitelistDTO,
   UpdateWhitelistDTO,
 } from '@/types/whitelist';
@@ -37,6 +41,10 @@ export class WhitelistService {
   }
 
   private async resolveTrafficSourceOrThrow(trafficSourceId: string) {
+    if (trafficSourceId === GENERAL_TRAFFIC_SOURCE_ID) {
+      return this.trafficSourceRepo.ensureGeneralTrafficSource();
+    }
+
     const resolved = await this.trafficSourceRepo.findByIdentifierWithStorageId(trafficSourceId);
     if (!resolved) {
       throw new NotFoundError('Traffic Source not found');
@@ -55,11 +63,14 @@ export class WhitelistService {
     const { storageId } = await this.resolveTrafficSourceOrThrow(trafficSourceId);
 
     // 验证值格式
-    this.validateEntryValue(type, value, normalizedData.ipMatchMode, normalizedData.uaMatchMode);
+    const hasConditionRules = this.hasConditionRules(normalizedData.conditions);
+    this.validateEntryValue(type, value, normalizedData.ipMatchMode, normalizedData.uaMatchMode, hasConditionRules);
+    this.validateConditionRules(type, normalizedData.matchMode, normalizedData.conditions);
 
     // 检查是否已存在
-    const existing = await this.whitelistRepo.findByValue(storageId, type, value);
-    if (existing) {
+    if (!hasConditionRules) {
+      const existing = await this.whitelistRepo.findByValue(storageId, type, value);
+      if (existing) {
       if (existing.status === 'active') {
         throw new ValidationError(`Entry already exists in whitelist: ${value}`);
       }
@@ -71,8 +82,11 @@ export class WhitelistService {
         ipMatchMode: normalizedData.ipMatchMode,
         uaMatchMode: normalizedData.uaMatchMode,
         syncToPlatform: normalizedData.syncToPlatform,
+        matchMode: normalizedData.matchMode,
+        conditions: normalizedData.conditions,
       });
-      return updated!;
+        return updated!;
+      }
     }
 
     // 创建新条目
@@ -88,6 +102,8 @@ export class WhitelistService {
       ipMatchMode: normalizedData.ipMatchMode,
       uaMatchMode: normalizedData.uaMatchMode,
       syncToPlatform: normalizedData.syncToPlatform,
+      matchMode: normalizedData.matchMode,
+      conditions: normalizedData.conditions,
     });
 
     return entry;
@@ -102,6 +118,10 @@ export class WhitelistService {
     if (!entry) {
       throw new NotFoundError('Whitelist entry not found');
     }
+
+    const effectiveConditions = normalizedData.conditions ?? entry.conditions;
+    const effectiveMatchMode = normalizedData.matchMode ?? entry.matchMode;
+    this.validateConditionRules(entry.type, effectiveMatchMode, effectiveConditions);
 
     const updated = await this.whitelistRepo.update(id, normalizedData);
     if (!updated) {
@@ -416,6 +436,18 @@ export class WhitelistService {
   private normalizeCreateInput(data: CreateWhitelistDTO): CreateWhitelistDTO {
     const type = data.type as WhitelistType;
     const valueMaxLength = this.getWhitelistValueMaxLength(type);
+    const hasConditionRules = this.hasConditionRules(data.conditions);
+    const normalizedConditions = this.normalizeConditions(data.conditions, 'whitelist.conditions');
+    const normalizedMatchMode = this.normalizeConditionMode(data.matchMode, normalizedConditions);
+    const normalizedValue = hasConditionRules
+      ? normalizeOptionalString(data.value as unknown, {
+          field: 'whitelist.value',
+          maxLength: valueMaxLength,
+        }) || `rule:${crypto.randomUUID()}`
+      : normalizeRequiredString(data.value as unknown, {
+          field: 'whitelist.value',
+          maxLength: valueMaxLength,
+        });
 
     return {
       ...data,
@@ -423,10 +455,7 @@ export class WhitelistService {
         field: 'whitelist.trafficSourceId',
         maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
       }),
-      value: normalizeRequiredString(data.value as unknown, {
-        field: 'whitelist.value',
-        maxLength: valueMaxLength,
-      }),
+      value: this.normalizeEntryValue(type, normalizedValue),
       name: normalizeOptionalString(data.name as unknown, {
         field: 'whitelist.name',
         maxLength: FIELD_MAX_LENGTH.NAME,
@@ -439,6 +468,8 @@ export class WhitelistService {
         field: 'whitelist.campaignId',
         maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
       }),
+      matchMode: normalizedMatchMode,
+      conditions: normalizedConditions,
     };
   }
 
@@ -457,6 +488,14 @@ export class WhitelistService {
         field: 'whitelist.reason',
         maxLength: FIELD_MAX_LENGTH.REASON,
       });
+    }
+
+    if (data.conditions !== undefined) {
+      normalizedData.conditions = this.normalizeConditions(data.conditions, 'whitelist.conditions');
+    }
+
+    if (data.matchMode !== undefined || normalizedData.conditions !== undefined) {
+      normalizedData.matchMode = this.normalizeConditionMode(data.matchMode, normalizedData.conditions);
     }
 
     return normalizedData;
@@ -479,10 +518,13 @@ export class WhitelistService {
       trafficSourceId: normalizedTrafficSourceId,
       items: data.items.map((item, index) => ({
         ...item,
-        value: normalizeRequiredString(item.value as unknown, {
-          field: `whitelist.items[${index}].value`,
-          maxLength: valueMaxLength,
-        }),
+        value: this.normalizeEntryValue(
+          type,
+          normalizeRequiredString(item.value as unknown, {
+            field: `whitelist.items[${index}].value`,
+            maxLength: valueMaxLength,
+          })
+        ),
         name: normalizeOptionalString(item.name as unknown, {
           field: `whitelist.items[${index}].name`,
           maxLength: FIELD_MAX_LENGTH.NAME,
@@ -513,9 +555,13 @@ export class WhitelistService {
     type: WhitelistType,
     value: string,
     ipMatchMode?: string,
-    uaMatchMode?: string
+    uaMatchMode?: string,
+    hasConditionRules = false
   ): void {
     if (!value || value.trim() === '') {
+      if (hasConditionRules) {
+        return;
+      }
       throw new ValidationError('Value is required');
     }
 
@@ -532,12 +578,21 @@ export class WhitelistService {
       case 'user_agent':
         this.validateUaValue(normalizedValue, uaMatchMode);
         break;
+      case 'asn':
+        this.validateAsnValue(normalizedValue);
+        break;
+      case 'country':
+        this.validateCountryValue(normalizedValue);
+        break;
       case 'zone':
       case 'creative':
       case 'publisher':
       case 'sub_id':
       case 'geo':
       case 'device':
+      case 'isp':
+      case 'fingerprint':
+      case 'rule':
         // 这些类型只需要非空值
         break;
       default:
@@ -548,6 +603,129 @@ export class WhitelistService {
   /**
    * 验证IP地址格式
    */
+  private hasConditionRules(conditions?: ListCondition[]): boolean {
+    return Array.isArray(conditions) && conditions.length > 0;
+  }
+
+  private normalizeConditionMode(
+    mode: ListConditionMode | undefined,
+    conditions: ListCondition[] | undefined
+  ): ListConditionMode | undefined {
+    if (!this.hasConditionRules(conditions)) {
+      return undefined;
+    }
+    if (!mode) {
+      return 'all';
+    }
+    if (mode !== 'all' && mode !== 'any') {
+      throw new ValidationError("matchMode must be 'all' or 'any'");
+    }
+    return mode;
+  }
+
+  private normalizeConditions(
+    conditions: CreateWhitelistDTO['conditions'] | UpdateWhitelistDTO['conditions'] | undefined,
+    fieldPrefix: string
+  ): ListCondition[] | undefined {
+    if (conditions === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(conditions)) {
+      throw new ValidationError(`${fieldPrefix} must be an array`);
+    }
+    if (conditions.length === 0) {
+      return [];
+    }
+    return conditions.map((raw, index) => this.normalizeCondition(raw, `${fieldPrefix}[${index}]`));
+  }
+
+  private normalizeCondition(raw: ListCondition, fieldPrefix: string): ListCondition {
+    if (!raw || typeof raw !== 'object') {
+      throw new ValidationError(`${fieldPrefix} must be an object`);
+    }
+
+    const field = String(raw.field || '').trim() as ListConditionField;
+    const operator = String(raw.operator || '').trim().toLowerCase() as ListCondition['operator'];
+    const allowedFields: ListConditionField[] = [
+      'ip',
+      'asn',
+      'userAgent',
+      'zoneId',
+      'country',
+      'device',
+      'isp',
+      'fingerprint',
+      'utmSource',
+      'utmCampaign',
+      'browser',
+      'subId1',
+      'subId2',
+      'subId3',
+      'subId4',
+      'subId5',
+    ];
+    if (!allowedFields.includes(field)) {
+      throw new ValidationError(`${fieldPrefix}.field is invalid`);
+    }
+
+    const allowedOperators: ListCondition['operator'][] = [
+      'equals',
+      'contains',
+      'starts_with',
+      'ends_with',
+      'in',
+      'exists',
+    ];
+    if (!allowedOperators.includes(operator)) {
+      throw new ValidationError(`${fieldPrefix}.operator is invalid`);
+    }
+
+    if (operator === 'exists') {
+      return { field, operator };
+    }
+    if (operator === 'in') {
+      if (!Array.isArray(raw.value)) {
+        throw new ValidationError(`${fieldPrefix}.value must be an array for 'in' operator`);
+      }
+      const values = raw.value
+        .map((item, valueIndex) =>
+          normalizeRequiredString(item as unknown, {
+            field: `${fieldPrefix}.value[${valueIndex}]`,
+            maxLength: this.getConditionValueMaxLength(field),
+          })
+        )
+        .filter(Boolean);
+      if (values.length === 0) {
+        throw new ValidationError(`${fieldPrefix}.value requires at least one item`);
+      }
+      return { field, operator, value: values };
+    }
+
+    const value = normalizeRequiredString(raw.value as unknown, {
+      field: `${fieldPrefix}.value`,
+      maxLength: this.getConditionValueMaxLength(field),
+    });
+    return { field, operator, value };
+  }
+
+  private getConditionValueMaxLength(field: ListConditionField): number {
+    return field === 'userAgent' ? FIELD_MAX_LENGTH.USER_AGENT_VALUE : FIELD_MAX_LENGTH.TRAFFIC_ENTRY_VALUE;
+  }
+
+  private validateConditionRules(
+    type: WhitelistType,
+    matchMode: ListConditionMode | undefined,
+    conditions: ListCondition[] | undefined
+  ): void {
+    const hasConditions = this.hasConditionRules(conditions);
+    if (!hasConditions && matchMode !== undefined) {
+      throw new ValidationError('matchMode requires conditions');
+    }
+    if (type === 'rule' && !hasConditions) {
+      throw new ValidationError('Rule type requires at least one condition');
+    }
+  }
+
   private validateIpValue(value: string, matchMode?: string): void {
     const mode = matchMode || 'exact';
 
@@ -602,6 +780,29 @@ export class WhitelistService {
     if (mode !== 'exact' && mode !== 'contains') {
       throw new ValidationError(`Invalid UA match mode: ${mode}. Must be 'exact' or 'contains'`);
     }
+  }
+
+  private validateAsnValue(value: string): void {
+    const normalized = value.trim().toUpperCase();
+    const asnRegex = /^(AS)?\d+$/;
+    if (!asnRegex.test(normalized)) {
+      throw new ValidationError(`Invalid ASN format: ${value}. Expected format: AS12345 or 12345`);
+    }
+  }
+
+  private validateCountryValue(value: string): void {
+    const countryCodeRegex = /^[A-Z]{2}$/;
+    if (!countryCodeRegex.test(value.trim().toUpperCase())) {
+      throw new ValidationError(`Invalid country code: ${value}. Expected ISO 3166-1 alpha-2 like US`);
+    }
+  }
+
+  private normalizeEntryValue(type: WhitelistType, value: string): string {
+    if (type === 'country') {
+      return value.trim().toUpperCase();
+    }
+
+    return value;
   }
 
   /**

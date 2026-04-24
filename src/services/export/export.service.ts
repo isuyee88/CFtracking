@@ -58,43 +58,49 @@ export interface ExportResult {
 }
 
 export class ExportService {
+  private env: Env;
+
+  constructor(env: Env) {
+    this.env = env;
+  }
+
   async exportCampaigns(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new CampaignRepository(db);
     const campaigns = await repo.findAll();
     return this.formatExportData('campaigns', campaigns as unknown as Record<string, unknown>[], request);
   }
 
   async exportLandingPages(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new LandingPageRepository(db);
     const pages = await repo.findAll();
     return this.formatExportData('landingPages', pages as unknown as Record<string, unknown>[], request);
   }
 
   async exportOffers(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new OfferRepository(db);
     const offers = await repo.findAll();
     return this.formatExportData('offers', offers as unknown as Record<string, unknown>[], request);
   }
 
   async exportTrafficSources(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new TrafficSourceRepository(db);
     const sources = await repo.findAll();
     return this.formatExportData('trafficSources', sources as unknown as Record<string, unknown>[], request);
   }
 
   async exportAffiliateNetworks(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new AffiliateNetworkRepository(db);
     const networks = await repo.findAll();
     return this.formatExportData('affiliateNetworks', networks as unknown as Record<string, unknown>[], request);
   }
 
   async exportClicks(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new ClickRepository(db);
     const { dateRange, filters } = request;
     
@@ -111,7 +117,7 @@ export class ExportService {
   }
 
   async exportConversions(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new ConversionRepository(db);
     const { dateRange, filters } = request;
     
@@ -129,7 +135,7 @@ export class ExportService {
 
   
   async exportFlows(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new FlowRepository(db);
     const flows = await repo.findAll();
     
@@ -180,6 +186,6 @@ export class ExportService {
   }
 }
 
-export function createExportService(): ExportService {
-  return new ExportService();
+export function createExportService(env: Env): ExportService {
+  return new ExportService(env);
 }

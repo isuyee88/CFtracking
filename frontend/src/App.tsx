@@ -4,7 +4,7 @@
  */
 
 import React, { Suspense, lazy, useLayoutEffect, useRef, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { InitialDataContext } from './contexts/InitialDataContext';
 import { getRawBootstrapData } from './services/bootstrap';
@@ -35,7 +35,6 @@ const loadTarget = () => import('./pages/Target');
 const loadHelpCenter = () => import('./pages/HelpCenter');
 const loadExportedReports = () => import('./pages/ExportedReports');
 const loadCustomMetrics = () => import('./pages/CustomMetrics');
-const loadTrafficFilter = () => import('./pages/TrafficFilter');
 const loadAutoOptimizationCenter = () => import('./pages/AutoOptimizationCenter');
 const loadLogin = () => import('./pages/Login');
 
@@ -60,7 +59,6 @@ const TargetPage = lazy(loadTarget);
 const HelpCenter = lazy(loadHelpCenter);
 const ExportedReports = lazy(loadExportedReports);
 const CustomMetrics = lazy(loadCustomMetrics);
-const TrafficFilter = lazy(loadTrafficFilter);
 const AutoOptimizationCenter = lazy(loadAutoOptimizationCenter);
 const LoginPage = lazy(loadLogin);
 
@@ -74,7 +72,6 @@ const routePreloadMap: Record<string, () => Promise<any>> = {
   '/reports': loadReports,
   '/audit': loadClicksLog,
   '/trends': loadTrends,
-  '/traffic-filter': loadTrafficFilter,
 };
 
 function RouteReadyBoundary({
@@ -207,7 +204,7 @@ export default function App({ initialData, onReady }: AppProps) {
             <Route path="reports" element={renderPage(<Reports />)} />
             <Route path="exported-reports" element={renderPage(<ExportedReports />)} />
             <Route path="custom-metrics" element={renderPage(<CustomMetrics />)} />
-            <Route path="traffic-filter" element={renderPage(<TrafficFilter />)} />
+            <Route path="traffic-filter" element={<Navigate to="/blacklist" replace />} />
             <Route path="audit" element={renderPage(<ClicksLog />)} />
             <Route path="conversions" element={renderPage(<ConversionsLog />)} />
             <Route path="blacklist" element={renderPage(<Blacklist />)} />

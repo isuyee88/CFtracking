@@ -26,6 +26,9 @@ import type { Env } from '@/config/env';
 import { getD1Connection, TrafficRepository } from '@/handlers/d1';
 import { getTrackingStatsStub } from '@/handlers/do';
 import type { ReportDimension, ReportFilter, ReportMetric, ReportQueryOptions } from '@/handlers/d1/traffic.repo';
+import { createCustomMetricService } from '@/services/customMetric/customMetric.service';
+import { createMetricCalculationEngine, type MetricCalculationEngine } from '@/services/customMetric/metric.engine';
+import type { CustomMetric, MetricCalculationContext } from '@/types/customMetric';
 
 export type DataSource = 'D1' | 'DO';
 
@@ -83,11 +86,44 @@ interface DOEntityStatsResponse {
   stats?: Record<string, EntityStatItem[]>;
 }
 
+const BUILTIN_REPORT_METRICS: ReportMetric[] = [
+  'clicks',
+  'impressions',
+  'conversions',
+  'revenue',
+  'spend',
+  'cost',
+  'profit',
+  'roi',
+  'cr',
+  'margin',
+  'epc',
+  'cpc',
+  'unique_visitors',
+  'fraud_clicks',
+  'bot_clicks',
+  'avg_fraud_score',
+  'blacklist_hits',
+  'blacklist_rate',
+  'rule_hits',
+  'blocked',
+];
+
+const BUILTIN_REPORT_METRIC_SET = new Set<ReportMetric>(BUILTIN_REPORT_METRICS);
+
+const BUILTIN_METRIC_ALIASES: Record<string, ReportMetric> = {
+  uniqueVisitors: 'unique_visitors',
+};
+
 export class DashboardQueryService {
   private trafficRepo: TrafficRepository;
+  private readonly customMetricService: ReturnType<typeof createCustomMetricService>;
+  private readonly metricEngine: MetricCalculationEngine;
 
   constructor(env: Env) {
     this.trafficRepo = new TrafficRepository(getD1Connection(env));
+    this.customMetricService = createCustomMetricService(env);
+    this.metricEngine = createMetricCalculationEngine();
   }
 
   /**
@@ -346,7 +382,138 @@ export class DashboardQueryService {
   }
 
   async getCustomReport(options: ReportQueryOptions): Promise<any[]> {
-    return this.trafficRepo.getCustomReport(options);
+    const groupBy = (options.groupBy || []).filter((item, index, array) => array.indexOf(item) === index);
+    const requestedMetrics = (options.metrics || ['clicks']).filter(
+      (item, index, array) => array.indexOf(item) === index
+    );
+    const filters = options.filters || [];
+    const sortOrder = options.sortOrder === 'asc' ? 'asc' : 'desc';
+    const requestedLimit = Math.min(Math.max(Number(options.limit) || 100, 1), 5000);
+
+    const activeCustomMetrics = await this.customMetricService.getActiveMetrics();
+    const customMetricByName = new Map<string, CustomMetric>(
+      activeCustomMetrics.map((metric) => [metric.name, metric])
+    );
+
+    const requestedCustomMetricNames = requestedMetrics.filter((metric) => customMetricByName.has(metric));
+    const customFilterMetricNames = filters
+      .map((filter) => filter.field)
+      .filter((field, index, array) => array.indexOf(field) === index && customMetricByName.has(field));
+    const customFilterFieldSet = new Set<string>(customFilterMetricNames);
+    const customFilters = filters.filter((filter) => customFilterFieldSet.has(filter.field));
+    const sortByCandidate = options.sortBy || requestedMetrics[0] || groupBy[0] || 'summary';
+    const customSortMetricName = customMetricByName.has(sortByCandidate) ? sortByCandidate : null;
+
+    const targetCustomMetricNames = Array.from(
+      new Set([
+        ...requestedCustomMetricNames,
+        ...customFilterMetricNames,
+        ...(customSortMetricName ? [customSortMetricName] : []),
+      ])
+    );
+
+    const metricCalculationOrder: string[] = [];
+    const metricVariables = new Map<string, string[]>();
+    const requiredBaseMetrics = new Set<ReportMetric>();
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+
+    for (const metric of requestedMetrics) {
+      const normalized = this.normalizeBuiltinMetricName(metric);
+      if (normalized) {
+        requiredBaseMetrics.add(normalized);
+      }
+    }
+
+    const visitCustomMetric = (metricName: string) => {
+      if (visited.has(metricName)) {
+        return;
+      }
+
+      if (visiting.has(metricName)) {
+        throw new Error(`Circular custom metric dependency detected: ${metricName}`);
+      }
+
+      const metric = customMetricByName.get(metricName);
+      if (!metric) {
+        return;
+      }
+
+      visiting.add(metricName);
+      const variables = this.metricEngine.extractVariables(metric.formula);
+      metricVariables.set(metricName, variables);
+
+      for (const variable of variables) {
+        if (customMetricByName.has(variable)) {
+          visitCustomMetric(variable);
+          continue;
+        }
+
+        const normalizedBuiltin = this.normalizeBuiltinMetricName(variable);
+        if (normalizedBuiltin) {
+          requiredBaseMetrics.add(normalizedBuiltin);
+        }
+      }
+
+      visiting.delete(metricName);
+      visited.add(metricName);
+      metricCalculationOrder.push(metricName);
+    };
+
+    for (const metricName of targetCustomMetricNames) {
+      visitCustomMetric(metricName);
+    }
+
+    if (requiredBaseMetrics.size === 0) {
+      requiredBaseMetrics.add('clicks');
+    }
+
+    const baseFilters = filters.filter((filter) => !customMetricByName.has(filter.field));
+    const requiresInMemoryPostProcess =
+      targetCustomMetricNames.length > 0 ||
+      baseFilters.length !== filters.length ||
+      Boolean(customSortMetricName);
+
+    const baseLimit = requiresInMemoryPostProcess
+      ? Math.min(Math.max(requestedLimit * 5, 500), 5000)
+      : requestedLimit;
+    const baseSortBy: ReportDimension | ReportMetric = customSortMetricName
+      ? (Array.from(requiredBaseMetrics)[0] || groupBy[0] || 'summary')
+      : sortByCandidate;
+
+    const baseRows = await this.trafficRepo.getCustomReport({
+      ...options,
+      groupBy,
+      metrics: Array.from(requiredBaseMetrics),
+      filters: baseFilters,
+      limit: baseLimit,
+      sortBy: baseSortBy,
+      sortOrder,
+    });
+
+    const rows = baseRows.map((item) => ({ ...item } as Record<string, unknown>));
+
+    for (const row of rows) {
+      if (metricCalculationOrder.length > 0) {
+        this.populateCustomMetricValues(row, metricCalculationOrder, metricVariables, customMetricByName);
+      }
+    }
+
+    const filteredRows = rows.filter((row) => this.matchesAllFilters(row, customFilters));
+    filteredRows.sort((left, right) => this.compareRows(left, right, sortByCandidate, sortOrder));
+
+    const projected = filteredRows.slice(0, requestedLimit).map((row) =>
+      this.projectReportRow(row, groupBy, requestedMetrics)
+    );
+
+    return projected;
+  }
+
+  async getReportMetadata(): Promise<{
+    dimensions: Array<{ value: string; label: string; hint: string }>;
+    metrics: Array<{ value: string; label: string; format: 'number' | 'currency' | 'percent' }>;
+  }> {
+    return this.trafficRepo.getReportMetadata();
   }
 
   private getDefaultMetricsForReportType(reportType: 'traffic' | 'conversion' | 'financial' | 'roi'): ReportMetric[] {
@@ -362,6 +529,167 @@ export class DashboardQueryService {
       default:
         return ['clicks', 'conversions', 'revenue'];
     }
+  }
+
+  private normalizeBuiltinMetricName(metric: string): ReportMetric | null {
+    if (BUILTIN_REPORT_METRIC_SET.has(metric)) {
+      return metric as ReportMetric;
+    }
+
+    const alias = BUILTIN_METRIC_ALIASES[metric];
+    return alias && BUILTIN_REPORT_METRIC_SET.has(alias) ? alias : null;
+  }
+
+  private buildMetricContext(row: Record<string, unknown>): MetricCalculationContext {
+    const context: MetricCalculationContext = {
+      clicks: 0,
+      impressions: 0,
+      conversions: 0,
+      revenue: 0,
+      spend: 0,
+      cost: 0,
+      profit: 0,
+      uniqueVisitors: 0,
+    };
+
+    for (const [key, value] of Object.entries(row)) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) {
+        context[key] = numeric;
+      }
+    }
+
+    if (context.unique_visitors !== undefined && context.uniqueVisitors === undefined) {
+      context.uniqueVisitors = context.unique_visitors;
+    }
+    if (context.uniqueVisitors !== undefined && context.unique_visitors === undefined) {
+      context.unique_visitors = context.uniqueVisitors;
+    }
+    if (context.spend !== undefined && context.cost === undefined) {
+      context.cost = context.spend;
+    }
+    if (context.cost !== undefined && context.spend === undefined) {
+      context.spend = context.cost;
+    }
+
+    return context;
+  }
+
+  private populateCustomMetricValues(
+    row: Record<string, unknown>,
+    calculationOrder: string[],
+    metricVariables: Map<string, string[]>,
+    customMetricByName: Map<string, CustomMetric>
+  ) {
+    const context = this.buildMetricContext(row);
+
+    for (const metricName of calculationOrder) {
+      const metric = customMetricByName.get(metricName);
+      if (!metric) {
+        continue;
+      }
+
+      const variables = metricVariables.get(metricName) || [];
+      for (const variable of variables) {
+        const aliased = BUILTIN_METRIC_ALIASES[variable];
+        if (aliased) {
+          if (context[variable] === undefined && context[aliased] !== undefined) {
+            context[variable] = context[aliased];
+          }
+          if (context[aliased] === undefined && context[variable] !== undefined) {
+            context[aliased] = context[variable];
+          }
+        }
+
+        if (context[variable] === undefined) {
+          context[variable] = 0;
+        }
+      }
+
+      const result = this.metricEngine.calculate(metric, context);
+      const numericValue = Number(result.value);
+      const safeValue = Number.isFinite(numericValue) ? numericValue : 0;
+
+      context[metricName] = safeValue;
+      row[metricName] = safeValue;
+    }
+  }
+
+  private matchesAllFilters(row: Record<string, unknown>, filters: ReportFilter[]): boolean {
+    for (const filter of filters) {
+      const actual = row[filter.field];
+      if (!this.evaluateFilterCondition(actual, filter.operator, filter.value)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private evaluateFilterCondition(
+    actual: unknown,
+    operator: ReportFilter['operator'],
+    expected: string | number
+  ): boolean {
+    const actualNumber = Number(actual);
+    const expectedNumber = Number(expected);
+    const canCompareAsNumber = Number.isFinite(actualNumber) && Number.isFinite(expectedNumber);
+
+    switch (operator) {
+      case 'eq':
+        return canCompareAsNumber ? actualNumber === expectedNumber : String(actual ?? '') === String(expected);
+      case 'neq':
+        return canCompareAsNumber ? actualNumber !== expectedNumber : String(actual ?? '') !== String(expected);
+      case 'contains':
+        return String(actual ?? '').toLowerCase().includes(String(expected).toLowerCase());
+      case 'gt':
+        return canCompareAsNumber && actualNumber > expectedNumber;
+      case 'gte':
+        return canCompareAsNumber && actualNumber >= expectedNumber;
+      case 'lt':
+        return canCompareAsNumber && actualNumber < expectedNumber;
+      case 'lte':
+        return canCompareAsNumber && actualNumber <= expectedNumber;
+      default:
+        return true;
+    }
+  }
+
+  private compareRows(
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+    sortBy: string,
+    sortOrder: 'asc' | 'desc'
+  ): number {
+    const leftValue = left[sortBy];
+    const rightValue = right[sortBy];
+    const leftNumber = Number(leftValue);
+    const rightNumber = Number(rightValue);
+
+    const rawResult =
+      Number.isFinite(leftNumber) && Number.isFinite(rightNumber)
+        ? leftNumber - rightNumber
+        : String(leftValue ?? '').localeCompare(String(rightValue ?? ''), 'en-US', {
+            numeric: true,
+            sensitivity: 'base',
+          });
+
+    return sortOrder === 'asc' ? rawResult : -rawResult;
+  }
+
+  private projectReportRow(
+    row: Record<string, unknown>,
+    groupBy: ReportDimension[],
+    metrics: ReportMetric[]
+  ): Record<string, unknown> {
+    const selectedColumns = groupBy.length > 0 ? [...groupBy, ...metrics] : ['summary', ...metrics];
+    const projected: Record<string, unknown> = {};
+
+    for (const column of selectedColumns) {
+      projected[column] = row[column] ?? (column === 'summary' ? 'Total' : 0);
+    }
+
+    return projected;
   }
 }
 

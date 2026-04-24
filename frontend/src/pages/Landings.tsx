@@ -26,7 +26,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
-import { fetchLandings, createLanding, updateLanding, deleteLanding } from '../services/api';
+import { fetchLandings, createLanding, updateLanding, deleteLanding, uploadHostedAsset } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatLandingPageForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
@@ -55,7 +55,50 @@ interface LandingPage {
   updatedAt: string;
 }
 
+type LandingHostingMode = 'hosted' | 'local' | 'zip';
+type HostedFileValue = { name?: string; type?: string; size?: number; base64?: string };
+type LandingFormData = Partial<LandingPage> & {
+  hostMode?: LandingHostingMode;
+  localHtml?: string;
+  zipFile?: HostedFileValue | null;
+};
+
+function encodeUtf8ToBase64(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+  }
+  return btoa(binary);
+}
+
+function inferLandingHostingMode(url: string | undefined): LandingHostingMode {
+  if (!url) {
+    return 'hosted';
+  }
+  if (url.includes('/hosted-assets/') && url.includes('mode=zip')) {
+    return 'zip';
+  }
+  if (url.includes('/hosted-assets/') && url.includes('mode=local')) {
+    return 'local';
+  }
+  return 'hosted';
+}
+
 const LANDING_FIELDS: FormField[] = [
+  {
+    name: 'hostMode',
+    label: 'Hosting Mode',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'hosted', label: 'Hosted URL' },
+      { value: 'local', label: 'Local HTML' },
+      { value: 'zip', label: 'ZIP Archive' },
+    ],
+    description: 'Choose how this landing page is hosted (remote URL, inline HTML, or ZIP archive).',
+  },
   {
     name: 'name',
     label: 'Landing Page Name',
@@ -71,6 +114,7 @@ const LANDING_FIELDS: FormField[] = [
     required: true,
     placeholder: 'https://example.com/landing-page',
     maxLength: FIELD_MAX_LENGTH.URL,
+    showWhen: (data) => (data.hostMode || 'hosted') === 'hosted',
     validation: (value) => {
       try {
         new URL(value);
@@ -79,6 +123,25 @@ const LANDING_FIELDS: FormField[] = [
         return 'Please enter a valid URL';
       }
     }
+  },
+  {
+    name: 'localHtml',
+    label: 'Local HTML',
+    type: 'textarea',
+    required: true,
+    placeholder: '<!DOCTYPE html><html><head>...</head><body>...</body></html>',
+    description: 'Paste full HTML document. System will host it as a managed landing asset.',
+    showWhen: (data) => data.hostMode === 'local',
+  },
+  {
+    name: 'zipFile',
+    label: 'ZIP Archive',
+    type: 'file',
+    required: true,
+    accept: '.zip,application/zip',
+    maxFileSizeMB: 8,
+    description: 'Upload a ZIP package. System stores archive and provides hosted asset URL.',
+    showWhen: (data) => data.hostMode === 'zip',
   },
   {
     name: 'group',
@@ -118,7 +181,7 @@ export const Landings = () => {
   // Form modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
-  const [selectedLanding, setSelectedLanding] = useState<Partial<LandingPage> | undefined>(undefined);
+  const [selectedLanding, setSelectedLanding] = useState<LandingFormData | undefined>(undefined);
   
   // Search and filter state
   const [searchTerm, setSearchTerm] = useState(() => {
@@ -182,25 +245,84 @@ export const Landings = () => {
 
   const handleCreateLanding = () => {
     setFormMode('create');
-    setSelectedLanding(undefined);
+    setSelectedLanding({
+      hostMode: 'hosted',
+      status: 'active',
+    });
     setIsFormOpen(true);
   };
 
   const handleEditLanding = (landing: LandingPage) => {
     setFormMode('edit');
-    setSelectedLanding(landing);
+    setSelectedLanding({
+      ...landing,
+      hostMode: inferLandingHostingMode(landing.url),
+    });
     setIsFormOpen(true);
   };
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
+    const hostMode = (formData.hostMode || 'hosted') as LandingHostingMode;
+    const submitData: Record<string, any> = { ...formData };
+
+    if (hostMode === 'local') {
+      const html = typeof formData.localHtml === 'string' ? formData.localHtml.trim() : '';
+      if (!html) {
+        toast.error('Local HTML is required', 'Please provide HTML content before saving.');
+        return;
+      }
+
+      try {
+        const upload = await uploadHostedAsset({
+          entityType: 'landing',
+          mode: 'local',
+          name: submitData.name || 'landing-local',
+          fileName: `${(submitData.name || 'landing').replace(/\s+/g, '-').toLowerCase()}.html`,
+          mimeType: 'text/html; charset=utf-8',
+          contentBase64: encodeUtf8ToBase64(html),
+        });
+        submitData.url = upload.publicUrl;
+      } catch (err) {
+        toast.error('Failed to upload local HTML', err instanceof Error ? err.message : 'Unknown error');
+        return;
+      }
+    }
+
+    if (hostMode === 'zip') {
+      const zipFile = formData.zipFile as HostedFileValue | undefined;
+      if (!zipFile?.base64) {
+        toast.error('ZIP archive is required', 'Please select a ZIP file before saving.');
+        return;
+      }
+
+      try {
+        const upload = await uploadHostedAsset({
+          entityType: 'landing',
+          mode: 'zip',
+          name: submitData.name || 'landing-zip',
+          fileName: zipFile.name || `${(submitData.name || 'landing').replace(/\s+/g, '-').toLowerCase()}.zip`,
+          mimeType: zipFile.type || 'application/zip',
+          contentBase64: zipFile.base64,
+        });
+        submitData.url = upload.publicUrl;
+      } catch (err) {
+        toast.error('Failed to upload ZIP archive', err instanceof Error ? err.message : 'Unknown error');
+        return;
+      }
+    }
+
+    delete submitData.hostMode;
+    delete submitData.localHtml;
+    delete submitData.zipFile;
+
     try {
       if (formMode === 'create') {
-        const landing = await createLanding(formData);
+        const landing = await createLanding(submitData);
         if (landing && landing.id) {
           setLandings(prev => [...prev, landing]);
         }
       } else if (selectedLanding?.id) {
-        const landing = await updateLanding(selectedLanding.id, formData);
+        const landing = await updateLanding(selectedLanding.id, submitData);
         if (landing && landing.id) {
           setLandings(prev =>
             prev.map(lp => lp.id === selectedLanding.id ? landing : lp)

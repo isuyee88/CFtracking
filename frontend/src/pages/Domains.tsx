@@ -207,6 +207,7 @@ export default function Domains() {
   const [statusFilter, setStatusFilter] = useState<'All' | Domain['status']>('All');
   const [usageFilter, setUsageFilter] = useState<'All' | Domain['usage']>('All');
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [bulkActionLoading, setBulkActionLoading] = useState<'activate' | 'pause' | 'delete' | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [selectedDomain, setSelectedDomain] = useState<Partial<Domain> | undefined>(undefined);
@@ -269,11 +270,12 @@ export default function Domains() {
 
   const governanceIssues = useMemo(() => {
     return domains.flatMap((domain) => {
-      const issues: Array<{ id: string; tone: 'error' | 'warning'; title: string; detail: string }> = [];
+      const issues: Array<{ id: string; domainId: string; tone: 'error' | 'warning'; title: string; detail: string }> = [];
 
       if ((domain.usage === 'tracking' || domain.usage === 'mixed') && !domain.defaultCampaignId) {
         issues.push({
           id: `${domain.id}-campaign`,
+          domainId: domain.id,
           tone: 'warning',
           title: `${domain.hostname} has no default campaign`,
           detail: 'Tracking and mixed domains should map a default campaign for fallback continuity.',
@@ -283,6 +285,7 @@ export default function Domains() {
       if ((domain.usage === 'landing' || domain.usage === 'mixed') && !domain.defaultLandingPageId) {
         issues.push({
           id: `${domain.id}-landing`,
+          domainId: domain.id,
           tone: 'warning',
           title: `${domain.hostname} has no default landing`,
           detail: 'Landing and mixed domains should map a default landing page for index behavior.',
@@ -292,6 +295,7 @@ export default function Domains() {
       if (domain.dnsProvider === 'cloudflare' && domain.cloudflareProxyEnabled && !domain.cloudflareZoneId) {
         issues.push({
           id: `${domain.id}-zone`,
+          domainId: domain.id,
           tone: 'error',
           title: `${domain.hostname} is proxied without a zone id`,
           detail: 'Cloudflare-managed domains should record the zone identifier for automation and governance.',
@@ -301,6 +305,7 @@ export default function Domains() {
       if (domain.status === 'active' && (domain.sslStatus === 'pending' || domain.sslStatus === 'disabled')) {
         issues.push({
           id: `${domain.id}-ssl`,
+          domainId: domain.id,
           tone: 'error',
           title: `${domain.hostname} is active without healthy SSL`,
           detail: 'Active domains should not remain pending or disabled on SSL.',
@@ -310,6 +315,7 @@ export default function Domains() {
       if (domain.usage === 'admin' && !domain.cloudflareProxyEnabled) {
         issues.push({
           id: `${domain.id}-admin-proxy`,
+          domainId: domain.id,
           tone: 'warning',
           title: `${domain.hostname} is an admin domain without proxy`,
           detail: 'Admin access domains should usually sit behind Cloudflare proxy / access controls before production.',
@@ -341,6 +347,19 @@ export default function Domains() {
     setIsFormOpen(true);
   };
 
+  const handleFixIssue = (domainId: string) => {
+    const target = domains.find((domain) => domain.id === domainId);
+    if (!target) {
+      toast.warning('Domain not found', 'The selected domain is no longer available.');
+      return;
+    }
+
+    setSearchTerm(target.hostname);
+    setStatusFilter('All');
+    setUsageFilter('All');
+    handleEdit(target);
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this domain record?')) return;
     try {
@@ -349,6 +368,59 @@ export default function Domains() {
       toast.success('Domain deleted', 'Domain inventory has been updated.');
     } catch (err) {
       toast.error('Delete failed', err instanceof Error ? err.message : 'Unable to delete domain');
+    }
+  };
+
+  const handleBulkStatusUpdate = async (nextStatus: Domain['status']) => {
+    const ids = Array.from(selectedRows);
+    if (ids.length === 0) {
+      toast.warning('No domains selected', 'Select at least one domain to update.');
+      return;
+    }
+
+    setBulkActionLoading(nextStatus === 'active' ? 'activate' : 'pause');
+    try {
+      await Promise.all(
+        ids.map((id) => {
+          const target = domains.find((domain) => domain.id === id);
+          if (!target) {
+            return Promise.resolve(null);
+          }
+          return updateDomain(id, { ...target, status: nextStatus });
+        })
+      );
+      setDomains((current) =>
+        current.map((domain) => (selectedRows.has(domain.id) ? { ...domain, status: nextStatus } : domain))
+      );
+      setSelectedRows(new Set());
+      toast.success('Domains updated', `${ids.length} domains set to ${nextStatus}.`);
+    } catch (err) {
+      toast.error('Bulk update failed', err instanceof Error ? err.message : 'Unable to update selected domains');
+    } finally {
+      setBulkActionLoading(null);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedRows);
+    if (ids.length === 0) {
+      toast.warning('No domains selected', 'Select at least one domain to delete.');
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} selected domains?`)) {
+      return;
+    }
+
+    setBulkActionLoading('delete');
+    try {
+      await Promise.all(ids.map((id) => deleteDomain(id)));
+      setDomains((current) => current.filter((domain) => !selectedRows.has(domain.id)));
+      setSelectedRows(new Set());
+      toast.success('Domains deleted', `${ids.length} domains removed from inventory.`);
+    } catch (err) {
+      toast.error('Bulk delete failed', err instanceof Error ? err.message : 'Unable to delete selected domains');
+    } finally {
+      setBulkActionLoading(null);
     }
   };
 
@@ -581,8 +653,17 @@ export default function Domains() {
                       : 'border-warning/20 bg-warning/10'
                   )}
                 >
-                  <div className={cn('text-sm font-semibold', issue.tone === 'error' ? 'text-error' : 'text-warning')}>
-                    {issue.title}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className={cn('text-sm font-semibold', issue.tone === 'error' ? 'text-error' : 'text-warning')}>
+                      {issue.title}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleFixIssue(issue.domainId)}
+                      className="rounded-sm border border-outline-variant/30 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-on-surface hover:bg-surface-container"
+                    >
+                      Fix now
+                    </button>
                   </div>
                   <div className="mt-1 text-sm text-on-surface-variant">{issue.detail}</div>
                 </div>
@@ -652,6 +733,44 @@ export default function Domains() {
             <option value="mixed">Mixed</option>
           </select>
         </div>
+
+        {selectedRows.size > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-sm border border-outline-variant/20 bg-surface p-3">
+            <span className="text-sm text-on-surface-variant">{selectedRows.size} selected</span>
+            <button
+              type="button"
+              onClick={() => void handleBulkStatusUpdate('active')}
+              disabled={bulkActionLoading !== null}
+              className="rounded-sm border border-secondary/30 px-3 py-1 text-xs font-bold uppercase tracking-widest text-secondary disabled:opacity-50"
+            >
+              {bulkActionLoading === 'activate' ? 'Activating...' : 'Activate'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleBulkStatusUpdate('paused')}
+              disabled={bulkActionLoading !== null}
+              className="rounded-sm border border-warning/30 px-3 py-1 text-xs font-bold uppercase tracking-widest text-warning disabled:opacity-50"
+            >
+              {bulkActionLoading === 'pause' ? 'Pausing...' : 'Pause'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleBulkDelete()}
+              disabled={bulkActionLoading !== null}
+              className="rounded-sm border border-error/30 px-3 py-1 text-xs font-bold uppercase tracking-widest text-error disabled:opacity-50"
+            >
+              {bulkActionLoading === 'delete' ? 'Deleting...' : 'Delete'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRows(new Set())}
+              disabled={bulkActionLoading !== null}
+              className="ml-auto rounded-sm border border-outline-variant/30 px-3 py-1 text-xs font-bold uppercase tracking-widest text-on-surface-variant disabled:opacity-50"
+            >
+              Clear Selection
+            </button>
+          </div>
+        ) : null}
 
         {error ? (
           <div className="rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>
