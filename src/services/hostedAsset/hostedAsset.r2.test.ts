@@ -123,6 +123,84 @@ describe('HostedAssetService R2 upload path', () => {
     expect(bucket.delete).toHaveBeenCalledWith('landing/ha_delete/index.html');
     expect(calls.at(-1)).toContain('DELETE FROM hostedAssets');
   });
+
+  it('does not write D1 metadata when the R2 upload fails', async () => {
+    const bucket: any = {
+      put: vi.fn(async () => { throw new Error('R2 put failed'); }),
+      delete: vi.fn(async () => undefined),
+    };
+    const statements: string[] = [];
+    const db = {
+      prepare: (sql: string) => ({
+        run: async () => { statements.push(sql); return {}; },
+        bind: (..._values: unknown[]) => ({
+          run: async () => { statements.push(sql); return {}; },
+        }),
+      }),
+    };
+    const service = new HostedAssetService({ DB: db, HOSTED_ASSETS_BUCKET: bucket } as any);
+
+    await expect(service.upload({
+      entityType: 'landing',
+      mode: 'local',
+      fileName: 'index.html',
+      contentBase64: btoa('<h1>R2 failure</h1>'),
+    }, 'https://tracker.example')).rejects.toThrow('R2 put failed');
+
+    expect(statements.some((sql) => sql.includes('INSERT INTO hostedAssets'))).toBe(false);
+  });
+
+  it('does not delete the R2 object when D1 metadata deletion fails', async () => {
+    const bucket: any = { delete: vi.fn(async () => undefined) };
+    const db = {
+      prepare: (sql: string) => ({
+        run: async () => {
+          if (sql.includes('CREATE TABLE')) return {};
+          throw new Error('D1 delete failed');
+        },
+        bind: (..._values: unknown[]) => ({
+          first: async () => ({
+            id: 'ha_d1_delete_failure', entityType: 'landing', mode: 'local', name: 'Delete failure',
+            fileName: 'index.html', mimeType: 'text/html; charset=utf-8', byteSize: 1, contentBase64: '',
+            storageBackend: 'r2', r2Key: 'landing/ha_d1_delete_failure/index.html', createdAt: '', updatedAt: '',
+          }),
+          run: async () => { throw new Error('D1 delete failed'); },
+        }),
+      }),
+    };
+    const service = new HostedAssetService({ DB: db, HOSTED_ASSETS_BUCKET: bucket } as any);
+
+    await expect(service.remove('ha_d1_delete_failure')).rejects.toThrow('D1 delete failed');
+    expect(bucket.delete).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an observable cleanup failure after D1 metadata is deleted', async () => {
+    const bucket: any = { delete: vi.fn(async () => { throw new Error('R2 delete failed'); }) };
+    const statements: string[] = [];
+    const db = {
+      prepare: (sql: string) => ({
+        run: async () => { statements.push(sql); return {}; },
+        bind: (..._values: unknown[]) => ({
+          first: async () => ({
+            id: 'ha_orphan', entityType: 'landing', mode: 'local', name: 'Orphan', fileName: 'index.html',
+            mimeType: 'text/html; charset=utf-8', byteSize: 1, contentBase64: '', storageBackend: 'r2',
+            r2Key: 'landing/ha_orphan/index.html', createdAt: '', updatedAt: '',
+          }),
+          run: async () => { statements.push(sql); return {}; },
+        }),
+      }),
+    };
+    const service = new HostedAssetService({ DB: db, HOSTED_ASSETS_BUCKET: bucket } as any);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(service.remove('ha_orphan')).rejects.toThrow('R2 delete failed');
+
+    expect(statements.some((sql) => sql.includes('DELETE FROM hostedAssets'))).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[HostedAsset] R2 cleanup failed; asset metadata was removed and the object is orphaned',
+      expect.objectContaining({ assetId: 'ha_orphan', r2Key: 'landing/ha_orphan/index.html' }),
+    );
+  });
   it('falls back to legacy D1 base64 content when the R2 object is missing', async () => {
     const legacyHtml = '<h1>Legacy</h1>';
     const bucket: any = { get: vi.fn(async () => null) };

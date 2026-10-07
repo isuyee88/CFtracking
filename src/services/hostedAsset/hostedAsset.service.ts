@@ -313,8 +313,18 @@ export class HostedAssetService {
     if (this.assetsBucket && existing.storageBackend === 'r2' && existing.r2Key) {
       try {
         await this.assetsBucket.delete(existing.r2Key);
-      } catch {
+      } catch (error) {
         // Metadata is already gone; leave an orphan for a later reconciliation job.
+        // Surface the failure so callers cannot report a complete cleanup.
+        console.error(
+          '[HostedAsset] R2 cleanup failed; asset metadata was removed and the object is orphaned',
+          {
+            assetId: id,
+            r2Key: existing.r2Key,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+        throw error;
       }
     }
     return true;
