@@ -31,6 +31,8 @@ export interface Env {
   
   /** 去重专用 KV 存储 */
   UNIQUENESS_KV: KVNamespace;
+  /** Optional login rate-limit KV; middleware fails open when not configured. */
+  KV?: KVNamespace;
 
   /** Postback幂等性检查专用 KV 存储 (可选，已迁移到D1) */
   POSTBACK_KV?: KVNamespace;
@@ -63,6 +65,8 @@ export interface Env {
   EXPORTS_BUCKET?: R2Bucket;
   /** Hosted landing/offer assets R2；未配置时回退 D1（仅开发/迁移期） */
   HOSTED_ASSETS_BUCKET?: R2Bucket;
+  /** Explicit opt-in for one bounded orphan reconciliation page per existing cron run. */
+  HOSTED_ASSET_ORPHAN_RECONCILIATION_ENABLED?: boolean | string;
   
   SESSION_DO: DurableObjectNamespace;
   COUNTER_DO: DurableObjectNamespace;

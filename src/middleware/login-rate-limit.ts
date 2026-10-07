@@ -64,7 +64,7 @@ export async function loginRateLimitMiddleware(
   // 检查是否已达到限制
   if (currentAttempts >= MAX_ATTEMPTS) {
     // 获取过期时间
-    const metadata = await c.env.KV.getWithMetadata(rateLimitKey);
+    const metadata = await c.env.KV.getWithMetadata<{ expirationTtl?: number }>(rateLimitKey);
     const expirationTtl = metadata.metadata?.expirationTtl || LOCKOUT_DURATION;
     const resetAt = new Date(Date.now() + expirationTtl * 1000);
 

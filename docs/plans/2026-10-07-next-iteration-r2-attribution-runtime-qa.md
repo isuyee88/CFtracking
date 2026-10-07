@@ -15,7 +15,7 @@
 - `HostedAssetService` 已实现 R2 上传、读取、删除、D1 元数据、旧 D1 Base64 回退、图片魔数校验和失败回滚。
 - 本轮新增公开路由、路由配置和迁移链测试：`10 tests passed`（公开路由 3、路由配置 3、迁移 073 1、完整迁移链 1，加上相关 Hosted Asset 定向测试）。
 - `npm run typecheck`、`npm run verify:frontend`、`npm run build:worker` dry-run 已通过；阶段 4 Landing version、inbound D1 生命周期、manual retry 和 outbound/report integration 已完成完整回归。
-- 当前本地回归基线为 `58 test files passed / 242 tests passed`；新增 Hosted Asset R2/D1 failure-matrix 与 orphan-reconciliation 测试、PostbackLogRepository fresh-table/retry-state 集成测试、ReportService outbound delivery 单元/集成测试、manual retry route 回归和 Flow simulation service/API route/frontend API/UI、GrapesJS lazy-loading 契约回归。
+- 当前本地回归基线为 `60 test files passed / 247 tests passed`；新增 Hosted Asset R2/D1 failure-matrix 与 orphan-reconciliation 测试、可选 Cron owner 接入、PostbackLogRepository fresh-table/retry-state 集成测试、ReportService outbound delivery 单元/集成测试、manual retry route 回归和 Flow simulation service/API route/frontend API/UI、GrapesJS lazy-loading 契约回归。
 - Wrangler production/dev/local-QA dry-run 能识别 bindings 和 assets 路由；这不是线上资源或 D1 migration 已成功的证明。
 - 本地 D1 迁移链测试已暴露并修复 016、057、066、070 的新库兼容问题；完整 001→076 链在 SQLite/D1 兼容面通过。持久化 local-QA store 存在历史 schema/ledger 漂移：本轮应用 057 后 auto-optimization 四个读取端点均恢复 `200`，继续应用 058 在既有 `clicks.ruleMatched` 上停止（duplicate column），因此不能把该持久化 store 的完整 CLI migration apply 写成成功；应使用受控 reconciliation 或新的 QA store。
 - 当前工作树包含大量未提交历史改动；本轮只允许修改本计划列出的文件，不得 reset、clean、覆盖其他工作。
@@ -108,7 +108,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 
 ### Task 2.2：建立 R2 orphan reconciliation 设计，不新增 Cron
 
-**Status: PARTIAL DONE (2026-10-07).** Added a bounded, cursor-based `reconcileHostedAssetOrphans` utility with dry-run mode, prefix filtering, D1 metadata checks, per-object delete failure accounting, and observable errors. It is intentionally not wired to a new Cron or Queue; the remaining step is to select and verify an existing bounded task runner/owner before operational scheduling.
+**Status: PARTIAL DONE (2026-10-07).** Added a bounded, cursor-based `reconcileHostedAssetOrphans` utility with dry-run mode, prefix filtering, D1 metadata checks, per-object delete failure accounting, and observable errors. It is now callable from the existing platform Cron owner behind the explicit `HOSTED_ASSET_ORPHAN_RECONCILIATION_ENABLED` opt-in and a hard 100-object page limit; no new Cron or Queue binding was added. The gate is not enabled in production and no production R2 list/delete operation has been run. Operational activation still requires an approved scope and production-safe validation of the existing nightly Cron's combined workload.
 
 **目标：** 清理 D1 已无对应元数据的 R2 对象，同时遵守 Cloudflare 免费资源限制。
 
@@ -238,7 +238,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 - Frontend API client covers list/create/publish/pause/rollback and has endpoint/body tests.
 - Migration chain test now covers 001→076 and asserts Hosted Asset, attribution event, Postback delivery, and Landing Page version schema.
 - `npm run typecheck` passes.
-- `npm run test:run` passes: 58 files / 242 tests.
+- `npm run test:run` passes: 60 files / 247 tests (the subsequent missing-binding test also passes in its focused 4-test suite).
 - `npm run verify:frontend` passes; existing GrapesJS chunk warning and dependency audit findings remain recorded, not treated as resolved.
 - `npm run build:worker` passes with Wrangler production dry-run. Production deployment and bounded online read-back completed on 2026-10-07; authenticated data-bearing fixtures were not available, so this is not a full production UI/API regression claim.
 - 预览、发布、暂停、复制、回滚动作有确认和 loading 状态。
@@ -349,7 +349,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 
 ## 阶段 7：Cloudflare 资源与生产发布门禁（最后执行）
 
-**Status: PARTIAL DONE (2026-10-07).** Commit `133c62c` was uploaded and deployed through the controlled version path. Cloudflare deployment-list read-back now shows `ba8b3499-9561-4507-b19d-b9580d09bad7` at 100% traffic with the `Deploy 133c62c` message; the previous 100% version was `9a3664be-e776-4318-9635-c165c383f595` (commit `1d72099`). Post-deploy bounded smoke through the approved local proxy returned `/health=200`, `/api/auth/status=200` with `AUTH_MODE=on`, unknown Hosted Asset `404`, unauthenticated `/api/campaigns=401`, missing campaign tracking click `404 Campaign not found`, and `/api/tracking/script/code` without `campaignId` `400 campaignId is required`; SPA shell routes returned HTTP 200. This remains bounded smoke, not authenticated data-bearing conversion/postback/report verification. The local matrix passed `63 total / 60 passed / 0 failed / 3 skipped`; the three skips are fixture-dependent Hosted Asset cases. Full authenticated conversion/postback/report read-back and k6 performance evidence remain blocked by missing approved production fixtures and k6 availability.
+**Status: PARTIAL DONE (2026-10-07).** Commit `133c62c` was uploaded and deployed through the controlled version path. Cloudflare deployment-list read-back shows `ba8b3499-9561-4507-b19d-b9580d09bad7` at 100% traffic with the `Deploy 133c62c` message; the previous 100% version was `9a3664be-e776-4318-9635-c165c383f595` (commit `1d72099`). Post-deploy bounded smoke through the approved local proxy returned `/health=200`, `/api/auth/status=200` with `AUTH_MODE=on`, unknown Hosted Asset `404`, unauthenticated `/api/campaigns=401`, missing campaign tracking click `404 Campaign not found`, and `/api/tracking/script/code` without `campaignId` `400 campaignId is required`; SPA shell routes returned HTTP 200. A later local-only change wires orphan reconciliation to the existing Cron behind a disabled-by-default opt-in; it has not been deployed or enabled in production. This remains bounded smoke, not authenticated data-bearing conversion/postback/report verification. The local matrix passed `63 total / 60 passed / 0 failed / 3 skipped`; the three skips are fixture-dependent Hosted Asset cases. Full authenticated conversion/postback/report read-back and k6 performance evidence remain blocked by missing approved production fixtures and k6 availability.
 
 1. 仅使用项目当前 Wrangler 部署路径；不在未迁移项目中运行 `cf dev/build/deploy`。
 2. 先对 development 配置执行 D1 migration、R2 binding、Worker dry-run 和 read-back。
