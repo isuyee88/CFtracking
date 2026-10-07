@@ -7,7 +7,7 @@
 -- ============================================
 CREATE TABLE IF NOT EXISTS auto_operations (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  display_id INTEGER NOT NULL DEFAULT (SELECT IFNULL(MAX(display_id), 0) + 1 FROM auto_operations),
+  display_id INTEGER NOT NULL DEFAULT 0,
 
   -- 关联信息
   campaign_id TEXT NOT NULL,
@@ -60,6 +60,21 @@ CREATE TABLE IF NOT EXISTS auto_operations (
   -- 外键约束
   FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
 );
+
+-- SQLite defaults cannot contain a subquery. Allocate the display id in a
+-- post-insert trigger so callers can omit it while writes stay serialized.
+CREATE TRIGGER IF NOT EXISTS trg_auto_operations_display_id
+AFTER INSERT ON auto_operations
+WHEN NEW.display_id = 0
+BEGIN
+  UPDATE auto_operations
+  SET display_id = (
+    SELECT IFNULL(MAX(display_id), 0) + 1
+    FROM auto_operations
+    WHERE id <> NEW.id
+  )
+  WHERE id = NEW.id;
+END;
 
 -- 索引优化
 CREATE INDEX IF NOT EXISTS idx_auto_ops_campaign ON auto_operations(campaign_id);
@@ -196,11 +211,11 @@ CREATE TABLE IF NOT EXISTS predefined_auto_rules (
   priority INTEGER NOT NULL DEFAULT 50,
 
   -- 条件定义 (JSON数组)
-  conditions JSON NOT NULL DEFAULT json_array(),
+  conditions JSON NOT NULL DEFAULT (json_array()),
   -- 示例: [{"metric": "roi", "operator": "<", "value": -0.8, "duration": "24h"}]
 
   -- 动作定义 (JSON数组)
-  actions JSON NOT NULL DEFAULT json_array(),
+  actions JSON NOT NULL DEFAULT (json_array()),
   -- 示例: [{"type": "BLOCK", "platform": "propellerads", "parameters": {"duration_hours": 24}}]
 
   -- 默认配置
@@ -329,7 +344,7 @@ CREATE TABLE IF NOT EXISTS approval_requests (
 
   -- 通知状态
   notification_sent BOOLEAN NOT NULL DEFAULT FALSE,
-  notification_channels JSON NOT NULL DEFAULT json_array(),
+  notification_channels JSON NOT NULL DEFAULT (json_array()),
 
   -- 元数据
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -356,7 +371,7 @@ CREATE TABLE IF NOT EXISTS roi_calculation_cache (
   campaign_id TEXT NOT NULL,
   zone_id TEXT,
   time_window TEXT NOT NULL,  -- 1h, 6h, 24h, 7d, 30d
-  dimensions JSON NOT NULL DEFAULT json_array(),  -- 分维度的字段列表
+  dimensions JSON NOT NULL DEFAULT (json_array()),  -- 分维度的字段列表
 
   -- 计算结果 (JSON)
   result JSON NOT NULL,

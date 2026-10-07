@@ -139,3 +139,33 @@ export function optionalAuth(c: Context, next: Next): Promise<void> {
 
   return next();
 }
+
+/**
+ * Worker 间共享密钥比较（恒定时间，避免逐字符短路泄漏前缀信息）
+ */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
+ * S2S 鉴权中间件：校验 X-S2S-Key 与 env.S2S_KEY
+ * 为什么不用 JWT：调用方是 affiliate-landing Worker（服务端），无用户会话；
+ * 为什么未配置即拒绝：密钥未部署时安全默认关闭，避免裸奔端点
+ */
+export async function s2sMiddleware(c: Context, next: Next): Promise<void | Response> {
+  const expected = c.env.S2S_KEY;
+  const provided = c.req.header('X-S2S-Key');
+
+  if (!expected || !provided || !safeEqual(provided, expected)) {
+    // 为什么用 c.json(body, status) 显式式：c.status()+c.json() 两段式在 Hono 响应
+    // 重建阶段会触发 Workers Response 构造限制（实证 500），返回式为 repo 验证过的模式
+    return c.json(error('Invalid S2S key', ERROR_CODES.UNAUTHORIZED), HTTP_STATUS.UNAUTHORIZED);
+  }
+
+  await next();
+}

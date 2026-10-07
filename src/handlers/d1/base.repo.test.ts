@@ -34,7 +34,9 @@ describe('BaseRepository', () => {
 
     await repo.findById('blacklist-entry');
 
-    expect(calls[0]).toEqual({
+    // calls[0] 可能是 D1 预热查询 (SELECT 1)，取最后一个业务调用
+    const queryCall = calls.find((c) => c.sql.startsWith('SELECT *'));
+    expect(queryCall).toEqual({
       sql: 'SELECT * FROM blacklist WHERE id = ?',
       values: ['blacklist-entry'],
     });
@@ -46,7 +48,9 @@ describe('BaseRepository', () => {
 
     await repo.findById('cmp1');
 
-    expect(calls[0]).toEqual({
+    // calls[0] 可能是 D1 预热查询 (SELECT 1)，取最后一个业务调用
+    const queryCall = calls.find((c) => c.sql.startsWith('SELECT *'));
+    expect(queryCall).toEqual({
       sql: 'SELECT * FROM campaigns WHERE id = ? OR displayId = ?',
       values: ['cmp1', 'cmp1'],
     });

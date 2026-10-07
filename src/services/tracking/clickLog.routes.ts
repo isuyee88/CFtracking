@@ -56,6 +56,11 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
 
       const db = getD1Connection(c.env);
       const clickRepo = new ClickRepository(db);
+      const parseNum = (v: string | undefined): number | undefined => {
+        if (v === undefined || v === '') return undefined;
+        const n = parseFloat(v);
+        return Number.isFinite(n) ? n : undefined;
+      };
       const result = await clickRepo.findClicks({
         ...params,
         source: c.req.query('source') || undefined,
@@ -65,6 +70,18 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
         subId1: c.req.query('subId1') || undefined,
         subId2: c.req.query('subId2') || undefined,
         subId3: c.req.query('subId3') || undefined,
+        // 高级搜索：subId4-10 逐位筛选 + cost/risk 数值范围
+        subId4: c.req.query('subId4') || undefined,
+        subId5: c.req.query('subId5') || undefined,
+        subId6: c.req.query('subId6') || undefined,
+        subId7: c.req.query('subId7') || undefined,
+        subId8: c.req.query('subId8') || undefined,
+        subId9: c.req.query('subId9') || undefined,
+        subId10: c.req.query('subId10') || undefined,
+        minCost: parseNum(c.req.query('minCost')),
+        maxCost: parseNum(c.req.query('maxCost')),
+        minRiskScore: parseNum(c.req.query('minRiskScore')),
+        maxRiskScore: parseNum(c.req.query('maxRiskScore')),
         isp: c.req.query('isp') || undefined,
         fingerprint: c.req.query('fingerprint') || undefined,
       });

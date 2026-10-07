@@ -54,6 +54,8 @@ export interface ClickRequest {
   city?: string;
   region?: string;
   isp?: string;
+  ispType?: string;
+  orgName?: string;
   connectionType?: string;
   device?: string;
   browser?: string;
@@ -104,6 +106,10 @@ export interface ClickRequest {
   cfInfo?: CloudflareRequestInfo;
   /** 访客指纹 */
   fingerprint?: string;
+  networkTags?: string[];
+  suspiciousSignals?: string[];
+  challengeState?: string;
+  tokenReplayState?: string;
   /** 风险评估 */
   riskAssessment?: RiskAssessment;
 }
@@ -136,7 +142,19 @@ export interface ClickResult {
     matched: boolean;
     bound: boolean;
     matchedRuleId?: string;
-    matchedLayer?: 'flow' | 'campaign' | 'traffic_source' | 'global' | 'whitelist' | 'blacklist';
+    matchedLayer?:
+      | 'flow'
+      | 'campaign'
+      | 'traffic_source'
+      | 'global'
+      | 'whitelist'
+      | 'blacklist'
+      | 'allow_exact'
+      | 'allow_verified_bot'
+      | 'block_exact'
+      | 'block_category_aggressive'
+      | 'allow_bias'
+      | 'suspicious_queue';
     effectiveScopeType?: 'campaign' | 'traffic_source' | 'global';
     reason?: string;
     redirectUrl?: string;
@@ -248,7 +266,7 @@ export class ClickService {
         await this.realtimeRuleEngine.evaluate({
           campaignId: campaign.id,
           flowId: selectedFlow?.id || null,
-          context: this.buildAutoruleContext(request, campaign, selectedFlow?.id || null),
+          context: await this.buildAutoruleContext(request, campaign, selectedFlow?.id || null, visitorId),
         }),
         request
       );
@@ -407,8 +425,15 @@ export class ClickService {
       let selectedOffer: Offer | null = null;
       
       if (selectedFlow) {
-        selectedLP = await this.selectLandingPage(selectedFlow);
-        selectedOffer = await this.selectOffer(selectedFlow, visitorId);
+        // [优化 O1] LP 和 Offer 选择并行执行
+        // 原因: selectLandingPage() 和 selectOffer() 互相独立，无数据依赖
+        // 收益: 减少约 20-30ms 串行等待时间（D1 查询并行后总等待 ≈ max(T_lp, T_offer)）
+        const [lpResult, offerResult] = await Promise.all([
+          this.selectLandingPage(selectedFlow),
+          this.selectOffer(selectedFlow, visitorId),
+        ]);
+        selectedLP = lpResult;
+        selectedOffer = offerResult;
       }
       
       // 7. 执行 Action 获取重定�?URL
@@ -999,10 +1024,11 @@ export class ClickService {
     }
   }
 
-  private buildAutoruleContext(
+  private async buildAutoruleContext(
     request: ClickRequest,
     campaign: { id: string; trafficSource?: string | null },
-    flowId: string | null
+    flowId: string | null,
+    visitorId: string
   ) {
     const subIds = [
       request.subId1, request.subId2, request.subId3, request.subId4, request.subId5,
@@ -1013,12 +1039,25 @@ export class ClickService {
       request.subId26, request.subId27, request.subId28, request.subId29, request.subId30,
     ].map((item) => String(item || '').trim()).filter(Boolean);
 
+    const riskReasons = Array.isArray(request.riskAssessment?.reasons)
+      ? request.riskAssessment?.reasons || []
+      : [];
+    const networkTags = Array.from(new Set([...(request.networkTags || []), ...riskReasons])).filter(Boolean);
+    const suspiciousSignals = Array.from(new Set([...(request.suspiciousSignals || []), ...riskReasons])).filter(Boolean);
+    const botManagement = request.cfInfo?.botManagement;
+    const recentVisitMetrics = await this.clickRepo.getRecentVisitMetrics({
+      visitorId,
+      ip: request.ip,
+      lookbackHours: 24 * 7,
+    });
+
     return {
       campaignId: campaign.id,
       flowId,
       trafficSourceId: campaign.trafficSource || undefined,
       ip: request.ip,
       asn: request.cfInfo?.asn ?? undefined,
+      visitorId,
       userAgent: request.userAgent,
       zoneId: request.subId1,
       country: request.country,
@@ -1026,11 +1065,25 @@ export class ClickService {
       device: request.device,
       browser: request.browser,
       isp: request.isp || request.cfInfo?.asOrganization || undefined,
+      ispType: request.ispType,
+      orgName: request.orgName || request.cfInfo?.asOrganization || request.isp || undefined,
       connectionType: request.connectionType,
       fingerprint: request.fingerprint,
+      verifiedBot: botManagement?.verifiedBot ?? false,
+      botScore: botManagement?.score ?? null,
+      ja3: botManagement?.ja3Hash ?? null,
+      ja4: botManagement?.ja4 ?? null,
+      jsDetectionPassed: botManagement?.jsDetectionPassed ?? null,
+      challengeState: request.challengeState || undefined,
+      tokenReplayState: request.tokenReplayState || undefined,
+      campaignCount7d: recentVisitMetrics.campaignCount,
+      visitorRepeat7d: recentVisitMetrics.visitorRepeat,
+      ipRepeat7d: recentVisitMetrics.ipRepeat,
       utmSource: request.urlParams?.get('utm_source') || undefined,
       utmCampaign: request.urlParams?.get('utm_campaign') || undefined,
       subIds,
+      networkTags,
+      suspiciousSignals,
     };
   }
 

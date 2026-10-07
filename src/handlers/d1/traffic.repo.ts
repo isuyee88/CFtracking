@@ -29,6 +29,8 @@ export interface ReportQueryOptions {
   limit?: number;
   sortBy?: ReportDimension | ReportMetric;
   sortOrder?: 'asc' | 'desc';
+  // 口径语义：conversion 语义报表强制实时 clicks 模式（T+1 聚合表不满足转化实时口径）
+  reportType?: string;
 }
 
 export class TrafficRepository extends BaseRepository<TrafficSummary> {
@@ -834,6 +836,7 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     const sortOrder = options.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
     const requiresClickQuery =
+      options.reportType === 'conversion' ||
       metrics.some((metric) => TrafficRepository.FRAUD_METRIC_SET.has(metric)) ||
       groupBy.some((dimension) => TrafficRepository.CLICK_ONLY_DIMENSION_SET.has(dimension) || this.isClickColumnDimension(dimension)) ||
       filters.some((filter) => {
@@ -1071,12 +1074,12 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
         return 'ROUND(COALESCE(AVG(COALESCE(c.riskScore, 0)), 0), 2)';
       case 'blacklist_hits':
         return hasMatchedRuleLayer
-          ? "COALESCE(SUM(CASE WHEN COALESCE(c.matchedRuleLayer, '') = 'blacklist' THEN 1 ELSE 0 END), 0)"
-          : `COALESCE(SUM(CASE WHEN ${this.getGovernanceRiskReasonPredicate('blacklist')} THEN 1 ELSE 0 END), 0)`;
+          ? "COALESCE(SUM(CASE WHEN COALESCE(c.matchedRuleLayer, '') IN ('blacklist', 'block_exact', 'block_category_aggressive') THEN 1 ELSE 0 END), 0)"
+          : `COALESCE(SUM(CASE WHEN ${this.getGovernanceRiskReasonPredicate(['blacklist', 'block_exact', 'block_category_aggressive'])} THEN 1 ELSE 0 END), 0)`;
       case 'blacklist_rate':
         return hasMatchedRuleLayer
-          ? "CASE WHEN COUNT(*) > 0 THEN ROUND((SUM(CASE WHEN COALESCE(c.matchedRuleLayer, '') = 'blacklist' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) ELSE 0 END"
-          : `CASE WHEN COUNT(*) > 0 THEN ROUND((SUM(CASE WHEN ${this.getGovernanceRiskReasonPredicate('blacklist')} THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) ELSE 0 END`;
+          ? "CASE WHEN COUNT(*) > 0 THEN ROUND((SUM(CASE WHEN COALESCE(c.matchedRuleLayer, '') IN ('blacklist', 'block_exact', 'block_category_aggressive') THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) ELSE 0 END"
+          : `CASE WHEN COUNT(*) > 0 THEN ROUND((SUM(CASE WHEN ${this.getGovernanceRiskReasonPredicate(['blacklist', 'block_exact', 'block_category_aggressive'])} THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) ELSE 0 END`;
       case 'rule_hits':
         return hasMatchedRuleLayer
           ? "COALESCE(SUM(CASE WHEN COALESCE(c.matchedRuleLayer, '') IN ('campaign', 'flow') OR (COALESCE(c.ruleMatched, 0) = 1 AND COALESCE(c.matchedRuleLayer, '') = '') THEN 1 ELSE 0 END), 0)"
@@ -1088,8 +1091,11 @@ export class TrafficRepository extends BaseRepository<TrafficSummary> {
     }
   }
 
-  private getGovernanceRiskReasonPredicate(layer: 'blacklist' | 'campaign' | 'flow' | 'whitelist'): string {
-    return `COALESCE(c.riskReasons, '') LIKE '%"governance_layer:${layer}"%'`;
+  private getGovernanceRiskReasonPredicate(layers: string | string[]): string {
+    const values = Array.isArray(layers) ? layers : [layers];
+    return `(${values
+      .map((layer) => `COALESCE(c.riskReasons, '') LIKE '%"governance_layer:${layer}"%'`)
+      .join(' OR ')})`;
   }
 
   private isClickColumnDimension(dimension: string): boolean {

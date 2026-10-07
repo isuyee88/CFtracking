@@ -15,10 +15,209 @@ import type {
   ROICalculationCache,
   ApprovalStatus,
   ExecutionStatus,
+  AiOptimizationDecision,
+  AiOptimizationDecisionStatus,
+  AiOptimizationExecutionStatus,
+  AiOptimizationRollbackStatus,
 } from '@/types/auto-optimization';
 
 export class AutoOptimizationRepository {
   constructor(private db: D1Database) {}
+
+  async createAiDecision(data: Omit<AiOptimizationDecision, 'id' | 'displayId' | 'createdAt' | 'updatedAt'>): Promise<AiOptimizationDecision | null> {
+    await this.ensureAiDecisionTable();
+    const id = crypto.randomUUID();
+    const displayIdResult = await this.db.prepare(
+      'SELECT IFNULL(MAX(display_id), 0) + 1 as nextDisplayId FROM ai_optimization_decisions'
+    ).first<{ nextDisplayId: number }>();
+    const displayId = Number(displayIdResult?.nextDisplayId || 1);
+
+    const result = await this.db.prepare(`
+      INSERT INTO ai_optimization_decisions (
+        id, display_id, idempotency_key, campaign_id, scope_type, scope_id, platform,
+        action_type, confidence, reason, evidence, expected_impact, rollback_hint,
+        metrics_snapshot, window_start, window_end, trigger_type, status, execution_status,
+        rollback_status, operation_id, rollback_operation_id, provider, gateway_id,
+        fallback_used, fallback_reason, model, raw_response, execution_error, executed_at, rollbacked_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      displayId,
+      data.idempotencyKey,
+      data.campaignId,
+      data.scopeType,
+      data.scopeId,
+      data.platform,
+      data.actionType,
+      data.confidence,
+      data.reason,
+      JSON.stringify(data.evidence || []),
+      JSON.stringify(data.expectedImpact || {}),
+      data.rollbackHint || null,
+      JSON.stringify(data.metricsSnapshot || {}),
+      data.windowStart,
+      data.windowEnd,
+      data.triggerType,
+      data.status,
+      data.executionStatus,
+      data.rollbackStatus,
+      data.operationId || null,
+      data.rollbackOperationId || null,
+      data.provider || null,
+      data.gatewayId || null,
+      data.fallbackUsed ? 1 : 0,
+      data.fallbackReason || null,
+      data.model || null,
+      data.rawResponse || null,
+      data.executionError || null,
+      data.executedAt || null,
+      data.rollbackedAt || null,
+    ).run();
+
+    if (!result.success) {
+      return null;
+    }
+
+    return this.getAiDecision(id);
+  }
+
+  async getAiDecision(id: string): Promise<AiOptimizationDecision | null> {
+    await this.ensureAiDecisionTable();
+    const result = await this.db
+      .prepare('SELECT * FROM ai_optimization_decisions WHERE id = ?')
+      .bind(id)
+      .first<Record<string, unknown>>();
+    return result ? this.parseAiDecision(result) : null;
+  }
+
+  async getAiDecisionByIdempotencyKey(idempotencyKey: string): Promise<AiOptimizationDecision | null> {
+    await this.ensureAiDecisionTable();
+    const result = await this.db
+      .prepare('SELECT * FROM ai_optimization_decisions WHERE idempotency_key = ? LIMIT 1')
+      .bind(idempotencyKey)
+      .first<Record<string, unknown>>();
+    return result ? this.parseAiDecision(result) : null;
+  }
+
+  async getRecentAiDecisions(limit: number = 20): Promise<AiOptimizationDecision[]> {
+    await this.ensureAiDecisionTable();
+    const results = await this.db
+      .prepare('SELECT * FROM ai_optimization_decisions ORDER BY created_at DESC LIMIT ?')
+      .bind(limit)
+      .all<Record<string, unknown>>();
+
+    return (results.results || []).map((row) => this.parseAiDecision(row));
+  }
+
+  async updateAiDecision(
+    id: string,
+    updates: Partial<{
+      status: AiOptimizationDecisionStatus;
+      executionStatus: AiOptimizationExecutionStatus;
+      rollbackStatus: AiOptimizationRollbackStatus;
+      operationId: string | null;
+      rollbackOperationId: string | null;
+      executionError: string | null;
+      executedAt: string | null;
+      rollbackedAt: string | null;
+      rawResponse: string | null;
+    }>
+  ): Promise<void> {
+    await this.ensureAiDecisionTable();
+    const sets: string[] = [];
+    const values: unknown[] = [];
+
+    if (updates.status !== undefined) {
+      sets.push('status = ?');
+      values.push(updates.status);
+    }
+    if (updates.executionStatus !== undefined) {
+      sets.push('execution_status = ?');
+      values.push(updates.executionStatus);
+    }
+    if (updates.rollbackStatus !== undefined) {
+      sets.push('rollback_status = ?');
+      values.push(updates.rollbackStatus);
+    }
+    if (updates.operationId !== undefined) {
+      sets.push('operation_id = ?');
+      values.push(updates.operationId);
+    }
+    if (updates.rollbackOperationId !== undefined) {
+      sets.push('rollback_operation_id = ?');
+      values.push(updates.rollbackOperationId);
+    }
+    if (updates.executionError !== undefined) {
+      sets.push('execution_error = ?');
+      values.push(updates.executionError);
+    }
+    if (updates.executedAt !== undefined) {
+      sets.push('executed_at = ?');
+      values.push(updates.executedAt);
+    }
+    if (updates.rollbackedAt !== undefined) {
+      sets.push('rollbacked_at = ?');
+      values.push(updates.rollbackedAt);
+    }
+    if (updates.rawResponse !== undefined) {
+      sets.push('raw_response = ?');
+      values.push(updates.rawResponse);
+    }
+
+    if (sets.length === 0) {
+      return;
+    }
+
+    sets.push("updated_at = datetime('now')");
+    values.push(id);
+    await this.db.prepare(`UPDATE ai_optimization_decisions SET ${sets.join(', ')} WHERE id = ?`).bind(...values).run();
+  }
+
+  async getAiDecisionStats(days: number = 7): Promise<{
+    total: number;
+    executed: number;
+    failed: number;
+    blockedBySafety: number;
+    noAction: number;
+    rollbackAvailable: number;
+    rollbackSuccess: number;
+    rollbackFailed: number;
+  }> {
+    await this.ensureAiDecisionTable();
+    const stats = await this.db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN execution_status = 'executed' THEN 1 ELSE 0 END) as executed,
+        SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failed,
+        SUM(CASE WHEN status = 'blocked_by_safety' THEN 1 ELSE 0 END) as blockedBySafety,
+        SUM(CASE WHEN status IN ('observe', 'no_action') THEN 1 ELSE 0 END) as noAction,
+        SUM(CASE WHEN rollback_status = 'available' THEN 1 ELSE 0 END) as rollbackAvailable,
+        SUM(CASE WHEN rollback_status = 'rollback_success' THEN 1 ELSE 0 END) as rollbackSuccess,
+        SUM(CASE WHEN rollback_status = 'rollback_failed' THEN 1 ELSE 0 END) as rollbackFailed
+      FROM ai_optimization_decisions
+      WHERE created_at > datetime('now', '-' || ? || ' days')
+    `).bind(days).first<{
+      total: number;
+      executed: number;
+      failed: number;
+      blockedBySafety: number;
+      noAction: number;
+      rollbackAvailable: number;
+      rollbackSuccess: number;
+      rollbackFailed: number;
+    }>();
+
+    return stats || {
+      total: 0,
+      executed: 0,
+      failed: 0,
+      blockedBySafety: 0,
+      noAction: 0,
+      rollbackAvailable: 0,
+      rollbackSuccess: 0,
+      rollbackFailed: 0,
+    };
+  }
 
   async createOperation(data: CreateAutoOperationDTO): Promise<AutoOperation | null> {
     const id = crypto.randomUUID();
@@ -648,6 +847,114 @@ export class AutoOptimizationRepository {
       executionResult: (raw.execution_result as string | undefined) || undefined,
       executionError: (raw.execution_error as string | undefined) || undefined,
       rollbackOperationId: (raw.rollback_operation_id as string | undefined) || undefined,
+      rollbackedAt: (raw.rollbacked_at as string | undefined) || undefined,
+      createdAt: String(raw.created_at || ''),
+      updatedAt: String(raw.updated_at || ''),
+    };
+  }
+
+  private async ensureAiDecisionTable(): Promise<void> {
+    await this.db.prepare(`
+      CREATE TABLE IF NOT EXISTS ai_optimization_decisions (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        display_id INTEGER NOT NULL DEFAULT 0,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        campaign_id TEXT NOT NULL,
+        scope_type TEXT NOT NULL CHECK(scope_type IN ('campaign', 'zone', 'publisher')),
+        scope_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        action_type TEXT NOT NULL CHECK(action_type IN ('ADJUST_BID', 'BLOCK_ZONE', 'BLOCK_PUBLISHER', 'OBSERVE', 'NO_ACTION')),
+        confidence REAL NOT NULL DEFAULT 0,
+        reason TEXT NOT NULL,
+        evidence TEXT NOT NULL DEFAULT '[]',
+        expected_impact TEXT NOT NULL DEFAULT '{}',
+        rollback_hint TEXT,
+        metrics_snapshot TEXT NOT NULL DEFAULT '{}',
+        window_start TEXT NOT NULL,
+        window_end TEXT NOT NULL,
+        trigger_type TEXT NOT NULL DEFAULT 'manual' CHECK(trigger_type IN ('manual', 'auto', 'scheduled')),
+        status TEXT NOT NULL DEFAULT 'suggested' CHECK(status IN ('suggested', 'blocked_by_safety', 'unsupported', 'executed', 'execution_failed', 'observe', 'no_action')),
+        execution_status TEXT NOT NULL DEFAULT 'pending' CHECK(execution_status IN ('pending', 'executed', 'failed', 'skipped')),
+        rollback_status TEXT NOT NULL DEFAULT 'not_applicable' CHECK(rollback_status IN ('not_applicable', 'available', 'rollback_success', 'rollback_failed')),
+        operation_id TEXT,
+        rollback_operation_id TEXT,
+        provider TEXT,
+        gateway_id TEXT,
+        fallback_used INTEGER NOT NULL DEFAULT 0,
+        fallback_reason TEXT,
+        model TEXT,
+        raw_response TEXT,
+        execution_error TEXT,
+        executed_at TEXT,
+        rollbacked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `).run();
+    const columns = await this.db.prepare('PRAGMA table_info(ai_optimization_decisions)').all<Record<string, unknown>>();
+    const columnNames = new Set((columns.results || []).map((row) => String(row.name || '')));
+    if (!columnNames.has('provider')) {
+      await this.db.prepare('ALTER TABLE ai_optimization_decisions ADD COLUMN provider TEXT').run();
+    }
+    if (!columnNames.has('gateway_id')) {
+      await this.db.prepare('ALTER TABLE ai_optimization_decisions ADD COLUMN gateway_id TEXT').run();
+    }
+    if (!columnNames.has('fallback_used')) {
+      await this.db.prepare('ALTER TABLE ai_optimization_decisions ADD COLUMN fallback_used INTEGER NOT NULL DEFAULT 0').run();
+    }
+    if (!columnNames.has('fallback_reason')) {
+      await this.db.prepare('ALTER TABLE ai_optimization_decisions ADD COLUMN fallback_reason TEXT').run();
+    }
+    await this.db.prepare('CREATE INDEX IF NOT EXISTS idx_ai_opt_decisions_campaign ON ai_optimization_decisions(campaign_id, created_at DESC)').run();
+    await this.db.prepare('CREATE INDEX IF NOT EXISTS idx_ai_opt_decisions_scope ON ai_optimization_decisions(scope_type, scope_id)').run();
+    await this.db.prepare('CREATE INDEX IF NOT EXISTS idx_ai_opt_decisions_status ON ai_optimization_decisions(status, execution_status, rollback_status)').run();
+    await this.db.prepare('CREATE INDEX IF NOT EXISTS idx_ai_opt_decisions_created ON ai_optimization_decisions(created_at DESC)').run();
+  }
+
+  private parseAiDecision(raw: Record<string, unknown>): AiOptimizationDecision {
+    return {
+      id: String(raw.id || ''),
+      displayId: Number(raw.display_id || 0),
+      idempotencyKey: String(raw.idempotency_key || ''),
+      campaignId: String(raw.campaign_id || ''),
+      scopeType: String(raw.scope_type || 'campaign') as AiOptimizationDecision['scopeType'],
+      scopeId: String(raw.scope_id || ''),
+      platform: String(raw.platform || ''),
+      actionType: String(raw.action_type || 'NO_ACTION') as AiOptimizationDecision['actionType'],
+      confidence: Number(raw.confidence || 0),
+      reason: String(raw.reason || ''),
+      evidence: this.parseJsonField<AiOptimizationDecision['evidence']>(raw.evidence, []),
+      expectedImpact: this.parseJsonField<AiOptimizationDecision['expectedImpact']>(raw.expected_impact, {}),
+      rollbackHint: (raw.rollback_hint as string | undefined) || undefined,
+      metricsSnapshot: this.parseJsonField<AiOptimizationDecision['metricsSnapshot']>(raw.metrics_snapshot, {
+        roi: 0,
+        revenue: 0,
+        cost: 0,
+        profit: 0,
+        clicks: 0,
+        conversions: 0,
+        ctr: 0,
+        cr: 0,
+        cpc: 0,
+        epc: 0,
+        cpa: 0,
+      }),
+      windowStart: String(raw.window_start || ''),
+      windowEnd: String(raw.window_end || ''),
+      triggerType: String(raw.trigger_type || 'manual') as AiOptimizationDecision['triggerType'],
+      status: String(raw.status || 'suggested') as AiOptimizationDecision['status'],
+      executionStatus: String(raw.execution_status || 'pending') as AiOptimizationDecision['executionStatus'],
+      rollbackStatus: String(raw.rollback_status || 'not_applicable') as AiOptimizationDecision['rollbackStatus'],
+      operationId: (raw.operation_id as string | undefined) || undefined,
+      rollbackOperationId: (raw.rollback_operation_id as string | undefined) || undefined,
+      provider: (raw.provider as AiOptimizationDecision['provider'] | undefined) || undefined,
+      gatewayId: (raw.gateway_id as string | undefined) || undefined,
+      fallbackUsed: this.toBoolean(raw.fallback_used),
+      fallbackReason: (raw.fallback_reason as string | undefined) || undefined,
+      model: (raw.model as string | undefined) || undefined,
+      rawResponse: (raw.raw_response as string | undefined) || undefined,
+      executionError: (raw.execution_error as string | undefined) || undefined,
+      executedAt: (raw.executed_at as string | undefined) || undefined,
       rollbackedAt: (raw.rollbacked_at as string | undefined) || undefined,
       createdAt: String(raw.created_at || ''),
       updatedAt: String(raw.updated_at || ''),

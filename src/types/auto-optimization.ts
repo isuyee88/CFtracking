@@ -19,6 +19,75 @@ export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'auto_approve
 export type ExecutionStatus = 'pending' | 'running' | 'success' | 'failed' | 'rollback_success' | 'rollback_failed';
 export type TriggerType = 'manual' | 'auto' | 'scheduled';
 
+export type AiOptimizationScopeType = 'campaign' | 'zone' | 'publisher';
+export type AiOptimizationActionType = 'ADJUST_BID' | 'BLOCK_ZONE' | 'BLOCK_PUBLISHER' | 'OBSERVE' | 'NO_ACTION';
+export type AiDecisionProviderType = 'workers-ai-gateway' | 'workers-ai-direct' | 'heuristic-fallback';
+export type AiOptimizationDecisionStatus =
+  | 'suggested'
+  | 'blocked_by_safety'
+  | 'unsupported'
+  | 'executed'
+  | 'execution_failed'
+  | 'observe'
+  | 'no_action';
+export type AiOptimizationExecutionStatus = 'pending' | 'executed' | 'failed' | 'skipped';
+export type AiOptimizationRollbackStatus = 'not_applicable' | 'available' | 'rollback_success' | 'rollback_failed';
+
+export interface AiOptimizationEvidenceItem {
+  label: string;
+  value: string | number;
+  kind?: 'metric' | 'governance' | 'history' | 'anomaly';
+}
+
+export interface AiOptimizationExpectedImpact {
+  roiDelta?: number;
+  spendDeltaPercent?: number;
+  riskLevel?: 'low' | 'medium' | 'high';
+  note?: string;
+}
+
+export interface AiOptimizationMetricsSnapshot extends ROIMetrics {
+  blacklistHits?: number;
+  blockedClicks?: number;
+  recentOperationCount?: number;
+}
+
+export interface AiOptimizationDecision {
+  id: string;
+  displayId: number;
+  idempotencyKey: string;
+  campaignId: string;
+  scopeType: AiOptimizationScopeType;
+  scopeId: string;
+  platform: string;
+  actionType: AiOptimizationActionType;
+  confidence: number;
+  reason: string;
+  evidence: AiOptimizationEvidenceItem[];
+  expectedImpact: AiOptimizationExpectedImpact;
+  rollbackHint?: string;
+  metricsSnapshot: AiOptimizationMetricsSnapshot;
+  windowStart: string;
+  windowEnd: string;
+  triggerType: TriggerType;
+  status: AiOptimizationDecisionStatus;
+  executionStatus: AiOptimizationExecutionStatus;
+  rollbackStatus: AiOptimizationRollbackStatus;
+  operationId?: string;
+  rollbackOperationId?: string;
+  provider?: AiDecisionProviderType;
+  gatewayId?: string;
+  fallbackUsed?: boolean;
+  fallbackReason?: string;
+  model?: string;
+  rawResponse?: string;
+  executionError?: string;
+  executedAt?: string;
+  rollbackedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DecisionContext {
   roi: number;
   clicks: number;

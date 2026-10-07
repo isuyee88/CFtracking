@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @fileoverview Workers 鍏ュ彛鏂囦欢
  * @description Cloudflare Workers 涓诲叆鍙ｏ紝澶勭悊鎵€鏈?HTTP 璇锋眰鍜屽畾鏃朵换鍔?
  * @module index
@@ -44,6 +44,7 @@ import { CACHE_CONFIGS, ETagCacheManager, ETagGenerator } from '@/services/cache
 import { CacheRefreshConsumer, type CacheRefreshMessage } from '@/services/cache/cache-refresh-consumer';
 import { matchAdminPage } from '@/services/page/admin-page-bundle';
 import { getWorkerVersionInfo } from '@/services/cache/version-utils';
+import { createCredentialsRouter } from '@/services/credentials/credentials.routes';
 import { isPublicApiPath } from '@/services/auth/public-api-path';
 import { appendServerTiming, durationMs, nowMs } from '@/utils/server-timing';
 
@@ -269,8 +270,15 @@ async function servePrecompressedStaticAsset(
   const variantUrl = new URL(assetUrl.toString());
   variantUrl.pathname = `${assetPath}.${preferredEncoding.extension}`;
 
-  const variantResponse = await env.ASSETS.fetch(new Request(variantUrl.toString(), request));
-  if (!variantResponse.ok) {
+  // 变体子请求剥离 Accept-Encoding：转发原请求头会让 workerd assets 层把显式 .gz/.br
+  // URL 再协商（解压返回原文件字节），导致变体永远命不中、gzip 响应退化为未压缩传输
+  const variantRequest = new Request(variantUrl.toString(), { method: 'GET' });
+  const variantResponse = await env.ASSETS.fetch(variantRequest);
+  // not_found_handling=SPA 会把缺失的变体文件伪装成 200 + index.html（text/html），
+  // 仅凭 ok 判断会把 HTML shell 盖上 text/javascript 冒充压缩 JS 返回并污染边缘缓存；
+  // 检测到 text/html 特征即判定变体不存在，回退原文件
+  const variantContentType = variantResponse.headers.get('Content-Type') || '';
+  if (!variantResponse.ok || variantContentType.includes('text/html')) {
     return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
   }
 
@@ -701,6 +709,9 @@ import { resolvePublicTrackingAlias } from '@/services/tracking/public-tracking-
 import { createAggregationRouter } from '@/services/analytics/aggregation.routes';
 import { createAnalyticsRouter } from '@/services/analytics/analytics.routes';
 import { createClickLogRouter } from '@/services/tracking/clickLog.routes';
+import { createS2SRouter } from '@/services/s2s/s2s.routes';
+import { createCostSyncRouter } from '@/services/costsync/cost-sync.routes';
+import { createOddBytesCostSyncRouter } from '@/services/costsync/oddbytes-cost-sync.routes';
 import { createConversionLogRouter } from '@/services/tracking/conversionLog.routes';
 import { createExportRouter } from '@/services/export/export.routes';
 import { createTrendsRouter } from '@/services/trends/trends.routes';
@@ -725,6 +736,8 @@ import roiRoutes from '@/services/auto-optimization/roi.routes';
 import autoRulesRoutes from '@/services/auto-optimization/rules.routes';
 import operationsRoutes from '@/services/auto-optimization/operations.routes';
 import approvalRoutes from '@/services/auto-optimization/approval.routes';
+import aiRoutes from '@/services/auto-optimization/ai.routes';
+import { AiOptimizationOrchestratorService } from '@/services/auto-optimization/ai-orchestrator.service';
 import authRoutes from '@/routes/auth.routes';
 import postbackRoutes from '@/routes/postback.routes';
 import postbackInboundRoutes from '@/routes/postback-inbound.routes';
@@ -916,6 +929,10 @@ app.route('/api/migration', createMigrationRouter());
 app.route('/api/export-tasks', exportTaskRoutes);
 app.route('/api/custom-metrics', customMetricRoutes);
 app.route('/api/anti-fraud', registerAntiFraudEnhancedRoutes());
+app.route('/api/s2s/credentials', createCredentialsRouter());
+app.route('/api/s2s/cost-sync', createCostSyncRouter());
+app.route('/api/s2s/oddbytes-cost-sync', createOddBytesCostSyncRouter());
+app.route('/api/s2s', createS2SRouter());
 app.route('/api/campaign-groups', registerCampaignGroupRoutes());
 app.route('/api/offer-payout', registerOfferPayoutRoutes());
 app.route('/api/param-mapping', registerParamMappingRoutes());
@@ -930,6 +947,7 @@ app.route('/api/auto-optimization', roiRoutes);
 app.route('/api/auto-optimization', autoRulesRoutes);
 app.route('/api/auto-optimization', operationsRoutes);
 app.route('/api/auto-optimization', approvalRoutes);
+app.route('/api/auto-optimization', aiRoutes);
 
 // 璁よ瘉璺敱锛堝繀椤诲湪璁よ瘉涓棿浠朵箣鍓嶆敞鍐岋紝鍥犱负鐧诲綍鎺ュ彛涓嶉渶瑕佽璇侊級
 app.route('/api/auth', authRoutes);
@@ -983,7 +1001,9 @@ function isAppControlRequest(pathname: string) {
     pathname === '/sw.js' ||
     pathname.startsWith('/__bootstrap/') ||
     pathname.startsWith('/api/') ||
-    pathname.startsWith('/events/')
+    pathname.startsWith('/events/') ||
+    // 托管着陆页资产必须走 Hono 公开渲染路由，否则会被 SPA fallback 吞掉返回 index.html
+    pathname.startsWith('/hosted-assets/')
   );
 }
 
@@ -1072,10 +1092,6 @@ export { app }
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-
-    if (url.pathname === '/traffic-filter' || url.pathname.startsWith('/traffic-filter/')) {
-      return Response.redirect(new URL('/blacklist', url.origin).toString(), 302);
-    }
     
     // 璁板綍閮ㄧ讲鐗堟湰淇℃伅
     if (env.CF_VERSION_METADATA) {
@@ -1116,8 +1132,14 @@ export default {
     if (isHtmlPageRequest(request, url.pathname)) {
       return serveSpaShellHtml(request, env);
     }
+
+    // 阻止 Vite 开发模式路径泄漏到生产环境
+    const blockedPaths = ['/@vite/', '/__/', '/@id/', '/@fs/'];
+    if (blockedPaths.some(prefix => url.pathname.startsWith(prefix))) {
+      return new Response('Not Found', { status: 404 });
+    }
     
-    // 鎵€鏈夊叾浠栬姹傦紙闈欐€佽祫婧愶級鐩存帴浜ょ粰 ASSETS 澶勭悊
+    // 非HTML页面请求直接代理到ASSETS静态资源
     return env.ASSETS.fetch(request);
   },
   async queue(batch: MessageBatch<CacheRefreshMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
@@ -1166,6 +1188,28 @@ export default {
         cacheUpdate.handleScheduled(event).catch(err => 
           console.error(`[Cron] Hourly cache refresh failed:`, err)
         )
+      );
+
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const service = new AiOptimizationOrchestratorService(env);
+            const config = await service.getEngineConfig();
+            if (!config.enabled) {
+              console.log('[Cron] AI optimization skipped because engine is disabled');
+              return;
+            }
+
+            const result = await service.runOptimizationCycle({
+              timeWindow: config.defaultTimeWindow,
+              limit: 20,
+              triggerType: 'scheduled',
+            });
+            console.log(`[Cron] AI optimization completed. processed=${result.processed} executed=${result.executed}`);
+          } catch (err) {
+            console.error('[Cron] AI optimization failed:', err);
+          }
+        })()
       );
     }
 

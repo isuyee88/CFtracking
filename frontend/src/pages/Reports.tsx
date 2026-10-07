@@ -1,7 +1,9 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
   Bookmark,
+  ChevronDown,
+  ChevronUp,
   Crosshair,
   Download,
   Filter,
@@ -20,6 +22,9 @@ import {
   exportReport,
   fetchReportMetadata,
   queryReport,
+  listReportPresets,
+  createReportPreset,
+  deleteReportPreset,
   type ClickLogParams,
   type ExportFormat,
   type ReportDimension,
@@ -28,8 +33,20 @@ import {
   type ReportFilterOperator,
   type ReportMetric,
   type ReportMetricOption,
+  type ReportPresetRecord,
   type ReportType,
 } from '../services/api';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
 import type { VirtualTableColumn } from '../components/VirtualTable';
 import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
@@ -52,6 +69,7 @@ interface SavedView {
   name: string;
   createdAt: string;
   config: BuilderConfig;
+  remote?: boolean;
 }
 
 type ReportRow = Record<string, string | number | null | undefined>;
@@ -323,6 +341,54 @@ function writeSavedViews(views: SavedView[]) {
   window.localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(views));
 }
 
+// 服务端预设的 config 仅做 JSON 透传，前端必须校验结构后才能安全喂给 Builder
+function normalizePresetConfig(raw: unknown): BuilderConfig | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+
+  const candidate = raw as Partial<BuilderConfig>;
+  if (typeof candidate.startDate !== 'string' || typeof candidate.endDate !== 'string') {
+    return null;
+  }
+
+  return {
+    reportType: (candidate.reportType || 'traffic') as BuilderConfig['reportType'],
+    startDate: normalizeDateValue(candidate.startDate),
+    endDate: normalizeDateValue(candidate.endDate),
+    groupBy: Array.isArray(candidate.groupBy) ? (candidate.groupBy as ReportDimension[]) : [],
+    metrics:
+      Array.isArray(candidate.metrics) && candidate.metrics.length > 0
+        ? (candidate.metrics as ReportMetric[])
+        : [...DEFAULT_CONFIG.metrics],
+    filters: Array.isArray(candidate.filters)
+      ? candidate.filters.filter((item) => Boolean(item?.field && item?.operator))
+      : [],
+    limit: Number(candidate.limit) > 0 ? Number(candidate.limit) : DEFAULT_CONFIG.limit,
+    sortBy: (candidate.sortBy || 'clicks') as BuilderConfig['sortBy'],
+    sortOrder: candidate.sortOrder === 'asc' ? 'asc' : 'desc',
+  };
+}
+
+function mapPresetsToViews(presets: ReportPresetRecord[]): SavedView[] {
+  return presets
+    .map((preset) => {
+      const config = normalizePresetConfig(preset.config);
+      if (!config) {
+        return null;
+      }
+
+      return {
+        id: preset.id,
+        name: preset.name,
+        createdAt: preset.createdAt || '',
+        config,
+        remote: true,
+      } satisfies SavedView;
+    })
+    .filter((item): item is SavedView => item !== null);
+}
+
 function mergeDimensionOptions(remote: ReportDimensionOption[]) {
   const merged = new Map<string, ReportDimensionOption>();
 
@@ -479,17 +545,45 @@ export default function Reports() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [queueingFormat, setQueueingFormat] = useState<ExportFormat | null>(null);
+  const [showDimensions, setShowDimensions] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [viewName, setViewName] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'chart'>('table');
+  const [chartType, setChartType] = useState<'bar' | 'line' | 'area'>('bar');
+  const [chartMetric, setChartMetric] = useState<ReportMetric>('clicks');
+  const [chartDim, setChartDim] = useState<ReportDimension | ''>('');
   const [activeTemplateId, setActiveTemplateId] = useState<string>('traffic-command');
   const [dimensionOptions, setDimensionOptions] = useState<ReportDimensionOption[]>(DEFAULT_DIMENSION_OPTIONS);
   const [metricOptions, setMetricOptions] = useState<ReportMetricOption[]>(DEFAULT_METRIC_OPTIONS);
   const deferredSearchQuery = React.useDeferredValue(searchQuery);
 
   useEffect(() => {
-    setSavedViews(readSavedViews());
+    let active = true;
+
+    // 预设以服务端为准（多端一致）；服务端不可用时降级 localStorage，保证视图可读
+    const loadViews = async () => {
+      try {
+        const presets = await listReportPresets();
+        if (!active) {
+          return;
+        }
+        setSavedViews(mapPresetsToViews(presets));
+      } catch {
+        if (active) {
+          setSavedViews(readSavedViews());
+        }
+      }
+    };
+
+    void loadViews();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -559,6 +653,7 @@ export default function Reports() {
         limit: nextConfig.limit,
         sortBy: nextConfig.sortBy,
         sortOrder: nextConfig.sortOrder,
+        reportType: nextConfig.reportType,
       });
 
       setRows(Array.isArray(reportData) ? reportData : []);
@@ -673,6 +768,38 @@ export default function Reports() {
 
   const isDirty = useMemo(() => JSON.stringify(builder) !== JSON.stringify(appliedConfig), [appliedConfig, builder]);
 
+  // 图表维度：默认取第一个分组维度；日期维度做趋势升序并放宽到 60 点，其余维度取前 12 行
+  const chartDimension = chartDim || appliedConfig.groupBy[0];
+
+  const chartData = useMemo(() => {
+    if (chartDimension === 'date') {
+      return [...filteredRows]
+        .sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')))
+        .slice(0, 60)
+        .map((row) => ({
+          label: truncateLabel(String(row.date ?? '-'), 24),
+          value: Number(row[chartMetric] ?? 0),
+        }));
+    }
+
+    return filteredRows.slice(0, 12).map((row, index) => ({
+      label: chartDimension ? truncateLabel(String(row[chartDimension] ?? '-'), 24) : `Row ${index + 1}`,
+      value: Number(row[chartMetric] ?? 0),
+    }));
+  }, [chartDimension, chartMetric, filteredRows]);
+
+  useEffect(() => {
+    if (!appliedConfig.metrics.includes(chartMetric)) {
+      setChartMetric(appliedConfig.metrics[0] || 'clicks');
+    }
+  }, [appliedConfig.metrics, chartMetric]);
+
+  useEffect(() => {
+    if (chartDim && !appliedConfig.groupBy.includes(chartDim)) {
+      setChartDim('');
+    }
+  }, [appliedConfig.groupBy, chartDim]);
+
   const applyTemplate = useCallback((templateId: string) => {
     const template = REPORT_TEMPLATES.find((item) => item.id === templateId);
     if (!template) {
@@ -744,24 +871,39 @@ export default function Reports() {
     }));
   }, []);
 
-  const saveCurrentView = useCallback(() => {
+  const saveCurrentView = useCallback(async () => {
     const nextName = clampInput(viewName.trim(), SAVED_VIEW_NAME_MAX_LENGTH);
     if (!nextName) {
       setError('Enter a view name before saving.');
       return;
     }
 
-    const nextView: SavedView = {
-      id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `view-${Date.now()}`,
-      name: nextName,
-      createdAt: new Date().toISOString(),
-      config: cloneConfig(builder),
-    };
-
-    const nextViews = [nextView, ...savedViews].slice(0, 12);
-    setSavedViews(nextViews);
-    writeSavedViews(nextViews);
+    const config = cloneConfig(builder);
     setViewName('');
+
+    try {
+      // 服务端保存成功后重拉列表，保证多端一致
+      const preset = await createReportPreset({ name: nextName, reportType: config.reportType, config });
+      if (!preset) {
+        throw new Error('Preset save returned empty payload');
+      }
+      const presets = await listReportPresets();
+      setSavedViews(mapPresetsToViews(presets));
+      setNotice(`View "${nextName}" saved to server.`);
+    } catch {
+      // 服务端不可用时降级本地保存，保证用户配置不丢失
+      const nextView: SavedView = {
+        id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `view-${Date.now()}`,
+        name: nextName,
+        createdAt: new Date().toISOString(),
+        config,
+      };
+
+      const nextViews = [nextView, ...savedViews].slice(0, 12);
+      setSavedViews(nextViews);
+      writeSavedViews(nextViews);
+      setNotice(`View "${nextName}" saved locally (server unavailable).`);
+    }
   }, [builder, savedViews, viewName]);
 
   const loadSavedView = useCallback((view: SavedView) => {
@@ -775,8 +917,18 @@ export default function Reports() {
     void runReport(nextConfig);
   }, [runReport]);
 
-  const deleteSavedView = useCallback((id: string) => {
-    const nextViews = savedViews.filter((view) => view.id !== id);
+  const deleteSavedView = useCallback(async (view: SavedView) => {
+    if (view.remote) {
+      try {
+        await deleteReportPreset(view.id);
+        setSavedViews((current) => current.filter((item) => item.id !== view.id));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete saved view');
+      }
+      return;
+    }
+
+    const nextViews = savedViews.filter((item) => item.id !== view.id);
     setSavedViews(nextViews);
     writeSavedViews(nextViews);
   }, [savedViews]);
@@ -954,7 +1106,7 @@ export default function Reports() {
               className="w-full border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
             />
             <button
-              onClick={saveCurrentView}
+              onClick={() => void saveCurrentView()}
               className="flex items-center gap-2 rounded-sm bg-primary px-4 py-2 text-sm text-on-primary"
             >
               <Save size={16} />
@@ -995,7 +1147,7 @@ export default function Reports() {
                     </div>
                   </button>
                   <button
-                    onClick={() => deleteSavedView(view.id)}
+                    onClick={() => void deleteSavedView(view)}
                     className="rounded-sm border border-outline-variant px-2 py-2 text-on-surface-variant hover:text-error"
                     aria-label={`Delete saved view ${view.name}`}
                   >
@@ -1008,128 +1160,162 @@ export default function Reports() {
         </div>
       </div>
 
-      <div className="mb-6 grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
-        <section className="rounded-sm border border-outline-variant bg-surface p-5">
-          <div className="mb-3 text-sm font-semibold text-on-surface">Dimensions</div>
-          <div className="flex flex-wrap gap-2">
-            {dimensionOptions.map((option) => {
-              const active = builder.groupBy.includes(option.value);
-              return (
-                <button
-                  key={option.value}
-                  onClick={() => toggleDimension(option.value)}
-                  className={cn(
-                    'rounded-sm border px-3 py-2 text-left text-sm transition-colors',
-                    active
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-outline-variant bg-surface-container text-on-surface'
-                  )}
-                >
-                  <div>{option.label}</div>
-                  <div className="mt-1 text-[11px] text-on-surface-variant">{option.hint}</div>
-                </button>
-              );
-            })}
+      <section className="mb-6 rounded-sm border border-outline-variant bg-surface p-5">
+        <div className="flex flex-col gap-3 border-b border-outline-variant/60 pb-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-on-surface">Builder Area</h2>
+            <p className="mt-1 text-sm text-on-surface-variant">
+              Keep the first screen focused, then expand dimensions, metrics, or filters only when you need to refine the report.
+            </p>
           </div>
-        </section>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded-sm bg-surface-container px-3 py-2 text-on-surface-variant">
+              {builder.groupBy.length} dimensions selected
+            </span>
+            <span className="rounded-sm bg-surface-container px-3 py-2 text-on-surface-variant">
+              {builder.metrics.length} metrics selected
+            </span>
+            <span className="rounded-sm bg-surface-container px-3 py-2 text-on-surface-variant">
+              {builder.filters.length} filters configured
+            </span>
+          </div>
+        </div>
 
-        <section className="rounded-sm border border-outline-variant bg-surface p-5">
-          <div className="mb-3 text-sm font-semibold text-on-surface">Metrics</div>
-          <div className="flex flex-wrap gap-2">
-            {metricOptions.map((option) => {
-              const active = builder.metrics.includes(option.value);
-              return (
-                <button
-                  key={option.value}
-                  onClick={() => toggleMetric(option.value)}
-                  className={cn(
-                    'rounded-sm border px-3 py-2 text-sm transition-colors',
-                    active
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-outline-variant bg-surface-container text-on-surface'
-                  )}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="rounded-sm border border-outline-variant bg-surface p-5">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-on-surface">
-            <Filter size={16} />
-            Filters
-          </div>
-          <div className="space-y-3">
-            {builder.filters.length === 0 ? (
-              <div className="rounded-sm border border-dashed border-outline-variant/40 px-3 py-4 text-sm text-on-surface-variant">
-                No filters. Add rules for country, device, campaign, or even metric thresholds like ROI greater than 20.
-              </div>
-            ) : (
-              builder.filters.map((filter, index) => (
-                <div key={`${filter.field}-${index}`} className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
-                  <select
-                    value={filter.field}
-                    onChange={(event) =>
-                      updateFilter(index, { field: event.target.value as ReportDimension | ReportMetric })
-                    }
-                    className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
-                  >
-                    {filterFieldOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={filter.operator}
-                    onChange={(event) => updateFilter(index, { operator: event.target.value as ReportFilterOperator })}
-                    className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
-                  >
-                    {FILTER_OPERATORS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={String(filter.value)}
-                    onChange={(event) => updateFilter(index, { value: event.target.value })}
-                    placeholder="Filter value"
-                    className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
-                  />
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
+          <BuilderPanel
+            title="Dimensions"
+            subtitle="Group the report by campaign, geo, device, sub IDs, or daily trend axes."
+            countLabel={`${builder.groupBy.length} selected`}
+            open={showDimensions}
+            onToggle={() => setShowDimensions((current) => !current)}
+          >
+            <div className="flex flex-wrap gap-2">
+              {dimensionOptions.map((option) => {
+                const active = builder.groupBy.includes(option.value);
+                return (
                   <button
-                    onClick={() =>
-                      setBuilder((current) => ({
-                        ...current,
-                        filters: current.filters.filter((_, itemIndex) => itemIndex !== index),
-                      }))
-                    }
-                    className="rounded-sm border border-outline-variant px-3 py-2 text-on-surface-variant hover:text-error"
-                    aria-label="Remove filter"
+                    key={option.value}
+                    onClick={() => toggleDimension(option.value)}
+                    className={cn(
+                      'rounded-sm border px-3 py-2 text-left text-sm transition-colors',
+                      active
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-outline-variant bg-surface-container text-on-surface'
+                    )}
                   >
-                    <Trash2 size={14} />
+                    <div>{option.label}</div>
+                    <div className="mt-1 text-[11px] text-on-surface-variant">{option.hint}</div>
                   </button>
+                );
+              })}
+            </div>
+          </BuilderPanel>
+
+          <BuilderPanel
+            title="Metrics"
+            subtitle="Choose the counters and value columns that should be calculated for each row."
+            countLabel={`${builder.metrics.length} selected`}
+            open={showMetrics}
+            onToggle={() => setShowMetrics((current) => !current)}
+          >
+            <div className="flex flex-wrap gap-2">
+              {metricOptions.map((option) => {
+                const active = builder.metrics.includes(option.value);
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => toggleMetric(option.value)}
+                    className={cn(
+                      'rounded-sm border px-3 py-2 text-sm transition-colors',
+                      active
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-outline-variant bg-surface-container text-on-surface'
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </BuilderPanel>
+
+          <BuilderPanel
+            title="Filters"
+            subtitle="Add only the rules you need so the report surface stays readable."
+            countLabel={`${builder.filters.length} configured`}
+            open={showFilters}
+            onToggle={() => setShowFilters((current) => !current)}
+          >
+            <div className="space-y-3">
+              {builder.filters.length === 0 ? (
+                <div className="rounded-sm border border-dashed border-outline-variant/40 px-3 py-4 text-sm text-on-surface-variant">
+                  No filters. Add rules for country, device, campaign, or even metric thresholds like ROI greater than 20.
                 </div>
-              ))
-            )}
-            <button
-              onClick={() =>
-                setBuilder((current) => ({
-                  ...current,
-                  filters: [...current.filters, createFilterDraft()],
-                }))
-              }
-              className="flex items-center gap-2 rounded-sm border border-outline-variant px-3 py-2 text-sm text-on-surface"
-            >
-              <Plus size={14} />
-              Add filter
-            </button>
-          </div>
-        </section>
-      </div>
+              ) : (
+                builder.filters.map((filter, index) => (
+                  <div key={`${filter.field}-${index}`} className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+                    <select
+                      value={filter.field}
+                      onChange={(event) =>
+                        updateFilter(index, { field: event.target.value as ReportDimension | ReportMetric })
+                      }
+                      className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
+                    >
+                      {filterFieldOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={filter.operator}
+                      onChange={(event) => updateFilter(index, { operator: event.target.value as ReportFilterOperator })}
+                      className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
+                    >
+                      {FILTER_OPERATORS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={String(filter.value)}
+                      onChange={(event) => updateFilter(index, { value: event.target.value })}
+                      placeholder="Filter value"
+                      className="border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface"
+                    />
+                    <button
+                      onClick={() =>
+                        setBuilder((current) => ({
+                          ...current,
+                          filters: current.filters.filter((_, itemIndex) => itemIndex !== index),
+                        }))
+                      }
+                      className="rounded-sm border border-outline-variant px-3 py-2 text-on-surface-variant hover:text-error"
+                      aria-label="Remove filter"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))
+              )}
+              <button
+                onClick={() =>
+                  setBuilder((current) => ({
+                    ...current,
+                    filters: [...current.filters, createFilterDraft()],
+                  }))
+                }
+                className="flex items-center gap-2 rounded-sm border border-outline-variant px-3 py-2 text-sm text-on-surface"
+              >
+                <Plus size={14} />
+                Add filter
+              </button>
+            </div>
+          </BuilderPanel>
+        </div>
+      </section>
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard label="Rows" value={filteredRows.length.toLocaleString()} />
@@ -1139,7 +1325,67 @@ export default function Reports() {
         ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <section className="rounded-sm border border-outline-variant bg-surface p-5">
+        <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-on-surface">Results Area</h2>
+            <p className="mt-1 text-sm text-on-surface-variant">
+              Apply the builder when you are ready, then search, export, or drill into matching click logs.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-sm border border-outline-variant">
+              {([
+                ['table', 'Table', () => setViewMode('table'), viewMode === 'table'],
+                ['bar', 'Bar', () => { setViewMode('chart'); setChartType('bar'); }, viewMode === 'chart' && chartType === 'bar'],
+                ['line', 'Line', () => { setViewMode('chart'); setChartType('line'); }, viewMode === 'chart' && chartType === 'line'],
+                ['area', 'Area', () => { setViewMode('chart'); setChartType('area'); }, viewMode === 'chart' && chartType === 'area'],
+              ] as Array<[string, string, () => void, boolean]>).map(([key, label, onClick, active]) => (
+                <button
+                  key={key}
+                  onClick={onClick}
+                  className={cn(
+                    'px-3 py-2 text-xs font-semibold uppercase tracking-widest',
+                    active ? 'bg-primary text-on-primary' : 'bg-surface text-on-surface-variant'
+                  )}
+                  aria-pressed={active}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {viewMode === 'chart' && appliedConfig.groupBy.length > 1 && (
+              <select
+                value={chartDimension || ''}
+                onChange={(event) => setChartDim(event.target.value as ReportDimension)}
+                className="border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface"
+                aria-label="Chart dimension"
+              >
+                {appliedConfig.groupBy.map((dimension) => (
+                  <option key={dimension} value={dimension}>
+                    {getColumnLabel(dimension, dimensionOptions, metricOptions)}
+                  </option>
+                ))}
+              </select>
+            )}
+            {viewMode === 'chart' && (
+              <select
+                value={chartMetric}
+                onChange={(event) => setChartMetric(event.target.value as ReportMetric)}
+                className="border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface"
+                aria-label="Chart metric"
+              >
+                {appliedConfig.metrics.map((metric) => (
+                  <option key={metric} value={metric}>
+                    {getColumnLabel(metric, dimensionOptions, metricOptions)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
           onClick={() => void runReport()}
           disabled={loading}
@@ -1217,38 +1463,97 @@ export default function Reports() {
             className="bg-transparent outline-none placeholder:text-on-surface-variant"
           />
         </div>
-      </div>
-
-      {isDirty && (
-        <div className="mb-4 rounded-sm border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-on-surface">
-          Builder settings changed but not yet applied. Click <strong>Run Report</strong> to refresh the dataset.
         </div>
-      )}
 
-      {notice && (
-        <div className="mb-4 rounded-sm border border-success/20 bg-success/10 p-4 text-sm text-success">{notice}</div>
-      )}
+        {isDirty && (
+          <div className="mb-4 rounded-sm border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-on-surface">
+            Builder settings changed but not yet applied. Click <strong>Run Report</strong> to refresh the dataset.
+          </div>
+        )}
 
-      {error && <div className="mb-4 rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>}
+        {notice && (
+          <div className="mb-4 rounded-sm border border-success/20 bg-success/10 p-4 text-sm text-success">{notice}</div>
+        )}
 
-      <div className="mb-4 rounded-sm border border-outline-variant/20 bg-surface-container-low px-4 py-3 text-xs uppercase tracking-widest text-on-surface-variant">
-        Click any result row to open the matching click log drilldown with the current report date range and dimension values.
-      </div>
+        {error && <div className="mb-4 rounded-sm border border-error/20 bg-error/10 p-4 text-sm text-error">{error}</div>}
 
-      <VirtualTableEnhanced
-        tableId="report-builder-results"
-        columns={resultColumns}
-        data={filteredRows}
-        loading={loading}
-        rowHeight={48}
-        height={reportTableHeight}
-        overscan={10}
-        emptyMessage={searchQuery.trim() ? 'No rows matched the current query.' : 'Run a report to see results.'}
-        getRowId={(row, index) => getReportRowKey(row, index, visibleColumns)}
-        onRowClick={(row) => navigate(buildClickLogHref(row))}
-        rowClassName={() => 'cursor-pointer hover:bg-surface-container/60'}
-        className="overflow-x-auto rounded-sm border border-outline-variant bg-surface"
-      />
+        {filteredRows.length === 0 && !loading ? (
+          <div className="rounded-sm border border-dashed border-outline-variant/50 bg-surface-container px-5 py-10 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface text-on-surface-variant">
+              <BarChart3 size={20} />
+            </div>
+            <h3 className="mt-4 text-lg font-semibold text-on-surface">No results on screen yet</h3>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              Keep the builder compact until you are ready, then run the report to populate the result table.
+            </p>
+          </div>
+        ) : viewMode === 'chart' ? (
+          <div className="h-[420px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              {chartType === 'line' ? (
+                <LineChart data={chartData} margin={{ top: 12, right: 16, left: 8, bottom: 28 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(128, 128, 128, 0.2)" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" height={72} interval={0} />
+                  <YAxis tick={{ fontSize: 11 }} width={72} />
+                  <RechartsTooltip
+                    formatter={(value) => formatMetricValue(chartMetric, value, metricOptions)}
+                    labelFormatter={(label) => String(label)}
+                  />
+                  <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} dot={chartData.length <= 20} />
+                </LineChart>
+              ) : chartType === 'area' ? (
+                <AreaChart data={chartData} margin={{ top: 12, right: 16, left: 8, bottom: 28 }}>
+                  <defs>
+                    <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2563eb" stopOpacity={0.35} />
+                      <stop offset="100%" stopColor="#2563eb" stopOpacity={0.04} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(128, 128, 128, 0.2)" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" height={72} interval={0} />
+                  <YAxis tick={{ fontSize: 11 }} width={72} />
+                  <RechartsTooltip
+                    formatter={(value) => formatMetricValue(chartMetric, value, metricOptions)}
+                    labelFormatter={(label) => String(label)}
+                  />
+                  <Area type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} fill="url(#areaFill)" />
+                </AreaChart>
+              ) : (
+                <BarChart data={chartData} margin={{ top: 12, right: 16, left: 8, bottom: 28 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(128, 128, 128, 0.2)" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" height={72} interval={0} />
+                  <YAxis tick={{ fontSize: 11 }} width={72} />
+                  <RechartsTooltip
+                    formatter={(value) => formatMetricValue(chartMetric, value, metricOptions)}
+                    labelFormatter={(label) => String(label)}
+                  />
+                  <Bar dataKey="value" fill="#2563eb" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+            <p className="mt-2 text-xs text-on-surface-variant">
+              {chartDimension === 'date'
+                ? `Trend of top ${chartData.length} dates (ascending), metric: ${getColumnLabel(chartMetric, dimensionOptions, metricOptions)}.`
+                : `Showing top ${chartData.length} rows grouped by ${getColumnLabel(chartDimension || 'summary', dimensionOptions, metricOptions)}.`}
+            </p>
+          </div>
+        ) : (
+          <VirtualTableEnhanced
+            tableId="report-builder-results"
+            columns={resultColumns}
+            data={filteredRows}
+            loading={loading}
+            rowHeight={48}
+            height={reportTableHeight}
+            overscan={10}
+            emptyMessage={searchQuery.trim() ? 'No rows matched the current query.' : 'Run a report to see results.'}
+            getRowId={(row, index) => getReportRowKey(row, index, visibleColumns)}
+            onRowClick={(row) => navigate(buildClickLogHref(row))}
+            rowClassName={() => 'cursor-pointer hover:bg-surface-container/60'}
+            className="overflow-x-auto rounded-sm border border-outline-variant bg-surface"
+          />
+        )}
+      </section>
     </div>
   );
 }
@@ -1259,5 +1564,47 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</div>
       <div className="mt-2 text-2xl font-display font-bold text-on-surface">{value}</div>
     </div>
+  );
+}
+
+function BuilderPanel({
+  title,
+  subtitle,
+  countLabel,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  countLabel: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-sm border border-outline-variant bg-surface">
+      <div className="flex items-start justify-between gap-3 p-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-on-surface">{title}</h2>
+            <span className="rounded-sm bg-surface-container px-2 py-1 text-[11px] text-on-surface-variant">
+              {countLabel}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-on-surface-variant">{subtitle}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="inline-flex items-center gap-1 rounded-sm border border-outline-variant px-2 py-1 text-xs text-on-surface hover:bg-surface-container"
+          aria-expanded={open}
+        >
+          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {open ? 'Collapse' : 'Expand'}
+        </button>
+      </div>
+      {open ? <div className="border-t border-outline-variant px-4 pb-4 pt-4">{children}</div> : null}
+    </section>
   );
 }

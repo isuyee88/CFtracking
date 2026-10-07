@@ -282,6 +282,7 @@ export const CampaignManagement = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [selectedCampaign, setSelectedCampaign] = useState<Record<string, any> | undefined>(undefined);
+  const [isSavingCampaign, setIsSavingCampaign] = useState(false);
   const [isAutoruleModalOpen, setIsAutoruleModalOpen] = useState(false);
   const [selectedCampaignForAutorules, setSelectedCampaignForAutorules] = useState<Campaign | null>(null);
   
@@ -414,6 +415,11 @@ export const CampaignManagement = () => {
   };
   
   const handleFormSubmit = async (formData: any) => {
+    if (isSavingCampaign) {
+      return;
+    }
+
+    setIsSavingCampaign(true);
     try {
       const { autoruleBindings = [], ...campaignPayload } = formData || {};
 
@@ -441,6 +447,8 @@ export const CampaignManagement = () => {
         formMode === 'create' ? 'Failed to Create Campaign' : 'Failed to Update Campaign',
         err instanceof Error ? err.message : 'Please check your input and try again.'
       );
+    } finally {
+      setIsSavingCampaign(false);
     }
   };
   
@@ -554,29 +562,45 @@ export const CampaignManagement = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 size={48} className="animate-spin text-primary" />
+      <div className="space-y-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold text-fg-default">Campaign Management</h1>
+            <p className="text-sm text-fg-muted">Manage your tracking campaigns and traffic distribution</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center h-96">
+          <Loader2 size={48} className="animate-spin text-primary" />
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 text-error">
-        <X size={48} className="mb-4" />
-        <p className="text-lg font-bold">{error}</p>
-        <button 
-          onClick={() => void loadCampaignsWithStats()}
-          className="mt-4 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest rounded-sm"
-        >
-          Retry
-        </button>
+      <div className="space-y-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold text-fg-default">Campaign Management</h1>
+            <p className="text-sm text-fg-muted">Manage your tracking campaigns and traffic distribution</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center h-96 text-error">
+          <X size={48} className="mb-4" />
+          <p className="text-lg font-bold">{error}</p>
+          <button 
+            onClick={() => void loadCampaignsWithStats()}
+            className="mt-4 px-4 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest rounded-sm"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
   
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-8">
       {/* Campaign Form Modal */}
       <CampaignForm
         isOpen={isFormOpen}
@@ -584,6 +608,7 @@ export const CampaignManagement = () => {
         onSubmit={handleFormSubmit}
         initialData={selectedCampaign}
         mode={formMode}
+        isSubmitting={isSavingCampaign}
       />
       <CampaignAutoruleBindingsModal
         isOpen={isAutoruleModalOpen}
@@ -730,7 +755,7 @@ export const CampaignManagement = () => {
       </div>
 
       {/* Campaigns Table - VirtualTableEnhanced */}
-      <div className="card overflow-hidden">
+      <div className="card overflow-hidden" style={{ contain: 'layout style paint' }}>
         <VirtualTableEnhanced
           tableId="campaigns"
           className="overflow-y-hidden"

@@ -75,6 +75,8 @@ export interface UniquenessCheckResult {
 export class UniquenessDurableObject {
   private storage: DurableObjectStorage;
   private records: Map<string, UniquenessRecord> = new Map();
+  /** 内存中最大缓存条目数，超出后淘汰最旧条目（利用Map插入序实现近似LRU） */
+  private static readonly MAX_IN_MEMORY_RECORDS = 10000;
 
   constructor(state: DurableObjectState, _env: Env) {
     this.storage = state.storage;
@@ -141,6 +143,14 @@ export class UniquenessDurableObject {
     };
 
     this.records.set(key, record);
+
+    // LRU 内存保护：超出上限时淘汰最旧条目（Map迭代器按插入序，首项最旧）
+    if (this.records.size > UniquenessDurableObject.MAX_IN_MEMORY_RECORDS) {
+      const oldestKey = this.records.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.records.delete(oldestKey);
+      }
+    }
 
     const ttlSeconds = req.ttl || 86400;
     await this.storage.put(key, record, { expirationTtl: ttlSeconds } as any);

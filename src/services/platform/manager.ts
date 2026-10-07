@@ -104,7 +104,7 @@ export class PlatformManager {
    */
   static createDefault(): PlatformManager {
     const manager = new PlatformManager();
-    manager.registerAdapter(new OddBytesAdapter({ wsdlUrl: '', apiKey: '' } as any));
+    manager.registerAdapter(new OddBytesAdapter({ baseUrl: '', apiKey: '' } as any));
     manager.registerAdapter(new PropellerAdsAdapter({ apiKey: '' } as any));
     manager.registerAdapter(new ClickBankAdapter({ apiKey: '', accountNickname: '' } as any));
     return manager;

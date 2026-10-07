@@ -284,7 +284,7 @@ export class PostbackRateLimiter {
     try {
       const row = await this.db
         .prepare(
-          'SELECT count FROM rate_limits WHERE key = ? AND expires_at > datetime("now")'
+          'SELECT count FROM rate_limits WHERE key = ? AND expires_at > datetime(\'now\')'
         )
         .bind(key)
         .first();
@@ -325,7 +325,7 @@ export class PostbackRateLimiter {
         // 计数器不存在，创建新记录
         await this.db
           .prepare(
-            'INSERT OR IGNORE INTO rate_limits (key, count, window_start, expires_at) VALUES (?, 1, datetime("now"), ?)'
+            'INSERT OR IGNORE INTO rate_limits (key, count, window_start, expires_at) VALUES (?, 1, datetime(\'now\'), ?)'
           )
           .bind(key, expiry)
           .run();

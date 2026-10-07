@@ -9,3 +9,5 @@ export { SafetyValveService } from './safety-valve.service';
 export { AutoRuleEvaluatorService } from './rule-evaluator.service';
 export { ApprovalWorkflowService } from './approval.service';
 export { AutoOperationExecutorService } from './operation-executor.service';
+export { AiDecisionProvider } from './ai-decision.provider';
+export { AiOptimizationOrchestratorService } from './ai-orchestrator.service';

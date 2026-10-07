@@ -4,11 +4,48 @@
  * @module services/autorule/realtime-rule-engine.service
  */
 
-import { AutoruleBindingRepository, AutoruleScopeRepository, RuleRepository, getD1Connection } from '@/handlers/d1';
+import { AutoruleBindingRepository, AutoruleScopeRepository, ClickRepository, RuleRepository, getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
 import type { Condition, Rule, RuleExpressionNode, RuleSetCondition } from '@/types/rule';
-import type { AutoruleScopeConfig, AutoruleScopeType } from '@/types/autoruleScope';
+import type { AutoruleScopeConfig, AutoruleScopeType, EffectiveAutoruleScopeResolution } from '@/types/autoruleScope';
 import { ListResolverService, type AutoruleVisitContext } from './list-resolver.service';
+import {
+  matchBuiltinAggressiveCategoryBlock,
+  matchBuiltinAllowBias,
+  matchBuiltinExactBlock,
+  matchBuiltinSuspiciousSignal,
+} from './aggressive-traffic-policy';
+
+const WHITELIST_EXACT_TYPES = [
+  'rule',
+  'ip',
+  'fingerprint',
+  'visitor_id',
+  'asn',
+  'country',
+  'isp',
+  'user_agent',
+  'zone',
+  'sub_id',
+  'device',
+] as const;
+
+const BLACKLIST_EXACT_TYPES = [
+  'rule',
+  'ip',
+  'fingerprint',
+  'visitor_id',
+  'user_agent',
+  'asn',
+  'country',
+  'isp',
+  'zone',
+  'sub_id',
+  'device',
+] as const;
+
+const CATEGORY_BLOCK_TYPES = ['org_exact', 'org_keyword', 'isp_type', 'network_tag'] as const;
+const ALLOW_BIAS_TYPES = ['allow_bias_org', 'allow_bias_isp_type'] as const;
 
 export interface RealtimeRuleEvaluationInput {
   campaignId: string;
@@ -21,7 +58,19 @@ export interface RealtimeRuleDecision {
   matched: boolean;
   bound: boolean;
   matchedRuleId?: string;
-  matchedLayer?: 'flow' | 'campaign' | 'traffic_source' | 'global' | 'whitelist' | 'blacklist';
+  matchedLayer?:
+    | 'flow'
+    | 'campaign'
+    | 'traffic_source'
+    | 'global'
+    | 'whitelist'
+    | 'blacklist'
+    | 'allow_exact'
+    | 'allow_verified_bot'
+    | 'block_exact'
+    | 'block_category_aggressive'
+    | 'allow_bias'
+    | 'suspicious_queue';
   effectiveScopeType?: 'campaign' | 'traffic_source' | 'global';
   reason?: string;
   redirectUrl?: string;
@@ -31,6 +80,7 @@ export class RealtimeRuleEngineService {
   private readonly ruleRepo: RuleRepository;
   private readonly bindingRepo: AutoruleBindingRepository;
   private readonly scopeRepo: AutoruleScopeRepository;
+  private readonly clickRepo: ClickRepository;
   private readonly listResolver: ListResolverService;
 
   constructor(env: Env) {
@@ -38,24 +88,74 @@ export class RealtimeRuleEngineService {
     this.ruleRepo = new RuleRepository(db);
     this.bindingRepo = new AutoruleBindingRepository(db);
     this.scopeRepo = new AutoruleScopeRepository(db);
+    this.clickRepo = new ClickRepository(db);
     this.listResolver = new ListResolverService(env);
   }
 
   async evaluate(input: RealtimeRuleEvaluationInput): Promise<RealtimeRuleDecision> {
-    const whitelistDecision = await this.resolveDirectListDecision('whitelist', input.context);
+    const whitelistDecision = await this.resolveDirectListDecision('whitelist', input.context, [...WHITELIST_EXACT_TYPES]);
     if (whitelistDecision) {
       return whitelistDecision;
     }
 
-    const blacklistDecision = await this.resolveDirectListDecision('blacklist', input.context);
+    const builtinExactBlock = matchBuiltinExactBlock(input.context);
+    if (builtinExactBlock) {
+      return this.buildBuiltinDecision('block', builtinExactBlock.layer, builtinExactBlock.reason);
+    }
+
+    const blacklistDecision = await this.resolveDirectListDecision('blacklist', input.context, [...BLACKLIST_EXACT_TYPES]);
     if (blacklistDecision) {
       return blacklistDecision;
     }
 
-    const scopeResolution = await this.scopeRepo.resolveEffectiveScopeConfig(
-      input.campaignId,
-      input.context.trafficSourceId
-    );
+    const builtinCategoryBlock = matchBuiltinAggressiveCategoryBlock(input.context);
+    if (builtinCategoryBlock) {
+      return this.buildBuiltinDecision('block', builtinCategoryBlock.layer, builtinCategoryBlock.reason);
+    }
+
+    const categoryBlockDecision = await this.resolveDirectListDecision('blacklist', input.context, [...CATEGORY_BLOCK_TYPES]);
+    if (categoryBlockDecision) {
+      return categoryBlockDecision;
+    }
+
+    if (input.context.verifiedBot) {
+      return {
+        action: 'allow',
+        matched: true,
+        bound: false,
+        matchedRuleId: 'greylist:verified_bot',
+        matchedLayer: 'suspicious_queue',
+        reason: 'verified_bot_observe',
+      };
+    }
+
+    const builtinSuspicious = matchBuiltinSuspiciousSignal(input.context);
+    if (builtinSuspicious) {
+      const allowBias = await this.resolveAllowBiasDecision(input.context);
+      if (allowBias) {
+        return {
+          ...allowBias,
+          reason: `${allowBias.reason}:${builtinSuspicious.reason}`,
+        };
+      }
+
+      return this.buildBuiltinDecision('allow', builtinSuspicious.layer, builtinSuspicious.reason);
+    }
+
+    const suspiciousDecision = await this.resolveDirectListDecision('blacklist', input.context, ['suspicious_reason']);
+    if (suspiciousDecision) {
+      const allowBias = await this.resolveAllowBiasDecision(input.context);
+      if (allowBias) {
+        return {
+          ...allowBias,
+          reason: `${allowBias.reason}:${suspiciousDecision.reason}`,
+        };
+      }
+
+      return suspiciousDecision;
+    }
+
+    const scopeResolution = await this.resolveScopeResolution(input);
 
     if (!scopeResolution.effectiveConfig) {
       if (!scopeResolution.hasExplicitConfig && input.flowId) {
@@ -70,7 +170,11 @@ export class RealtimeRuleEngineService {
         action: 'allow',
         matched: false,
         bound: scopeResolution.hasExplicitConfig,
-        reason: scopeResolution.hasExplicitConfig ? 'scope_inherit_without_effective_config' : 'not_bound',
+        reason: scopeResolution.hasExplicitConfig
+          ? 'scope_inherit_without_effective_config'
+          : scopeResolution.scannedScopeTypes.length === 0
+            ? 'scope_schema_unavailable'
+            : 'not_bound',
       };
     }
 
@@ -109,6 +213,50 @@ export class RealtimeRuleEngineService {
       effectiveScopeType: scopeResolution.effectiveConfig.scopeType,
       reason: 'no_bound_rule_matched',
     };
+  }
+
+  private async resolveAllowBiasDecision(context: AutoruleVisitContext): Promise<RealtimeRuleDecision | null> {
+    const builtinAllowBias = matchBuiltinAllowBias(context);
+    if (builtinAllowBias) {
+      return this.buildBuiltinDecision('allow', builtinAllowBias.layer, builtinAllowBias.reason);
+    }
+
+    return this.resolveDirectListDecision('whitelist', context, [...ALLOW_BIAS_TYPES]);
+  }
+
+  private async resolveScopeResolution(
+    input: RealtimeRuleEvaluationInput
+  ): Promise<EffectiveAutoruleScopeResolution> {
+    try {
+      return await this.scopeRepo.resolveEffectiveScopeConfig(
+        input.campaignId,
+        input.context.trafficSourceId
+      );
+    } catch (error) {
+      if (!this.isMissingAutoruleScopeSchemaError(error)) {
+        throw error;
+      }
+
+      console.warn('[RealtimeRuleEngineService] Autorule scope schema unavailable, falling back to legacy bindings', {
+        campaignId: input.campaignId,
+        trafficSourceId: input.context.trafficSourceId || null,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return {
+        effectiveConfig: null,
+        hasExplicitConfig: false,
+        scannedScopeTypes: [],
+      };
+    }
+  }
+
+  private isMissingAutoruleScopeSchemaError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error || '');
+    return (
+      message.includes('no such table') &&
+      (message.includes('autorule_scope_configs') || message.includes('autorule_scope_bindings'))
+    );
   }
 
   private async evaluateScopeConfig(
@@ -178,11 +326,12 @@ export class RealtimeRuleEngineService {
 
   private async resolveDirectListDecision(
     side: 'whitelist' | 'blacklist',
-    context: AutoruleVisitContext
+    context: AutoruleVisitContext,
+    orderedTypes?: string[]
   ): Promise<RealtimeRuleDecision | null> {
-    const orderedTypes = ['rule', 'ip', 'fingerprint', 'asn', 'country', 'isp', 'user_agent', 'zone', 'sub_id', 'device'];
+    const typesToCheck = orderedTypes || ['rule', 'ip', 'fingerprint', 'asn', 'country', 'isp', 'user_agent', 'zone', 'sub_id', 'device'];
 
-    for (const listType of orderedTypes) {
+    for (const listType of typesToCheck) {
       const matched =
         side === 'whitelist'
           ? await this.listResolver.inWhitelist(listType, context)
@@ -193,17 +342,105 @@ export class RealtimeRuleEngineService {
       }
 
       return {
-        action: side === 'whitelist' ? 'allow' : 'block',
+        action: this.mapDecisionAction(side, listType),
         matched: true,
         bound: false,
-        matchedRuleId: `${side}:${listType}`,
-        matchedLayer: side,
+        matchedRuleId: this.mapDecisionRuleId(side, listType),
+        matchedLayer: this.mapDecisionLayer(side, listType),
         effectiveScopeType: undefined,
-        reason: `${side}_${listType}_matched`,
+        reason: this.mapDecisionReason(side, listType),
       };
     }
 
     return null;
+  }
+
+  private buildBuiltinDecision(
+    action: 'allow' | 'block',
+    layer: RealtimeRuleDecision['matchedLayer'],
+    reason: string
+  ): RealtimeRuleDecision {
+    return {
+      action,
+      matched: true,
+      bound: false,
+      matchedRuleId: layer || undefined,
+      matchedLayer: layer,
+      effectiveScopeType: undefined,
+      reason,
+    };
+  }
+
+  private mapDecisionAction(side: 'whitelist' | 'blacklist', listType: string): RealtimeRuleDecision['action'] {
+    if (side === 'whitelist') {
+      return 'allow';
+    }
+
+    return listType === 'suspicious_reason' ? 'allow' : 'block';
+  }
+
+  private mapDecisionLayer(side: 'whitelist' | 'blacklist', listType: string): RealtimeRuleDecision['matchedLayer'] {
+    if (side === 'whitelist') {
+      if (ALLOW_BIAS_TYPES.includes(listType as (typeof ALLOW_BIAS_TYPES)[number])) {
+        return 'allow_bias';
+      }
+      return 'allow_exact';
+    }
+
+    if (listType === 'suspicious_reason') {
+      return 'suspicious_queue';
+    }
+
+    if (CATEGORY_BLOCK_TYPES.includes(listType as (typeof CATEGORY_BLOCK_TYPES)[number])) {
+      return 'block_category_aggressive';
+    }
+
+    return 'block_exact';
+  }
+
+  private mapDecisionRuleId(side: 'whitelist' | 'blacklist', listType: string): string {
+    const layer = this.mapDecisionLayer(side, listType);
+    return `${layer}:${listType}`;
+  }
+
+  private mapDecisionReason(side: 'whitelist' | 'blacklist', listType: string): string {
+    const layer = this.mapDecisionLayer(side, listType);
+    return `${layer}_${listType}_matched`;
+  }
+
+  private async evaluateRepeatWindowExceeded(args: string[], context: AutoruleVisitContext): Promise<boolean> {
+    const [subjectRaw, minCountRaw, minCampaignsRaw, lookbackHoursRaw] = args;
+    const subject = String(subjectRaw || 'either').trim().toLowerCase();
+    const minCount = Number(minCountRaw);
+    const minCampaigns = Number(minCampaignsRaw);
+    const lookbackHours = Number(lookbackHoursRaw);
+
+    if (!['visitor', 'ip', 'either'].includes(subject)) {
+      return false;
+    }
+    if (!Number.isFinite(minCount) || !Number.isFinite(minCampaigns) || !Number.isFinite(lookbackHours)) {
+      return false;
+    }
+
+    const includeVisitor = subject === 'visitor' || subject === 'either';
+    const includeIp = subject === 'ip' || subject === 'either';
+    if ((!includeVisitor || !context.visitorId) && (!includeIp || !context.ip)) {
+      return false;
+    }
+
+    const metrics = await this.clickRepo.getRecentVisitMetrics({
+      visitorId: includeVisitor ? context.visitorId : undefined,
+      ip: includeIp ? context.ip : undefined,
+      lookbackHours,
+    });
+
+    const repeatCount = subject === 'visitor'
+      ? metrics.visitorRepeat
+      : subject === 'ip'
+        ? metrics.ipRepeat
+        : Math.max(metrics.visitorRepeat, metrics.ipRepeat);
+
+    return repeatCount >= minCount && metrics.campaignCount >= minCampaigns;
   }
 
   private async evaluateRule(rule: Rule, context: AutoruleVisitContext): Promise<RealtimeRuleDecision> {
@@ -337,6 +574,9 @@ export class RealtimeRuleEngineService {
       }
       if (fn === 'in_whitelist') {
         return this.listResolver.inWhitelist(listType, context);
+      }
+      if (fn === 'repeat_window_exceeded') {
+        return this.evaluateRepeatWindowExceeded(args, context);
       }
       return false;
     }

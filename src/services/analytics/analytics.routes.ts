@@ -416,6 +416,10 @@ export function createAnalyticsRouter() {
       const sortBy = (body.sortBy || metrics[0] || groupBy[0] || 'summary') as ReportDimension | ReportMetric;
       const sortOrder = body.sortOrder === 'asc' ? 'asc' : 'desc';
       const limit = Number(body.limit) || 250;
+      // reportType 透传：conversion 语义报表强制实时口径（traffic.repo 判定）
+      const reportType = ['traffic', 'conversion', 'financial', 'roi'].includes(body.reportType)
+        ? body.reportType
+        : undefined;
 
       const reportData = await dashboardQuery.getCustomReport({
         startDate,
@@ -426,11 +430,12 @@ export function createAnalyticsRouter() {
         limit,
         sortBy,
         sortOrder,
+        reportType,
       });
 
       return c.json(success({
         data: reportData,
-        params: { startDate, endDate, groupBy, metrics, filters, limit, sortBy, sortOrder },
+        params: { startDate, endDate, groupBy, metrics, filters, limit, sortBy, sortOrder, reportType },
         queryTime: new Date().toISOString(),
       }));
     } catch (err) {

@@ -57,14 +57,14 @@ const VIEWPORTS: ViewportSpec[] = [
 const STATIC_ROUTES: RouteSpec[] = [
   { path: '#/dashboard', heading: 'Dashboard' },
   { path: '#/campaigns', heading: 'Campaign Management' },
-  { path: '#/rules', heading: 'Rule Management' },
+  { path: '#/rules', heading: 'Autorules' },
   { path: '#/platforms', heading: 'Platform Management' },
   { path: '#/landings', heading: 'Landing Pages' },
   { path: '#/offers', heading: 'Offers' },
   { path: '#/traffic-sources', heading: 'Traffic Sources' },
   { path: '#/affiliate-networks', heading: 'Affiliate Networks' },
   { path: '#/trends', heading: 'Trends' },
-  { path: '#/reports', heading: 'Reports Center' },
+  { path: '#/reports', heading: 'Report Builder' },
   { path: '#/audit', heading: 'Clicks Log' },
   { path: '#/conversions', heading: 'Conversions Log' },
   { path: '#/blacklist', heading: 'Blacklist' },
@@ -85,6 +85,7 @@ class RegressionMatrixSuite {
     try {
       await this.testWorkerHealth();
       await this.testApiSmoke();
+      await this.testHostedAssets();
       await this.testAllStaticRoutes();
       await this.testCampaignDetailIfAvailable();
       await this.testSettingsTabs();
@@ -243,6 +244,79 @@ class RegressionMatrixSuite {
     }
   }
 
+  private async testHostedAssets(): Promise<void> {
+    const unknownAssetId = process.env.HOSTED_ASSET_UNKNOWN_ID || 'e2e-hosted-asset-does-not-exist';
+    await this.record('api: unknown hosted asset returns 404 without SPA fallback', async () => {
+      const response = await this.request!.get(`/hosted-assets/${encodeURIComponent(unknownAssetId)}/content`);
+      if (response.status() !== 404) {
+        throw new Error(`Expected 404, got ${response.status()}`);
+      }
+      const body = await response.text();
+      if (body.includes('<div id="root"></div>')) {
+        throw new Error('Hosted asset route fell through to SPA index');
+      }
+    });
+
+    const configuredChecks = [
+      {
+        name: 'api: hosted HTML asset delivery',
+        id: process.env.HOSTED_ASSET_HTML_ID,
+        suffix: 'content',
+        verify: async (response: Awaited<ReturnType<APIRequestContext['get']>>) => {
+          if (response.status() !== 200) throw new Error(`Expected 200, got ${response.status()}`);
+          if (!(response.headers()['content-type'] || '').includes('text/html')) throw new Error('Expected HTML content type');
+          if (!(response.headers()['content-security-policy'] || '').includes('sandbox')) throw new Error('Expected sandbox CSP');
+          if (response.headers()['x-content-type-options'] !== 'nosniff') throw new Error('Expected nosniff header');
+        },
+      },
+      {
+        name: 'api: hosted ZIP archive delivery',
+        id: process.env.HOSTED_ASSET_ZIP_ID,
+        suffix: 'archive',
+        verify: async (response: Awaited<ReturnType<APIRequestContext['get']>>) => {
+          if (response.status() !== 200) throw new Error(`Expected 200, got ${response.status()}`);
+          if (!(response.headers()['content-type'] || '').includes('application/zip')) throw new Error('Expected ZIP content type');
+          if (!(response.headers()['content-disposition'] || '').match(/attachment/i)) throw new Error('Expected attachment disposition');
+        },
+      },
+      {
+        name: 'api: hosted R2-missing asset returns uncached 503',
+        id: process.env.HOSTED_ASSET_MISSING_R2_ID,
+        suffix: 'content',
+        verify: async (response: Awaited<ReturnType<APIRequestContext['get']>>) => {
+          if (response.status() !== 503) throw new Error(`Expected 503, got ${response.status()}`);
+          if (response.headers()['cache-control'] !== 'no-store') throw new Error('Expected no-store cache policy');
+        },
+      },
+    ] as const;
+
+    for (const check of configuredChecks) {
+      if (!check.id) {
+        this.recordSkip(check.name, 'fixture environment variable is not configured');
+        continue;
+      }
+      await this.record(check.name, async () => {
+        const response = await this.request!.get(`/hosted-assets/${encodeURIComponent(check.id!)}/${check.suffix}`);
+        await check.verify(response);
+      });
+    }
+
+    for (const viewport of VIEWPORTS) {
+      await this.record(`ui ${viewport.name}: hosted asset 404 has no horizontal overflow`, async () => {
+        const context = await this.createContext(viewport);
+        const page = await context.newPage();
+        try {
+          const response = await page.goto(`${WORKER_BASE_URL}/hosted-assets/${encodeURIComponent(unknownAssetId)}/content`);
+          if (response?.status() !== 404) throw new Error(`Expected 404, got ${response?.status()}`);
+          const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+          if (overflow) throw new Error('Hosted asset error response overflows viewport');
+        } finally {
+          await context.close();
+        }
+      });
+    }
+  }
+
   private async testAllStaticRoutes(): Promise<void> {
     for (const viewport of VIEWPORTS) {
       for (const route of STATIC_ROUTES) {
@@ -292,7 +366,10 @@ class RegressionMatrixSuite {
 
       try {
         await this.visit(page, `#/campaigns/${campaignId}`);
-        await this.waitForPageHeading(page, 'Campaign Details');
+        await page.getByRole('heading', { name: campaignName, exact: true }).first().waitFor({
+          state: 'visible',
+          timeout: 15000,
+        });
         await page.getByText(campaignName, { exact: true }).first().waitFor({ state: 'visible', timeout: 15000 });
       } finally {
         await context.close();
@@ -328,34 +405,22 @@ class RegressionMatrixSuite {
   }
 
   private async testReportsInteractions(): Promise<void> {
-    await this.record('ui desktop: reports switches types and toggles columns panel', async () => {
+    await this.record('ui desktop: reports applies a quick template and toggles builder panel', async () => {
       const context = await this.createContext(VIEWPORTS[0]);
       const page = await context.newPage();
 
       try {
         await this.visit(page, '#/reports');
-        await this.waitForPageHeading(page, 'Reports Center');
+        await this.waitForPageHeading(page, 'Report Builder');
 
-        const reportTypeSelect = page.locator('select').first();
+        await page.getByText('Geo Margin', { exact: true }).click();
+        await page.getByRole('button', { name: 'Expand', exact: true }).first().click();
+        await page.getByText('Country', { exact: true }).first().waitFor({ state: 'visible', timeout: 10000 });
+        await page.getByText('Spend', { exact: true }).first().waitFor({ state: 'visible', timeout: 10000 });
 
-        await reportTypeSelect.selectOption('conversion');
-        if ((await reportTypeSelect.inputValue()) !== 'conversion') {
-          throw new Error('Expected report type to switch to conversion');
-        }
-
-        await reportTypeSelect.selectOption('financial');
-        if ((await reportTypeSelect.inputValue()) !== 'financial') {
-          throw new Error('Expected report type to switch to financial');
-        }
-
-        await reportTypeSelect.selectOption('roi');
-        if ((await reportTypeSelect.inputValue()) !== 'roi') {
-          throw new Error('Expected report type to switch to roi');
-        }
-
-        await page.getByRole('button', { name: 'Columns' }).click();
-        await page.getByRole('button', { name: 'Campaign / Dimension', exact: true }).waitFor({ state: 'visible', timeout: 10000 });
-        await page.getByRole('button', { name: 'Spend', exact: true }).waitFor({ state: 'visible', timeout: 10000 });
+        const collapseButtons = page.getByRole('button', { name: 'Collapse', exact: true });
+        await collapseButtons.first().click();
+        await page.getByRole('button', { name: 'Expand', exact: true }).first().waitFor({ state: 'visible', timeout: 10000 });
       } finally {
         await context.close();
       }
@@ -379,8 +444,9 @@ class RegressionMatrixSuite {
 
         const emptyState = page.getByText('No conversions found.', { exact: true });
         if (await emptyState.isVisible().catch(() => false)) {
-          await page.getByRole('button', { name: /Export/i }).waitFor({ state: 'visible', timeout: 10000 });
-          const exportDisabled = await page.getByRole('button', { name: /Export/i }).isDisabled();
+          const exportButton = page.getByRole('button', { name: 'Export conversions log', exact: true });
+          await exportButton.waitFor({ state: 'visible', timeout: 10000 });
+          const exportDisabled = await exportButton.isDisabled();
           if (!exportDisabled) {
             throw new Error('Expected export button to stay disabled for empty conversions state');
           }
@@ -399,7 +465,10 @@ class RegressionMatrixSuite {
           await expandButtons.first().click();
           await page.getByText('Click ID', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
         } else {
-          await page.getByRole('button', { name: /Export/i }).waitFor({ state: 'visible', timeout: 10000 });
+          await page.getByRole('button', { name: 'Export conversions log', exact: true }).waitFor({
+            state: 'visible',
+            timeout: 10000,
+          });
         }
       } finally {
         await context.close();

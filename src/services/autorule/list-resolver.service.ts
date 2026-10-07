@@ -32,18 +32,33 @@ export interface AutoruleVisitContext {
   trafficSourceId?: string | null;
   ip?: string;
   asn?: number | string;
+  visitorId?: string;
   userAgent?: string;
   zoneId?: string;
   country?: string;
   city?: string;
   device?: string;
   isp?: string;
+  ispType?: string;
+  orgName?: string;
   connectionType?: string;
   fingerprint?: string;
+  verifiedBot?: boolean;
+  botScore?: number | null;
+  ja3?: string | null;
+  ja4?: string | null;
+  jsDetectionPassed?: boolean | null;
+  challengeState?: string | null;
+  tokenReplayState?: string | null;
+  campaignCount7d?: number;
+  visitorRepeat7d?: number;
+  ipRepeat7d?: number;
   utmSource?: string;
   utmCampaign?: string;
   browser?: string;
   subIds?: string[];
+  networkTags?: string[];
+  suspiciousSignals?: string[];
 }
 
 export class ListResolverService {
@@ -100,6 +115,14 @@ export class ListResolverService {
       country: 'country',
       device: 'device',
       isp: 'isp',
+      isp_type: 'isp_type',
+      visitor_id: 'visitor_id',
+      org_exact: 'org_exact',
+      org_keyword: 'org_keyword',
+      network_tag: 'network_tag',
+      allow_bias_org: 'allow_bias_org',
+      allow_bias_isp_type: 'allow_bias_isp_type',
+      suspicious_reason: 'suspicious_reason',
       fingerprint: 'fingerprint',
       rule: 'rule',
     };
@@ -182,6 +205,8 @@ export class ListResolverService {
         return this.toValues(ctx.ip);
       case 'asn':
         return this.toValues(String(ctx.asn ?? ''));
+      case 'visitor_id':
+        return this.toValues(ctx.visitorId);
       case 'user_agent':
         return this.toValues(ctx.userAgent);
       case 'zone':
@@ -193,6 +218,18 @@ export class ListResolverService {
         return this.toValues(ctx.device);
       case 'isp':
         return this.toValues(ctx.isp);
+      case 'isp_type':
+        return this.toValues(ctx.ispType);
+      case 'org_exact':
+      case 'org_keyword':
+      case 'allow_bias_org':
+        return this.toValues(ctx.orgName);
+      case 'allow_bias_isp_type':
+        return this.toValues(ctx.ispType);
+      case 'network_tag':
+        return (ctx.networkTags || []).map((item) => item.trim()).filter(Boolean);
+      case 'suspicious_reason':
+        return (ctx.suspiciousSignals || []).map((item) => item.trim()).filter(Boolean);
       case 'fingerprint':
         return this.toValues(ctx.fingerprint);
       case 'sub_id':
@@ -249,6 +286,11 @@ export class ListResolverService {
           const lower = value.toLowerCase();
           return lower === lowerRule || lower.includes(lowerRule);
         });
+      }
+      case 'org_keyword':
+      case 'allow_bias_org': {
+        const lowerRule = ruleValue.toLowerCase();
+        return values.some((value) => value.toLowerCase().includes(lowerRule));
       }
       default:
         return values.some((value) => value.toLowerCase() === ruleValue.toLowerCase());
@@ -324,6 +366,8 @@ export class ListResolverService {
         return this.toValues(this.currentContext?.ip);
       case 'asn':
         return this.toValues(this.currentContext?.asn !== undefined ? String(this.currentContext.asn) : undefined);
+      case 'visitorId':
+        return this.toValues(this.currentContext?.visitorId);
       case 'userAgent':
         return this.toValues(this.currentContext?.userAgent);
       case 'zoneId':
@@ -334,8 +378,50 @@ export class ListResolverService {
         return this.toValues(this.currentContext?.device);
       case 'isp':
         return this.toValues(this.currentContext?.isp);
+      case 'ispType':
+        return this.toValues(this.currentContext?.ispType);
+      case 'orgName':
+        return this.toValues(this.currentContext?.orgName);
       case 'fingerprint':
         return this.toValues(this.currentContext?.fingerprint);
+      case 'verifiedBot':
+        return this.toValues(
+          this.currentContext?.verifiedBot === undefined ? undefined : String(this.currentContext.verifiedBot)
+        );
+      case 'botScore':
+        return this.toValues(
+          this.currentContext?.botScore === undefined || this.currentContext?.botScore === null
+            ? undefined
+            : String(this.currentContext.botScore)
+        );
+      case 'ja3':
+        return this.toValues(this.currentContext?.ja3 ?? undefined);
+      case 'ja4':
+        return this.toValues(this.currentContext?.ja4 ?? undefined);
+      case 'jsDetectionPassed':
+        return this.toValues(
+          this.currentContext?.jsDetectionPassed === undefined || this.currentContext?.jsDetectionPassed === null
+            ? undefined
+            : String(this.currentContext.jsDetectionPassed)
+        );
+      case 'challengeState':
+        return this.toValues(this.currentContext?.challengeState ?? undefined);
+      case 'tokenReplayState':
+        return this.toValues(this.currentContext?.tokenReplayState ?? undefined);
+      case 'campaignCount7d':
+        return this.toValues(
+          this.currentContext?.campaignCount7d === undefined ? undefined : String(this.currentContext.campaignCount7d)
+        );
+      case 'visitorRepeat7d':
+        return this.toValues(
+          this.currentContext?.visitorRepeat7d === undefined ? undefined : String(this.currentContext.visitorRepeat7d)
+        );
+      case 'ipRepeat7d':
+        return this.toValues(
+          this.currentContext?.ipRepeat7d === undefined ? undefined : String(this.currentContext.ipRepeat7d)
+        );
+      case 'suspiciousSignal':
+        return (this.currentContext?.suspiciousSignals || []).map((item) => item.trim()).filter(Boolean);
       case 'utmSource':
         return this.toValues(this.currentContext?.utmSource);
       case 'utmCampaign':

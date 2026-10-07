@@ -53,6 +53,8 @@ export function createHostedAssetApiRouter(): Hono<{ Bindings: Env }> {
         byteSize: record.byteSize,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
+        storageBackend: record.storageBackend,
+        r2Key: record.r2Key,
         publicUrl: `${origin}/hosted-assets/${record.id}/content?mode=${record.mode}`,
         archiveUrl: record.mode === 'zip' ? `${origin}/hosted-assets/${record.id}/archive` : undefined,
       })

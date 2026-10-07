@@ -22,6 +22,12 @@ interface ClickData {
   offerId?: string;
   landingId?: string;
   trafficSourceId?: string;
+  visitorId?: string;
+  /** 事件类型：pageview=着陆页浏览，click=/go 出站点击（affiliate-landing 集成） */
+  type?: 'pageview' | 'click';
+  /** 维度归因：subId1=slot/offer 维度，subId2=A/B 实验组维度（affiliate-landing /go 上报） */
+  subId1?: string;
+  subId2?: string;
   ip: string;
   country?: string;
   region?: string;
@@ -111,6 +117,26 @@ export class TrackingStatsDO extends DurableObject<TrackingStatsEnv> {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_clicks_timestamp ON clicks(timestamp)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_clicks_campaign ON clicks(campaign_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_clicks_conversion ON clicks(is_conversion)`);
+
+    // 存量表平滑迁移：已有部署的 clicks 表缺 visitor_id/type 列，ALTER 失败（列已存在）属预期
+    for (const colDef of ['visitor_id TEXT', "type TEXT DEFAULT 'pageview'", 'sub_id_1 TEXT', 'sub_id_2 TEXT']) {
+      try {
+        this.db.exec(`ALTER TABLE clicks ADD COLUMN ${colDef}`);
+      } catch {
+        // 列已存在（新部署或已迁移），幂等跳过
+      }
+    }
+
+    // 访问时长聚合表（affiliate-landing beacon 上报，按 campaign 按天）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS duration_stats (
+        campaign_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        total_ms INTEGER DEFAULT 0,
+        count INTEGER DEFAULT 0,
+        PRIMARY KEY (campaign_id, day)
+      )
+    `);
   }
 
   private normalizeSqlRows<T extends Record<string, unknown>>(result: unknown): T[] {
@@ -153,6 +179,10 @@ export class TrackingStatsDO extends DurableObject<TrackingStatsEnv> {
           return await this.handleTrackClick(request);
         case '/track-conversion':
           return await this.handleTrackConversion(request);
+        case '/track-duration':
+          return await this.handleTrackDuration(request);
+        case '/landing-stats':
+          return await this.handleGetLandingStats(request);
         case '/stats':
           return await this.handleGetStats();
         case '/recent-clicks':
@@ -260,7 +290,7 @@ export class TrackingStatsDO extends DurableObject<TrackingStatsEnv> {
       console.warn('[TrackingStatsDO] Failed to update conversion:', e);
     }
     
-    return Response.json({ 
+    return Response.json({
       success: true,
       stats: {
         todayClicks: this.stats.todayClicks,
@@ -268,6 +298,176 @@ export class TrackingStatsDO extends DurableObject<TrackingStatsEnv> {
         todayRevenue: this.stats.todayRevenue,
       }
     });
+  }
+
+  /**
+   * 记录访问时长（affiliate-landing beacon 上报）
+   * 为什么直接落库不进 pendingWrites：量小（每访问至多 1 次）且需跨重启保留当日聚合
+   */
+  private async handleTrackDuration(request: Request): Promise<Response> {
+    const data = await request.json() as { campaignId?: string; durationMs?: number };
+    const campaignId = String(data.campaignId || '');
+    if (!campaignId) {
+      return Response.json({ success: false, error: 'campaignId required' }, { status: 400 });
+    }
+    // 钳制：页面挂后台/休眠一晚的异常值不应污染均值（上限 30 分钟）
+    const ms = Math.max(0, Math.min(Number(data.durationMs) || 0, 30 * 60 * 1000));
+    const day = new Date().toISOString().slice(0, 10);
+
+    this.db.exec(`
+      INSERT INTO duration_stats (campaign_id, day, total_ms, count)
+      VALUES (?, ?, ?, 1)
+      ON CONFLICT(campaign_id, day)
+      DO UPDATE SET total_ms = total_ms + excluded.total_ms, count = count + 1
+    `, campaignId, day, ms);
+
+    return Response.json({ success: true });
+  }
+
+  /**
+   * 着陆页统计（affiliate-landing S2S 拉取）：按 campaign 返回分时 UV/PV/点击/平均时长
+   * 为什么读前先 flush：内存队列最长延迟 5s 落库，先同步保证统计含最新数据
+   */
+  private async handleGetLandingStats(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const hours = Math.max(1, Math.min(parseInt(url.searchParams.get('hours') || '24', 10) || 24, 168));
+    const campaignFilter = (url.searchParams.get('campaignIds') || '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+
+    this.flushPendingWrites();
+    const since = Date.now() - hours * 3600 * 1000;
+
+    // 分 campaign 分小时分类型计数；UV 用 visitor_id 兜底 ip（存量行无 visitor_id）
+    const rows = this.normalizeSqlRows<{
+      campaign_id: string; hour_bucket: number; t: string; n: number; uv: number;
+    }>(this.db.exec(`
+      SELECT campaign_id,
+             (timestamp / 3600000) * 3600000 AS hour_bucket,
+             COALESCE(type, 'pageview') AS t,
+             COUNT(*) AS n,
+             COUNT(DISTINCT COALESCE(visitor_id, ip)) AS uv
+      FROM clicks
+      WHERE timestamp >= ?
+      GROUP BY campaign_id, hour_bucket, t
+    `, since));
+
+    // 整窗去重 UV（不可加指标，单独聚合，仅统计 pageview 事件）
+    const uvRows = this.normalizeSqlRows<{ campaign_id: string; uv: number }>(this.db.exec(`
+      SELECT campaign_id, COUNT(DISTINCT COALESCE(visitor_id, ip)) AS uv
+      FROM clicks
+      WHERE timestamp >= ? AND COALESCE(type, 'pageview') = 'pageview'
+      GROUP BY campaign_id
+    `, since));
+
+    const dayCutoff = new Date(Date.now() - hours * 3600 * 1000).toISOString().slice(0, 10);
+    const durRows = this.normalizeSqlRows<{ campaign_id: string; total_ms: number; cnt: number }>(this.db.exec(`
+      SELECT campaign_id, SUM(total_ms) AS total_ms, SUM(count) AS cnt
+      FROM duration_stats
+      WHERE day >= ?
+      GROUP BY campaign_id
+    `, dayCutoff));
+
+    // A/B 实验组分布：仅 click 事件且 sub_id_2 非空（pageview 不参与点击归因）
+    const variantRows = this.normalizeSqlRows<{ campaign_id: string; v: string; n: number }>(this.db.exec(`
+      SELECT campaign_id, sub_id_2 AS v, COUNT(*) AS n
+      FROM clicks
+      WHERE timestamp >= ? AND COALESCE(type, 'pageview') = 'click' AND COALESCE(sub_id_2, '') <> ''
+      GROUP BY campaign_id, v
+    `, since));
+    const variantsByCampaign = new Map<string, Record<string, number>>();
+    for (const r of variantRows) {
+      const m = variantsByCampaign.get(r.campaign_id) || {};
+      m[r.v] = (m[r.v] || 0) + r.n;
+      variantsByCampaign.set(r.campaign_id, m);
+    }
+
+    const totalUv = new Map<string, number>();
+    for (const r of uvRows) totalUv.set(r.campaign_id, r.uv);
+    const duration = new Map<string, { totalMs: number; count: number }>();
+    for (const r of durRows) duration.set(r.campaign_id, { totalMs: r.total_ms || 0, count: r.cnt || 0 });
+
+    // 按 campaign 归组
+    const grouped = new Map<string, { hourly: Map<number, { pv: number; uv: number; clicks: number }> }>();
+    for (const r of rows) {
+      if (campaignFilter.length > 0 && !campaignFilter.includes(r.campaign_id)) continue;
+      if (!grouped.has(r.campaign_id)) grouped.set(r.campaign_id, { hourly: new Map() });
+      const g = grouped.get(r.campaign_id)!;
+      const h = g.hourly.get(r.hour_bucket) || { pv: 0, uv: 0, clicks: 0 };
+      if (r.t === 'click') {
+        h.clicks += r.n;
+      } else {
+        h.pv += r.n;
+        h.uv += r.uv;
+      }
+      g.hourly.set(r.hour_bucket, h);
+    }
+
+    // 补齐空小时，保证前端 24h 柱状连续
+    const nowBucket = Math.floor(Date.now() / 3600000) * 3600000;
+    const campaigns: any[] = [];
+    for (const [campaignId, g] of grouped) {
+      const hourly: any[] = [];
+      let pv = 0, clicks = 0, uvSum = 0;
+      for (let i = hours - 1; i >= 0; i--) {
+        const bucket = nowBucket - i * 3600000;
+        const h = g.hourly.get(bucket);
+        hourly.push({
+          hour: new Date(bucket).toISOString(),
+          pv: h?.pv || 0,
+          uv: h?.uv || 0,
+          clicks: h?.clicks || 0,
+        });
+        pv += h?.pv || 0;
+        clicks += h?.clicks || 0;
+        uvSum += h?.uv || 0;
+      }
+      const d = duration.get(campaignId);
+      campaigns.push({
+        campaignId,
+        pv,
+        // 整窗真实去重 UV；分时 uv 为小时级去重（跨小时可重复），口径已在 UI 标注
+        uv: totalUv.get(campaignId) ?? uvSum,
+        clicks,
+        avgDurationMs: d && d.count > 0 ? Math.round(d.totalMs / d.count) : null,
+        durationSamples: d?.count || 0,
+        // A/B 实验组点击分布（如 {"A":3,"B":2}）；无实验数据时省略，零基线不破坏消费方
+        ...(variantsByCampaign.has(campaignId) ? { variants: variantsByCampaign.get(campaignId) } : {}),
+        hourly,
+      });
+    }
+
+    return Response.json({
+      campaigns,
+      hours,
+      dataSource: 'DO_SQLITE',
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * 将内存队列批量写入 SQLite（alarm 与 landing-stats 共用，含 visitor_id/type 列）
+   */
+  private flushPendingWrites(): void {
+    if (this.stats.pendingWrites.length === 0) return;
+    for (const click of this.stats.pendingWrites) {
+      this.db.exec(`
+        INSERT OR REPLACE INTO clicks
+        (id, campaign_id, campaign_name, offer_id, landing_id, traffic_source_id,
+         ip, country, region, city, device, browser, os, timestamp, is_conversion, revenue, cost,
+         visitor_id, type, sub_id_1, sub_id_2)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        click.id, click.campaignId, click.campaignName || '', click.offerId || '',
+        click.landingId || '', click.trafficSourceId || '',
+        click.ip, click.country || '', click.region || '', click.city || '',
+        click.device || '', click.browser || '', click.os || '',
+        click.timestamp, click.isConversion ? 1 : 0, click.revenue || 0, click.cost || 0,
+        click.visitorId || '', click.type || 'pageview',
+        click.subId1 || '', click.subId2 || ''
+      );
+    }
+    console.log(`[TrackingStatsDO] Persisted ${this.stats.pendingWrites.length} clicks`);
+    this.stats.pendingWrites = [];
   }
 
   /**
@@ -396,26 +596,8 @@ export class TrackingStatsDO extends DurableObject<TrackingStatsEnv> {
     console.log('[Alarm] Running batch persistence');
     
     try {
-      // 1. 批量写入 SQLite
-      if (this.stats.pendingWrites.length > 0) {
-        for (const click of this.stats.pendingWrites) {
-          this.db.exec(`
-            INSERT OR REPLACE INTO clicks 
-            (id, campaign_id, campaign_name, offer_id, landing_id, traffic_source_id,
-             ip, country, region, city, device, browser, os, timestamp, is_conversion, revenue, cost)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `, 
-            click.id, click.campaignId, click.campaignName || '', click.offerId || '', 
-            click.landingId || '', click.trafficSourceId || '',
-            click.ip, click.country || '', click.region || '', click.city || '',
-            click.device || '', click.browser || '', click.os || '',
-            click.timestamp, click.isConversion ? 1 : 0, click.revenue || 0, click.cost || 0
-          );
-        }
-        
-        console.log(`[Alarm] Persisted ${this.stats.pendingWrites.length} clicks`);
-        this.stats.pendingWrites = [];
-      }
+      // 1. 批量写入 SQLite（复用共享 flush：含 visitor_id/type 列）
+      this.flushPendingWrites();
       
       // 2. 更新小时统计到 SQLite
       for (const [hour, stats] of this.stats.hourlyStats) {

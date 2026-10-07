@@ -33,6 +33,8 @@ describe('TrafficRepository click-report governance metrics', () => {
     expect(getClickMetricSql('unique_clicks')).toContain('c.isUnique');
     expect(getClickMetricSql('blacklist_hits')).toContain("c.matchedRuleLayer");
     expect(getClickMetricSql('blacklist_hits')).toContain("'blacklist'");
+    expect(getClickMetricSql('blacklist_hits')).toContain("'block_exact'");
+    expect(getClickMetricSql('blacklist_hits')).toContain("'block_category_aggressive'");
     expect(getClickMetricSql('blacklist_rate')).toContain("c.matchedRuleLayer");
     expect(getClickMetricSql('rule_hits')).toContain("c.matchedRuleLayer");
     expect(getClickMetricSql('rule_hits')).toContain("'campaign'");
@@ -47,6 +49,8 @@ describe('TrafficRepository click-report governance metrics', () => {
     const clickColumns = new Set(['clickId', 'riskReasons', 'ruleMatched', 'ruleBlocked']);
 
     expect(getClickMetricSql('blacklist_hits', clickColumns)).toContain('governance_layer:blacklist');
+    expect(getClickMetricSql('blacklist_hits', clickColumns)).toContain('governance_layer:block_exact');
+    expect(getClickMetricSql('blacklist_hits', clickColumns)).toContain('governance_layer:block_category_aggressive');
     expect(getClickMetricSql('blacklist_hits', clickColumns)).not.toContain('matchedRuleLayer');
     expect(getClickMetricSql('rule_hits', clickColumns)).toContain('c.ruleMatched');
   });

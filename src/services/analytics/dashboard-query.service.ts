@@ -157,7 +157,7 @@ export class DashboardQueryService {
     const d1Result = await this.trafficRepo.getDashboardStats(range, campaignId);
     const d1ChartData = await this.trafficRepo.getChartData(range, campaignId);
     const metrics = this.formatD1Metrics(d1Result);
-    const chartData = this.formatD1ChartData(d1ChartData);
+    const chartData = this.formatChartData(d1ChartData);
     const entityStats = await this.getEntityStatsFromD1(range, campaignId);
 
     return {
@@ -238,7 +238,7 @@ export class DashboardQueryService {
     campaignId?: string
   ): Promise<ChartDataPoint[]> {
     const trendData = await this.trafficRepo.getTrend(campaignId || '', startDate, endDate);
-    return this.formatD1TrendData(trendData);
+    return this.formatChartData(trendData);
   }
 
   /**
@@ -332,23 +332,9 @@ export class DashboardQueryService {
   }
 
   /**
-   * 鏍煎紡鍖?D1 鍥捐〃鏁版嵁
+   * 格式化图表数据
    */
-  private formatD1ChartData(data: any[]): ChartDataPoint[] {
-    return data.map((item: any) => ({
-      date: item.date || '',
-      clicks: Number(item.clicks) || 0,
-      conversions: Number(item.conversions) || 0,
-      spend: Number(item.spend) || 0,
-      revenue: Number(item.revenue) || 0,
-      impressions: Number(item.impressions) || 0,
-    }));
-  }
-
-  /**
-   * 鏍煎紡鍖?D1 瓒嬪娍鏁版嵁
-   */
-  private formatD1TrendData(data: any[]): ChartDataPoint[] {
+  private formatChartData(data: any[]): ChartDataPoint[] {
     return data.map((item: any) => ({
       date: item.date || '',
       clicks: Number(item.clicks) || 0,
@@ -379,6 +365,8 @@ export class DashboardQueryService {
   ): Promise<any[]> {
     return this.getCustomReport({
       ...options,
+      // reportType 影响口径：conversion 语义强制实时 clicks 模式（traffic.repo 内判定）
+      reportType,
       metrics: options.metrics?.length ? options.metrics : this.getDefaultMetricsForReportType(reportType),
     });
   }

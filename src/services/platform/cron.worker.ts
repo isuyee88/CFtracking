@@ -4,6 +4,7 @@
  * @module services/platform/cron.worker
  */
 
+import { handlePostbackRetryCron } from '@/services/postback/postback-retry.consumer';
 import { PlatformTaskProcessor } from './task.processor';
 import { RuleEngine } from '@/services/rule/engine';
 import type { Env } from '@/config/env';
@@ -21,7 +22,14 @@ export async function handlePlatformCron(env: Env): Promise<void> {
     const ruleEngine = new RuleEngine(env);
     await ruleEngine.evaluateAllRules();
 
-    // 2. 处理生成的任务
+    // 2. 消费到期的 outbound postback retry，复用现有 5 分钟 Cron，不新增 Queue/Cron binding。
+    const retrySummary = await handlePostbackRetryCron(env, { limit: 100 });
+    console.log(
+      `Postback retry consumer completed. inspected=${retrySummary.inspected} sent=${retrySummary.sent} ` +
+      `retried=${retrySummary.retried} deadLettered=${retrySummary.deadLettered} skipped=${retrySummary.skipped}`,
+    );
+
+    // 3. 处理生成的任务
     console.log('Processing pending tasks...');
     const processor = new PlatformTaskProcessor(env);
     const processedCount = await processor.processPendingTasks(50);

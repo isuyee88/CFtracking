@@ -2,6 +2,12 @@
  * @fileoverview Report API 路由
  * @description 提供报告相关的 HTTP 接口
  * @module services/analytics/report.routes
+ *
+ * ⚠️ 数据口径说明：
+ * - 标准报表（/generate traffic 等）：直查 clicks + conversions 表，实时口径。
+ *   结果经 report_cache 缓存 5 分钟。
+ * - 当日实时 UV/PV 另有 GET /api/s2s/landing-stats（S2S 鉴权，直读 DO）。
+ * - trafficSummary 每日聚合表（2AM cron，T+1）仅供 Trends 等历史趋势视图。
  */
 
 import { Hono } from 'hono';
@@ -70,6 +76,91 @@ export function registerReportRoutes(): Hono<{ Bindings: Env }> {
     } catch (err) {
       return c.json(
         error(err instanceof Error ? err.message : 'Failed to generate comparison report', ERROR_CODES.INTERNAL_ERROR),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
+  // ==================== 报表预设 ====================
+
+  // 预设列表（?reportType= 可选过滤）
+  router.get('/presets', async (c) => {
+    const env = c.env;
+    try {
+      const reportType = c.req.query('reportType') || undefined;
+      const presets = await service(env).listReportPresets(reportType);
+      return c.json(success(presets));
+    } catch (err) {
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to list report presets', ERROR_CODES.INTERNAL_ERROR),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
+  // 创建预设
+  router.post('/presets', async (c) => {
+    const env = c.env;
+    try {
+      const body = await c.req.json();
+      const { name, reportType = 'traffic', config } = body || {};
+      if (!name || typeof name !== 'string' || !config) {
+        return c.json(
+          error('name and config are required', ERROR_CODES.VALIDATION),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+      if (name.length > 100) {
+        return c.json(
+          error('name too long (max 100)', ERROR_CODES.VALIDATION),
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+      const preset = await service(env).createReportPreset({ name, reportType, config });
+      return c.json(success(preset), HTTP_STATUS.CREATED);
+    } catch (err) {
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to create report preset', ERROR_CODES.INTERNAL_ERROR),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
+  // 更新预设
+  router.put('/presets/:id', async (c) => {
+    const env = c.env;
+    const id = c.req.param('id');
+    try {
+      const body = await c.req.json();
+      const preset = await service(env).updateReportPreset(id, {
+        name: body?.name,
+        config: body?.config,
+      });
+      if (!preset) {
+        return c.json(error('Preset not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      return c.json(success(preset));
+    } catch (err) {
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to update report preset', ERROR_CODES.INTERNAL_ERROR),
+        HTTP_STATUS.INTERNAL_ERROR
+      );
+    }
+  });
+
+  // 删除预设
+  router.delete('/presets/:id', async (c) => {
+    const env = c.env;
+    const id = c.req.param('id');
+    try {
+      const deleted = await service(env).deleteReportPreset(id);
+      if (!deleted) {
+        return c.json(error('Preset not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      return c.json(success({ deleted: true }));
+    } catch (err) {
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to delete report preset', ERROR_CODES.INTERNAL_ERROR),
         HTTP_STATUS.INTERNAL_ERROR
       );
     }

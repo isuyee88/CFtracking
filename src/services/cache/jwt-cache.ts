@@ -147,9 +147,5 @@ export class JWTCacheManager {
   }
 }
 
-// 定期清理过期缓存（每5分钟）
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    JWTCacheManager.getInstance().cleanup();
-  }, 300000);
-}
+// 为什么移除全局 setInterval 定期清理：Workers 禁止全局作用域异步操作（部署校验 10021）；
+// 过期项由 get() 惰性剔除、容量由 evictOldest() 兜底，无功能影响。

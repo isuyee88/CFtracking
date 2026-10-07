@@ -81,6 +81,10 @@ export function createTrackingScriptRouter() {
         clickId?: string;
         visitorId: string;
         url: string;
+        // 为什么白名单透传而非直接透传：/track 原语义即 pageview，affiliate-landing /go
+        // 302 点击复用此端点时必须区分口径（landing-stats 按 type 分列 pv/clicks），
+        // 未知值一律回落 pageview，防止伪造脏数据污染统计
+        type?: string;
         referrer?: string;
         userAgent?: string;
         subId1?: string;
@@ -110,12 +114,19 @@ export function createTrackingScriptRouter() {
         timestamp: string;
       }>();
 
-      const clientIP = c.req.header('CF-Connecting-IP') || 
-                       c.req.header('X-Forwarded-For') || 
+      const clientIP = c.req.header('CF-Connecting-IP') ||
+                       c.req.header('X-Forwarded-For') ||
                        'unknown';
 
       const clickId = body.clickId || generateClickId();
       const visitorId = body.visitorId || generateVisitorId();
+
+      // 为什么不用 new Date(body.timestamp).getTime()：数字字符串会得到 Invalid Date→NaN→落库 NULL
+      const eventTs = typeof body.timestamp === 'number' && Number.isFinite(body.timestamp)
+        ? body.timestamp
+        : (Date.parse(String(body.timestamp || '')) || Date.now());
+
+      const eventType = body.type === 'click' ? 'click' : 'pageview';
 
       const cf = c.req.raw.cf as any || {};
 
@@ -132,11 +143,17 @@ export function createTrackingScriptRouter() {
         body: JSON.stringify({
           id: clickId,
           campaignId: body.campaignId,
+          visitorId,
+          type: eventType,
+          // 维度归因透传：subId1=slot/offer，subId2=A/B 实验组（affiliate-landing /go），
+          // pageview 无维度时 undefined → DO 侧落 ''
+          subId1: body.subId1,
+          subId2: body.subId2,
           ip: clientIP,
           country: cf.country || '',
           city: cf.city || '',
           region: cf.region || '',
-          timestamp: new Date(body.timestamp || Date.now()).getTime(),
+          timestamp: eventTs,
           cost: 0,
         }),
       });
@@ -273,23 +290,43 @@ export function createTrackingScriptRouter() {
 
   /**
    * POST /update
-   * 更新点击参数
+   * 更新点击参数；durationMs 存在时记录访问时长（affiliate-landing beacon）
    * 完整路径: /api/tracking/script/update
+   * 为什么保持旧契约兼容：既有调用方只传 subIds+clickId，不能因本次改造被破坏
    */
   router.post('/update', async (c) => {
     try {
       const body = await c.req.json<{
         campaignId: string;
         clickId?: string;
-        subIds: Record<string, string>;
+        durationMs?: number;
+        subIds?: Record<string, string>;
       }>();
 
-      if (!body.campaignId || !body.clickId) {
-        return c.json(error('campaignId and clickId are required'), HTTP_STATUS.BAD_REQUEST);
+      if (!body.campaignId) {
+        return c.json(error('campaignId is required'), HTTP_STATUS.BAD_REQUEST);
+      }
+
+      let durationRecorded = false;
+      if (typeof body.durationMs === 'number' && body.durationMs > 0) {
+        const trackingDO = c.env.TRACKING_STATS_DO.get(
+          c.env.TRACKING_STATS_DO.idFromName('global-stats')
+        );
+        await trackingDO.fetch('http://do/track-duration', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            campaignId: body.campaignId,
+            clickId: body.clickId,
+            durationMs: body.durationMs,
+          }),
+        });
+        durationRecorded = true;
       }
 
       return c.json(success({
         updated: true,
+        durationRecorded,
         clickId: body.clickId,
         subIds: body.subIds
       }));

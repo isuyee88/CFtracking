@@ -154,8 +154,8 @@ app.post('/login', async (c) => {
     // 验证密码
     const inputPasswordHash = await hashPassword(password);
 
-    // 如果没有配置密码哈希，使用默认密码（仅开发环境）
-    const effectivePasswordHash = adminPasswordHash || '240be518fabd2724badc5ee725a9e8e314b5a3b053a4f0384d9f0203ce1956aeb7';
+    // 如果没有配置密码哈希，使用默认密码（仅开发环境）：SHA-256("admin123")
+    const effectivePasswordHash = adminPasswordHash || '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
     
     if (inputPasswordHash !== effectivePasswordHash) {
       console.warn(`[AUTH] 登录失败：密码错误 - 用户: ${username}`);

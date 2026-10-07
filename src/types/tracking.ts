@@ -130,7 +130,20 @@ export interface ClickData {
   ruleBlocked?: number;
   governanceAction?: 'allow' | 'block' | 'challenge' | 'redirect' | null;
   matchedRuleId?: string | null;
-  matchedRuleLayer?: 'flow' | 'campaign' | 'traffic_source' | 'global' | 'whitelist' | 'blacklist' | null;
+  matchedRuleLayer?:
+    | 'flow'
+    | 'campaign'
+    | 'traffic_source'
+    | 'global'
+    | 'whitelist'
+    | 'blacklist'
+    | 'allow_exact'
+    | 'allow_verified_bot'
+    | 'block_exact'
+    | 'block_category_aggressive'
+    | 'allow_bias'
+    | 'suspicious_queue'
+    | null;
   matchedRuleReason?: string | null;
 }
 

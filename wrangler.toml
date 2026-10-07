@@ -2,6 +2,9 @@ name = "cf-tracking"
 main = "src/index.ts"
 compatibility_date = "2024-12-30"
 
+[ai]
+binding = "AI"
+
 [vars]
 ENVIRONMENT = "production"
 JWT_EXPIRES_IN = "24h"
@@ -10,6 +13,8 @@ CACHE_TTL = "21600"
 ENABLED_REGIONS = "HK,CN"
 REALTIME_ENABLED = true
 SSE_ENABLED = true
+AI_OPTIMIZATION_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+AI_OPTIMIZATION_GATEWAY_ID = ""
 AUTH_MODE = "on"
 # 管理员用户名（非敏感信息）
 ADMIN_USERNAME = "admin"
@@ -38,6 +43,10 @@ migrations_dir = "schema/migrations"
 [[kv_namespaces]]
 binding = "UNIQUENESS_KV"
 id = "7cdc9c88e1964bff954835d91f98bd74"
+
+[[r2_buckets]]
+binding = "HOSTED_ASSETS_BUCKET"
+bucket_name = "cf-tracking-hosted-assets"
 
 # ⚠️ POSTBACK_KV 已废弃，迁移到D1数据库 (postback_idempotency表)
 # 原因: 免费账户KV写入限制1000次/天，无法满足生产需求
@@ -137,13 +146,18 @@ directory = "./frontend/dist"
 binding = "ASSETS"
 html_handling = "none"
 not_found_handling = "single-page-application"
-run_worker_first = true
+run_worker_first = ["/api/*", "/events/*", "/hosted-assets/*", "/health", "/sw.js", "/__bootstrap/*", "/__bootstrap-object/*"]
 
 [version_metadata]
 binding = "CF_VERSION_METADATA"
 
 [observability]
 enabled = true
+
+[triggers]
+# 为什么只保留 0 2 * * *：线上现值即此（2026-03-20 创建），账号 cron 免费配额已满（5/5），
+# 部署多加会触发 10072；其余缓存刷新走 Queues（CACHE_REFRESH_QUEUE）
+crons = ["0 2 * * *"]
 
 [dev]
 port = 12342

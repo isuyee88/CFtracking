@@ -10,6 +10,7 @@
  */
 
 export type LandingPageStatus = 'active' | 'paused' | 'deleted';
+export type LandingHostingMode = 'remote' | 'local' | 'zip';
 export type PreloadType = 'none' | 'preload' | 'action';
 export type FetchStatus = 'pending' | 'success' | 'failed' | 'expired';
 
@@ -18,6 +19,11 @@ export interface LandingPage {
   displayId?: string;
   name: string;
   url: string;
+  sourceSlug: string | null;
+  hostingMode: LandingHostingMode;
+  assetId: string | null;
+  manifestJson: string | null;
+  notes: string | null;
   status: LandingPageStatus;
   group: string;
   preloadType: PreloadType;
@@ -31,6 +37,11 @@ export interface LandingPage {
 export interface CreateLandingPageDTO {
   name: string;
   url: string;
+  sourceSlug?: string | null;
+  hostingMode?: LandingHostingMode;
+  assetId?: string | null;
+  manifestJson?: string | null;
+  notes?: string | null;
   group?: string;
   preloadType?: PreloadType;
   preloadEnabled?: boolean;
@@ -40,6 +51,11 @@ export interface CreateLandingPageDTO {
 export interface UpdateLandingPageDTO {
   name?: string;
   url?: string;
+  sourceSlug?: string | null;
+  hostingMode?: LandingHostingMode;
+  assetId?: string | null;
+  manifestJson?: string | null;
+  notes?: string | null;
   status?: LandingPageStatus;
   group?: string;
   preloadType?: PreloadType;

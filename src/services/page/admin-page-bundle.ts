@@ -39,7 +39,11 @@ export type AdminPageKey =
   | 'help'
   | 'blacklist'
   | 'whitelist'
-  | 'target';
+  | 'target'
+  | 'traffic-filter'
+  | 'custom-metrics'
+  | 'exported-reports'
+  | 'auto-optimization';
 
 export interface AdminPageMatch {
   page: AdminPageKey;
@@ -102,6 +106,10 @@ export function matchAdminPage(url: URL): AdminPageMatch | null {
     '/blacklist': 'blacklist',
     '/whitelist': 'whitelist',
     '/target': 'target',
+    '/traffic-filter': 'traffic-filter',
+    '/custom-metrics': 'custom-metrics',
+    '/exported-reports': 'exported-reports',
+    '/auto-optimization': 'auto-optimization',
   };
 
   if (pathname in staticPages) {
@@ -549,6 +557,23 @@ async function buildAuditBundle(env: Env, url: URL): Promise<AdminPageBundle> {
   const search = url.searchParams.get('search') || undefined;
   const status = url.searchParams.get('status') || 'all';
   const isUnique = status === 'unique' ? true : status === 'nonunique' ? false : undefined;
+  // 高级搜索参数：与 /api/clicks 同口径，避免 bootstrap 回源忽略筛选造成假数据
+  const advancedSubIds: Record<string, string | undefined> = {};
+  for (let index = 4; index <= 10; index += 1) {
+    advancedSubIds[`subId${index}`] = url.searchParams.get(`subId${index}`) || undefined;
+  }
+  const parseNumParam = (key: string): number | undefined => {
+    const raw = url.searchParams.get(key);
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+  const minCost = parseNumParam('minCost');
+  const maxCost = parseNumParam('maxCost');
+  const minRiskScore = parseNumParam('minRiskScore');
+  const maxRiskScore = parseNumParam('maxRiskScore');
 
   const [clicks, stats] = await Promise.all([
     clickRepo.findClicks({
@@ -562,6 +587,11 @@ async function buildAuditBundle(env: Env, url: URL): Promise<AdminPageBundle> {
       subId1,
       subId2,
       subId3,
+      ...advancedSubIds,
+      minCost,
+      maxCost,
+      minRiskScore,
+      maxRiskScore,
       country,
       device,
       browser,
@@ -621,6 +651,17 @@ async function buildAuditBundle(env: Env, url: URL): Promise<AdminPageBundle> {
       subId1: subId1 || '',
       subId2: subId2 || '',
       subId3: subId3 || '',
+      subId4: advancedSubIds.subId4 || '',
+      subId5: advancedSubIds.subId5 || '',
+      subId6: advancedSubIds.subId6 || '',
+      subId7: advancedSubIds.subId7 || '',
+      subId8: advancedSubIds.subId8 || '',
+      subId9: advancedSubIds.subId9 || '',
+      subId10: advancedSubIds.subId10 || '',
+      minCost: minCost ?? '',
+      maxCost: maxCost ?? '',
+      minRiskScore: minRiskScore ?? '',
+      maxRiskScore: maxRiskScore ?? '',
       country: country || '',
       device: device || '',
       browser: browser || '',
@@ -810,6 +851,10 @@ export async function buildAdminPageBundle(env: Env, url: URL, match: AdminPageM
       case 'reports':
       case 'help':
       case 'target':
+      case 'traffic-filter':
+      case 'custom-metrics':
+      case 'exported-reports':
+      case 'auto-optimization':
         return buildStaticBundle(match.page, env);
     }
   }

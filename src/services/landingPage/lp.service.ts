@@ -11,6 +11,50 @@ import type { LandingPage, CreateLandingPageDTO, UpdateLandingPageDTO } from '@/
 import { NotFoundError, DuplicateError } from '@/middleware/error';
 import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldLength';
+import { importLandingManifest } from './manifest-import';
+
+const LANDING_HOSTING_MODES = new Set(['remote', 'local', 'zip']);
+
+function normalizeHostingMode(value: unknown): 'remote' | 'local' | 'zip' {
+  const normalized = String(value ?? 'remote').trim().toLowerCase();
+  if (!LANDING_HOSTING_MODES.has(normalized)) {
+    throw new Error('landingPage.hostingMode must be remote, local or zip');
+  }
+  return normalized as 'remote' | 'local' | 'zip';
+}
+
+function normalizeManifest(value: unknown): string | null {
+  const normalized = normalizeOptionalString(value, {
+    field: 'landingPage.manifestJson',
+    maxLength: FIELD_MAX_LENGTH.LANDING_MANIFEST,
+  });
+  if (!normalized) {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(normalized);
+  } catch {
+    throw new Error('landingPage.manifestJson must be valid JSON');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('landingPage.manifestJson must be a JSON object');
+  }
+  return JSON.stringify(parsed);
+}
+
+function normalizeSourceSlug(value: unknown): string | null {
+  const normalized = normalizeOptionalString(value, {
+    field: 'landingPage.sourceSlug',
+    maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+  });
+  if (!normalized) return null;
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(normalized)) {
+    throw new Error('landingPage.sourceSlug must be a lowercase slug');
+  }
+  return normalized;
+}
 
 export class LandingPageService {
   private repo: LandingPageRepository;
@@ -31,6 +75,21 @@ export class LandingPageService {
     }
 
     return this.repo.create(normalizedData);
+  }
+
+  async importManifest(runtimeUrl: string, manifest: unknown): Promise<{ created: boolean; landingPage: LandingPage }> {
+    return importLandingManifest(
+      {
+        findBySourceSlug: (sourceSlug) => this.repo.findBySourceSlug(sourceSlug),
+        create: (data) => this.create(data),
+        update: async (id, data) => {
+          const landingPage = await this.update(id, data);
+          if (!landingPage) throw new NotFoundError('Landing Page not found');
+          return landingPage;
+        },
+      },
+      { runtimeUrl, manifest },
+    );
   }
 
   /**
@@ -151,8 +210,9 @@ export class LandingPageService {
   }
 
   private normalizeCreateInput(data: CreateLandingPageDTO): CreateLandingPageDTO {
+    const normalizedHostingMode = normalizeHostingMode(data.hostingMode);
     return {
-      ...data,
+        ...data,
       name: normalizeRequiredString(data.name as unknown, {
         field: 'landingPage.name',
         maxLength: FIELD_MAX_LENGTH.NAME,
@@ -161,10 +221,21 @@ export class LandingPageService {
         field: 'landingPage.url',
         maxLength: FIELD_MAX_LENGTH.URL,
       }),
+      sourceSlug: normalizeSourceSlug(data.sourceSlug),
       group: normalizeOptionalString(data.group as unknown, {
         field: 'landingPage.group',
         maxLength: FIELD_MAX_LENGTH.GROUP,
       }),
+      hostingMode: normalizedHostingMode,
+      assetId: normalizeOptionalString(data.assetId as unknown, {
+        field: 'landingPage.assetId',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      }) || null,
+      manifestJson: normalizeManifest(data.manifestJson),
+      notes: normalizeOptionalString(data.notes as unknown, {
+        field: 'landingPage.notes',
+        maxLength: FIELD_MAX_LENGTH.NOTES,
+      }) || null,
     };
   }
 
@@ -185,11 +256,37 @@ export class LandingPageService {
       });
     }
 
+    if (data.sourceSlug !== undefined) {
+      normalizedData.sourceSlug = normalizeSourceSlug(data.sourceSlug);
+    }
+
     if (data.group !== undefined) {
       normalizedData.group = normalizeOptionalString(data.group as unknown, {
         field: 'landingPage.group',
         maxLength: FIELD_MAX_LENGTH.GROUP,
       });
+    }
+
+    if (data.hostingMode !== undefined) {
+      normalizedData.hostingMode = normalizeHostingMode(data.hostingMode);
+    }
+
+    if (data.assetId !== undefined) {
+      normalizedData.assetId = normalizeOptionalString(data.assetId as unknown, {
+        field: 'landingPage.assetId',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      }) || null;
+    }
+
+    if (data.manifestJson !== undefined) {
+      normalizedData.manifestJson = normalizeManifest(data.manifestJson);
+    }
+
+    if (data.notes !== undefined) {
+      normalizedData.notes = normalizeOptionalString(data.notes as unknown, {
+        field: 'landingPage.notes',
+        maxLength: FIELD_MAX_LENGTH.NOTES,
+      }) || null;
     }
 
     return normalizedData;

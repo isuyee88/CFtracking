@@ -264,6 +264,12 @@ export interface PostbackSendConfig {
   timeoutMs: number;
   /** 最大重试次数 (默认3) */
   maxRetries: number;
+  /**
+   * 平台标识（已知平台名或自定义端点主机名）。
+   * 用途：专属适配器查找 + 幂等键 (conversionId, platform) 的端点维度，
+   * 缺失会导致多个回传端点互相顶掉（第二条被幂等拦截静默跳过）。
+   */
+  platform: string;
 }
 
 // ============================================================

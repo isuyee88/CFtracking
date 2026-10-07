@@ -154,6 +154,8 @@ export interface PlatformParamMapping {
   payoutParam: string;
   /** status/action_type参数名 */
   statusParam: string;
+  /** transaction_id / event_id parameter name used for conversion identity */
+  transactionIdParam?: string;
 }
 
 /**
@@ -165,20 +167,31 @@ export const PLATFORM_PARAM_MAPS: Record<string, PlatformParamMapping> = {
     clickIdParam: 'clickid',
     payoutParam: 'payout',
     statusParam: 'status',
+    transactionIdParam: 'transaction_id',
+  },
+  // OddBytes S2S 词表（来源：官方 postback 规格 postback.oddbytes.com/track?clickid=&payout=&status=）
+  oddbytes: {
+    clickIdParam: 'clickid',
+    payoutParam: 'payout',
+    statusParam: 'status',
+    transactionIdParam: 'transaction_id',
   },
   taboola: {
     clickIdParam: 'click-id',
     payoutParam: 'revenue',
     statusParam: 'action_type',
+    transactionIdParam: 'transaction_id',
   },
   facebook: {
     clickIdParam: 'event_id',
     payoutParam: 'value',
     statusParam: 'event_name',
+    transactionIdParam: 'event_id',
   },
   generic: {
     clickIdParam: 'clickid',
     payoutParam: 'payout',
     statusParam: 'status',
+    transactionIdParam: 'transaction_id',
   },
 };

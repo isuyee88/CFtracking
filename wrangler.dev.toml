@@ -2,6 +2,9 @@ name = "cf-tracking"
 main = "src/index.ts"
 compatibility_date = "2024-12-30"
 
+[ai]
+binding = "AI"
+
 [vars]
 ENVIRONMENT = "development"
 JWT_EXPIRES_IN = "24h"
@@ -10,6 +13,8 @@ CACHE_TTL = "21600"
 ENABLED_REGIONS = "HK,CN"
 REALTIME_ENABLED = true
 SSE_ENABLED = true
+AI_OPTIMIZATION_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+AI_OPTIMIZATION_GATEWAY_ID = ""
 AUTH_MODE = "off"
 CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
 
@@ -31,6 +36,10 @@ migrations_dir = "schema/migrations"
 [[kv_namespaces]]
 binding = "UNIQUENESS_KV"
 id = "7cdc9c88e1964bff954835d91f98bd74"
+
+[[r2_buckets]]
+binding = "HOSTED_ASSETS_BUCKET"
+bucket_name = "cf-tracking-hosted-assets-dev"
 
 [durable_objects]
 [[durable_objects.bindings]]
@@ -113,13 +122,16 @@ new_sqlite_classes = ["TrackingStatsDO"]
 directory = "./frontend/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/events/*", "/health", "/sw.js", "/__bootstrap/*", "/__bootstrap-object/*"]
+run_worker_first = ["/api/*", "/events/*", "/hosted-assets/*", "/health", "/sw.js", "/__bootstrap/*", "/__bootstrap-object/*"]
 
 [version_metadata]
 binding = "CF_VERSION_METADATA"
 
 [observability]
 enabled = true
+
+[triggers]
+crons = ["*/5 * * * *", "0 * * * *", "0 0 * * *", "0 2 * * *"]
 
 [dev]
 port = 12342

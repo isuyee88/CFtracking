@@ -19,7 +19,11 @@ import {
   Play,
   Pause,
   History,
-  Save
+  Save,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -46,6 +50,7 @@ import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstr
 import { FIELD_MAX_LENGTH } from '../constants/fieldConstraints';
 import { clampInput, truncateLabel } from '../utils/text';
 import type { TrafficSource } from '../types/trafficSource';
+import { RULE_BUILDER_FIELD_OPTIONS, formatGovernanceActionLabel, formatMatchedRuleReasonLabel, getConditionFieldMeta } from '../constants/governance-ui';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -84,9 +89,14 @@ interface BuilderGroupNode {
 interface BuilderConditionNode {
   id: string;
   kind: 'condition';
+  conditionType: 'comparison' | 'repeat_window';
   field: string;
   operator: BuilderOperator;
   value: string;
+  repeatSubject?: 'visitor' | 'ip' | 'either';
+  repeatCount?: string;
+  repeatCampaigns?: string;
+  repeatHours?: string;
 }
 
 interface BuilderActionState {
@@ -109,23 +119,6 @@ interface RuleFormState {
   conditionsDirty: boolean;
   actionsDirty: boolean;
 }
-
-const RULE_FIELD_OPTIONS = [
-  { value: 'campaignId', label: 'Campaign ID' },
-  { value: 'trafficSourceId', label: 'Traffic Source ID' },
-  { value: 'ip', label: 'IP' },
-  { value: 'asn', label: 'ASN' },
-  { value: 'country', label: 'Country' },
-  { value: 'city', label: 'City' },
-  { value: 'isp', label: 'ISP' },
-  { value: 'device', label: 'Device' },
-  { value: 'browser', label: 'Browser' },
-  { value: 'zoneId', label: 'Zone ID' },
-  { value: 'utmSource', label: 'UTM Source' },
-  { value: 'utmCampaign', label: 'UTM Campaign' },
-  { value: 'subIds', label: 'Sub IDs' },
-  { value: 'fingerprint', label: 'Fingerprint' },
-] as const;
 
 const RULE_OPERATOR_OPTIONS: Array<{ value: BuilderOperator; label: string }> = [
   { value: 'eq', label: 'Equals' },
@@ -153,9 +146,25 @@ function createConditionNode(): BuilderConditionNode {
   return {
     id: createBuilderId(),
     kind: 'condition',
+    conditionType: 'comparison',
     field: 'country',
     operator: 'eq',
     value: '',
+  };
+}
+
+function createRepeatWindowNode(): BuilderConditionNode {
+  return {
+    id: createBuilderId(),
+    kind: 'condition',
+    conditionType: 'repeat_window',
+    field: '',
+    operator: 'gte',
+    value: '',
+    repeatSubject: 'visitor',
+    repeatCount: '20',
+    repeatCampaigns: '3',
+    repeatHours: '24',
   };
 }
 
@@ -189,6 +198,18 @@ function parsePrimitiveValue(value: string, operator: BuilderOperator): string |
 
 function serializeBuilderNode(node: BuilderNode): RuleExpressionNode {
   if (node.kind === 'condition') {
+    if (node.conditionType === 'repeat_window') {
+      return {
+        fn: 'repeat_window_exceeded',
+        args: [
+          node.repeatSubject || 'visitor',
+          node.repeatCount || '20',
+          node.repeatCampaigns || '3',
+          node.repeatHours || '24',
+        ],
+      };
+    }
+
     if (node.operator === 'exists') {
       return { exists: [node.field] };
     }
@@ -232,6 +253,7 @@ function deserializeRuleConditions(payload: RuleConditionPayload | undefined): B
       children: payload.map((condition) => ({
         id: createBuilderId(),
         kind: 'condition',
+        conditionType: 'comparison',
         field: condition.metric,
         operator:
           condition.operator === '=='
@@ -283,31 +305,45 @@ function deserializeRuleConditions(payload: RuleConditionPayload | undefined): B
       };
     }
     if ('eq' in node) {
-      return { id: createBuilderId(), kind: 'condition', field: node.eq[0], operator: 'eq', value: String(node.eq[1] ?? '') };
+      return { id: createBuilderId(), kind: 'condition', conditionType: 'comparison', field: node.eq[0], operator: 'eq', value: String(node.eq[1] ?? '') };
     }
     if ('ne' in node) {
-      return { id: createBuilderId(), kind: 'condition', field: node.ne[0], operator: 'ne', value: String(node.ne[1] ?? '') };
+      return { id: createBuilderId(), kind: 'condition', conditionType: 'comparison', field: node.ne[0], operator: 'ne', value: String(node.ne[1] ?? '') };
     }
     if ('contains' in node) {
-      return { id: createBuilderId(), kind: 'condition', field: node.contains[0], operator: 'contains', value: String(node.contains[1] ?? '') };
+      return { id: createBuilderId(), kind: 'condition', conditionType: 'comparison', field: node.contains[0], operator: 'contains', value: String(node.contains[1] ?? '') };
     }
     if ('not_contains' in node) {
-      return { id: createBuilderId(), kind: 'condition', field: node.not_contains[0], operator: 'not_contains', value: String(node.not_contains[1] ?? '') };
+      return { id: createBuilderId(), kind: 'condition', conditionType: 'comparison', field: node.not_contains[0], operator: 'not_contains', value: String(node.not_contains[1] ?? '') };
     }
     if ('gt' in node) {
-      return { id: createBuilderId(), kind: 'condition', field: node.gt[0], operator: 'gt', value: String(node.gt[1] ?? '') };
+      return { id: createBuilderId(), kind: 'condition', conditionType: 'comparison', field: node.gt[0], operator: 'gt', value: String(node.gt[1] ?? '') };
     }
     if ('gte' in node) {
-      return { id: createBuilderId(), kind: 'condition', field: node.gte[0], operator: 'gte', value: String(node.gte[1] ?? '') };
+      return { id: createBuilderId(), kind: 'condition', conditionType: 'comparison', field: node.gte[0], operator: 'gte', value: String(node.gte[1] ?? '') };
     }
     if ('lt' in node) {
-      return { id: createBuilderId(), kind: 'condition', field: node.lt[0], operator: 'lt', value: String(node.lt[1] ?? '') };
+      return { id: createBuilderId(), kind: 'condition', conditionType: 'comparison', field: node.lt[0], operator: 'lt', value: String(node.lt[1] ?? '') };
     }
     if ('lte' in node) {
-      return { id: createBuilderId(), kind: 'condition', field: node.lte[0], operator: 'lte', value: String(node.lte[1] ?? '') };
+      return { id: createBuilderId(), kind: 'condition', conditionType: 'comparison', field: node.lte[0], operator: 'lte', value: String(node.lte[1] ?? '') };
     }
     if ('exists' in node) {
-      return { id: createBuilderId(), kind: 'condition', field: node.exists[0], operator: 'exists', value: '' };
+      return { id: createBuilderId(), kind: 'condition', conditionType: 'comparison', field: node.exists[0], operator: 'exists', value: '' };
+    }
+    if ('fn' in node && node.fn === 'repeat_window_exceeded') {
+      return {
+        id: createBuilderId(),
+        kind: 'condition',
+        conditionType: 'repeat_window',
+        field: '',
+        operator: 'gte',
+        value: '',
+        repeatSubject: (node.args?.[0] as 'visitor' | 'ip' | 'either') || 'visitor',
+        repeatCount: node.args?.[1] || '20',
+        repeatCampaigns: node.args?.[2] || '3',
+        repeatHours: node.args?.[3] || '24',
+      };
     }
     return createConditionNode();
   };
@@ -464,7 +500,8 @@ function supportsVisualConditionPayload(payload: RuleConditionPayload | undefine
       'gte' in node ||
       'lt' in node ||
       'lte' in node ||
-      'exists' in node
+      'exists' in node ||
+      ('fn' in node && node.fn === 'repeat_window_exceeded')
     );
   };
 
@@ -522,6 +559,50 @@ function createRuleFormStateFromRule(rule: Rule): RuleFormState {
   };
 }
 
+function SectionCard({
+  title,
+  description,
+  open = true,
+  onToggle,
+  actions,
+  children,
+}: {
+  title: string;
+  description: string;
+  open?: boolean;
+  onToggle?: () => void;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const canToggle = typeof onToggle === 'function';
+
+  return (
+    <section className="rounded-lg border border-border-default bg-surface">
+      <div className="flex flex-wrap items-start justify-between gap-3 p-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold uppercase tracking-widest text-fg-default">{title}</h2>
+            {canToggle ? (
+              <button
+                type="button"
+                onClick={onToggle}
+                className="inline-flex items-center gap-1 rounded border border-border-default px-2 py-1 text-[11px] font-medium text-fg-muted hover:bg-surface-container hover:text-fg-default"
+                aria-expanded={open}
+              >
+                {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                {open ? 'Collapse' : 'Expand'}
+              </button>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-fg-muted">{description}</p>
+        </div>
+        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      </div>
+      {open ? <div className="border-t border-border-default p-4 pt-0">{children}</div> : null}
+    </section>
+  );
+}
+
 export const RuleManagement = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentQuery = searchParams.toString();
@@ -561,9 +642,21 @@ export const RuleManagement = () => {
   const [testBenchRunning, setTestBenchRunning] = useState(false);
   const [testBenchResult, setTestBenchResult] = useState<RuleTestBenchResult | null>(null);
   const [testBenchError, setTestBenchError] = useState<string | null>(null);
+  const [showDeletedRules, setShowDeletedRules] = useState(
+    (bootstrap?.scope?.status as 'all' | 'active' | 'paused' | 'deleted' | undefined) === 'deleted'
+  );
+  const [showConflictDetection, setShowConflictDetection] = useState(false);
+  const [showTestBench, setShowTestBench] = useState(false);
   const skipInitialBootstrapLoadRef = useRef(Boolean(bootstrap?.data?.rules));
 
   const [formData, setFormData] = useState<RuleFormState>(() => createDefaultRuleFormState());
+  const winningRuleResult = useMemo(() => {
+    if (!testBenchResult?.winner) {
+      return null;
+    }
+
+    return testBenchResult.ruleResults.find((result) => result.ruleId === testBenchResult.winner?.ruleId) || null;
+  }, [testBenchResult]);
 
   const updateFormField = (field: 'name' | 'description', value: string) => {
     const maxLength = field === 'name' ? FIELD_MAX_LENGTH.RULE_NAME : FIELD_MAX_LENGTH.RULE_DESCRIPTION;
@@ -670,9 +763,26 @@ export const RuleManagement = () => {
     void loadScopeAssignments();
   }, [loadScopeAssignments]);
 
-  const filteredRules = rules.filter(rule => 
-    rule.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredRules = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    return rules.filter((rule) => {
+      const matchesSearch =
+        normalizedSearch.length === 0 ||
+        rule.name.toLowerCase().includes(normalizedSearch) ||
+        String(rule.description || '').toLowerCase().includes(normalizedSearch);
+      const matchesType = selectedType === 'all' || rule.type === selectedType;
+      const matchesStatus = selectedStatus === 'all' ? true : rule.status === selectedStatus;
+      const passesDeletedVisibility =
+        selectedStatus === 'deleted' || showDeletedRules ? true : rule.status !== 'deleted';
+
+      return matchesSearch && matchesType && matchesStatus && passesDeletedVisibility;
+    });
+  }, [rules, searchTerm, selectedType, selectedStatus, showDeletedRules]);
+
+  const activeRuleCount = useMemo(() => rules.filter((rule) => rule.status === 'active').length, [rules]);
+  const pausedRuleCount = useMemo(() => rules.filter((rule) => rule.status === 'paused').length, [rules]);
+  const deletedRuleCount = useMemo(() => rules.filter((rule) => rule.status === 'deleted').length, [rules]);
   const activeRules = useMemo(
     () => rules.filter((rule) => rule.enabled && rule.status === 'active'),
     [rules]
@@ -868,6 +978,94 @@ export const RuleManagement = () => {
 
   const renderBuilderNode = (node: BuilderNode, depth = 0): React.ReactNode => {
     if (node.kind === 'condition') {
+      if (node.conditionType === 'repeat_window') {
+        return (
+          <div
+            key={node.id}
+            className={cn(
+              'grid gap-3 rounded-lg border border-border-default bg-surface-container p-3',
+              depth > 0 ? 'ml-4' : ''
+            )}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-fg-muted">Repeat Window</div>
+                <div className="text-xs text-fg-muted">Detect repeated visits within a configurable hour window.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateConditionTree((current) => removeBuilderNode(current, node.id))}
+                className="rounded border border-border-default text-fg-muted hover:border-danger hover:text-danger"
+                title="Remove condition"
+              >
+                <Trash2 size={16} className="mx-auto" />
+              </button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              <select
+                value={node.repeatSubject || 'visitor'}
+                onChange={(event) =>
+                  updateConditionTree((current) =>
+                    updateBuilderTreeNode(current, node.id, (target) =>
+                      target.kind === 'condition'
+                        ? { ...target, repeatSubject: event.target.value as 'visitor' | 'ip' | 'either' }
+                        : target
+                    ) as BuilderGroupNode
+                  )
+                }
+                className="rounded border border-border-default bg-surface px-3 py-2 text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+              >
+                <option value="visitor">By Visitor</option>
+                <option value="ip">By IP</option>
+                <option value="either">Visitor or IP</option>
+              </select>
+              <input
+                type="number"
+                min="1"
+                value={node.repeatCount || '20'}
+                onChange={(event) =>
+                  updateConditionTree((current) =>
+                    updateBuilderTreeNode(current, node.id, (target) =>
+                      target.kind === 'condition' ? { ...target, repeatCount: event.target.value } : target
+                    ) as BuilderGroupNode
+                  )
+                }
+                placeholder="Min visits"
+                className="rounded border border-border-default bg-surface px-3 py-2 text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+              />
+              <input
+                type="number"
+                min="1"
+                value={node.repeatCampaigns || '3'}
+                onChange={(event) =>
+                  updateConditionTree((current) =>
+                    updateBuilderTreeNode(current, node.id, (target) =>
+                      target.kind === 'condition' ? { ...target, repeatCampaigns: event.target.value } : target
+                    ) as BuilderGroupNode
+                  )
+                }
+                placeholder="Min campaigns"
+                className="rounded border border-border-default bg-surface px-3 py-2 text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+              />
+              <input
+                type="number"
+                min="1"
+                value={node.repeatHours || '24'}
+                onChange={(event) =>
+                  updateConditionTree((current) =>
+                    updateBuilderTreeNode(current, node.id, (target) =>
+                      target.kind === 'condition' ? { ...target, repeatHours: event.target.value } : target
+                    ) as BuilderGroupNode
+                  )
+                }
+                placeholder="Window hours"
+                className="rounded border border-border-default bg-surface px-3 py-2 text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+              />
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div
           key={node.id}
@@ -876,6 +1074,12 @@ export const RuleManagement = () => {
             depth > 0 ? 'ml-4' : ''
           )}
         >
+          {(() => {
+            const fieldMeta = getConditionFieldMeta(node.field);
+            const placeholder = fieldMeta.placeholder || 'Value';
+
+            return (
+              <>
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),minmax(0,1fr),minmax(0,1fr),40px]">
             <select
               value={node.field}
@@ -888,7 +1092,7 @@ export const RuleManagement = () => {
               }
               className="rounded border border-border-default bg-surface px-3 py-2 text-sm text-fg-default focus:outline-none focus:border-accent-fg"
             >
-              {RULE_FIELD_OPTIONS.map((option) => (
+              {RULE_BUILDER_FIELD_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -924,9 +1128,9 @@ export const RuleManagement = () => {
                 No value needed
               </div>
             ) : (
-              <input
-                type="text"
-                value={node.value}
+                <input
+                  type="text"
+                  value={node.value}
                 onChange={(event) =>
                   updateConditionTree((current) =>
                     updateBuilderTreeNode(current, node.id, (target) =>
@@ -934,7 +1138,7 @@ export const RuleManagement = () => {
                     ) as BuilderGroupNode
                   )
                 }
-                placeholder="Value"
+                placeholder={placeholder}
                 className="rounded border border-border-default bg-surface px-3 py-2 text-sm text-fg-default focus:outline-none focus:border-accent-fg"
               />
             )}
@@ -947,6 +1151,10 @@ export const RuleManagement = () => {
               <Trash2 size={16} className="mx-auto" />
             </button>
           </div>
+          {fieldMeta.helpText ? <p className="text-[11px] text-fg-muted">{fieldMeta.helpText}</p> : null}
+              </>
+            );
+          })()}
         </div>
       );
     }
@@ -1025,6 +1233,14 @@ export const RuleManagement = () => {
               <Plus size={14} />
               Add Group
             </button>
+            <button
+              type="button"
+              onClick={() => updateConditionTree((current) => addBuilderChild(current, node.id, createRepeatWindowNode()))}
+              className="inline-flex items-center gap-2 rounded border border-border-default px-3 py-2 text-xs hover:bg-surface-container"
+            >
+              <Plus size={14} />
+              Add Repeat Window
+            </button>
           </div>
         )}
       </div>
@@ -1059,8 +1275,10 @@ export const RuleManagement = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-display font-bold text-fg-default">Autorules</h2>
-          <p className="text-sm text-fg-muted">Automate traffic governance and campaign optimization with reusable rules</p>
+          <h1 className="text-2xl font-display font-bold text-fg-default">Autorules</h1>
+          <p className="text-sm text-fg-muted">
+            Automate traffic governance and campaign optimization with reusable rules, scoped rollout, and repeat-window controls.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button 
@@ -1081,41 +1299,74 @@ export const RuleManagement = () => {
       </div>
 
       {/* Filters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 bg-surface p-4 rounded-lg border border-border-default">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" size={16} />
-          <input 
-            type="text" 
-            placeholder="Search rules..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg transition-all"
-          />
+      <div className="space-y-4 rounded-lg border border-border-default bg-surface p-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded border border-border-default bg-surface-container p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted">Active</div>
+            <div className="mt-2 text-2xl font-display font-bold text-fg-default">{activeRuleCount}</div>
+          </div>
+          <div className="rounded border border-border-default bg-surface-container p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted">Paused</div>
+            <div className="mt-2 text-2xl font-display font-bold text-fg-default">{pausedRuleCount}</div>
+          </div>
+          <div className="rounded border border-border-default bg-surface-container p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted">Deleted</div>
+            <div className="mt-2 text-2xl font-display font-bold text-fg-default">{deletedRuleCount}</div>
+          </div>
+          <div className="rounded border border-border-default bg-surface-container p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted">Visible Now</div>
+            <div className="mt-2 text-2xl font-display font-bold text-fg-default">{filteredRules.length}</div>
+          </div>
         </div>
-        <select
-          value={selectedType}
-          onChange={(e) => setSelectedType(e.target.value as typeof selectedType)}
-          className="px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
-        >
-          <option value="all">All Types</option>
-          <option value="campaign">Campaign</option>
-          <option value="platform">Platform</option>
-          <option value="flow">Flow</option>
-        </select>
-        <select
-          value={selectedStatus}
-          onChange={(e) => setSelectedStatus(e.target.value as typeof selectedStatus)}
-          className="px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
-        >
-          <option value="all">All Status</option>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="deleted">Deleted</option>
-        </select>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-fg-muted">{filteredRules.length} rules</span>
-          <div className="h-6 w-px bg-border-default" />
-          <span className="text-xs text-fg-muted">{total} total</span>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr),160px,160px,auto,auto]">
+          <div className="relative min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" size={16} />
+            <input 
+              type="text" 
+              placeholder="Search rules, descriptions, or signals..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg transition-all"
+            />
+          </div>
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value as typeof selectedType)}
+            className="px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+          >
+            <option value="all">All Types</option>
+            <option value="campaign">Campaign</option>
+            <option value="platform">Platform</option>
+            <option value="flow">Flow</option>
+          </select>
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value as typeof selectedStatus)}
+            className="px-3 py-2 bg-surface-container border border-border-default text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="deleted">Deleted</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setShowDeletedRules((current) => !current)}
+            className="inline-flex items-center justify-center gap-2 rounded border border-border-default px-3 py-2 text-sm text-fg-default hover:bg-surface-container"
+          >
+            {showDeletedRules ? <EyeOff size={16} /> : <Eye size={16} />}
+            {showDeletedRules ? 'Hide Deleted' : 'Show Deleted'}
+          </button>
+          <div className="flex items-center gap-2 text-xs text-fg-muted">
+            <span>{total} total</span>
+            <div className="h-6 w-px bg-border-default" />
+            <span>{filteredRules.length} visible</span>
+          </div>
+        </div>
+
+        <div className="rounded border border-border-default bg-surface-container px-3 py-3 text-xs text-fg-muted">
+          Deleted rules are deprioritized by default so active governance stays on the first screen. Switch them back on when auditing history.
         </div>
       </div>
 
@@ -1315,14 +1566,12 @@ export const RuleManagement = () => {
       </div>
 
       {/* Conflict Detection */}
-      <div className="bg-surface rounded-lg border border-border-default p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-widest text-fg-default">Rule Conflict Detection</h3>
-            <p className="text-xs text-fg-muted mt-1">
-              Detect duplicate priorities, overlapping conditions, and contradictory actions.
-            </p>
-          </div>
+      <SectionCard
+        title="Rule Conflict Detection"
+        description="Detect duplicate priorities, overlapping conditions, and contradictory actions."
+        open={showConflictDetection}
+        onToggle={() => setShowConflictDetection((current) => !current)}
+        actions={
           <button
             onClick={() => void loadConflictReport()}
             className="px-3 py-1.5 text-xs border border-border-default rounded hover:bg-surface-container"
@@ -1330,7 +1579,8 @@ export const RuleManagement = () => {
           >
             {conflictLoading ? 'Checking...' : 'Recheck'}
           </button>
-        </div>
+        }
+      >
         {conflictReport ? (
           <>
             <div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
@@ -1367,16 +1617,15 @@ export const RuleManagement = () => {
         ) : (
           <div className="text-sm text-fg-muted">Conflict report unavailable.</div>
         )}
-      </div>
+      </SectionCard>
 
       {/* Decision Path Test Bench */}
-      <div className="bg-surface rounded-lg border border-border-default p-4 space-y-3">
-        <div>
-          <h3 className="text-sm font-bold uppercase tracking-widest text-fg-default">Decision Path Test Bench</h3>
-          <p className="text-xs text-fg-muted mt-1">
-            Simulate runtime context to inspect matched rules and winning action path.
-          </p>
-        </div>
+      <SectionCard
+        title="Decision Path Test Bench"
+        description="Simulate runtime context to inspect matched rules and winning action path."
+        open={showTestBench}
+        onToggle={() => setShowTestBench((current) => !current)}
+      >
         <textarea
           rows={7}
           value={testBenchInput}
@@ -1402,12 +1651,17 @@ export const RuleManagement = () => {
               Winner:{' '}
               {testBenchResult.winner ? (
                 <span className="font-medium text-success">
-                  {testBenchResult.winner.ruleName} (P{testBenchResult.winner.priority}) → {testBenchResult.winner.actionSummary}
+                  {testBenchResult.winner.ruleName} (P{testBenchResult.winner.priority}) {'->'} {testBenchResult.winner.actionSummary}
                 </span>
               ) : (
                 <span className="text-warning">No rule matched.</span>
               )}
             </div>
+            {winningRuleResult?.reason ? (
+              <div className="text-xs text-fg-muted">
+                Why it won: {formatMatchedRuleReasonLabel(winningRuleResult.reason)}
+              </div>
+            ) : null}
             <div className="space-y-1">
               {testBenchResult.ruleResults.map((result) => (
                 <div
@@ -1421,16 +1675,29 @@ export const RuleManagement = () => {
                         : 'border-border-default bg-surface-container-low text-fg-default'
                   )}
                 >
-                  {result.ruleName} (P{result.priority}) - {result.skipped ? result.reason : result.matched ? 'Matched' : 'Not matched'}
+                  {result.ruleName} (P{result.priority}) - {result.skipped ? formatMatchedRuleReasonLabel(result.reason) : result.matched ? `Matched | ${formatMatchedRuleReasonLabel(result.reason)}` : 'Not matched'}
                 </div>
               ))}
             </div>
           </div>
         ) : null}
-      </div>
+      </SectionCard>
 
       {/* Rules Table */}
       <div className="bg-surface rounded-lg border border-border-default overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-default px-4 py-4">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-widest text-fg-default">Rules Table</h2>
+            <p className="mt-1 text-xs text-fg-muted">
+              Active governance stays front-and-center, while deleted history remains available on demand.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-fg-muted">
+            <span>{filteredRules.length} rows shown</span>
+            <div className="h-5 w-px bg-border-default" />
+            <span>{deletedRuleCount} deleted in history</span>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           {filteredRules.length > 0 ? (
             <table className="w-full text-left border-collapse">
@@ -1701,6 +1968,9 @@ export const RuleManagement = () => {
                   <pre className="max-h-40 overflow-auto rounded border border-border-default bg-surface-container px-3 py-2 text-[11px] text-fg-muted">
                     {ruleActionPreview}
                   </pre>
+                  <div className="mt-2 text-xs text-fg-muted">
+                    Governance outcome: {formatGovernanceActionLabel(formData.actionState.type)}
+                  </div>
                 </div>
               </div>
                

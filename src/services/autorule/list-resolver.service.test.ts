@@ -106,4 +106,56 @@ describe('ListResolverService country compatibility', () => {
       })
     ).resolves.toBe(true);
   });
+
+  it('matches the new aggressive org and visitor list types against the expanded visit context', async () => {
+    const service = new ListResolverService(
+      createEnvWithRows([
+        {
+          trafficSourceId: 'general',
+          type: 'visitor_id',
+          value: 'vid-123',
+          campaignId: null,
+          conditionMode: null,
+          conditionsJson: null,
+        },
+        {
+          trafficSourceId: 'general',
+          type: 'org_keyword',
+          value: 'cloud',
+          campaignId: null,
+          conditionMode: null,
+          conditionsJson: null,
+        },
+        {
+          trafficSourceId: 'general',
+          type: 'allow_bias_isp_type',
+          value: 'Fixed Line ISP',
+          campaignId: null,
+          conditionMode: null,
+          conditionsJson: null,
+        },
+      ])
+    );
+
+    await expect(
+      service.inBlacklist('visitor_id', {
+        campaignId: 'cmp1',
+        visitorId: 'vid-123',
+      })
+    ).resolves.toBe(true);
+
+    await expect(
+      service.inBlacklist('org_keyword', {
+        campaignId: 'cmp1',
+        orgName: 'Example Cloud Hosting LLC',
+      })
+    ).resolves.toBe(true);
+
+    await expect(
+      service.inWhitelist('allow_bias_isp_type', {
+        campaignId: 'cmp1',
+        ispType: 'Fixed Line ISP',
+      })
+    ).resolves.toBe(true);
+  });
 });

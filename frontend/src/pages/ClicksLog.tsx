@@ -31,6 +31,7 @@ import { GroupByFilter, filterByGroupBy } from '@/components/GroupByFilter';
 import type { GroupByState, GroupByOption } from '@/types/filter';
 import { createExportTask, fetchClicks, fetchClickStats, type ClickLogParams, type ClickStats } from '../services/api';
 import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
+import { formatGovernanceActionLabel, formatGovernanceSummary, formatMatchedRuleLayerLabel, formatMatchedRuleReasonLabel } from '../constants/governance-ui';
 
 // ============================================
 // 类型定义
@@ -79,6 +80,13 @@ type DimensionFilterKey =
   | 'subId1'
   | 'subId2'
   | 'subId3'
+  | 'subId4'
+  | 'subId5'
+  | 'subId6'
+  | 'subId7'
+  | 'subId8'
+  | 'subId9'
+  | 'subId10'
   | 'country'
   | 'device'
   | 'browser'
@@ -146,6 +154,13 @@ const CLICK_LOG_DIMENSION_FILTER_DEFS: Array<{ key: DimensionFilterKey; label: s
   { key: 'subId1', label: 'SubID1' },
   { key: 'subId2', label: 'SubID2' },
   { key: 'subId3', label: 'SubID3' },
+  { key: 'subId4', label: 'SubID4' },
+  { key: 'subId5', label: 'SubID5' },
+  { key: 'subId6', label: 'SubID6' },
+  { key: 'subId7', label: 'SubID7' },
+  { key: 'subId8', label: 'SubID8' },
+  { key: 'subId9', label: 'SubID9' },
+  { key: 'subId10', label: 'SubID10' },
   { key: 'country', label: 'Country' },
   { key: 'device', label: 'Device' },
   { key: 'browser', label: 'Browser' },
@@ -159,6 +174,23 @@ const CLICK_LOG_DIMENSION_FILTER_DEFS: Array<{ key: DimensionFilterKey; label: s
 ];
 
 const CLICK_LOG_FILTER_STORAGE_KEY = 'cftracking.clicks-log.filters.v1';
+
+type RangeFilterKey = 'minCost' | 'maxCost' | 'minRiskScore' | 'maxRiskScore';
+type RangeFiltersState = Partial<Record<RangeFilterKey, string>>;
+const RANGE_FILTER_DEFS: Array<{ key: RangeFilterKey; label: string }> = [
+  { key: 'minCost', label: 'Cost ≥' },
+  { key: 'maxCost', label: 'Cost ≤' },
+  { key: 'minRiskScore', label: 'Risk ≥' },
+  { key: 'maxRiskScore', label: 'Risk ≤' },
+];
+
+function parseRangeFilterValue(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 export const ClicksLog = () => {
   const navigate = useNavigate();
@@ -199,6 +231,26 @@ export const ClicksLog = () => {
     }
     return pickDimensionFilters(bootstrap?.scope);
   });
+  const [rangeFilters, setRangeFilters] = useState<RangeFiltersState>(() => {
+    const fromUrl = RANGE_FILTER_DEFS.reduce<RangeFiltersState>((acc, { key }) => {
+      const value = searchParams.get(key);
+      if (value) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+
+    return Object.keys(fromUrl).length > 0
+      ? fromUrl
+      : RANGE_FILTER_DEFS.reduce<RangeFiltersState>((acc, { key }) => {
+          const scopeValue = bootstrap?.scope?.[key];
+          if (typeof scopeValue === 'string' && scopeValue !== '') {
+            acc[key] = scopeValue;
+          }
+          return acc;
+        }, {});
+  });
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   
   const [groupByStates, setGroupByStates] = useState<GroupByState[]>([]);
   
@@ -242,6 +294,7 @@ export const ClicksLog = () => {
         statusFilter?: string;
         campaignIdFilter?: string;
         dimensionFilters?: DimensionFiltersState;
+        rangeFilters?: RangeFiltersState;
         groupByStates?: GroupByState[];
         pageSize?: number;
         dateRange?: DateRangeValue;
@@ -258,6 +311,9 @@ export const ClicksLog = () => {
       }
       if (Object.keys(initialDimensionFiltersFromUrl).length === 0 && persisted.dimensionFilters) {
         setDimensionFilters(persisted.dimensionFilters);
+      }
+      if (typeof persisted.rangeFilters === 'object' && persisted.rangeFilters !== null) {
+        setRangeFilters((current) => (Object.keys(current).length > 0 ? current : persisted.rangeFilters as RangeFiltersState));
       }
       if (!initialPageSizeFromUrl && typeof persisted.pageSize === 'number' && persisted.pageSize > 0) {
         setPagination((current) => ({ ...current, pageSize: persisted.pageSize }));
@@ -286,6 +342,7 @@ export const ClicksLog = () => {
           statusFilter,
           campaignIdFilter,
           dimensionFilters,
+          rangeFilters,
           groupByStates,
           pageSize: pagination.pageSize,
           dateRange,
@@ -294,7 +351,7 @@ export const ClicksLog = () => {
     } catch {
       // Ignore localStorage failures in restricted contexts.
     }
-  }, [campaignIdFilter, dateRange, dimensionFilters, groupByStates, pagination.pageSize, searchQuery, statusFilter]);
+  }, [campaignIdFilter, dateRange, dimensionFilters, groupByStates, pagination.pageSize, rangeFilters, searchQuery, statusFilter]);
 
   const loadClicks = useCallback(async () => {
     setLoading(true);
@@ -306,6 +363,10 @@ export const ClicksLog = () => {
         pageSize: pagination.pageSize,
         campaignId: campaignIdFilter || undefined,
         ...dimensionFilters,
+        minCost: parseRangeFilterValue(rangeFilters.minCost),
+        maxCost: parseRangeFilterValue(rangeFilters.maxCost),
+        minRiskScore: parseRangeFilterValue(rangeFilters.minRiskScore),
+        maxRiskScore: parseRangeFilterValue(rangeFilters.maxRiskScore),
         search: searchQuery || undefined,
         startDate: dateRange.startDate.split('T')[0],
         endDate: dateRange.endDate.split('T')[0],
@@ -330,7 +391,15 @@ export const ClicksLog = () => {
       CLICK_LOG_DIMENSION_FILTER_DEFS.forEach(({ key }) => {
         const value = params[key];
         if (value) {
-          nextUrl.searchParams.set(key, value);
+          nextUrl.searchParams.set(key, String(value));
+        } else {
+          nextUrl.searchParams.delete(key);
+        }
+      });
+      RANGE_FILTER_DEFS.forEach(({ key }) => {
+        const value = rangeFilters[key];
+        if (value && value.trim()) {
+          nextUrl.searchParams.set(key, value.trim());
         } else {
           nextUrl.searchParams.delete(key);
         }
@@ -385,7 +454,7 @@ export const ClicksLog = () => {
     } finally {
       setLoading(false);
     }
-  }, [campaignIdFilter, currentQuery, dateRange, dimensionFilters, pagination.page, pagination.pageSize, searchQuery, setSearchParams, statusFilter]);
+  }, [campaignIdFilter, currentQuery, dateRange, dimensionFilters, pagination.page, pagination.pageSize, rangeFilters, searchQuery, setSearchParams, statusFilter]);
 
   useEffect(() => {
     if (skipInitialBootstrapLoadRef.current) {
@@ -414,7 +483,7 @@ export const ClicksLog = () => {
 
   const handleExport = () => {
     const csvContent = [
-      ['Click ID', 'Timestamp', 'Campaign', 'Traffic Source', 'Zone ID', 'UTM Source', 'IP', 'Country', 'Device', 'Browser', 'OS', 'ISP', 'Visitor ID', 'Risk Score', 'Governance Action'].join(','),
+      ['Click ID', 'Timestamp', 'Campaign', 'Traffic Source', 'Zone ID', 'UTM Source', 'IP', 'Country', 'Device', 'Browser', 'OS', 'ISP', 'Visitor ID', 'Risk Score', 'Governance Action', 'Governance Summary'].join(','),
       ...displayedClicks.map(click => [
         click.clickId,
         click.timestamp,
@@ -431,6 +500,11 @@ export const ClicksLog = () => {
         click.visitorId,
         click.riskScore ?? '',
         click.governanceAction || '',
+        formatGovernanceSummary({
+          action: click.governanceAction,
+          layer: click.matchedRuleLayer,
+          reason: click.matchedRuleReason,
+        }),
       ].join(','))
     ].join('\n');
 
@@ -496,6 +570,12 @@ export const ClicksLog = () => {
         items.push({ key: `dimension:${key}`, label, value: String(value).trim() });
       }
     });
+    RANGE_FILTER_DEFS.forEach(({ key, label }) => {
+      const value = rangeFilters[key];
+      if (value && value.trim()) {
+        items.push({ key: `range:${key}`, label, value: value.trim() });
+      }
+    });
     if (statusFilter !== 'all') {
       items.push({
         key: 'status',
@@ -521,7 +601,17 @@ export const ClicksLog = () => {
     });
 
     return items;
-  }, [campaignIdFilter, dateRange.endDate, dateRange.startDate, dimensionFilters, groupByStates, searchQuery, statusFilter]);
+  }, [campaignIdFilter, dateRange.endDate, dateRange.startDate, dimensionFilters, groupByStates, rangeFilters, searchQuery, statusFilter]);
+
+  const advancedFilterCount = useMemo(
+    () =>
+      RANGE_FILTER_DEFS.filter(({ key }) => (rangeFilters[key] || '').trim()).length +
+      [4, 5, 6, 7, 8, 9, 10].filter((index) => {
+        const key = `subId${index}` as DimensionFilterKey;
+        return (dimensionFilters[key] || '').trim();
+      }).length,
+    [dimensionFilters, rangeFilters]
+  );
 
   const removeActiveFilter = useCallback((key: string) => {
     if (key === 'search') {
@@ -549,6 +639,16 @@ export const ClicksLog = () => {
       setPagination((prev) => ({ ...prev, page: 1 }));
       return;
     }
+    if (key.startsWith('range:')) {
+      const rangeKey = key.replace('range:', '') as RangeFilterKey;
+      setRangeFilters((current) => {
+        const next = { ...current };
+        delete next[rangeKey];
+        return next;
+      });
+      setPagination((prev) => ({ ...prev, page: 1 }));
+      return;
+    }
     if (key === 'date') {
       setDateRange(getDateRange(7));
       setPagination((prev) => ({ ...prev, page: 1 }));
@@ -565,6 +665,7 @@ export const ClicksLog = () => {
     setStatusFilter('all');
     setCampaignIdFilter('');
     setDimensionFilters({});
+    setRangeFilters({});
     setGroupByStates([]);
     setDateRange(getDateRange(7));
     setPagination((prev) => ({ ...prev, page: 1 }));
@@ -754,6 +855,74 @@ export const ClicksLog = () => {
           ))}
         </div>
         
+        {/* Advanced 高级筛选（subId4-10 + cost/risk 数值范围） */}
+        <div className="pt-2 border-t border-border-default">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedFilters((current) => !current)}
+            className="flex items-center gap-2 text-sm text-fg-muted hover:text-fg-default"
+            aria-expanded={showAdvancedFilters}
+          >
+            {showAdvancedFilters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            Advanced Filters
+            {advancedFilterCount > 0 && (
+              <span className="rounded-sm bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                {advancedFilterCount}
+              </span>
+            )}
+          </button>
+          {showAdvancedFilters && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {RANGE_FILTER_DEFS.map(({ key, label }) => (
+                <input
+                  key={key}
+                  type="text"
+                  inputMode="decimal"
+                  value={rangeFilters[key] || ''}
+                  onChange={(event) => {
+                    setRangeFilters((current) => {
+                      const next = { ...current };
+                      if (event.target.value.trim()) {
+                        next[key] = event.target.value.trim();
+                      } else {
+                        delete next[key];
+                      }
+                      return next;
+                    });
+                    setPagination((current) => ({ ...current, page: 1 }));
+                  }}
+                  placeholder={label}
+                  className="w-full bg-surface-container border border-border-default rounded px-3 py-2 text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+                />
+              ))}
+              {[4, 5, 6, 7, 8, 9, 10].map((index) => {
+                const key = `subId${index}` as DimensionFilterKey;
+                return (
+                  <input
+                    key={key}
+                    type="text"
+                    value={dimensionFilters[key] || ''}
+                    onChange={(event) => {
+                      setDimensionFilters((current) => {
+                        const next = { ...current };
+                        if (event.target.value.trim()) {
+                          next[key] = event.target.value.trim();
+                        } else {
+                          delete next[key];
+                        }
+                        return next;
+                      });
+                      setPagination((current) => ({ ...current, page: 1 }));
+                    }}
+                    placeholder={`SubID${index}`}
+                    className="w-full bg-surface-container border border-border-default rounded px-3 py-2 text-sm text-fg-default focus:outline-none focus:border-accent-fg"
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Group By 筛选 */}
         <div className="pt-2 border-t border-border-default">
           <GroupByFilter
@@ -979,15 +1148,25 @@ export const ClicksLog = () => {
                                   </div>
                                   <div className="bg-surface p-2 rounded border border-border-default">
                                     <p className="text-fg-muted text-xs">Governance Action</p>
-                                    <p className="text-fg-default">{click.governanceAction || '-'}</p>
+                                    <p className="text-fg-default">{formatGovernanceActionLabel(click.governanceAction)}</p>
                                   </div>
                                   <div className="bg-surface p-2 rounded border border-border-default">
                                     <p className="text-fg-muted text-xs">Matched Rule Layer</p>
-                                    <p className="text-fg-default">{click.matchedRuleLayer || '-'}</p>
+                                    <p className="text-fg-default">{formatMatchedRuleLayerLabel(click.matchedRuleLayer)}</p>
                                   </div>
                                   <div className="bg-surface p-2 rounded border border-border-default md:col-span-2">
                                     <p className="text-fg-muted text-xs">Matched Rule Reason</p>
-                                    <p className="text-fg-default break-all">{click.matchedRuleReason || '-'}</p>
+                                    <p className="text-fg-default break-all">{formatMatchedRuleReasonLabel(click.matchedRuleReason)}</p>
+                                  </div>
+                                  <div className="bg-surface p-2 rounded border border-border-default md:col-span-2">
+                                    <p className="text-fg-muted text-xs">Governance Summary</p>
+                                    <p className="text-fg-default break-all">
+                                      {formatGovernanceSummary({
+                                        action: click.governanceAction,
+                                        layer: click.matchedRuleLayer,
+                                        reason: click.matchedRuleReason,
+                                      })}
+                                    </p>
                                   </div>
                                   <div className="bg-surface p-2 rounded border border-border-default">
                                     <p className="text-fg-muted text-xs">Fingerprint</p>

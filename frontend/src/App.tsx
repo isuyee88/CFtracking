@@ -31,6 +31,7 @@ const loadSettings = () => import('./pages/Settings');
 const loadTrends = () => import('./pages/Trends');
 const loadBlacklist = () => import('./pages/Blacklist');
 const loadWhitelist = () => import('./pages/Whitelist');
+const loadTrafficFilter = () => import('./pages/TrafficFilter');
 const loadTarget = () => import('./pages/Target');
 const loadHelpCenter = () => import('./pages/HelpCenter');
 const loadExportedReports = () => import('./pages/ExportedReports');
@@ -55,6 +56,7 @@ const Settings = lazy(loadSettings);
 const Trends = lazy(loadTrends);
 const Blacklist = lazy(loadBlacklist);
 const Whitelist = lazy(loadWhitelist);
+const TrafficFilterPage = lazy(loadTrafficFilter);
 const TargetPage = lazy(loadTarget);
 const HelpCenter = lazy(loadHelpCenter);
 const ExportedReports = lazy(loadExportedReports);
@@ -72,6 +74,7 @@ const routePreloadMap: Record<string, () => Promise<any>> = {
   '/reports': loadReports,
   '/audit': loadClicksLog,
   '/trends': loadTrends,
+  '/traffic-filter': loadTrafficFilter,
 };
 
 function RouteReadyBoundary({
@@ -204,7 +207,7 @@ export default function App({ initialData, onReady }: AppProps) {
             <Route path="reports" element={renderPage(<Reports />)} />
             <Route path="exported-reports" element={renderPage(<ExportedReports />)} />
             <Route path="custom-metrics" element={renderPage(<CustomMetrics />)} />
-            <Route path="traffic-filter" element={<Navigate to="/blacklist" replace />} />
+            <Route path="traffic-filter" element={renderPage(<TrafficFilterPage />)} />
             <Route path="audit" element={renderPage(<ClicksLog />)} />
             <Route path="conversions" element={renderPage(<ConversionsLog />)} />
             <Route path="blacklist" element={renderPage(<Blacklist />)} />

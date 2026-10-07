@@ -102,17 +102,17 @@ export class PostbackLogRepository extends BaseRepository<PostbackLog> {
             success INTEGER NOT NULL DEFAULT 0,
             errorMessage TEXT,
             retryCount INTEGER NOT NULL DEFAULT 0,
-            createdAt TEXT NOT NULL,
-
-            -- 索引优化查询性能
-            INDEX idx_postback_conversionId (conversionId),
-            INDEX idx_postback_clickId (clickId),
-            INDEX idx_postback_campaignId (campaignId),
-            INDEX idx_postback_platform (platform),
-            INDEX idx_postback_success (success),
-            INDEX idx_postback_createdAt (createdAt),
-            INDEX idx_postback_taskId (taskId)
+            createdAt TEXT NOT NULL
           )
+        `);
+        await this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_postback_conversionId ON postback_logs(conversionId);
+          CREATE INDEX IF NOT EXISTS idx_postback_clickId ON postback_logs(clickId);
+          CREATE INDEX IF NOT EXISTS idx_postback_campaignId ON postback_logs(campaignId);
+          CREATE INDEX IF NOT EXISTS idx_postback_platform ON postback_logs(platform);
+          CREATE INDEX IF NOT EXISTS idx_postback_success ON postback_logs(success);
+          CREATE INDEX IF NOT EXISTS idx_postback_createdAt ON postback_logs(createdAt);
+          CREATE INDEX IF NOT EXISTS idx_postback_taskId ON postback_logs(taskId);
         `);
         console.log('[PostbackLogRepository] postback_logs table created successfully');
       }
@@ -435,8 +435,59 @@ export class PostbackLogRepository extends BaseRepository<PostbackLog> {
   }
 
   /**
-   * 更新Postback日志状态 (重试后更新)
-   *
+   * 查询仍处于 delivery retry 状态、可供人工重试的日志。
+   * 只返回同时存在 retry delivery state 的失败日志，避免把历史失败日志
+   * 当作可发送任务，绕过幂等状态机。
+   */
+  async findRetryableLogs(
+    limit: number = 100,
+    conversionId?: string,
+    platform?: string,
+  ): Promise<PostbackLog[]> {
+    await this.ensureTable();
+
+    const conditions = ["pid.status = 'retry'"];
+    const values: string[] = [];
+    if (conversionId) {
+      conditions.push('l.conversionId = ?');
+      values.push(conversionId);
+    }
+    if (platform) {
+      conditions.push('l.platform = ?');
+      values.push(platform);
+    }
+
+    const result = await this.db
+      .prepare(`
+        SELECT
+          l.id, l.taskId, l.conversionId, l.clickId, l.campaignId,
+          l.platform, l.url, l.method, l.requestHeaders, l.requestBody,
+          l.statusCode, l.responseBody, l.latencyMs, l.success,
+          l.errorMessage, l.retryCount, l.createdAt
+        FROM postback_logs l
+        INNER JOIN postback_idempotency pid
+          ON pid.conversion_id = l.conversionId AND pid.platform = l.platform
+        WHERE ${conditions.join(' AND ')}
+          AND l.id = (
+            SELECT latest.id
+            FROM postback_logs latest
+            WHERE latest.conversionId = l.conversionId AND latest.platform = l.platform
+            ORDER BY latest.createdAt DESC, latest.id DESC
+            LIMIT 1
+          )
+        ORDER BY l.createdAt DESC, l.id DESC
+        LIMIT ?
+      `)
+      .bind(...values, Math.max(1, Math.min(100, limit)))
+      .all();
+
+    return (result.results as Array<Record<string, unknown>>).map((row) => ({
+      ...row,
+      success: row.success === 1,
+    })) as PostbackLog[];
+  }
+
+  /**
    * @param logId 日志ID
    * @param status 新的状态描述 (如 'retried', 'success_after_retry')
    * @param statusCode HTTP响应状态码 (可选)

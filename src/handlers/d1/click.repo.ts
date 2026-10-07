@@ -31,6 +31,17 @@ export interface ClickQueryParams {
   subId1?: string;
   subId2?: string;
   subId3?: string;
+  subId4?: string;
+  subId5?: string;
+  subId6?: string;
+  subId7?: string;
+  subId8?: string;
+  subId9?: string;
+  subId10?: string;
+  minCost?: number;
+  maxCost?: number;
+  minRiskScore?: number;
+  maxRiskScore?: number;
   country?: string;
   device?: string;
   browser?: string;
@@ -235,6 +246,17 @@ export class ClickRepository extends BaseRepository<ClickData> {
       subId1,
       subId2,
       subId3,
+      subId4,
+      subId5,
+      subId6,
+      subId7,
+      subId8,
+      subId9,
+      subId10,
+      minCost,
+      maxCost,
+      minRiskScore,
+      maxRiskScore,
       country,
       device,
       browser,
@@ -293,6 +315,38 @@ export class ClickRepository extends BaseRepository<ClickData> {
     if (subId3) {
       conditions.push('c.subId3 = ?');
       values.push(subId3);
+    }
+    // subId4-10 逐位等值筛选（高级搜索面板）
+    const subIdN: [string, string | undefined][] = [
+      ['subId4', subId4],
+      ['subId5', subId5],
+      ['subId6', subId6],
+      ['subId7', subId7],
+      ['subId8', subId8],
+      ['subId9', subId9],
+      ['subId10', subId10],
+    ];
+    for (const [col, val] of subIdN) {
+      if (val) {
+        conditions.push(`c.${col} = ?`);
+        values.push(val);
+      }
+    }
+    if (minCost !== undefined) {
+      conditions.push('c.cost >= ?');
+      values.push(minCost);
+    }
+    if (maxCost !== undefined) {
+      conditions.push('c.cost <= ?');
+      values.push(maxCost);
+    }
+    if (minRiskScore !== undefined) {
+      conditions.push('c.riskScore >= ?');
+      values.push(minRiskScore);
+    }
+    if (maxRiskScore !== undefined) {
+      conditions.push('c.riskScore <= ?');
+      values.push(maxRiskScore);
     }
     if (country) {
       conditions.push('c.country = ?');
@@ -611,6 +665,62 @@ export class ClickRepository extends BaseRepository<ClickData> {
         .all();
 
       return (result.results as unknown as ClickData[]) || [];
+    }, 30);
+  }
+
+  async getRecentVisitMetrics(params: {
+    visitorId?: string;
+    ip?: string;
+    lookbackHours?: number;
+  }): Promise<{
+    visitorRepeat: number;
+    ipRepeat: number;
+    campaignCount: number;
+  }> {
+    const visitorId = String(params.visitorId || '').trim();
+    const ip = String(params.ip || '').trim();
+    const lookbackHours = Number.isFinite(params.lookbackHours) ? Math.max(1, Number(params.lookbackHours)) : 24;
+    const since = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString();
+    const cacheKey = `query:clicks:recent-metrics:${visitorId}:${ip}:${lookbackHours}`;
+
+    return this.queryCache.getOrFetch(cacheKey, async () => {
+      const result = await this.db
+        .prepare(`
+          SELECT
+            (
+              SELECT COUNT(*)
+              FROM clicks
+              WHERE ? <> '' AND visitorId = ? AND timestamp >= ?
+            ) AS visitorRepeat,
+            (
+              SELECT COUNT(*)
+              FROM clicks
+              WHERE ? <> '' AND ip = ? AND timestamp >= ?
+            ) AS ipRepeat,
+            (
+              SELECT COUNT(DISTINCT campaignId)
+              FROM clicks
+              WHERE timestamp >= ?
+                AND (
+                  (? <> '' AND visitorId = ?)
+                  OR (? <> '' AND ip = ?)
+                )
+            ) AS campaignCount
+        `)
+        .bind(
+          visitorId, visitorId, since,
+          ip, ip, since,
+          since,
+          visitorId, visitorId,
+          ip, ip,
+        )
+        .first<{ visitorRepeat: number; ipRepeat: number; campaignCount: number }>();
+
+      return {
+        visitorRepeat: Number(result?.visitorRepeat || 0),
+        ipRepeat: Number(result?.ipRepeat || 0),
+        campaignCount: Number(result?.campaignCount || 0),
+      };
     }, 30);
   }
 

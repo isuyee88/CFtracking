@@ -88,21 +88,43 @@ export class PostbackSender {
       while (currentRetryCount <= task.maxRetries) {
         try {
           const { statusCode } = await this.executeRequest(task);
+          lastStatusCode = statusCode;
 
-          // 计算总耗时
-          const totalLatencyMs = Date.now() - startTime;
+          // 2xx 成功；可恢复的 HTTP 响应按 delivery retry policy 重试。
+          if (statusCode >= 200 && statusCode < 300) {
+            const totalLatencyMs = Date.now() - startTime;
+            return {
+              success: true,
+              taskId: task.id,
+              platform: task.platform,
+              url: task.postbackUrl,
+              statusCode,
+              latencyMs: totalLatencyMs,
+              retryCount: currentRetryCount,
+              willRetry: false,
+            };
+          }
 
-          // 判断是否成功 (2xx状态码视为成功)
-          const success = statusCode >= 200 && statusCode < 300;
+          if (this.isRetryableStatus(statusCode) && currentRetryCount < task.maxRetries) {
+            currentRetryCount++;
+            const nextRetryDelay = this.calculateNextRetry(currentRetryCount);
+            console.warn(
+              `[PostbackSender] HTTP ${statusCode} (attempt ${currentRetryCount}/${task.maxRetries}), ` +
+              `retrying in ${nextRetryDelay}ms`,
+            );
+            await this.sleep(nextRetryDelay);
+            continue;
+          }
 
           return {
-            success,
+            success: false,
             taskId: task.id,
             platform: task.platform,
             url: task.postbackUrl,
             statusCode,
-            latencyMs: totalLatencyMs,
+            latencyMs: Date.now() - startTime,
             retryCount: currentRetryCount,
+            errorMessage: `HTTP ${statusCode}`,
             willRetry: false,
           };
         } catch (error) {
@@ -205,6 +227,13 @@ export class PostbackSender {
     }
 
     return results;
+  }
+
+  private isRetryableStatus(statusCode: number): boolean {
+    return statusCode === 408
+      || statusCode === 425
+      || statusCode === 429
+      || (statusCode >= 500 && statusCode <= 599);
   }
 
   /**

@@ -20,6 +20,36 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// === 表格密度切换：全局持久化，S/M/L 三档缩放外部传入的 rowHeight 基准 ===
+type TableDensity = 'compact' | 'default' | 'relaxed';
+const TABLE_DENSITY_STORAGE_KEY = 'cftracking.table-density.v1';
+const TABLE_DENSITY_FACTORS: Record<TableDensity, number> = {
+  compact: 0.72,
+  default: 1,
+  relaxed: 1.3,
+};
+const TABLE_DENSITY_LABELS: Record<TableDensity, string> = {
+  compact: 'S',
+  default: 'M',
+  relaxed: 'L',
+};
+const TABLE_DENSITY_ORDER: TableDensity[] = ['compact', 'default', 'relaxed'];
+
+function readInitialDensity(): TableDensity {
+  if (typeof window === 'undefined') {
+    return 'default';
+  }
+  try {
+    const saved = window.localStorage.getItem(TABLE_DENSITY_STORAGE_KEY);
+    if (saved && saved in TABLE_DENSITY_FACTORS) {
+      return saved as TableDensity;
+    }
+  } catch {
+    // Ignore storage failures in restricted contexts.
+  }
+  return 'default';
+}
+
 export interface VirtualTableEnhancedProps<T = any> {
   columns: VirtualTableColumn<T>[];
   data: T[];
@@ -68,6 +98,24 @@ export function VirtualTableEnhanced<T = any>({
   const [containerHeight, setContainerHeight] = useState(
     typeof height === 'number' ? height : 400
   );
+  const [density, setDensity] = useState<TableDensity>(readInitialDensity);
+  const effectiveRowHeight = Math.max(
+    28,
+    Math.round(rowHeight * TABLE_DENSITY_FACTORS[density])
+  );
+
+  const cycleDensity = useCallback(() => {
+    setDensity((current) => {
+      const nextIndex = (TABLE_DENSITY_ORDER.indexOf(current) + 1) % TABLE_DENSITY_ORDER.length;
+      const next = TABLE_DENSITY_ORDER[nextIndex] || 'default';
+      try {
+        window.localStorage.setItem(TABLE_DENSITY_STORAGE_KEY, next);
+      } catch {
+        // Ignore storage failures in restricted contexts.
+      }
+      return next;
+    });
+  }, []);
   
   // === 新增：筛选和排序状态（带持久化）===
   const { filters, setFilters, sorter, setSorter } = useTablePersistence(tableId);
@@ -108,20 +156,20 @@ export function VirtualTableEnhanced<T = any>({
   // 计算可见行范围
   const { visibleStart, visibleEnd, totalHeight } = useMemo(() => {
     const total = processedData.length;
-    const totalH = total * rowHeight;
-    
-    const start = Math.floor(scrollTop / rowHeight);
-    const visibleCount = Math.ceil(containerHeight / rowHeight);
-    
+    const totalH = total * effectiveRowHeight;
+
+    const start = Math.floor(scrollTop / effectiveRowHeight);
+    const visibleCount = Math.ceil(containerHeight / effectiveRowHeight);
+
     const bufferedStart = Math.max(0, start - overscan);
     const bufferedEnd = Math.min(total, start + visibleCount + overscan);
-    
+
     return {
       visibleStart: bufferedStart,
       visibleEnd: bufferedEnd,
       totalHeight: totalH,
     };
-  }, [processedData.length, rowHeight, scrollTop, containerHeight, overscan]);
+  }, [processedData.length, effectiveRowHeight, scrollTop, containerHeight, overscan]);
 
   // 可见数据
   const visibleData = useMemo(() => {
@@ -230,13 +278,13 @@ export function VirtualTableEnhanced<T = any>({
       }}
     >
       {/* 固定表头 */}
-      <div 
+      <div
         className="sticky top-0 z-10 bg-surface-container dark:bg-surface-container-high border-b border-outline-variant/20"
-        style={{ height: rowHeight, minWidth: 'max-content' }}
+        style={{ height: effectiveRowHeight, minWidth: 'max-content' }}
       >
         <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
           {selectable && (
-            <div 
+            <div
               className="px-4 flex items-center"
               style={{ width: '50px', minWidth: '50px', flex: 'none' }}
             >
@@ -339,6 +387,15 @@ export function VirtualTableEnhanced<T = any>({
               </div>
             );
           })}
+          <button
+            type="button"
+            onClick={cycleDensity}
+            className="flex-none mx-3 rounded border border-outline-variant/40 px-1.5 py-0.5 text-[11px] font-medium text-fg-muted hover:text-fg-default hover:bg-surface-container transition-colors"
+            title={`Row density: ${density} — click to switch (S/M/L)`}
+            aria-label="Toggle table row density"
+          >
+            {TABLE_DENSITY_LABELS[density]}
+          </button>
         </div>
       </div>
 
@@ -348,8 +405,8 @@ export function VirtualTableEnhanced<T = any>({
         <div
           className="absolute left-0 right-0"
           style={{
-            top: visibleStart * rowHeight,
-            height: (visibleEnd - visibleStart) * rowHeight,
+            top: visibleStart * effectiveRowHeight,
+            height: (visibleEnd - visibleStart) * effectiveRowHeight,
           }}
         >
           {visibleData.map((row, index) => {
@@ -368,8 +425,8 @@ export function VirtualTableEnhanced<T = any>({
                   customRowClass
                 )}
                 style={{
-                  height: rowHeight,
-                  top: index * rowHeight,
+                  height: effectiveRowHeight,
+                  top: index * effectiveRowHeight,
                 }}
                 onClick={() => onRowClick?.(row, actualIndex)}
               >

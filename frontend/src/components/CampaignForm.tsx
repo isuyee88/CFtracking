@@ -64,6 +64,7 @@ interface CampaignFormProps {
   onSubmit: (data: CampaignFormData) => void;
   initialData?: Partial<CampaignFormData>;
   mode: 'create' | 'edit';
+  isSubmitting?: boolean;
 }
 
 function buildInitialCampaignFormData(initialData?: Partial<CampaignFormData>): CampaignFormData {
@@ -118,7 +119,8 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
   onClose,
   onSubmit,
   initialData,
-  mode
+  mode,
+  isSubmitting = false,
 }) => {
   const [activeTab, setActiveTab] = useState('main');
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
@@ -298,7 +300,7 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
           <h2 className="text-xl font-display font-bold text-primary">
             {mode === 'create' ? 'Create Campaign' : 'Edit Campaign'}
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-surface-container rounded-sm transition-colors">
+          <button type="button" onClick={onClose} aria-label="Close campaign form" className="p-2 hover:bg-surface-container rounded-sm transition-colors">
             <X size={20} className="text-on-surface-variant" />
           </button>
         </div>
@@ -782,10 +784,11 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
           </button>
           <button
             type="submit"
-            onClick={handleSubmit}
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
             className="px-6 py-3 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors rounded-sm"
           >
-            {mode === 'create' ? 'Create Campaign' : 'Save Changes'}
+            {isSubmitting ? 'Saving…' : mode === 'create' ? 'Create Campaign' : 'Save Changes'}
           </button>
         </div>
       </div>

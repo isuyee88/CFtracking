@@ -73,6 +73,14 @@ type WhitelistType =
   | 'user_agent'
   | 'asn'
   | 'isp'
+  | 'isp_type'
+  | 'visitor_id'
+  | 'org_exact'
+  | 'org_keyword'
+  | 'network_tag'
+  | 'allow_bias_org'
+  | 'allow_bias_isp_type'
+  | 'suspicious_reason'
   | 'fingerprint'
   | 'rule';
 type IpMatchMode = 'exact' | 'cidr';
@@ -144,6 +152,14 @@ const typeOptions: { value: WhitelistType; label: string; icon: React.ReactNode 
   { value: 'user_agent', label: 'User Agent', icon: <ExternalLink size={16} /> },
   { value: 'asn', label: 'ASN', icon: <Hash size={16} /> },
   { value: 'isp', label: 'ISP', icon: <Building2 size={16} /> },
+  { value: 'isp_type', label: 'ISP Type', icon: <Building2 size={16} /> },
+  { value: 'visitor_id', label: 'Visitor ID', icon: <User size={16} /> },
+  { value: 'org_exact', label: 'Org Exact', icon: <Building2 size={16} /> },
+  { value: 'org_keyword', label: 'Org Keyword', icon: <Building2 size={16} /> },
+  { value: 'network_tag', label: 'Network Tag', icon: <Shield size={16} /> },
+  { value: 'allow_bias_org', label: 'Allow Bias Org', icon: <Building2 size={16} /> },
+  { value: 'allow_bias_isp_type', label: 'Allow Bias ISP Type', icon: <Building2 size={16} /> },
+  { value: 'suspicious_reason', label: 'Suspicious Reason', icon: <AlertTriangle size={16} /> },
   { value: 'fingerprint', label: 'Fingerprint', icon: <Fingerprint size={16} /> },
   { value: 'rule', label: 'Rule Group', icon: <Shield size={16} /> },
 ];
@@ -155,6 +171,18 @@ const normalizeDisplayType = (type: string): WhitelistType | string => (type ===
 
 const normalizeCountryInput = (type: WhitelistType, value: string) =>
   type === 'country' ? value.toUpperCase() : value;
+
+const shouldUseExpandedValueEditor = (type: WhitelistType) =>
+  [
+    'user_agent',
+    'org_exact',
+    'org_keyword',
+    'network_tag',
+    'allow_bias_org',
+    'allow_bias_isp_type',
+    'suspicious_reason',
+    'rule',
+  ].includes(type);
 
 const withGeneralTrafficSource = (sources: TrafficSource[]): TrafficSource[] => {
   if (sources.some((source) => source.id === GENERAL_TRAFFIC_SOURCE_ID)) {
@@ -194,6 +222,7 @@ export const Whitelist = () => {
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormData, string>>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [showAdvancedLogic, setShowAdvancedLogic] = useState(false);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -284,6 +313,7 @@ export const Whitelist = () => {
     setIsEditMode(false);
     setEditingId(null);
     setFormData(initialFormData);
+    setShowAdvancedLogic(false);
     setFormErrors({});
     setIsModalOpen(true);
   };
@@ -304,6 +334,7 @@ export const Whitelist = () => {
       matchMode: entry.matchMode || 'all',
       conditions: Array.isArray(entry.conditions) ? entry.conditions : [],
     });
+    setShowAdvancedLogic(Array.isArray(entry.conditions) && entry.conditions.length > 0);
     setFormErrors({});
     setIsModalOpen(true);
   };
@@ -311,6 +342,7 @@ export const Whitelist = () => {
   const closeModal = () => {
     setIsModalOpen(false);
     setFormData(initialFormData);
+    setShowAdvancedLogic(false);
     setFormErrors({});
   };
 
@@ -445,7 +477,7 @@ export const Whitelist = () => {
         <div>
           <h1 className="text-3xl font-display font-bold text-primary">Whitelist</h1>
           <p className="text-sm text-on-surface-variant">
-            Manage whitelisted zones, creatives, IPs, user agents and other traffic sources
+            Manage exact allows, allow-bias signals, observed crawler tags, and other trusted traffic sources
           </p>
         </div>
         <div className="flex gap-3">
@@ -515,8 +547,8 @@ export const Whitelist = () => {
       </div>
 
       {/* Filters */}
-      <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-wrap">
+      <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col gap-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(360px,1.4fr),220px,180px,180px]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
             <input 
@@ -524,13 +556,13 @@ export const Whitelist = () => {
               placeholder="Search by value, name or reason..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all min-w-[300px]"
+              className="h-12 w-full pl-10 pr-4 bg-surface text-base border border-outline-variant focus:border-primary outline-none transition-all"
             />
           </div>
           <select
             value={filterSource}
             onChange={(e) => setFilterSource(e.target.value)}
-            className="px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+            className="h-12 w-full px-4 bg-surface text-base border border-outline-variant focus:border-primary outline-none"
           >
             <option value="all">All Traffic Sources</option>
             {trafficSources.map(ts => (
@@ -542,7 +574,7 @@ export const Whitelist = () => {
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+            className="h-12 w-full px-4 bg-surface text-base border border-outline-variant focus:border-primary outline-none"
           >
             <option value="all">All Types</option>
             {typeOptions.map(opt => (
@@ -552,14 +584,14 @@ export const Whitelist = () => {
           <select
             value={filterSynced}
             onChange={(e) => setFilterSynced(e.target.value)}
-            className="px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+            className="h-12 w-full px-4 bg-surface text-base border border-outline-variant focus:border-primary outline-none"
           >
             <option value="all">All Status</option>
             <option value="synced">Synced</option>
             <option value="unsynced">Not Synced</option>
           </select>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {trafficSources.map(ts => (
             <button
               key={ts.id}
@@ -753,7 +785,7 @@ export const Whitelist = () => {
       {/* Add/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface-container-lowest w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-surface-container-lowest w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h2 className="text-xl font-bold text-primary mb-4">
                 {isEditMode ? 'Edit Whitelist Entry' : 'Add Whitelist Entry'}
@@ -817,36 +849,91 @@ export const Whitelist = () => {
                   <label className="block text-sm font-medium text-on-surface mb-1">
                     Value {formData.conditions.length === 0 && <span className="text-error">*</span>}
                   </label>
-                  <input
-                    type="text"
-                    value={formData.value}
-                    onChange={(e) => {
-                      clearFormError('value');
-                      setFormData({
-                        ...formData,
-                        value: clampInput(
-                          normalizeCountryInput(formData.type, e.target.value),
-                          getWhitelistValueMaxLength(formData.type),
-                        ),
-                      });
-                    }}
-                    placeholder={
-                      formData.type === 'ip'
-                        ? '192.168.1.1'
-                        : formData.type === 'user_agent'
-                          ? 'Mozilla/5.0...'
-                          : formData.type === 'asn'
-                            ? 'AS12345'
-                            : formData.type === 'country'
-                              ? 'US'
+                  {shouldUseExpandedValueEditor(formData.type) ? (
+                    <textarea
+                      value={formData.value}
+                      onChange={(e) => {
+                        clearFormError('value');
+                        setFormData({
+                          ...formData,
+                          value: clampInput(
+                            normalizeCountryInput(formData.type, e.target.value),
+                            getWhitelistValueMaxLength(formData.type),
+                          ),
+                        });
+                      }}
+                      placeholder={
+                        formData.type === 'user_agent'
+                          ? 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+                          : formData.type === 'org_exact'
+                            ? 'Google Fiber'
+                          : formData.type === 'org_keyword'
+                              ? 'fiber'
+                            : formData.type === 'network_tag'
+                              ? 'known_crawler\ntrusted_proxy'
+                            : formData.type === 'suspicious_reason'
+                              ? 'verified_bot_observe\ntrusted_bypass'
+                            : formData.type === 'allow_bias_org'
+                              ? 'Comcast Cable'
+                            : formData.type === 'allow_bias_isp_type'
+                              ? 'Mobile ISP'
                             : formData.type === 'rule'
                               ? 'Optional label for this rule group'
-                            : 'Enter value'
-                    }
-                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
-                    disabled={isEditMode}
-                    maxLength={getWhitelistValueMaxLength(formData.type)}
-                  />
+                              : 'Enter value'
+                      }
+                      rows={4}
+                      className="w-full px-4 py-3 bg-surface text-sm border border-outline-variant focus:border-primary outline-none resize-y min-h-[112px]"
+                      disabled={isEditMode}
+                      maxLength={getWhitelistValueMaxLength(formData.type)}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.value}
+                      onChange={(e) => {
+                        clearFormError('value');
+                        setFormData({
+                          ...formData,
+                          value: clampInput(
+                            normalizeCountryInput(formData.type, e.target.value),
+                            getWhitelistValueMaxLength(formData.type),
+                          ),
+                        });
+                      }}
+                      placeholder={
+                        formData.type === 'ip'
+                          ? '192.168.1.1'
+                          : formData.type === 'user_agent'
+                            ? 'Mozilla/5.0...'
+                        : formData.type === 'asn'
+                              ? 'AS12345'
+                              : formData.type === 'country'
+                                ? 'US'
+                              : formData.type === 'visitor_id'
+                                ? 'visitor_abc123'
+                              : formData.type === 'org_exact'
+                                ? 'Google Fiber'
+                              : formData.type === 'org_keyword'
+                                ? 'fiber'
+                              : formData.type === 'isp_type'
+                                ? 'Fixed Line ISP'
+                              : formData.type === 'network_tag'
+                                ? 'known_crawler'
+                              : formData.type === 'suspicious_reason'
+                                ? 'verified_bot_observe'
+                              : formData.type === 'allow_bias_org'
+                                ? 'Comcast Cable'
+                              : formData.type === 'allow_bias_isp_type'
+                                ? 'Mobile ISP'
+                              : formData.type === 'rule'
+                                ? 'Optional label for this rule group'
+                              : 'Enter value'
+                      }
+                      className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                      disabled={isEditMode}
+                      maxLength={getWhitelistValueMaxLength(formData.type)}
+                    />
+                  )}
                   {renderLengthCounter(formData.value, getWhitelistValueMaxLength(formData.type))}
                   {formErrors.value && (
                     <p className="text-xs text-error mt-1">{formErrors.value}</p>
@@ -866,33 +953,77 @@ export const Whitelist = () => {
                       Enter ISO 3166-1 alpha-2 country code, for example US or DE
                     </p>
                   )}
-                  {formData.conditions.length > 0 && (
+                  {(formData.type === 'org_exact' || formData.type === 'org_keyword' || formData.type === 'isp_type') && (
                     <p className="text-xs text-on-surface-variant mt-1">
-                      Value becomes optional when rule conditions are configured.
+                      Use the normalized organization or ISP label exactly as your detection pipeline emits it.
                     </p>
                   )}
+                  {(formData.type === 'network_tag' || formData.type === 'suspicious_reason') && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Use this for observed crawler or trust-layer signals you want to rescue without creating a hard allow.
+                    </p>
+                  )}
+                  {shouldUseExpandedValueEditor(formData.type) && !hasConditionRules && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Larger input space is enabled for long labels, stacked tags, and reusable rule-group notes.
+                    </p>
+                  )}
+                  {hasConditionRules ? (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      This value acts as the primary trust target. Use advanced logic below only when you need extra filters.
+                    </p>
+                  ) : null}
                 </div>
 
-                <ListConditionsEditor
-                  title="Rule Editor"
-                  matchMode={formData.matchMode}
-                  conditions={formData.conditions}
-                  onMatchModeChange={(mode) => {
-                    clearFormError('conditions');
-                    setFormData({ ...formData, matchMode: mode });
-                  }}
-                  onConditionsChange={(conditions) => {
-                    clearFormError('conditions');
-                    clearFormError('value');
-                    setFormData({ ...formData, conditions });
-                  }}
-                />
-                {formErrors.conditions && (
-                  <p className="text-xs text-error -mt-2">{formErrors.conditions}</p>
-                )}
+                <div className="rounded-sm border border-outline-variant/30 bg-surface-container/30 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-on-surface">Advanced Logic (Optional)</div>
+                      <p className="mt-1 text-xs text-on-surface-variant">
+                        Add extra AND / OR conditions only when the primary type and value above are not enough.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearFormError('conditions');
+                        setShowAdvancedLogic((current) => !current);
+                      }}
+                      className="px-3 py-2 border border-outline-variant text-primary text-xs font-semibold hover:bg-surface transition-colors"
+                    >
+                      {showAdvancedLogic ? 'Hide Logic' : hasConditionRules ? `Edit Logic (${formData.conditions.length})` : 'Configure Logic'}
+                    </button>
+                  </div>
+                  {hasConditionRules && !showAdvancedLogic ? (
+                    <p className="mt-3 text-xs text-on-surface-variant">
+                      {formData.matchMode.toUpperCase()} logic with {formData.conditions.length} condition{formData.conditions.length === 1 ? '' : 's'} configured.
+                    </p>
+                  ) : null}
+                  {showAdvancedLogic ? (
+                    <div className="mt-4 space-y-3">
+                      <ListConditionsEditor
+                        title="Additional Conditions"
+                        matchMode={formData.matchMode}
+                        conditions={formData.conditions}
+                        onMatchModeChange={(mode) => {
+                          clearFormError('conditions');
+                          setFormData({ ...formData, matchMode: mode });
+                        }}
+                        onConditionsChange={(conditions) => {
+                          clearFormError('conditions');
+                          clearFormError('value');
+                          setFormData({ ...formData, conditions });
+                        }}
+                      />
+                      {formErrors.conditions && (
+                        <p className="text-xs text-error -mt-2">{formErrors.conditions}</p>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
 
                 {/* IP Match Mode */}
-                {formData.type === 'ip' && formData.conditions.length === 0 && (
+                {formData.type === 'ip' && !hasConditionRules && (
                   <div>
                     <label className="block text-sm font-medium text-on-surface mb-1">
                       Match Mode
@@ -923,7 +1054,7 @@ export const Whitelist = () => {
                 )}
 
                 {/* UA Match Mode */}
-                {formData.type === 'user_agent' && formData.conditions.length === 0 && (
+                {formData.type === 'user_agent' && !hasConditionRules && (
                   <div>
                     <label className="block text-sm font-medium text-on-surface mb-1">
                       Match Mode
@@ -954,7 +1085,7 @@ export const Whitelist = () => {
                 )}
 
                 {/* Sync to Platform */}
-                {(formData.type === 'ip' || formData.type === 'user_agent') && formData.conditions.length === 0 && (
+                {(formData.type === 'ip' || formData.type === 'user_agent') && !hasConditionRules && (
                   <div>
                     <label className="flex items-center gap-2">
                       <input

@@ -12,6 +12,7 @@
 import { Hono } from 'hono';
 import { FlowService } from './flow.service';
 import { FlowLogService } from './flow.log.service';
+import { FlowSimulationService } from './flow.simulation.service';
 import { FlowValidator } from './flow.validator';
 import { success, error } from '@/utils/response';
 import { validatePagination, validateRequired } from '@/utils/validator';
@@ -22,6 +23,31 @@ import { getAvailableOperators, getAvailableTargets } from '@/utils/flow.filters
 
 export function createFlowRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
+
+  /**
+   * Simulate deterministic flow selection without visitor binding or persistence.
+   */
+  router.post('/simulation', async (c) => {
+    try {
+      const body = await c.req.json();
+      if (!body?.context || !Array.isArray(body.schemas)) {
+        return c.json(error('context and schemas are required', ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+      }
+      const result = await new FlowSimulationService().simulate({
+        context: body.context,
+        schemas: body.schemas,
+        rotation: body.rotation === 'weight' ? 'weight' : 'position',
+        riskScore: typeof body.riskScore === 'number' ? body.riskScore : null,
+      });
+      return c.json(success({ ...result, simulated: true }));
+    } catch (err) {
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to simulate flow', ERROR_CODES.VALIDATION),
+        HTTP_STATUS.BAD_REQUEST,
+      );
+    }
+  });
+
 
   router.get('/', async (c) => {
     const query = {

@@ -20,6 +20,7 @@ import {
   Save,
   Settings2,
   Shield,
+  X,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';

@@ -48,9 +48,28 @@ import { Hono } from 'hono';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
-import { PLATFORM_PARAM_MAPS } from '@/types/attribution';
+import { PLATFORM_PARAM_MAPS, type PlatformParamMapping } from '@/types/attribution';
+import type { AttributionConversionStatus } from '@/types/attribution-event';
+import { createAttributionEvent } from '@/types/attribution-event';
+import { AttributionEventRepository, InvalidAttributionStatusTransitionError } from '@/handlers/d1/attribution-event.repo';
+import { sha256 } from '@/utils/crypto';
 
-/** 定义Hono应用的绑定类型 */
+/** Map provider-specific lifecycle values to the canonical attribution ledger. */
+export function normalizeInboundAttributionStatus(rawStatus: string): AttributionConversionStatus {
+  const value = rawStatus.trim().toLowerCase();
+  if (['approved', 'conversion', 'converted', 'complete', 'completed', 'paid', 'sale'].includes(value)) {
+    return 'approved';
+  }
+  if (['rejected', 'declined', 'denied', 'cancelled', 'canceled'].includes(value)) {
+    return 'rejected';
+  }
+  if (['reversed', 'reversal', 'refunded', 'refund', 'chargeback'].includes(value)) {
+    return 'reversed';
+  }
+  return 'pending';
+}
+
+/** 定义Hono应用的Bindings类型 */
 type Bindings = Env;
 
 /** 创建Hono应用实例 */
@@ -71,25 +90,34 @@ const app = new Hono<{ Bindings: Bindings }>();
  */
 async function extractParams(
   c: any,
-  paramMapping: { clickIdParam: string; payoutParam: string; statusParam: string }
+  paramMapping: {
+    clickIdParam: string;
+    payoutParam: string;
+    statusParam: string;
+    transactionIdParam?: string;
+  }
 ): Promise<{
   clickId: string;
+  transactionId: string;
   payout: number;
   status: string;
   rawParams: Record<string, string>;
 }> {
   // 尝试从Query String提取
+  const transactionIdParam = paramMapping.transactionIdParam ?? 'transaction_id';
   let clickId = c.req.query(paramMapping.clickIdParam) || '';
+  let transactionId = c.req.query(transactionIdParam) || c.req.query('transaction_id') || c.req.query('transactionId') || '';
   let payoutStr = c.req.query(paramMapping.payoutParam) || '0';
   let status = c.req.query(paramMapping.statusParam) || 'approved';
 
-  // 如果Query中没有，尝试从JSON Body提取
-  if (!clickId) {
+  // 如果Query中缺少关键字段，尝试从JSON Body提取
+  if (!clickId || !transactionId) {
     try {
       const body = await c.req.json();
-      clickId = body[paramMapping.clickIdParam] || '';
-      payoutStr = String(body[paramMapping.payoutParam] || '0');
-      status = body[paramMapping.statusParam] || 'approved';
+      clickId = clickId || body[paramMapping.clickIdParam] || '';
+      transactionId = transactionId || body[transactionIdParam] || body.transaction_id || body.transactionId || '';
+      payoutStr = String(body[paramMapping.payoutParam] || payoutStr || '0');
+      status = body[paramMapping.statusParam] || status || 'approved';
     } catch {
       // Body不是JSON，忽略错误
     }
@@ -97,10 +125,14 @@ async function extractParams(
 
   return {
     clickId,
+    transactionId,
     payout: parseFloat(payoutStr) || 0,
     status,
     rawParams: {
-      ...Object.fromEntries(c.req.query().entries()),
+      // 为什么不用 fromEntries(query().entries())：Hono 4.x 的 c.req.query() 已返回
+      // Record<string,string> 普通对象，无 entries() 方法，原写法会导致所有入站
+      // postback 500（hono ^4.6.0 实测）。
+      ...c.req.query(),
     },
   };
 }
@@ -126,7 +158,7 @@ async function extractParams(
 async function handleInboundPostback(
   c: any,
   platform: string,
-  paramMapping: { clickIdParam: string; payoutParam: string; statusParam: string }
+  paramMapping: PlatformParamMapping
 ): Promise<Response> {
   const startTime = Date.now();
 
@@ -140,6 +172,12 @@ async function handleInboundPostback(
       console.warn(`[InboundPostback][${platform}] Missing clickId`);
       c.status(HTTP_STATUS.BAD_REQUEST);
       return c.json(error('Missing required parameter: clickid', 'MISSING_CLICKID'));
+    }
+
+    if (!params.transactionId) {
+      console.warn(`[InboundPostback][${platform}] Missing transactionId`);
+      c.status(HTTP_STATUS.BAD_REQUEST);
+      return c.json(error('Missing required parameter: transaction_id', 'MISSING_TRANSACTION_ID'));
     }
 
     console.log(
@@ -195,30 +233,51 @@ async function handleInboundPostback(
     }
 
     // ============================================================
-    // 步骤5: 幂等性检查 (用clickId+platform作为key)
+    // 步骤5: 统一归因事件账本（transactionId + 状态）
     // ============================================================
+    const attributionStatus = normalizeInboundAttributionStatus(params.status);
+    let attributionRepo: AttributionEventRepository | null = null;
+    let existingAttributionConversionId: string | null = null;
     if (c.env.DB) {
-      const { PostbackIdempotencyRepository } = await import(
-        '@/handlers/d1/postback-idempotency.repo'
-      );
-      const idempotencyRepo = new PostbackIdempotencyRepository(c.env.DB);
+      attributionRepo = new AttributionEventRepository(c.env.DB);
+      const latest = await attributionRepo.latest(platform, params.transactionId);
+      existingAttributionConversionId = latest?.conversionId ?? null;
+      const attributionEvent = createAttributionEvent({
+        sourcePlatform: platform,
+        transactionId: params.transactionId,
+        clickId: params.clickId,
+        conversionId: existingAttributionConversionId ?? undefined,
+        status: attributionStatus,
+        occurredAt: new Date().toISOString(),
+        payout: params.payout,
+        revenue: params.payout,
+        currency: 'USD',
+      });
+      const canonicalRaw = JSON.stringify(Object.entries(params.rawParams).sort(([a], [b]) => a.localeCompare(b)));
+      const rawHash = await sha256(`${platform}|${params.transactionId}|${params.status}|${params.payout}|${canonicalRaw}`);
+      const requestId = c.req.header('x-request-id') || c.req.header('cf-ray') || crypto.randomUUID();
 
-      // 使用clickId + platform作为唯一键
-      const idempotencyKey = `${params.clickId}:${platform}`;
-      const alreadyProcessed = await idempotencyRepo.isSent(idempotencyKey, platform);
-
-      if (alreadyProcessed) {
-        console.log(
-          `[InboundPostback][${platform}] Already processed: ${params.clickId}`
-        );
-        // 返回成功但不重复处理 (幂等性保证)
-        return c.json(success({
-          success: true,
-          platform,
-          clickId: params.clickId,
-          conversionId: null,
-          message: 'Already processed',
-        }));
+      try {
+        const appendResult = await attributionRepo.append(attributionEvent, { rawHash, requestId });
+        if (appendResult.duplicate && (attributionStatus !== 'approved' || appendResult.record.conversionId)) {
+          console.log(
+            `[InboundPostback][${platform}] Duplicate attribution event: ${params.transactionId}/${attributionStatus}`
+          );
+          return c.json(success({
+            success: true,
+            platform,
+            clickId: params.clickId,
+            transactionId: params.transactionId,
+            conversionId: appendResult.record.conversionId,
+            message: 'Already processed',
+          }));
+        }
+      } catch (appendError) {
+        if (appendError instanceof InvalidAttributionStatusTransitionError) {
+          c.status(HTTP_STATUS.CONFLICT);
+          return c.json(error('Invalid attribution status transition', 'INVALID_STATUS_TRANSITION'));
+        }
+        throw appendError;
       }
     }
 
@@ -242,17 +301,20 @@ async function handleInboundPostback(
         success: true,
         platform,
         clickId: params.clickId,
-        conversionId: null,
-        warning: 'Click not found',
+        transactionId: params.transactionId,
+        conversionId: existingAttributionConversionId,
+        eventStatus: attributionStatus,
+        retryable: attributionStatus === 'approved' && !existingAttributionConversionId,
+        warning: 'Click not found; attribution event retained for retry',
       }));
     }
 
     // ============================================================
-    // 步骤7: 创建转化记录
+    // 步骤7: 仅在 approved 时创建一次正向转化
     // ============================================================
-    let conversionId: string | null = null;
+    let conversionId: string | null = existingAttributionConversionId;
 
-    if (c.env.DB) {
+    if (c.env.DB && attributionStatus === 'approved' && !conversionId) {
       const { ConversionService } = await import('@/services/tracking/conversion.service');
       const conversionService = new ConversionService(c.env);
 
@@ -274,21 +336,25 @@ async function handleInboundPostback(
         c.status(HTTP_STATUS.INTERNAL_ERROR);
         return c.json(error('Conversion failed', 'CONVERSION_ERROR'));
       }
+
+      if (attributionRepo) {
+        await attributionRepo.attachConversionId(
+          platform,
+          params.transactionId,
+          attributionStatus,
+          conversionId,
+        );
+      }
+    } else if (c.env.DB && conversionId && (attributionStatus === 'rejected' || attributionStatus === 'reversed')) {
+      // Lifecycle updates change the existing conversion; they never create a
+      // second approved conversion or increment the click counter again.
+      await c.env.DB.prepare(
+        'UPDATE conversions SET status = ? WHERE conversionId = ?'
+      ).bind(attributionStatus, conversionId).run();
     }
 
     // ============================================================
-    // 步骤8: 标记幂等性 (防止重复处理)
-    // ============================================================
-    if (c.env.DB && conversionId) {
-      const { PostbackIdempotencyRepository } = await import(
-        '@/handlers/d1/postback-idempotency.repo'
-      );
-      const idempotencyRepo = new PostbackIdempotencyRepository(c.env.DB);
-      await idempotencyRepo.markAsSent(`${params.clickId}:${platform}`, platform);
-    }
-
-    // ============================================================
-    // 步骤9: 记录频率限制计数
+    // 步骤8: 记录频率限制计数
     // ============================================================
     if (c.env.DB) {
       const { PostbackRateLimiter } = await import('@/services/postback/rate-limiter');

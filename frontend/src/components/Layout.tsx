@@ -35,12 +35,14 @@ import {
   Home,
   FileDown,
   Calculator,
-  Brain
+  Brain,
+  Filter
 } from 'lucide-react';
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { loadBootstrapForLocation } from '../services/bootstrap';
+import { Breadcrumb } from './Breadcrumb';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -238,6 +240,7 @@ export const Layout = () => {
       title: "Tools",
       items: [
         { icon: Zap, label: "Autorules", to: "/rules" },
+        { icon: Filter, label: "Traffic Filter", to: "/traffic-filter" },
         { icon: Shield, label: "Blacklist", to: "/blacklist" },
         { icon: ThumbsUp, label: "Whitelist", to: "/whitelist" },
         { icon: Target, label: "Target", to: "/target" },
@@ -283,7 +286,9 @@ export const Layout = () => {
             >
               <TrendingUp size={18} className="text-on-primary" />
             </div>
-            <h1 className="text-xl font-display font-bold tracking-tight text-fg-default">CFTracking</h1>
+            <div className="text-xl font-display font-bold tracking-tight text-fg-default" aria-label="CFTracking shell">
+              CFTracking
+            </div>
           </div>
           <button
             type="button"
@@ -403,6 +408,9 @@ export const Layout = () => {
             </button>
           </div>
         </header>
+
+        {/* Breadcrumb Navigation */}
+        <Breadcrumb />
 
         {/* Page Content - 优化：添加ARIA标签 */}
         <div 

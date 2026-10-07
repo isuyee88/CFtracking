@@ -7,9 +7,16 @@
 export interface Env {
   ENVIRONMENT: 'development' | 'staging' | 'production';
   JWT_SECRET: string;
+  /** S2S 共享密钥：affiliate-landing Worker 服务端拉取统计用（wrangler secret put S2S_KEY） */
+  S2S_KEY?: string;
+  /** 凭据加密主密钥：secret_store AES-256-GCM 加密用（wrangler secret put CRED_MASTER_KEY，随机 32+ 字节） */
+  CRED_MASTER_KEY?: string;
   JWT_EXPIRES_IN: string;
   REALTIME_ENABLED: boolean;
   SSE_ENABLED: boolean;
+  AI_OPTIMIZATION_ENABLED?: boolean | string;
+  AI_OPTIMIZATION_MODEL?: string;
+  AI_OPTIMIZATION_GATEWAY_ID?: string;
   CACHE_UPDATE_TOKEN: string;
   /**
    * 认证开关:
@@ -44,9 +51,18 @@ export interface Env {
   RECAPTCHA_SECRET_KEY?: string;
   
   CACHE_REFRESH_QUEUE: Queue;
+  AI?: {
+    run: (
+      model: string,
+      input: Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ) => Promise<unknown>;
+  };
   
   /** 导出文件存储 R2 */
   EXPORTS_BUCKET?: R2Bucket;
+  /** Hosted landing/offer assets R2；未配置时回退 D1（仅开发/迁移期） */
+  HOSTED_ASSETS_BUCKET?: R2Bucket;
   
   SESSION_DO: DurableObjectNamespace;
   COUNTER_DO: DurableObjectNamespace;

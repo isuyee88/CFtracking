@@ -42,6 +42,8 @@ export interface FormField {
   description?: string;
   validation?: (value: any) => string | null;
   showWhen?: (data: Record<string, any>) => boolean;
+  // 可选自定义渲染槽：在字段控件之后追加（如着陆页可视化编辑器），不影响通用渲染
+  renderExtra?: (formData: Record<string, any>, handleChange: (name: string, value: any) => void) => React.ReactNode;
 }
 
 function supportsLengthCounter(field: FormField): boolean {
@@ -596,6 +598,7 @@ export const EntityForm: React.FC<EntityFormProps> = ({
                     </label>
                   )}
                   {renderField(field)}
+                  {field.renderExtra?.(formData, handleChange)}
                   {field.description && field.type !== 'checkbox' && (
                     <p className="mt-1 text-xs text-on-surface-variant/60">{field.description}</p>
                   )}

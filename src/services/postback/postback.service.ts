@@ -45,7 +45,11 @@ import { UrlTemplateEngine } from './url-template.engine';
 import { PostbackSender } from './postback.sender';
 import { PostbackLogRepository } from '@/handlers/d1/postback.repo';
 import { PostbackIdempotencyRepository } from '@/handlers/d1/postback-idempotency.repo';
+import { ConversionRepository } from '@/handlers/d1/conversion.repo';
 import { generateUUID } from '@/utils/crypto';
+import type { ConversionData } from '@/types/tracking';
+
+type ConversionDataWithStatus = ConversionData & { status?: string };
 
 /**
  * Postback主服务
@@ -192,12 +196,31 @@ export class PostbackService {
             continue;
           }
 
+          // 执行发送前先抢占 delivery lease；并发请求只能有一个进入外部网络。
+          const claimed = await this.claimDelivery(context.conversionId, task.platform);
+          if (!claimed) {
+            results.push({
+              success: false,
+              taskId: task.id,
+              platform: task.platform,
+              url: task.postbackUrl,
+              statusCode: 409,
+              latencyMs: 0,
+              retryCount: 0,
+              errorMessage: 'Delivery is already in-flight or dead-lettered',
+              willRetry: true,
+            });
+            continue;
+          }
+
           // 执行发送
           const result = await this.sender.send(task);
+          if (result.success) {
+            await this.markSent(context.conversionId, task.platform, result.statusCode, task.id);
+          } else {
+            await this.recordFailedDelivery(task, result);
+          }
           results.push(result);
-
-          // 标记为已发送 (无论成功失败都标记，避免重复尝试)
-          await this.markSent(context.conversionId, task.platform);
 
           // 记录日志
           await this.logPostback(this.buildLogFromResult(task, result));
@@ -208,7 +231,7 @@ export class PostbackService {
             errorMessage
           );
 
-          results.push({
+          const failedResult: PostbackResult = {
             success: false,
             taskId: task.id,
             platform: task.platform,
@@ -217,7 +240,16 @@ export class PostbackService {
             retryCount: 0,
             errorMessage,
             willRetry: false,
-          });
+          };
+          try {
+            await this.recordFailedDelivery(task, failedResult);
+          } catch (deliveryStateError) {
+            console.error(
+              '[PostbackService] Failed to persist delivery failure state:',
+              deliveryStateError instanceof Error ? deliveryStateError.message : deliveryStateError,
+            );
+          }
+          results.push(failedResult);
 
           // 记录失败的日志
           await this.logPostback(this.buildErrorLog(task, errorMessage));
@@ -299,8 +331,10 @@ export class PostbackService {
    *
    * @private 内部方法
    *
-   * @description 查询traffic_sources表中与该campaignId关联的记录，
-   * 提取postback_url、postback_method等字段构建配置对象。
+   * @description 走正向关系链 campaigns.trafficSource → trafficSources.id
+   * （与 click.repo JOIN 口径一致），并按 name 兜底匹配历史数据。
+   * 旧实现用 findBy('campaign_id') 反查 trafficSources——该表根本没有
+   * campaign_id 列，D1 必然抛 no such column 导致出站回传静默失效。
    */
   private async getConfigsFromTrafficSource(campaignId: string): Promise<PostbackSendConfig[]> {
     if (!this.env.DB) {
@@ -308,16 +342,31 @@ export class PostbackService {
     }
 
     try {
-      // 动态导入避免循环依赖
-      const { TrafficSourceRepository } = await import('@/handlers/d1/trafficSource.repo');
-      const repo = new TrafficSourceRepository(this.env.DB);
+      // 第一步：从 campaign 拿到关联的流量源标识（存的是 trafficSources.id）
+      const campaignRow = await this.env.DB
+        .prepare('SELECT trafficSource FROM campaigns WHERE id = ?')
+        .bind(campaignId)
+        .first<{ trafficSource: string | null }>();
 
-      // 查询使用该campaignId的所有流量源
-      const trafficSources = await repo.findBy('campaign_id', campaignId);
+      const tsKey = campaignRow?.trafficSource?.trim();
+      if (!tsKey) {
+        return [];
+      }
+
+      // 第二步：按 ID 优先、name 兜底定位流量源（历史数据可能存名字而非 ID）
+      const tsRow = await this.env.DB
+        .prepare('SELECT * FROM trafficSources WHERE id = ? OR name = ? LIMIT 1')
+        .bind(tsKey, tsKey)
+        .first<Record<string, unknown>>();
+
+      if (!tsRow) {
+        return [];
+      }
 
       // 过滤出有postback_url配置的记录并转换为PostbackSendConfig
-      const configs: PostbackSendConfig[] = trafficSources
-        .filter((ts: any) => ts.postbackUrl || ts.postback_url)
+      const ts = tsRow as any;
+      const configs: PostbackSendConfig[] = [ts]
+        .filter((ts) => ts.postbackUrl || ts.postback_url)
         .map((ts: any) => ({
           enabled: ts.postbackEnabled ?? ts.postback_enabled ?? true,
           urlTemplate: ts.postbackUrl || ts.postback_url || '',
@@ -345,8 +394,9 @@ export class PostbackService {
    *
    * @private 内部方法
    *
-   * @description 查询affiliate_networks表中与该offerId关联的记录，
-   * 提取postback相关字段构建配置对象。
+   * @description 走正向关系链 offers.network → affiliateNetworks（id 优先，
+   * name 兜底）。旧实现用 findBy('offer_id') 反查 affiliateNetworks——
+   * 该表没有 offer_id 列，D1 必然抛 no such column 导致配置永远为空。
    */
   private async getConfigsFromAffiliateNetwork(offerId: string): Promise<PostbackSendConfig[]> {
     if (!this.env.DB) {
@@ -354,16 +404,31 @@ export class PostbackService {
     }
 
     try {
-      // 动态导入避免循环依赖
-      const { AffiliateNetworkRepository } = await import('@/handlers/d1/affiliateNetwork.repo');
-      const repo = new AffiliateNetworkRepository(this.env.DB);
+      // 第一步：从 offer 拿到关联的联盟平台标识
+      const offerRow = await this.env.DB
+        .prepare('SELECT network FROM offers WHERE id = ?')
+        .bind(offerId)
+        .first<{ network: string | null }>();
 
-      // 查询使用该offerId的所有联盟网络
-      const networks = await repo.findBy('offer_id', offerId);
+      const anKey = offerRow?.network?.trim();
+      if (!anKey) {
+        return [];
+      }
+
+      // 第二步：按 ID 优先、name 兜底定位联盟网络
+      const anRow = await this.env.DB
+        .prepare('SELECT * FROM affiliateNetworks WHERE id = ? OR name = ? LIMIT 1')
+        .bind(anKey, anKey)
+        .first<Record<string, unknown>>();
+
+      if (!anRow) {
+        return [];
+      }
 
       // 过滤出有postback_url配置的记录并转换为PostbackSendConfig
-      const configs: PostbackSendConfig[] = networks
-        .filter((an: any) => an.postbackUrl || an.postback_url)
+      const an = anRow as any;
+      const configs: PostbackSendConfig[] = [an]
+        .filter((an) => an.postbackUrl || an.postback_url)
         .map((an: any) => ({
           enabled: an.postbackEnabled ?? an.postback_enabled ?? true,
           urlTemplate: an.postbackUrl || an.postback_url || '',
@@ -428,7 +493,10 @@ export class PostbackService {
         }
       }
 
-      return 'generic';
+      // 未命中已知平台时回退为端点主机名而非固定 'generic'：
+      // 幂等键 (conversionId, platform) 依赖 platform 区分不同回传端点，
+      // 一律 'generic' 会让多个自定义端点互相顶掉（第二条被静默跳过）。
+      return hostname;
     } catch {
       return 'generic';
     }
@@ -453,8 +521,10 @@ export class PostbackService {
 
     for (const config of configs) {
       try {
-        // 获取对应的平台适配器
-        const adapter = this.adapters.get(config.urlTemplate); // TODO: 需要从config获取platform标识
+        // 按配置的 platform 名查找专属适配器；未注册的自定义端点回退 generic 构建器。
+        // 旧实现误用 config.urlTemplate 作为查找键，任何配置都命中不了专属适配器，
+        // 导致 task.platform 恒为 'generic'（幂等撞键的根因之一）。
+        const adapter = this.adapters.get(config.platform);
 
         // 如果没有找到特定适配器，使用Generic适配器
         const platformAdapter = adapter || this.adapters.get('generic');
@@ -481,13 +551,16 @@ export class PostbackService {
         }
 
         // 创建任务对象
+        // platform 取 config.platform 优先：幂等键 (conversionId, platform) 需要
+        // 端点维度——若统一用适配器名（generic），TS 与 AN 两条配置会互相顶掉，
+        // 第二条被幂等拦截静默跳过。
         const task: PostbackTask = {
           id: generateUUID(),
           conversionId: context.conversionId,
           clickId: context.clickId,
           campaignId: context.campaignId,
           offerId: context.offerId,
-          platform: platformAdapter.platformName,
+          platform: config.platform || platformAdapter.platformName,
           postbackUrl,
           rawUrlTemplate: config.urlTemplate,
           payload,
@@ -558,8 +631,46 @@ export class PostbackService {
     }
   }
 
+  private async claimDelivery(conversionId: string, platform: string): Promise<boolean> {
+    if (!this.idempotencyRepo) return true;
+
+    await this.idempotencyRepo.markAsPending(conversionId, platform);
+    return this.idempotencyRepo.markAsSending(conversionId, platform);
+  }
+
+  private async recordFailedDelivery(
+    task: PostbackTask,
+    result: PostbackResult,
+  ): Promise<void> {
+    if (!this.idempotencyRepo) return;
+
+    const errorMessage = result.errorMessage || `HTTP ${result.statusCode ?? 'unknown'}`;
+    if (result.retryCount >= task.maxRetries) {
+        await this.idempotencyRepo.markDeadLetter(
+        task.conversionId,
+        task.platform,
+        errorMessage,
+        result.statusCode,
+        task.id,
+      );
+      result.willRetry = false;
+      return;
+    }
+
+    await this.idempotencyRepo.markAsRetry(
+      task.conversionId,
+      task.platform,
+      errorMessage,
+      result.retryCount + 1,
+      undefined,
+      result.statusCode,
+      task.id,
+    );
+    result.willRetry = true;
+  }
+
   /**
-   * 标记已发送 (写入D1防止重复)
+   * 标记已发送 (幂等性写入)
    *
    * @param conversionId 转化ID
    * @param platform 平台名称
@@ -567,11 +678,16 @@ export class PostbackService {
    * @description 在成功发送后写入D1数据库，设置唯一约束防止重复。
    * 替代原有的KV存储方案。
    */
-  private async markSent(conversionId: string, platform: string): Promise<void> {
+  private async markSent(
+    conversionId: string,
+    platform: string,
+    statusCode?: number,
+    requestId?: string,
+  ): Promise<void> {
     // 优先使用D1实现
     if (this.idempotencyRepo) {
       try {
-        await this.idempotencyRepo.markAsSent(conversionId, platform);
+        await this.idempotencyRepo.markAsSent(conversionId, platform, statusCode, requestId);
         return;
       } catch (error) {
         console.error('[PostbackService] D1 markSent error:', error);
@@ -617,6 +733,114 @@ export class PostbackService {
     }
   }
 
+  async retryDuePostbacks(limit = 100): Promise<{
+    inspected: number;
+    claimed: number;
+    sent: number;
+    retried: number;
+    deadLettered: number;
+    skipped: number;
+  }> {
+    const summary = { inspected: 0, claimed: 0, sent: 0, retried: 0, deadLettered: 0, skipped: 0 };
+    if (!this.idempotencyRepo) return summary;
+
+    const dueRetries = await this.idempotencyRepo.listDueRetries(limit);
+    summary.inspected = dueRetries.length;
+
+    for (const row of dueRetries) {
+      const conversionId = String(row.conversion_id ?? row.conversionId ?? '');
+      const platform = String(row.platform ?? '');
+      const attemptCount = Number(row.attempt_count ?? row.attemptCount ?? 0);
+      if (!conversionId || !platform) {
+        summary.skipped++;
+        continue;
+      }
+
+      const claimed = await this.idempotencyRepo.markAsSending(conversionId, platform);
+      if (!claimed) {
+        summary.skipped++;
+        continue;
+      }
+      summary.claimed++;
+
+      const context = await this.getConversionForRetry(conversionId);
+      if (!context) {
+        await this.idempotencyRepo.markDeadLetter(
+          conversionId,
+          platform,
+          'Conversion could not be rebuilt for due postback retry',
+          undefined,
+          undefined,
+        );
+        summary.deadLettered++;
+        continue;
+      }
+
+      try {
+        const configs = (await this.getPostbackConfigs(context.campaignId, context.offerId))
+          .filter((config) => config.platform === platform);
+        const tasks = await this.buildTasks(context, configs);
+        const task = tasks[0];
+        if (!task) {
+          await this.idempotencyRepo.markDeadLetter(
+            conversionId,
+            platform,
+            'Postback configuration could not be rebuilt for due retry',
+            undefined,
+            undefined,
+          );
+          summary.deadLettered++;
+          continue;
+        }
+
+        task.retryCount = attemptCount;
+        const result = await this.sender.send(task);
+        if (result.success) {
+          await this.markSent(conversionId, platform, result.statusCode, task.id);
+          summary.sent++;
+        } else {
+          await this.recordFailedDelivery(task, result);
+          if (result.willRetry) summary.retried++;
+          else summary.deadLettered++;
+        }
+        await this.logPostback(this.buildLogFromResult(task, result));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.idempotencyRepo.markAsRetry(
+          conversionId,
+          platform,
+          message,
+          attemptCount + 1,
+          undefined,
+          undefined,
+          undefined,
+        );
+        summary.retried++;
+      }
+    }
+
+    return summary;
+  }
+
+  private async getConversionForRetry(conversionId: string): Promise<PostbackContext | null> {
+    if (!this.env.DB) return null;
+    const conversion = await new ConversionRepository(this.env.DB).findByConversionId(conversionId);
+    if (!conversion) return null;
+    return {
+      conversionId: conversion.conversionId,
+      clickId: conversion.clickId,
+      campaignId: conversion.campaignId,
+      offerId: conversion.offerId,
+      revenue: conversion.revenue,
+      payout: conversion.payout,
+      currency: conversion.currency,
+      conversionType: conversion.conversionType,
+      status: ((conversion as ConversionDataWithStatus).status as ConversionStatus) || 'approved',
+      timestamp: conversion.timestamp,
+      offerName: conversion.offerName ?? undefined,
+    };
+  }
+
   /**
    * 手动重发失败的Postback
    *
@@ -629,21 +853,85 @@ export class PostbackService {
    */
   async retryFailedPostbacks(
     conversionId?: string,
-    platform?: string
+    platform?: string,
   ): Promise<PostbackResult[]> {
-    console.log(
-      `[PostbackService] Retrying failed postbacks` +
-      `${conversionId ? ` for conversion: ${conversionId}` : ''}` +
-      `${platform ? ` for platform: ${platform}` : ''}`
+    if (!this.env.DB || !this.idempotencyRepo) return [];
+
+    const retryRecord = conversionId && platform
+      ? await this.idempotencyRepo.findRetry(conversionId, platform)
+      : null;
+    const dueRetries = retryRecord
+      ? [retryRecord]
+      : await this.idempotencyRepo.listDueRetries(100);
+    const candidates = dueRetries.filter((row) =>
+      (!conversionId || String(row.conversion_id) === conversionId)
+      && (!platform || String(row.platform) === platform),
     );
+    const results: PostbackResult[] = [];
 
-    // TODO: 实现重试逻辑
-    // 1. 从D1查询失败的日志
-    // 2. 重新构建任务
-    // 3. 执行发送
-    // 4. 更新日志状态
+    for (const row of candidates) {
+      const currentConversionId = String(row.conversion_id ?? '');
+      const currentPlatform = String(row.platform ?? '');
+      const attemptCount = Number(row.attempt_count ?? 0);
+      if (!currentConversionId || !currentPlatform) continue;
 
-    return [];
+      const claimed = await this.idempotencyRepo.markAsSending(currentConversionId, currentPlatform);
+      if (!claimed) continue;
+
+      const context = await this.getConversionForRetry(currentConversionId);
+      if (!context) {
+        await this.idempotencyRepo.markDeadLetter(
+          currentConversionId,
+          currentPlatform,
+          'Conversion could not be rebuilt for manual postback retry',
+        );
+        continue;
+      }
+
+      try {
+        const configs = (await this.getPostbackConfigs(context.campaignId, context.offerId))
+          .filter((config) => config.platform === currentPlatform);
+        const task = (await this.buildTasks(context, configs))[0];
+        if (!task) {
+          await this.idempotencyRepo.markDeadLetter(
+            currentConversionId,
+            currentPlatform,
+            'Postback configuration could not be rebuilt for manual retry',
+          );
+          continue;
+        }
+
+        task.retryCount = attemptCount;
+        const result = await this.sender.send(task);
+        if (result.success) {
+          await this.markSent(currentConversionId, currentPlatform, result.statusCode, task.id);
+        } else {
+          await this.recordFailedDelivery(task, result);
+        }
+        await this.logPostback(this.buildLogFromResult(task, result));
+        results.push(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.idempotencyRepo.markAsRetry(
+          currentConversionId,
+          currentPlatform,
+          message,
+          attemptCount + 1,
+        );
+        results.push({
+          success: false,
+          taskId: '',
+          platform: currentPlatform,
+          url: '',
+          latencyMs: 0,
+          retryCount: attemptCount + 1,
+          errorMessage: message,
+          willRetry: true,
+        });
+      }
+    }
+
+    return results;
   }
 
   /**

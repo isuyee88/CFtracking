@@ -1,17 +1,32 @@
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
+import { LIST_CONDITION_FIELD_OPTIONS, getConditionFieldMeta } from '../constants/governance-ui';
 
 export type ListConditionMode = 'all' | 'any';
 export type ListConditionOperator = 'equals' | 'contains' | 'starts_with' | 'ends_with' | 'in' | 'exists';
 export type ListConditionField =
   | 'ip'
   | 'asn'
+  | 'visitorId'
   | 'userAgent'
   | 'zoneId'
   | 'country'
   | 'device'
   | 'isp'
+  | 'ispType'
+  | 'orgName'
   | 'fingerprint'
+  | 'verifiedBot'
+  | 'botScore'
+  | 'ja3'
+  | 'ja4'
+  | 'jsDetectionPassed'
+  | 'challengeState'
+  | 'tokenReplayState'
+  | 'campaignCount7d'
+  | 'visitorRepeat7d'
+  | 'ipRepeat7d'
+  | 'suspiciousSignal'
   | 'utmSource'
   | 'utmCampaign'
   | 'browser'
@@ -35,25 +50,6 @@ interface ListConditionsEditorProps {
   onConditionsChange: (conditions: ListCondition[]) => void;
 }
 
-const fieldOptions: Array<{ value: ListConditionField; label: string }> = [
-  { value: 'ip', label: 'IP' },
-  { value: 'asn', label: 'ASN' },
-  { value: 'userAgent', label: 'User Agent' },
-  { value: 'zoneId', label: 'Zone ID' },
-  { value: 'country', label: 'Country' },
-  { value: 'device', label: 'Device' },
-  { value: 'isp', label: 'ISP' },
-  { value: 'fingerprint', label: 'Fingerprint' },
-  { value: 'utmSource', label: 'UTM Source' },
-  { value: 'utmCampaign', label: 'UTM Campaign' },
-  { value: 'browser', label: 'Browser' },
-  { value: 'subId1', label: 'SubID 1' },
-  { value: 'subId2', label: 'SubID 2' },
-  { value: 'subId3', label: 'SubID 3' },
-  { value: 'subId4', label: 'SubID 4' },
-  { value: 'subId5', label: 'SubID 5' },
-];
-
 const operatorOptions: Array<{ value: ListConditionOperator; label: string }> = [
   { value: 'equals', label: 'Equals' },
   { value: 'contains', label: 'Contains' },
@@ -62,6 +58,14 @@ const operatorOptions: Array<{ value: ListConditionOperator; label: string }> = 
   { value: 'in', label: 'In (comma list)' },
   { value: 'exists', label: 'Exists' },
 ];
+
+function describeMatchMode(mode: ListConditionMode, count: number): string {
+  if (mode === 'any') {
+    return count <= 1 ? 'Match ANY condition' : `Match ANY condition (${count} choices)`;
+  }
+
+  return count <= 1 ? 'Match ALL conditions' : `Match ALL conditions (${count} required)`;
+}
 
 function getDisplayValue(condition: ListCondition): string {
   if (Array.isArray(condition.value)) {
@@ -148,16 +152,27 @@ export function ListConditionsEditor({
         </button>
       </div>
 
-      <div className="flex items-center gap-2">
-        <label className="text-xs text-on-surface-variant">Match</label>
-        <select
-          value={matchMode}
-          onChange={(e) => onMatchModeChange(e.target.value as ListConditionMode)}
-          className="px-3 py-1 bg-surface text-xs border border-outline-variant focus:border-primary outline-none"
-        >
-          <option value="all">ALL conditions (AND)</option>
-          <option value="any">ANY condition (OR)</option>
-        </select>
+      <div className="rounded-sm border border-outline-variant/40 bg-surface-container/40 p-3">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
+          Operator Logic
+        </div>
+        <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-on-surface">{describeMatchMode(matchMode, conditions.length)}</p>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-on-surface-variant">Match</label>
+            <select
+              value={matchMode}
+              onChange={(e) => onMatchModeChange(e.target.value as ListConditionMode)}
+              className="px-3 py-1 bg-surface text-xs border border-outline-variant focus:border-primary outline-none"
+            >
+              <option value="all">ALL conditions (AND)</option>
+              <option value="any">ANY condition (OR)</option>
+            </select>
+          </div>
+        </div>
+        <p className="mt-2 text-[11px] text-on-surface-variant">
+          Use ALL for tight blocking logic. Switch to ANY when a single suspicious signal should trigger the entry.
+        </p>
       </div>
 
       {conditions.length === 0 && (
@@ -166,56 +181,84 @@ export function ListConditionsEditor({
         </p>
       )}
 
-      {conditions.map((condition, index) => (
-        <div key={`${condition.field}-${condition.operator}-${index}`} className="grid grid-cols-12 gap-2 items-start">
-          <select
-            value={condition.field}
-            onChange={(e) => updateCondition(index, { field: e.target.value as ListConditionField })}
-            className="col-span-4 px-2 py-2 bg-surface text-xs border border-outline-variant focus:border-primary outline-none"
-          >
-            {fieldOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+      {conditions.map((condition, index) => {
+        const fieldMeta = getConditionFieldMeta(condition.field);
+        const placeholder =
+          condition.operator === 'in'
+            ? fieldMeta.listPlaceholder || 'a,b,c'
+            : fieldMeta.placeholder || 'Enter value';
 
-          <select
-            value={condition.operator}
-            onChange={(e) => updateConditionOperator(index, e.target.value as ListConditionOperator)}
-            className="col-span-3 px-2 py-2 bg-surface text-xs border border-outline-variant focus:border-primary outline-none"
-          >
-            {operatorOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+        return (
+          <div key={`${condition.field}-${condition.operator}-${index}`} className="space-y-1">
+            <div className="grid grid-cols-12 gap-2 items-start">
+              <select
+                value={condition.field}
+                onChange={(e) => updateCondition(index, { field: e.target.value as ListConditionField })}
+                className="col-span-4 px-2 py-2 bg-surface text-xs border border-outline-variant focus:border-primary outline-none"
+              >
+                {LIST_CONDITION_FIELD_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
 
-          {condition.operator !== 'exists' ? (
-            <input
-              type="text"
-              value={getDisplayValue(condition)}
-              onChange={(e) => updateConditionValue(index, e.target.value)}
-              placeholder={condition.operator === 'in' ? 'a,b,c' : 'Enter value'}
-              className="col-span-4 px-2 py-2 bg-surface text-xs border border-outline-variant focus:border-primary outline-none"
-            />
-          ) : (
-            <div className="col-span-4 px-2 py-2 text-xs text-on-surface-variant border border-dashed border-outline-variant/40">
-              No value needed
+              <select
+                value={condition.operator}
+                onChange={(e) => updateConditionOperator(index, e.target.value as ListConditionOperator)}
+                className="col-span-3 px-2 py-2 bg-surface text-xs border border-outline-variant focus:border-primary outline-none"
+              >
+                {operatorOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+
+              {condition.operator !== 'exists' ? (
+                condition.operator === 'in' ? (
+                  <textarea
+                    value={getDisplayValue(condition)}
+                    onChange={(e) => updateConditionValue(index, e.target.value)}
+                    placeholder={placeholder}
+                    rows={4}
+                    className="col-span-4 px-2 py-2 bg-surface text-xs border border-outline-variant focus:border-primary outline-none resize-y min-h-[88px]"
+                  />
+                ) : (
+                  <textarea
+                    value={getDisplayValue(condition)}
+                    onChange={(e) => updateConditionValue(index, e.target.value)}
+                    placeholder={placeholder}
+                    rows={2}
+                    className="col-span-4 px-2 py-2 bg-surface text-xs border border-outline-variant focus:border-primary outline-none resize-y min-h-[56px]"
+                  />
+                )
+              ) : (
+                <div className="col-span-4 px-2 py-2 text-xs text-on-surface-variant border border-dashed border-outline-variant/40">
+                  No value needed
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => removeCondition(index)}
+                className="col-span-1 inline-flex justify-center items-center py-2 text-on-surface-variant hover:text-error"
+                title="Remove condition"
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => removeCondition(index)}
-            className="col-span-1 inline-flex justify-center items-center py-2 text-on-surface-variant hover:text-error"
-            title="Remove condition"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      ))}
+            {fieldMeta.helpText ? (
+              <p className="pl-1 text-[11px] text-on-surface-variant">{fieldMeta.helpText}</p>
+            ) : null}
+            {condition.operator === 'in' ? (
+              <p className="pl-1 text-[11px] text-on-surface-variant">
+                Enter multiple values separated by commas or new lines.
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

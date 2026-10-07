@@ -28,6 +28,7 @@ import { Hono } from 'hono';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
+import { PostbackService } from '@/services/postback/postback.service';
 
 /** 定义Hono应用的绑定类型 */
 type Bindings = Env;
@@ -153,41 +154,32 @@ app.post('/retry', async (c) => {
     );
 
     const repo = new PostbackLogRepository(c.env.DB);
-    let failedLogs;
-
-    // 根据条件查询失败的日志
-    if (body.conversionId || body.platform) {
-      failedLogs = await repo.findFailedLogs(50);
-      if (body.conversionId) {
-        failedLogs = failedLogs.filter(
-          (l) => l.conversionId === body.conversionId
-        );
-      }
-      if (body.platform) {
-        failedLogs = failedLogs.filter((l) => l.platform === body.platform);
-      }
-    } else {
-      // 无筛选条件，取最近20条失败记录
-      failedLogs = await repo.findFailedLogs(20);
-    }
+    // 只取 delivery state 中仍为 retry 的记录；历史失败日志不再绕过状态机。
+    const limit = body.conversionId || body.platform ? 50 : 20;
+    const retryableLogs = await repo.findRetryableLogs(
+      limit,
+      body.conversionId,
+      body.platform,
+    );
 
     // 限制最多重试10条，避免长时间阻塞
-    const logsToRetry = failedLogs.slice(0, 10);
+    const logsToRetry = retryableLogs.slice(0, 10);
+    const service = new PostbackService(c.env);
     const results: Array<{
       logId: string;
       success: boolean;
       error?: string;
     }> = [];
 
-    // TODO: 实现完整的重试逻辑
-    // 当前版本仅记录日志，实际重发需要在后续迭代中实现
-    // 需要根据log重建context并重新发送Postback
     for (const log of logsToRetry) {
       try {
-        // 占位符: 实际应重建上下文并重新发送
-        // const service = new PostbackService(c.env);
-        // await service.retrySinglePostback(log);
-        results.push({ logId: log.id, success: true });
+        const retryResults = await service.retryFailedPostbacks(log.conversionId, log.platform);
+        const result = retryResults[0];
+        results.push({
+          logId: log.id,
+          success: result?.success ?? false,
+          ...(result?.errorMessage ? { error: result.errorMessage } : {}),
+        });
       } catch (e) {
         results.push({
           logId: log.id,

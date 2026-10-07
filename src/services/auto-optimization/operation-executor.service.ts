@@ -77,7 +77,7 @@ export class AutoOperationExecutorService {
     }
 
     const platformId = this.normalizePlatformId(operation.platform);
-    const mapped = this.mapOperationToPlatformAction(operation, platformId);
+    const mapped = await this.mapOperationToPlatformAction(operation, platformId);
     if (!mapped.success) {
       await this.repo.finalizeOperationExecution(operation.id, {
         success: false,
@@ -219,16 +219,34 @@ export class AutoOperationExecutorService {
     };
   }
 
-  private mapOperationToPlatformAction(
+  private async mapOperationToPlatformAction(
     operation: AutoOperation,
     platformId: string,
-  ): { success: true; mapping: PlatformActionMapping } | { success: false; message: string } {
+  ): Promise<{ success: true; mapping: PlatformActionMapping } | { success: false; message: string }> {
     const baseCampaignId = operation.campaignId;
     const params = operation.parameters || {};
 
     switch (operation.actionType) {
       case 'BLOCK':
       case 'PAUSE': {
+        if (platformId === 'propellerads' && params.scopeType === 'publisher') {
+          const publisherId = this.resolveStringParam(params, ['publisherId', 'publisher_id', 'scopeId']);
+          if (!publisherId) {
+            return { success: false, message: 'Publisher block requires publisherId' };
+          }
+
+          return {
+            success: true,
+            mapping: {
+              action: 'exclude_subzone',
+              parameters: {
+                campaignId: baseCampaignId,
+                publisherId,
+              },
+            },
+          };
+        }
+
         if (platformId === 'propellerads' && operation.zoneId) {
           return {
             success: true,
@@ -238,6 +256,16 @@ export class AutoOperationExecutorService {
                 campaignId: baseCampaignId,
                 zoneId: operation.zoneId,
               },
+            },
+          };
+        }
+        // oddbytes 仅支持批量操作（pauseCampaigns），单 campaign 包装为数组
+        if (platformId === 'oddbytes') {
+          return {
+            success: true,
+            mapping: {
+              action: 'pause_campaigns',
+              parameters: { campaignIds: [baseCampaignId] },
             },
           };
         }
@@ -251,6 +279,24 @@ export class AutoOperationExecutorService {
       }
       case 'UNBLOCK':
       case 'RESUME': {
+        if (platformId === 'propellerads' && params.scopeType === 'publisher') {
+          const publisherId = this.resolveStringParam(params, ['publisherId', 'publisher_id', 'scopeId']);
+          if (!publisherId) {
+            return { success: false, message: 'Publisher unblock requires publisherId' };
+          }
+
+          return {
+            success: true,
+            mapping: {
+              action: 'include_subzone',
+              parameters: {
+                campaignId: baseCampaignId,
+                publisherId,
+              },
+            },
+          };
+        }
+
         if (platformId === 'propellerads' && operation.zoneId) {
           return {
             success: true,
@@ -263,6 +309,16 @@ export class AutoOperationExecutorService {
             },
           };
         }
+        // oddbytes 仅支持批量操作（resumeCampaigns），单 campaign 包装为数组
+        if (platformId === 'oddbytes') {
+          return {
+            success: true,
+            mapping: {
+              action: 'resume_campaigns',
+              parameters: { campaignIds: [baseCampaignId] },
+            },
+          };
+        }
         return {
           success: true,
           mapping: {
@@ -272,40 +328,43 @@ export class AutoOperationExecutorService {
         };
       }
       case 'ADJUST_BID': {
-        const bid = this.resolveNumericParam(params, ['bid', 'newBid', 'targetBid']);
-        if (bid === null) {
-          return { success: false, message: 'ADJUST_BID requires numeric bid parameter' };
+        let bid = this.resolveNumericParam(params, ['bid', 'newBid', 'targetBid']);
+        let previousBid: number | null = null;
+
+        if (bid === null && platformId === 'propellerads') {
+          const currentData = await this.manager.executeAction(platformId, 'get_campaign_data', {
+            campaignId: baseCampaignId,
+          });
+          const currentBid = this.extractCurrentBid(currentData.data);
+          previousBid = currentBid;
+
+          if (currentBid !== null) {
+            const bidMultiplier = this.resolveNumericParam(params, ['bidMultiplier']);
+            const bidDeltaPercent = this.resolveNumericParam(params, ['bidDeltaPercent']);
+            if (bidMultiplier !== null) {
+              bid = Number((currentBid * bidMultiplier).toFixed(5));
+            } else if (bidDeltaPercent !== null) {
+              bid = Number((currentBid * (1 + bidDeltaPercent / 100)).toFixed(5));
+            }
+          }
         }
 
-        if (platformId === 'oddbytes') {
-          const keywordId = this.resolveStringParam(params, ['keywordId', 'keyword_id']);
-          if (!keywordId) {
-            return { success: false, message: 'OddBytes ADJUST_BID requires keywordId' };
-          }
+        if (bid === null) {
+          return { success: false, message: 'ADJUST_BID requires numeric bid or derivation parameters' };
+        }
 
+        // oddbytes 走通用映射：其适配器不支持 adjust_bid（targets 报文未实测），由 adapter 层显式返回 unsupported
           return {
             success: true,
             mapping: {
               action: 'adjust_bid',
               parameters: {
                 campaignId: baseCampaignId,
-                keywordId,
                 bid,
+                previousBid: previousBid ?? this.resolveNumericParam(params, ['previousBid']),
               },
             },
           };
-        }
-
-        return {
-          success: true,
-          mapping: {
-            action: 'adjust_bid',
-            parameters: {
-              campaignId: baseCampaignId,
-              bid,
-            },
-          },
-        };
       }
       case 'BUDGET_REALLOC':
         return { success: false, message: 'BUDGET_REALLOC is not supported by current platform adapters' };
@@ -333,10 +392,11 @@ export class AutoOperationExecutorService {
         return apiUrl ? { apiKey, apiUrl } : { apiKey };
       }
       case 'oddbytes': {
+        // 规范键 ODDBYTES_BASE_URL；兼容旧 ODDBYTES_WSDL_URL（脏值后缀由 adapter 取 origin 清洗）
         const apiKey = this.readEnvString(envMap, ['ODDBYTES_API_KEY']);
-        const wsdlUrl = this.readEnvString(envMap, ['ODDBYTES_WSDL_URL']);
-        if (!apiKey || !wsdlUrl) return null;
-        return { apiKey, wsdlUrl };
+        const baseUrl = this.readEnvString(envMap, ['ODDBYTES_BASE_URL', 'ODDBYTES_WSDL_URL']);
+        if (!apiKey || !baseUrl) return null;
+        return { apiKey, baseUrl };
       }
       case 'clickbank': {
         const apiKey = this.readEnvString(envMap, ['CLICKBANK_API_KEY']);
@@ -384,6 +444,28 @@ export class AutoOperationExecutorService {
     return null;
   }
 
+  private extractCurrentBid(source: Record<string, unknown> | undefined): number | null {
+    if (!source) {
+      return null;
+    }
+
+    const candidates = [
+      source.cpc,
+      source.bid,
+      (source.campaign as Record<string, unknown> | undefined)?.cpc,
+      (source.data as Record<string, unknown> | undefined)?.cpc,
+    ];
+
+    for (const candidate of candidates) {
+      const numeric = Number(candidate);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        return numeric;
+      }
+    }
+
+    return null;
+  }
+
   private stringifyError(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
@@ -391,4 +473,3 @@ export class AutoOperationExecutorService {
     return String(error);
   }
 }
-

@@ -39,7 +39,8 @@ export interface PlatformActionResult {
 }
 
 export interface OddBytesConfig extends PlatformCredentials {
-  wsdlUrl: string;
+  /** API 根地址（如 https://api.oddbytes.com），实际请求目标为 {origin}/?v3={service} */
+  baseUrl: string;
   apiKey: string;
 }
 

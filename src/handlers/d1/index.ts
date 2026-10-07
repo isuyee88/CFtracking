@@ -19,6 +19,8 @@ import { DomainRepository } from './domain.repo';
 import { MultiOfferRepository } from './multi-offer.repo';
 import { AutoruleBindingRepository } from './autoruleBinding.repo';
 import { AutoruleScopeRepository } from './autoruleScope.repo';
+import { AttributionEventRepository } from './attribution-event.repo';
+import { LandingPageVersionRepository } from './landingPageVersion.repo';
 
 export type { D1Database } from '@cloudflare/workers-types';
 
@@ -37,6 +39,8 @@ export interface D1Repositories {
   multiOffer: MultiOfferRepository;
   autoruleBinding: AutoruleBindingRepository;
   autoruleScope: AutoruleScopeRepository;
+  attributionEvent: AttributionEventRepository;
+  landingPageVersion: LandingPageVersionRepository;
 }
 
 export function getD1Connection(env: Env): D1Database {
@@ -59,6 +63,8 @@ export function createRepositories(db: D1Database): D1Repositories {
     multiOffer: new MultiOfferRepository(db),
     autoruleBinding: new AutoruleBindingRepository(db),
     autoruleScope: new AutoruleScopeRepository(db),
+    attributionEvent: new AttributionEventRepository(db),
+    landingPageVersion: new LandingPageVersionRepository(db),
   };
 }
 
@@ -76,4 +82,6 @@ export { DomainRepository } from './domain.repo';
 export { MultiOfferRepository } from './multi-offer.repo';
 export { AutoruleBindingRepository } from './autoruleBinding.repo';
 export { AutoruleScopeRepository } from './autoruleScope.repo';
+export { AttributionEventRepository } from './attribution-event.repo';
+export { LandingPageVersionRepository } from './landingPageVersion.repo';
 

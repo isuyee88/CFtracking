@@ -54,6 +54,21 @@ operationsRoutes.get('/operations/recent', async (c: Context<{ Bindings: Env }>)
   }
 });
 
+operationsRoutes.get('/operations/stats', async (c: Context<{ Bindings: Env }>) => {
+  const days = parseInt(c.req.query('days') || '30', 10);
+
+  try {
+    const db = getD1Connection(c.env);
+    const repo = new AutoOptimizationRepository(db);
+    const stats = await repo.getOperationStats(days);
+
+    return c.json({ success: true, data: stats });
+  } catch (error) {
+    console.error('[Ops Stats API] Error:', error);
+    return c.json({ success: false, error: 'Failed to fetch stats' }, 500);
+  }
+});
+
 operationsRoutes.get('/operations/:operationId', async (c: Context<{ Bindings: Env }>) => {
   const operationId = c.req.param('operationId')!;
 
@@ -78,21 +93,6 @@ operationsRoutes.get('/operations/:operationId', async (c: Context<{ Bindings: E
   } catch (error) {
     console.error('[Operation Detail API] Error:', error);
     return c.json({ success: false, error: 'Failed to fetch operation detail' }, 500);
-  }
-});
-
-operationsRoutes.get('/operations/stats', async (c: Context<{ Bindings: Env }>) => {
-  const days = parseInt(c.req.query('days') || '30', 10);
-
-  try {
-    const db = getD1Connection(c.env);
-    const repo = new AutoOptimizationRepository(db);
-    const stats = await repo.getOperationStats(days);
-
-    return c.json({ success: true, data: stats });
-  } catch (error) {
-    console.error('[Ops Stats API] Error:', error);
-    return c.json({ success: false, error: 'Failed to fetch stats' }, 500);
   }
 });
 

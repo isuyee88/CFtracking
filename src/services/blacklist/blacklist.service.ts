@@ -581,6 +581,14 @@ export class BlacklistService {
       case 'country':
         this.validateCountryValue(normalizedValue);
         break;
+      case 'visitor_id':
+      case 'org_exact':
+      case 'org_keyword':
+      case 'isp_type':
+      case 'network_tag':
+      case 'allow_bias_org':
+      case 'allow_bias_isp_type':
+      case 'suspicious_reason':
       case 'zone':
       case 'creative':
       case 'publisher':
@@ -650,12 +658,26 @@ export class BlacklistService {
     const allowedFields: ListConditionField[] = [
       'ip',
       'asn',
+      'visitorId',
       'userAgent',
       'zoneId',
       'country',
       'device',
       'isp',
+      'ispType',
+      'orgName',
       'fingerprint',
+      'verifiedBot',
+      'botScore',
+      'ja3',
+      'ja4',
+      'jsDetectionPassed',
+      'challengeState',
+      'tokenReplayState',
+      'campaignCount7d',
+      'visitorRepeat7d',
+      'ipRepeat7d',
+      'suspiciousSignal',
       'utmSource',
       'utmCampaign',
       'browser',

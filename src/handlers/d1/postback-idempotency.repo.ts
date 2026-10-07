@@ -75,16 +75,39 @@ export class PostbackIdempotencyRepository extends BaseRepository<{
             id TEXT PRIMARY KEY,
             conversion_id TEXT NOT NULL,
             platform TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'sent',
+            status TEXT NOT NULL DEFAULT 'pending',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(conversion_id, platform)
           )
         `),
+      ]);
+
+      // Older deployments created this table lazily before delivery state was
+      // formalized. Add only missing columns so the upgrade is non-destructive.
+      for (const statement of [
+        'ALTER TABLE postback_idempotency ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0',
+        'ALTER TABLE postback_idempotency ADD COLUMN next_attempt_at TEXT',
+        'ALTER TABLE postback_idempotency ADD COLUMN last_error TEXT',
+        'ALTER TABLE postback_idempotency ADD COLUMN last_status_code INTEGER',
+        'ALTER TABLE postback_idempotency ADD COLUMN request_id TEXT',
+      ]) {
+        try {
+          await this.db.prepare(statement).bind().run();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/duplicate column name/i.test(message)) throw error;
+        }
+      }
+
+      await this.db.batch([
         this.db.prepare(
           'CREATE INDEX IF NOT EXISTS idx_pidempotency_conversion ON postback_idempotency(conversion_id)'
         ),
         this.db.prepare(
           'CREATE INDEX IF NOT EXISTS idx_pidempotency_platform ON postback_idempotency(platform)'
+        ),
+        this.db.prepare(
+          'CREATE INDEX IF NOT EXISTS idx_postback_idempotency_retry ON postback_idempotency(status, next_attempt_at)'
         ),
       ]);
 
@@ -131,7 +154,7 @@ export class PostbackIdempotencyRepository extends BaseRepository<{
     try {
       const result = await this.db
         .prepare(
-          `SELECT id FROM postback_idempotency WHERE conversion_id = ? AND platform = ?`
+          `SELECT id FROM postback_idempotency WHERE conversion_id = ? AND platform = ? AND status = 'sent'`
         )
         .bind(conversionId, platform)
         .first();
@@ -146,13 +169,102 @@ export class PostbackIdempotencyRepository extends BaseRepository<{
     }
   }
 
+  async markAsPending(conversionId: string, platform: string): Promise<void> {
+    await this.ensureTable();
+    await this.db.prepare(`
+      INSERT OR IGNORE INTO postback_idempotency
+        (id, conversion_id, platform, status, attempt_count, created_at)
+      VALUES (?, ?, ?, 'pending', 0, datetime('now'))
+    `).bind(crypto.randomUUID(), conversionId, platform).run();
+  }
+
+  async markAsSending(conversionId: string, platform: string): Promise<boolean> {
+    await this.ensureTable();
+    const result = await this.db.prepare(`
+      UPDATE postback_idempotency
+      SET status = 'sending', attempt_count = attempt_count + 1
+      WHERE conversion_id = ? AND platform = ? AND status IN ('pending', 'retry')
+    `).bind(conversionId, platform).run();
+    return Number(result.meta?.changes ?? 0) > 0;
+  }
+
+  async markAsRetry(
+    conversionId: string,
+    platform: string,
+    lastError: string,
+    attemptCount: number,
+    nextAttemptAt: string = new Date(Date.now() + Math.min(3600000, 1000 * 2 ** Math.max(0, attemptCount))).toISOString(),
+    lastStatusCode?: number,
+    requestId?: string,
+  ): Promise<void> {
+    await this.ensureTable();
+    await this.db.prepare(`
+      UPDATE postback_idempotency
+      SET status = 'retry', last_error = ?, next_attempt_at = ?, attempt_count = ?,
+          last_status_code = ?, request_id = ?
+      WHERE conversion_id = ? AND platform = ? AND status != 'sent'
+    `).bind(
+      lastError,
+      nextAttemptAt,
+      attemptCount,
+      lastStatusCode ?? null,
+      requestId ?? null,
+      conversionId,
+      platform,
+    ).run();
+  }
+
+  async markDeadLetter(
+    conversionId: string,
+    platform: string,
+    lastError: string,
+    lastStatusCode?: number,
+    requestId?: string,
+  ): Promise<void> {
+    await this.ensureTable();
+    await this.db.prepare(`
+      UPDATE postback_idempotency
+      SET status = 'dead_letter', last_error = ?, next_attempt_at = NULL,
+          last_status_code = ?, request_id = ?
+      WHERE conversion_id = ? AND platform = ? AND status != 'sent'
+    `).bind(
+      lastError,
+      lastStatusCode ?? null,
+      requestId ?? null,
+      conversionId,
+      platform,
+    ).run();
+  }
+
+  async listDueRetries(limit: number = 100): Promise<Array<Record<string, unknown>>> {
+    await this.ensureTable();
+    const result = await this.db.prepare(`
+      SELECT * FROM postback_idempotency
+      WHERE status = 'retry' AND (next_attempt_at IS NULL OR julianday(next_attempt_at) <= julianday('now'))
+      ORDER BY next_attempt_at ASC, created_at ASC
+      LIMIT ?
+    `).bind(Math.max(1, Math.min(500, limit))).all<Record<string, unknown>>();
+    return result.results ?? [];
+  }
+
+  async findRetry(conversionId: string, platform: string): Promise<Record<string, unknown> | null> {
+    await this.ensureTable();
+    const row = await this.db.prepare(`
+      SELECT * FROM postback_idempotency
+      WHERE conversion_id = ? AND platform = ? AND status = 'retry'
+      LIMIT 1
+    `).bind(conversionId, platform).first<Record<string, unknown>>();
+    return row ?? null;
+  }
+
   /**
    * 标记Postback为已发送 (幂等性写入)
    *
    * @param conversionId 转化ID
    * @param platform 平台名称
    *
-   * @description 使用INSERT OR IGNORE保证唯一性，
+   * @description 只有外部发送成功后才允许写入 sent 状态。
+   * 失败发送必须走 retry/dead_letter，不能被幂等检查永久吞掉。
    * 即使重复调用也不会产生错误或重复记录。
    *
    * @example
@@ -173,17 +285,29 @@ export class PostbackIdempotencyRepository extends BaseRepository<{
    * SIDE_EFFECTS:
    * - 写入D1数据库 (INSERT操作)
    */
-  async markAsSent(conversionId: string, platform: string): Promise<void> {
+  async markAsSent(
+    conversionId: string,
+    platform: string,
+    statusCode?: number,
+    requestId?: string,
+  ): Promise<void> {
     await this.ensureTable();
 
     try {
       const id = crypto.randomUUID();
       await this.db
         .prepare(`
-          INSERT OR IGNORE INTO postback_idempotency (id, conversion_id, platform, status, created_at)
-          VALUES (?, ?, ?, 'sent', datetime('now'))
+          INSERT INTO postback_idempotency
+            (id, conversion_id, platform, status, attempt_count, next_attempt_at, last_error, last_status_code, request_id, created_at)
+          VALUES (?, ?, ?, 'sent', 0, NULL, NULL, ?, ?, datetime('now'))
+          ON CONFLICT(conversion_id, platform) DO UPDATE SET
+            status = 'sent',
+            next_attempt_at = NULL,
+            last_error = NULL,
+            last_status_code = excluded.last_status_code,
+            request_id = excluded.request_id
         `)
-        .bind(id, conversionId, platform)
+        .bind(id, conversionId, platform, statusCode ?? null, requestId ?? null)
         .run();
 
       console.log(

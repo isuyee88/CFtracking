@@ -47,7 +47,7 @@ export interface Action {
 }
 
 export interface FunctionCondition {
-  fn: 'in_blacklist' | 'in_whitelist';
+  fn: 'in_blacklist' | 'in_whitelist' | 'repeat_window_exceeded';
   args: string[];
 }
 

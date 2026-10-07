@@ -1198,7 +1198,7 @@ export interface TrafficSourceMacroPreviewResult {
 export interface HostedAssetUploadResult {
   assetId: string;
   entityType: 'landing' | 'offer';
-  mode: 'local' | 'zip';
+  mode: 'local' | 'zip' | 'image';
   name: string;
   fileName: string;
   mimeType: string;
@@ -1374,7 +1374,7 @@ export async function previewTrafficSourceMacros(data: {
 
 export async function uploadHostedAsset(data: {
   entityType: 'landing' | 'offer';
-  mode: 'local' | 'zip';
+  mode: 'local' | 'zip' | 'image';
   name?: string;
   fileName?: string;
   mimeType?: string;
@@ -1709,6 +1709,33 @@ export interface FlowValidationResult {
   durationMs: number;
 }
 
+export interface FlowSimulationInput {
+  context: Record<string, unknown>;
+  schemas: FlowSchemaDocument[];
+  rotation?: 'position' | 'weight';
+  riskScore?: number | null;
+}
+
+export interface FlowSimulationTrace {
+  flowId: string;
+  flowType: FlowSchemaDocument['flow']['type'];
+  matched: boolean;
+  reason: string;
+  ruleResults: FlowRuleValidationResult[];
+  matchedRule?: FlowRuleValidationResult;
+}
+
+export interface FlowSimulationResult {
+  decision: 'flow' | 'default' | 'do_nothing';
+  flowId: string | null;
+  action: FlowRuleActionConfig;
+  matchedRule?: FlowRuleValidationResult;
+  trace: FlowSimulationTrace[];
+  riskScore: number | null;
+  reason: string;
+  latencyMs: number;
+}
+
 export async function fetchFlowSchema(flowId: string): Promise<FlowSchemaDocument> {
   const bootstrapSchema = readCampaignDetailFlowSchema(flowId);
   if (bootstrapSchema) {
@@ -1762,6 +1789,15 @@ export async function testFlow(
   const response = await authenticatedFetch(`/api/flows/${flowId}/test`, {
     method: 'POST',
     body: JSON.stringify({ visitData }),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function simulateFlow(input: FlowSimulationInput): Promise<FlowSimulationResult> {
+  const response = await authenticatedFetch('/api/flows/simulation', {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
   const result = await handleResponse(response);
   return result.data;
@@ -1937,6 +1973,18 @@ export async function fetchLanding(id: string | number) {
   return unwrapPayload(payload);
 }
 
+export async function importLandingManifest(data: {
+  runtimeUrl: string;
+  manifest: Record<string, unknown>;
+}) {
+  const response = await authenticatedFetch('/api/landing-pages/import-manifest', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
 export async function createLanding(data: any) {
   const response = await authenticatedFetch('/api/landing-pages', {
     method: 'POST',
@@ -1961,6 +2009,97 @@ export async function deleteLanding(id: string | number) {
   });
   const result = await handleResponse(response);
   return result.data;
+}
+
+export type LandingPageVersionStatus = 'draft' | 'preview' | 'published' | 'paused' | 'archived';
+
+export interface LandingPageVersion {
+  id: string;
+  landingPageId: string;
+  versionNumber: number;
+  assetId: string | null;
+  manifestSnapshot: Record<string, unknown> | null;
+  status: LandingPageVersionStatus;
+  publishedAt: string | null;
+  publishedBy: string | null;
+  rollbackFromVersion: number | null;
+  contentHash: string | null;
+  etag: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateLandingVersionInput {
+  assetId?: string | null;
+  manifestSnapshot?: Record<string, unknown> | null;
+  status?: 'draft' | 'preview';
+  publishedBy?: string | null;
+  rollbackFromVersion?: number | null;
+  contentHash?: string | null;
+  etag?: string | null;
+}
+
+export async function fetchLandingVersions(landingPageId: string | number): Promise<LandingPageVersion[]> {
+  const response = await authenticatedFetch(`/api/landing-pages/${landingPageId}/versions`);
+  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion[] }>(response);
+  const data = unwrapPayload<LandingPageVersion[]>(payload);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function createLandingVersion(
+  landingPageId: string | number,
+  data: CreateLandingVersionInput,
+): Promise<LandingPageVersion> {
+  const response = await authenticatedFetch(`/api/landing-pages/${landingPageId}/versions`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion }>(response);
+  return unwrapPayload<LandingPageVersion>(payload);
+}
+
+export async function publishLandingVersion(
+  landingPageId: string | number,
+  versionId: string,
+  publishedBy?: string,
+): Promise<LandingPageVersion> {
+  const response = await authenticatedFetch(
+    `/api/landing-pages/${landingPageId}/versions/${versionId}/publish`,
+    {
+      method: 'POST',
+      body: JSON.stringify(publishedBy ? { publishedBy } : {}),
+    },
+  );
+  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion }>(response);
+  return unwrapPayload<LandingPageVersion>(payload);
+}
+
+export async function pauseLandingVersion(
+  landingPageId: string | number,
+  versionId: string,
+): Promise<LandingPageVersion> {
+  const response = await authenticatedFetch(
+    `/api/landing-pages/${landingPageId}/versions/${versionId}/pause`,
+    { method: 'POST' },
+  );
+  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion }>(response);
+  return unwrapPayload<LandingPageVersion>(payload);
+}
+
+export async function rollbackLandingVersion(
+  landingPageId: string | number,
+  versionNumber: number,
+  publishedBy?: string,
+): Promise<LandingPageVersion> {
+  const response = await authenticatedFetch(
+    `/api/landing-pages/${landingPageId}/versions/${versionNumber}/rollback`,
+    {
+      method: 'POST',
+      body: JSON.stringify(publishedBy ? { publishedBy } : {}),
+    },
+  );
+  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion }>(response);
+  return unwrapPayload<LandingPageVersion>(payload);
 }
 
 // ==================== Analytics API ====================
@@ -2159,6 +2298,8 @@ export interface ReportParams {
   limit?: number;
   sortBy?: ReportDimension | ReportMetric;
   sortOrder?: 'asc' | 'desc';
+  // conversion 语义报表后端强制实时口径
+  reportType?: ReportType;
 }
 
 export interface ReportExportParams extends ReportParams {
@@ -2234,6 +2375,54 @@ export async function exportReport(params: ReportExportParams): Promise<Blob> {
   }
 
   return await response.blob();
+}
+
+export interface ReportPresetRecord {
+  id: string;
+  name: string;
+  reportType: string;
+  config: unknown;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export async function listReportPresets(reportType?: string): Promise<ReportPresetRecord[]> {
+  const query = reportType ? `?reportType=${encodeURIComponent(reportType)}` : '';
+  const response = await authenticatedFetch(`/api/reports/presets${query}`);
+  const payload = await handleRawJsonResponse<{ success?: boolean; data?: unknown }>(response);
+  const data = unwrapPayload<unknown>(payload);
+  const list = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { presets?: unknown[] })?.presets)
+      ? (data as { presets: unknown[] }).presets
+      : [];
+
+  return list.filter((item): item is ReportPresetRecord => {
+    const record = item as ReportPresetRecord | null;
+    return Boolean(record && typeof record.id === 'string' && typeof record.name === 'string');
+  });
+}
+
+export async function createReportPreset(params: {
+  name: string;
+  reportType: string;
+  config: unknown;
+}): Promise<ReportPresetRecord | null> {
+  const response = await authenticatedFetch('/api/reports/presets', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  const payload = await handleRawJsonResponse<{ success?: boolean; data?: unknown }>(response);
+  return unwrapPayload<ReportPresetRecord | null>(payload) ?? null;
+}
+
+export async function deleteReportPreset(id: string): Promise<void> {
+  const response = await authenticatedFetch(`/api/reports/presets/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete report preset (status ${response.status})`);
+  }
 }
 
 export async function createExportTask(params: CreateExportTaskParams) {
@@ -2445,6 +2634,17 @@ export interface ClickLogParams {
   subId1?: string;
   subId2?: string;
   subId3?: string;
+  subId4?: string;
+  subId5?: string;
+  subId6?: string;
+  subId7?: string;
+  subId8?: string;
+  subId9?: string;
+  subId10?: string;
+  minCost?: number;
+  maxCost?: number;
+  minRiskScore?: number;
+  maxRiskScore?: number;
   country?: string;
   device?: string;
   browser?: string;
@@ -2493,6 +2693,17 @@ export async function fetchClicks(params: ClickLogParams = {}): Promise<ClickLog
       subId1: params.subId1 || '',
       subId2: params.subId2 || '',
       subId3: params.subId3 || '',
+      subId4: params.subId4 || '',
+      subId5: params.subId5 || '',
+      subId6: params.subId6 || '',
+      subId7: params.subId7 || '',
+      subId8: params.subId8 || '',
+      subId9: params.subId9 || '',
+      subId10: params.subId10 || '',
+      minCost: params.minCost ?? '',
+      maxCost: params.maxCost ?? '',
+      minRiskScore: params.minRiskScore ?? '',
+      maxRiskScore: params.maxRiskScore ?? '',
       country: params.country || '',
       device: params.device || '',
       browser: params.browser || '',
@@ -2529,6 +2740,17 @@ export async function fetchClicks(params: ClickLogParams = {}): Promise<ClickLog
     subId1: params.subId1,
     subId2: params.subId2,
     subId3: params.subId3,
+    subId4: params.subId4,
+    subId5: params.subId5,
+    subId6: params.subId6,
+    subId7: params.subId7,
+    subId8: params.subId8,
+    subId9: params.subId9,
+    subId10: params.subId10,
+    minCost: params.minCost,
+    maxCost: params.maxCost,
+    minRiskScore: params.minRiskScore,
+    maxRiskScore: params.maxRiskScore,
     country: params.country,
     device: params.device,
     browser: params.browser,
@@ -2563,6 +2785,17 @@ export async function fetchClickStats(params: ClickLogParams): Promise<ClickStat
       subId1: params.subId1 || '',
       subId2: params.subId2 || '',
       subId3: params.subId3 || '',
+      subId4: params.subId4 || '',
+      subId5: params.subId5 || '',
+      subId6: params.subId6 || '',
+      subId7: params.subId7 || '',
+      subId8: params.subId8 || '',
+      subId9: params.subId9 || '',
+      subId10: params.subId10 || '',
+      minCost: params.minCost ?? '',
+      maxCost: params.maxCost ?? '',
+      minRiskScore: params.minRiskScore ?? '',
+      maxRiskScore: params.maxRiskScore ?? '',
       country: params.country || '',
       device: params.device || '',
       browser: params.browser || '',
@@ -2592,6 +2825,17 @@ export async function fetchClickStats(params: ClickLogParams): Promise<ClickStat
     subId1: params.subId1,
     subId2: params.subId2,
     subId3: params.subId3,
+    subId4: params.subId4,
+    subId5: params.subId5,
+    subId6: params.subId6,
+    subId7: params.subId7,
+    subId8: params.subId8,
+    subId9: params.subId9,
+    subId10: params.subId10,
+    minCost: params.minCost,
+    maxCost: params.maxCost,
+    minRiskScore: params.minRiskScore,
+    maxRiskScore: params.maxRiskScore,
     country: params.country,
     device: params.device,
     browser: params.browser,
@@ -2988,13 +3232,21 @@ export async function fetchTrendsReport(filter: TrendsFilter = {}): Promise<Tren
     interval: filter.interval || 'day',
     campaignId: filter.campaignId,
   });
-  const response = await authenticatedFetch(`/api/analytics/trend-report${query}`);
+  const response = await authenticatedFetch(`/api/trends/report${query}`);
   const payload = await handleRawJsonResponse(response);
-  const result = unwrapPayload<{
-    data?: TrendsReport;
-  }>(payload);
+  const result = unwrapPayload<Partial<TrendsReport>>(payload);
 
-  return result?.data || createEmptyTrendsReport(filter);
+  if (
+    result &&
+    typeof result === 'object' &&
+    result.filter &&
+    result.summary &&
+    Array.isArray(result.data)
+  ) {
+    return result as TrendsReport;
+  }
+
+  return createEmptyTrendsReport(filter);
 }
 
 export async function fetchTrendsCompare(params: {
@@ -3076,6 +3328,7 @@ export interface UpdateRuleDTO {
 }
 
 export type RuleExpressionNode =
+  | { fn: 'in_blacklist' | 'in_whitelist' | 'repeat_window_exceeded'; args: string[] }
   | { eq: [string, string | number | boolean | null] }
   | { ne: [string, string | number | boolean | null] }
   | { in: [string, Array<string | number | boolean>] }
