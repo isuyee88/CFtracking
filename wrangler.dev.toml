@@ -15,8 +15,7 @@ REALTIME_ENABLED = true
 SSE_ENABLED = true
 AI_OPTIMIZATION_MODEL = "@cf/meta/llama-3.1-8b-instruct"
 AI_OPTIMIZATION_GATEWAY_ID = ""
-AUTH_MODE = "off"
-CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
+AUTH_MODE = "on"
 
 [[queues.producers]]
 queue = "cache-refresh-queue"
@@ -30,12 +29,10 @@ max_batch_timeout = 5
 [[d1_databases]]
 binding = "DB"
 database_name = "cf-tracking-db"
-database_id = "c20392f5-c14c-42fa-a3e7-fa9bdb5b4b76"
 migrations_dir = "schema/migrations"
 
 [[kv_namespaces]]
 binding = "UNIQUENESS_KV"
-id = "7cdc9c88e1964bff954835d91f98bd74"
 
 [[r2_buckets]]
 binding = "HOSTED_ASSETS_BUCKET"
