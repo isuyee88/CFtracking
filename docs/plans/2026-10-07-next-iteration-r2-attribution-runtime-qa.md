@@ -66,7 +66,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 
 ### Task 1.3：完成 D1 migration 的本地验证，禁止把新 schema 依赖留在请求路径
 
-**Status: PARTIAL DONE (2026-10-07).** Added executable migration tests for 073 and the complete 001→073 chain. The chain now passes after fixing fresh-D1 incompatibilities in migrations 016, 057, 066, and 070. Wrangler local apply still needs a separate runtime/network fix because this host returned `fetch failed` followed by a Node UV assertion; no remote migration was attempted.
+**Status: PARTIAL DONE (2026-10-07).** Added executable migration tests for 073 and the complete 001→076 chain. The chain passes after fixing fresh-D1 incompatibilities in migrations 016, 057, 066, and 070. The first production migration attempt was blocked by legacy drift: remote `clicks` already contains the subId/UTM/Cloudflare/governance columns, but migrations 047/050/051/062/063 were never recorded in `d1_migrations`; replaying the wide-table ALTER statements fails with D1 `too many columns`. No Worker deployment was performed. A no-op reconciliation boundary (077) is added; the runbook must record already-present legacy effects, apply only missing schema, and read back the result before deployment.
 
 **目标：** 让 `073_hosted_assets_storage.sql` 成为正式 schema 来源，运行时只保留明确的迁移期兼容逻辑。
 
