@@ -17,7 +17,7 @@
 - `npm run typecheck`、`npm run verify:frontend`、`npm run build:worker` dry-run 已通过；阶段 4 Landing version、inbound D1 生命周期、manual retry 和 outbound/report integration 已完成完整回归。
 - 当前本地回归基线为 `57 test files passed / 236 tests passed`；新增 PostbackLogRepository fresh-table/retry-state 集成测试、ReportService outbound delivery 单元/集成测试、manual retry route 回归和 Flow simulation service/API route/frontend API/UI、GrapesJS lazy-loading 契约回归。
 - Wrangler production/dev/local-QA dry-run 能识别 bindings 和 assets 路由；这不是线上资源或 D1 migration 已成功的证明。
-- 本地 D1 迁移链测试已暴露并修复 016、057、066、070 的新库兼容问题；完整 001→076 链在 SQLite/D1 兼容面通过。Wrangler `d1 migrations apply --local` 仍受当前 DNS/fetch 失败和 Node UV assertion 阻断，未宣称 CLI 迁移成功。
+- 本地 D1 迁移链测试已暴露并修复 016、057、066、070 的新库兼容问题；完整 001→076 链在 SQLite/D1 兼容面通过。持久化 local-QA store 存在历史 schema/ledger 漂移：本轮应用 057 后 auto-optimization 四个读取端点均恢复 `200`，继续应用 058 在既有 `clicks.ruleMatched` 上停止（duplicate column），因此不能把该持久化 store 的完整 CLI migration apply 写成成功；应使用受控 reconciliation 或新的 QA store。
 - 当前工作树包含大量未提交历史改动；本轮只允许修改本计划列出的文件，不得 reset、clean、覆盖其他工作。
 - 当前 Postback 幂等仓库已增加显式 delivery state 和 retry due 查询；入站回传路径使用统一 attribution event ledger，但完整的 outbound route/report integration 仍待补齐。
 - `PostbackService` 成功后才标记 sent；失败进入 retry/dead-letter；due-retry consumer 已接入现有 5 分钟 Cron。
@@ -66,7 +66,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 
 ### Task 1.3：完成 D1 migration 的本地验证，禁止把新 schema 依赖留在请求路径
 
-**Status: DONE (2026-10-07, migration gate).** Added executable migration tests for 073 and the complete 001→076 chain. The chain passes after fixing fresh-D1 incompatibilities in migrations 016, 057, 066, and 070. Production legacy drift was reconciled without replaying wide-table ALTER statements: existing `clicks` effects were recorded through the 077 boundary, missing Hosted Asset fields/indexes were applied, and remote D1 read-back returned `No migrations to apply` plus confirmed migrations 074–077. The production Worker was then deployed and verified separately; the historical reconciliation boundary remains documented for future migrations.
+**Status: DONE (2026-10-07, production migration gate); PARTIAL (persistent local-QA store).** Added executable migration tests for 073 and the complete 001→076 chain. The chain passes after fixing fresh-D1 incompatibilities in migrations 016, 057, 066, and 070. Production legacy drift was reconciled without replaying wide-table ALTER statements: existing `clicks` effects were recorded through the 077 boundary, missing Hosted Asset fields/indexes were applied, and remote D1 read-back returned `No migrations to apply` plus confirmed migrations 074–077. The production Worker was then deployed and verified separately; the historical reconciliation boundary remains documented for future migrations. The persisted local-QA store separately requires reconciliation at migration 058 because `clicks.ruleMatched` already exists.
 
 **目标：** 让 `073_hosted_assets_storage.sql` 成为正式 schema 来源，运行时只保留明确的迁移期兼容逻辑。
 
