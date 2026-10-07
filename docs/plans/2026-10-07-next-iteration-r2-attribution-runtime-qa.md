@@ -15,7 +15,7 @@
 - `HostedAssetService` 已实现 R2 上传、读取、删除、D1 元数据、旧 D1 Base64 回退、图片魔数校验和失败回滚。
 - 本轮新增公开路由、路由配置和迁移链测试：`10 tests passed`（公开路由 3、路由配置 3、迁移 073 1、完整迁移链 1，加上相关 Hosted Asset 定向测试）。
 - `npm run typecheck`、`npm run verify:frontend`、`npm run build:worker` dry-run 已通过；阶段 4 Landing version、inbound D1 生命周期、manual retry 和 outbound/report integration 已完成完整回归。
-- 当前本地回归基线为 `56 test files passed / 235 tests passed`；新增 PostbackLogRepository fresh-table/retry-state 集成测试、ReportService outbound delivery 单元/集成测试、manual retry route 回归和 Flow simulation service/API route/frontend API/UI、GrapesJS lazy-loading 契约回归。
+- 当前本地回归基线为 `57 test files passed / 236 tests passed`；新增 PostbackLogRepository fresh-table/retry-state 集成测试、ReportService outbound delivery 单元/集成测试、manual retry route 回归和 Flow simulation service/API route/frontend API/UI、GrapesJS lazy-loading 契约回归。
 - Wrangler production/dev/local-QA dry-run 能识别 bindings 和 assets 路由；这不是线上资源或 D1 migration 已成功的证明。
 - 本地 D1 迁移链测试已暴露并修复 016、057、066、070 的新库兼容问题；完整 001→076 链在 SQLite/D1 兼容面通过。Wrangler `d1 migrations apply --local` 仍受当前 DNS/fetch 失败和 Node UV assertion 阻断，未宣称 CLI 迁移成功。
 - 当前工作树包含大量未提交历史改动；本轮只允许修改本计划列出的文件，不得 reset、clean、覆盖其他工作。
@@ -66,7 +66,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 
 ### Task 1.3：完成 D1 migration 的本地验证，禁止把新 schema 依赖留在请求路径
 
-**Status: PARTIAL DONE (2026-10-07).** Added executable migration tests for 073 and the complete 001→076 chain. The chain passes after fixing fresh-D1 incompatibilities in migrations 016, 057, 066, and 070. The first production migration attempt was blocked by legacy drift: remote `clicks` already contains the subId/UTM/Cloudflare/governance columns, but migrations 047/050/051/062/063 were never recorded in `d1_migrations`; replaying the wide-table ALTER statements fails with D1 `too many columns`. No Worker deployment was performed. A no-op reconciliation boundary (077) is added; the runbook must record already-present legacy effects, apply only missing schema, and read back the result before deployment.
+**Status: DONE (2026-10-07, migration gate).** Added executable migration tests for 073 and the complete 001→076 chain. The chain passes after fixing fresh-D1 incompatibilities in migrations 016, 057, 066, and 070. Production legacy drift was reconciled without replaying wide-table ALTER statements: existing `clicks` effects were recorded through the 077 boundary, missing Hosted Asset fields/indexes were applied, and remote D1 read-back returned `No migrations to apply` plus confirmed migrations 074–077. The production Worker was then deployed and verified separately; the historical reconciliation boundary remains documented for future migrations.
 
 **目标：** 让 `073_hosted_assets_storage.sql` 成为正式 schema 来源，运行时只保留明确的迁移期兼容逻辑。
 
@@ -159,7 +159,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 
 ### Task 3.2：修复 inbound postback 的重复与状态变化
 
-**Status: DONE (2026-10-07).** Inbound now requires transaction identity, appends the canonical attribution event, preserves missing-click evidence, maps provider lifecycle states, avoids duplicate approved conversion creation, and updates existing conversion status for reversal/rejection. Local migrated D1 route integration now covers pending→approved→reversed, duplicate status idempotency, conversion-id reuse, and attribution-event evidence. Production D1/remote migration remains unverified.
+**Status: DONE (2026-10-07).** Inbound now requires transaction identity, appends the canonical attribution event, preserves missing-click evidence, maps provider lifecycle states, avoids duplicate approved conversion creation, and updates existing conversion status for reversal/rejection. Local migrated D1 route integration now covers pending→approved→reversed, duplicate status idempotency, conversion-id reuse, and attribution-event evidence. Production D1 migration read-back is verified; production postback execution remains unverified because no authenticated production fixture was available.
 - Modify: `src/routes/postback-inbound.routes.ts`
 - Modify: `src/handlers/d1/postback-idempotency.repo.ts`
 - Create: `src/routes/postback-inbound.routes.test.ts`
@@ -173,7 +173,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 
 ### Task 3.3：修复 outbound postback delivery state
 
-**Status: DONE (2026-10-07).** Delivery persistence models pending→sending→sent, retry, and dead_letter; failed sends are no longer marked sent; attempt count, error, status code, request ID, and retry time are persisted. Sender tests cover 500/429 retry, timeout retry, and non-retryable 4xx. The bounded due-retry consumer rebuilds conversions/configuration, claims rows atomically, sends through the existing PostbackSender, records sent/retry/dead_letter outcomes, and is wired into the existing 5-minute platform Cron without adding a Queue/Cron binding. Manual retry now selects only logs backed by a persisted `retry` delivery state, uses the same state machine, and is covered by route/service/repository tests. Reports now expose confirmed conversion counts separately from outbound `sent`, `pending` (`pending`/`sending`/`retry`), and `dead_letter` delivery counts. Production delivery/read-back remains unverified.
+**Status: DONE (2026-10-07).** Delivery persistence models pending→sending→sent, retry, and dead_letter; failed sends are no longer marked sent; attempt count, error, status code, request ID, and retry time are persisted. Sender tests cover 500/429 retry, timeout retry, and non-retryable 4xx. The bounded due-retry consumer rebuilds conversions/configuration, claims rows atomically, sends through the existing PostbackSender, records sent/retry/dead_letter outcomes, and is wired into the existing 5-minute platform Cron without adding a Queue/Cron binding. Manual retry now selects only logs backed by a persisted `retry` delivery state, uses the same state machine, and is covered by route/service/repository tests. Reports now expose confirmed conversion counts separately from outbound `sent`, `pending` (`pending`/`sending`/`retry`), and `dead_letter` delivery counts. Production deployment is complete, but authenticated delivery/read-back remains unverified.
 - Modify: `src/services/postback/postback.service.ts`
 - Modify: `src/services/postback/postback.sender.ts`
 - Create/Modify: `src/handlers/d1/postback.repo.ts`
@@ -234,9 +234,9 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 - Frontend API client covers list/create/publish/pause/rollback and has endpoint/body tests.
 - Migration chain test now covers 001→076 and asserts Hosted Asset, attribution event, Postback delivery, and Landing Page version schema.
 - `npm run typecheck` passes.
-- `npm run test:run` passes: 45 files / 217 tests.
+- `npm run test:run` passes: 57 files / 236 tests.
 - `npm run verify:frontend` passes; existing GrapesJS chunk warning and dependency audit findings remain recorded, not treated as resolved.
-- `npm run build:worker` passes with Wrangler production dry-run only; no production deployment or online read-back was performed.
+- `npm run build:worker` passes with Wrangler production dry-run. Production deployment and bounded online read-back completed on 2026-10-07; authenticated data-bearing fixtures were not available, so this is not a full production UI/API regression claim.
 - 预览、发布、暂停、复制、回滚动作有确认和 loading 状态。
 - 发布失败不会改变当前 published version。
 - 长 URL、长文件名、错误信息在桌面和 390px 窄屏不撑破布局。
@@ -345,6 +345,8 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 
 ## 阶段 7：Cloudflare 资源与生产发布门禁（最后执行）
 
+**Status: PARTIAL DONE (2026-10-07).** Production deployment completed at `https://cf-tracking.suyee88.workers.dev` with Worker Version ID `4c2970a1-0ac6-47c4-a4c3-6667786caa31`. Online smoke through the approved local proxy verified `/health=200`, `/api/auth/status=200` with `AUTH_MODE=on`, unknown Hosted Asset `404`, unauthenticated `/api/campaigns=401`, public tracking GET route handling (`c1` fixture absent, expected `404 Campaign not found`), and unauthenticated SPA routes rendering the login screen. The local matrix passed `63 total / 60 passed / 0 failed / 3 skipped`; the three skips are fixture-dependent Hosted Asset cases. Full authenticated conversion/postback/report read-back and k6 performance evidence remain blocked by missing approved production fixtures and k6 availability.
+
 1. 仅使用项目当前 Wrangler 部署路径；不在未迁移项目中运行 `cf dev/build/deploy`。
 2. 先对 development 配置执行 D1 migration、R2 binding、Worker dry-run 和 read-back。
 3. 线上资源检查必须确认：account ID 格式、D1 database、R2 bucket、Queue、DO migrations、KV 和 cron 配额；凭据只走 vault/本地安全环境，不进入计划、日志或聊天。
@@ -374,6 +376,6 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 5. 阶段 4：Landing version/publish/rollback。
 6. 阶段 5：Flow simulation 与反作弊解释。
 7. 阶段 6：Playwright、k6、GrapesJS lazy loading。
-8. 阶段 7：只有所有 P0/P1 证据齐全后，才考虑 development/production deploy。
+8. 阶段 7：production deploy 已完成；只有补齐剩余 P0/P1 证据后，才可宣称完整线上回归和对标完成。
 
-**最终门槛：** 在 P0 归因/幂等/状态转换、Hosted Asset 路由和 migration read-back 未全部通过前，不宣称“Keitaro 对标完成”，不启动生产 paid traffic，不把 Cloudflare dry-run 当成线上部署成功。
+**最终门槛：** 当前已形成 production deployed 与 bounded online smoke 证据，但 P0/P1 的完整 Hosted Asset fixture、authenticated conversion/postback/report read-back 和 k6 性能证据仍未齐全。因此不得宣称“Keitaro 对标完成”，不得启动生产 paid traffic，不得把本轮 bounded smoke 扩大解释为完整线上回归。
