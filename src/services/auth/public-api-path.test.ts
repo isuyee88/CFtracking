@@ -4,6 +4,8 @@ import { isPublicApiPath } from './public-api-path';
 describe('isPublicApiPath', () => {
   it('allows public tracking and auth endpoints', () => {
     expect(isPublicApiPath('/api/tracking/click/campaign-alias')).toBe(true);
+    expect(isPublicApiPath('/api/tracking/click', 'POST')).toBe(false);
+    expect(isPublicApiPath('/api/tracking/conversion', 'POST')).toBe(false);
     expect(isPublicApiPath('/api/auth/login')).toBe(true);
   });
 

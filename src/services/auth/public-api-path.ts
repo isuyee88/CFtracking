@@ -1,10 +1,9 @@
 const PUBLIC_API_PREFIXES = [
   '/api/tracking/script',
   '/api/tracking/kclient',
-  '/api/tracking/click',
-  '/api/tracking/conversion',
   '/api/auth/login',
   '/api/auth/status',
+  '/api/health',
   '/api/webhook',
   '/api/proxy-detection/challenge-html',
   '/api/proxy-detection/verify-challenge',
@@ -13,8 +12,12 @@ const PUBLIC_API_PREFIXES = [
   '/api/s2s/',
 ] as const;
 
-export function isPublicApiPath(path: string): boolean {
-  return PUBLIC_API_PREFIXES.some((publicPath) => path.startsWith(publicPath));
+export function isPublicApiPath(path: string, method = 'GET'): boolean {
+  if (path.startsWith('/api/tracking/click/')) {
+    return method.toUpperCase() === 'GET';
+  }
+
+  return PUBLIC_API_PREFIXES.some((publicPath) => path === publicPath || path.startsWith(`${publicPath}/`));
 }
 
 export { PUBLIC_API_PREFIXES };

@@ -215,6 +215,26 @@ export function createTrackingScriptRouter() {
         return c.json(error('campaignId is required'), HTTP_STATUS.BAD_REQUEST);
       }
 
+      if (typeof body.campaignId !== 'string' || body.campaignId.length > 128) {
+        return c.json(error('campaignId is invalid'), HTTP_STATUS.BAD_REQUEST);
+      }
+
+      if (body.clickId !== undefined && (typeof body.clickId !== 'string' || body.clickId.length > 256)) {
+        return c.json(error('clickId is invalid'), HTTP_STATUS.BAD_REQUEST);
+      }
+
+      if (!Number.isFinite(body.payout) || body.payout < 0 || body.payout > 1_000_000) {
+        return c.json(error('payout must be a finite non-negative amount'), HTTP_STATUS.BAD_REQUEST);
+      }
+
+      if (!['lead', 'sale', 'rejected'].includes(body.status)) {
+        return c.json(error('status is invalid'), HTTP_STATUS.BAD_REQUEST);
+      }
+
+      if (body.tid !== undefined && (typeof body.tid !== 'string' || body.tid.length > 256)) {
+        return c.json(error('tid is invalid'), HTTP_STATUS.BAD_REQUEST);
+      }
+
       // 创建转化记录
       const conversionId = body.tid || crypto.randomUUID();
       const now = new Date().toISOString();

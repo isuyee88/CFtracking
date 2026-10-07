@@ -255,15 +255,11 @@ function resolveSourceUrl(requestUrl: URL, page: string): URL | null {
 
 function createCurrentResponseHeaders(
   current: BootstrapCurrentEnvelope,
-  currentEtag: string,
-  edgeTTL: number,
-  swr: number
+  currentEtag: string
 ) {
   return new Headers({
     'Content-Type': 'application/json; charset=UTF-8',
-    'Cache-Control': 'public, max-age=0, must-revalidate',
-    'CDN-Cache-Control': `public, s-maxage=${edgeTTL}, stale-while-revalidate=${swr}`,
-    'Cloudflare-CDN-Cache-Control': `public, s-maxage=${edgeTTL}, stale-while-revalidate=${swr}`,
+    'Cache-Control': 'private, no-store, max-age=0',
     ETag: currentEtag,
     'Timing-Allow-Origin': '*',
     Vary: 'Accept-Encoding',
@@ -274,15 +270,11 @@ function createCurrentResponseHeaders(
 
 function createObjectResponseHeaders(
   objectEtag: string,
-  edgeTTL: number,
-  swr: number,
   contentVersion: string
 ) {
   return new Headers({
     'Content-Type': 'application/json; charset=UTF-8',
-    'Cache-Control': 'public, max-age=0, must-revalidate',
-    'CDN-Cache-Control': `public, s-maxage=${edgeTTL}, stale-while-revalidate=${swr}`,
-    'Cloudflare-CDN-Cache-Control': `public, s-maxage=${edgeTTL}, stale-while-revalidate=${swr}`,
+    'Cache-Control': 'private, no-store, max-age=0',
     ETag: objectEtag,
     'Timing-Allow-Origin': '*',
     Vary: 'Accept-Encoding',
@@ -387,9 +379,7 @@ export async function serveAdminPageBootstrap(
   );
   const headers = createCurrentResponseHeaders(
     current,
-    currentEtag,
-    versioningPolicy.currentEdgeTTL,
-    versioningPolicy.currentSWR
+    currentEtag
   );
 
   const metrics: ServerTimingMetric[] = [
@@ -470,8 +460,6 @@ export async function serveAdminPageBootstrapObject(
       );
     const headers = createObjectResponseHeaders(
       objectEtag,
-      versioningPolicy.objectEdgeTTL,
-      versioningPolicy.objectSWR,
       requestedVersion
     );
 
@@ -530,8 +518,6 @@ export async function serveAdminPageBootstrapObject(
 
     const headers = createObjectResponseHeaders(
       artifacts.objectEtag,
-      artifacts.versioningPolicy.objectEdgeTTL,
-      artifacts.versioningPolicy.objectSWR,
       artifacts.envelope.contentVersion
     );
 

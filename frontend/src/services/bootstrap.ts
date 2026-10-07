@@ -144,6 +144,16 @@ let currentBootstrapManifestRequestUrl: string | null = null;
 let currentBootstrapObjectRequestUrl: string | null = null;
 const bootstrapRequests = new Map<string, Promise<PageBootstrapEnvelope | null>>();
 
+function getBootstrapAuthHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const token = window.localStorage.getItem('token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 export function setPageBootstrapData(value: unknown) {
   rawBootstrap = value;
 
@@ -467,6 +477,9 @@ export async function loadBootstrapForLocation(options: {
 
   const loadPromise = (async () => {
     const manifestHeaders = new Headers();
+    for (const [key, value] of Object.entries(getBootstrapAuthHeaders())) {
+      manifestHeaders.set(key, value);
+    }
 
     if (currentBootstrapManifestRequestUrl === requestUrl && currentBootstrapManifest?.etag) {
       manifestHeaders.set('If-None-Match', currentBootstrapManifest.etag);
@@ -506,6 +519,9 @@ export async function loadBootstrapForLocation(options: {
     }
 
     const objectHeaders = new Headers();
+    for (const [key, value] of Object.entries(getBootstrapAuthHeaders())) {
+      objectHeaders.set(key, value);
+    }
 
     if (currentBootstrapObjectRequestUrl === objectRequestUrl && currentBootstrap?.etag) {
       objectHeaders.set('If-None-Match', currentBootstrap.etag);

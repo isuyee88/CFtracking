@@ -10,6 +10,7 @@
  */
 
 import { Hono } from 'hono';
+import type { Context, Next } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import type { Env } from '@/config/env';
@@ -46,6 +47,7 @@ import { matchAdminPage } from '@/services/page/admin-page-bundle';
 import { getWorkerVersionInfo } from '@/services/cache/version-utils';
 import { createCredentialsRouter } from '@/services/credentials/credentials.routes';
 import { isPublicApiPath } from '@/services/auth/public-api-path';
+import { authMiddleware } from '@/middleware/auth';
 import { appendServerTiming, durationMs, nowMs } from '@/utils/server-timing';
 
 // 瀵煎嚭 Durable Objects锛圕loudflare Workers 瑕佹眰锛?
@@ -481,7 +483,7 @@ app.use('/api/*', async (c, next) => {
   const path = c.req.path;
   
   // 妫€鏌ユ槸鍚︽槸鍏紑璺緞
-  const isPublicPath = isPublicApiPath(path);
+  const isPublicPath = isPublicApiPath(path, c.req.method);
 
   if (isPublicPath) {
     return next();
@@ -595,6 +597,10 @@ app.get('/health', (c) => {
   return c.json(success({ status: 'healthy', timestamp: new Date().toISOString() }));
 });
 
+app.get('/api/health', (c) => {
+  return c.json(success({ status: 'healthy', timestamp: new Date().toISOString() }));
+});
+
 app.get('/sw.js', () => {
   return new Response(LEGACY_SW_CLEANUP_SCRIPT, {
     headers: {
@@ -604,6 +610,23 @@ app.get('/sw.js', () => {
     },
   });
 });
+
+async function protectBootstrapRoutes(c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) {
+  if (resolveAuthMode(c.env) === 'off') {
+    c.set('user', {
+      userId: 'dev-bypass-user',
+      email: 'dev-bypass@example.local',
+      exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+    });
+    await next();
+    return;
+  }
+
+  return authMiddleware(c, next);
+}
+
+app.use('/__bootstrap/*', protectBootstrapRoutes);
+app.use('/__bootstrap-object/*', protectBootstrapRoutes);
 
 app.get('/__bootstrap/dashboard/*', async (c) => {
   const requestUrl = new URL(c.req.url);
