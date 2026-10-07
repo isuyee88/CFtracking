@@ -17,6 +17,7 @@ import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
 import { AppError } from '@/middleware/error';
+import { validateEnvironment, throwOnValidationErrors, generateConfigReport } from '@/utils/env-validator';
 
 // 瀹氫箟 Hono 搴旂敤鐨勫彉閲忕被鍨?
 type Variables = {
@@ -1115,7 +1116,38 @@ export { app }
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    
+
+    // ============================================================
+    // 环境配置验证 (Phase 0.1 增强)
+    // ============================================================
+    try {
+      const validationErrors = validateEnvironment(env);
+      throwOnValidationErrors(validationErrors);
+
+      // 输出配置报告
+      if (env.ENVIRONMENT === 'production') {
+        console.log('[EnvValidator]', generateConfigReport(env));
+      }
+    } catch (validationError) {
+      // 生产环境配置错误：阻止启动
+      if (env.ENVIRONMENT === 'production') {
+        console.error('[EnvValidator] CRITICAL:', validationError);
+        return new Response(
+          JSON.stringify({
+            error: 'Configuration Error',
+            message: validationError instanceof Error ? validationError.message : 'Invalid environment configuration',
+            environment: env.ENVIRONMENT
+          }),
+          {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          }
+        );
+      }
+      // 开发环境：仅警告，继续运行
+      console.error('[EnvValidator] Warning:', validationError);
+    }
+
     // 璁板綍閮ㄧ讲鐗堟湰淇℃伅
     if (env.CF_VERSION_METADATA) {
       console.log('[Deployment] Version info:', {
@@ -1124,7 +1156,7 @@ export default {
         versionTimestamp: env.CF_VERSION_METADATA.timestamp,
       });
     }
-    
+
     // 澶勭悊 API 璇锋眰锛堝寘鎷?/api/* 鍜?/health锛?
     if (isAppControlRequest(url.pathname)) {
       return app.fetch(request, env, ctx);

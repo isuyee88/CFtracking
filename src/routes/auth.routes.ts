@@ -15,6 +15,7 @@ import { Hono } from 'hono';
 import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
+import { loginRateLimitMiddleware } from '@/middleware/login-rate-limit';
 
 type Bindings = Env;
 
@@ -121,8 +122,11 @@ async function hashPassword(password: string): Promise<string> {
  *     }
  *   }
  * }
+ *
+ * 安全增强:
+ * - 登录限流: 5次失败尝试后锁定15分钟
  */
-app.post('/login', async (c) => {
+app.post('/login', loginRateLimitMiddleware, async (c) => {
   try {
     const body = await c.req.json();
     const { username, password } = body as { username?: string; password?: string };
