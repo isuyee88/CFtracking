@@ -15,7 +15,7 @@
 - `HostedAssetService` 已实现 R2 上传、读取、删除、D1 元数据、旧 D1 Base64 回退、图片魔数校验和失败回滚。
 - 本轮新增公开路由、路由配置和迁移链测试：`10 tests passed`（公开路由 3、路由配置 3、迁移 073 1、完整迁移链 1，加上相关 Hosted Asset 定向测试）。
 - `npm run typecheck`、`npm run verify:frontend`、`npm run build:worker` dry-run 已通过；阶段 4 Landing version、inbound D1 生命周期、manual retry 和 outbound/report integration 已完成完整回归。
-- 当前本地回归基线为 `60 test files passed / 247 tests passed`；新增 Hosted Asset R2/D1 failure-matrix 与 orphan-reconciliation 测试、可选 Cron owner 接入、PostbackLogRepository fresh-table/retry-state 集成测试、ReportService outbound delivery 单元/集成测试、manual retry route 回归和 Flow simulation service/API route/frontend API/UI、GrapesJS lazy-loading 契约回归。
+- 当前本地回归基线为 `60 test files passed / 248 tests passed`；新增 Hosted Asset R2/D1 failure-matrix 与 orphan-reconciliation 测试、可选 Cron owner 接入、PostbackLogRepository fresh-table/retry-state 集成测试、ReportService outbound delivery 单元/集成测试、manual retry route 回归和 Flow simulation service/API route/frontend API/UI、GrapesJS lazy-loading 契约回归，以及 local-QA 资源隔离契约测试。
 - Wrangler production/dev/local-QA dry-run 能识别 bindings 和 assets 路由；这不是线上资源或 D1 migration 已成功的证明。
 - 本地 D1 迁移链测试已暴露并修复 016、057、066、070 的新库兼容问题；完整 001→076 链在 SQLite/D1 兼容面通过。持久化 local-QA store 存在历史 schema/ledger 漂移：本轮应用 057 后 auto-optimization 四个读取端点均恢复 `200`，继续应用 058 在既有 `clicks.ruleMatched` 上停止（duplicate column），因此不能把该持久化 store 的完整 CLI migration apply 写成成功；应使用受控 reconciliation 或新的 QA store。
 - 当前工作树包含大量未提交历史改动；本轮只允许修改本计划列出的文件，不得 reset、clean、覆盖其他工作。
@@ -66,7 +66,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 
 ### Task 1.3：完成 D1 migration 的本地验证，禁止把新 schema 依赖留在请求路径
 
-**Status: DONE (2026-10-07, production migration gate); PARTIAL (persistent local-QA store).** Added executable migration tests for 073 and the complete 001→076 chain. The chain passes after fixing fresh-D1 incompatibilities in migrations 016, 057, 066, and 070. Production legacy drift was reconciled without replaying wide-table ALTER statements: existing `clicks` effects were recorded through the 077 boundary, missing Hosted Asset fields/indexes were applied, and remote D1 read-back returned `No migrations to apply` plus confirmed migrations 074–077. The production Worker was then deployed and verified separately; the historical reconciliation boundary remains documented for future migrations. The persisted local-QA store separately requires reconciliation at migration 058 because `clicks.ruleMatched` already exists.
+**Status: DONE (2026-10-07, production migration gate); PARTIAL (persistent local-QA store).** Added executable migration tests for 073 and the complete 001→076 chain. Production legacy drift was reconciled without replaying wide-table ALTER statements: existing `clicks` effects were recorded through the 077 boundary, missing Hosted Asset fields/indexes were applied, and remote D1 read-back returned `No migrations to apply` plus confirmed migrations 074–077. The production Worker was then deployed and verified separately; the historical reconciliation boundary remains documented for future migrations. The persisted local-QA store separately requires reconciliation at migration 058 because `clicks.ruleMatched` already exists. The local-QA Wrangler profile is now isolated from production semantics: Worker name `cf-tracking-local-qa`, `ENVIRONMENT="staging"`, database name `cf-tracking-db-local-qa`, queue name `cache-refresh-queue-local-qa`, and no production D1/KV IDs; its dry-run read-back passed.
 
 **目标：** 让 `073_hosted_assets_storage.sql` 成为正式 schema 来源，运行时只保留明确的迁移期兼容逻辑。
 
@@ -238,7 +238,7 @@ npm exec vitest run src/services/hostedAsset/hostedAsset.public.routes.test.ts
 - Frontend API client covers list/create/publish/pause/rollback and has endpoint/body tests.
 - Migration chain test now covers 001→076 and asserts Hosted Asset, attribution event, Postback delivery, and Landing Page version schema.
 - `npm run typecheck` passes.
-- `npm run test:run` passes: 60 files / 247 tests (the subsequent missing-binding test also passes in its focused 4-test suite).
+- `npm run test:run` passes: 60 files / 248 tests (the subsequent missing-binding test also passes in its focused 4-test suite).
 - `npm run verify:frontend` passes; existing GrapesJS chunk warning and dependency audit findings remain recorded, not treated as resolved.
 - `npm run build:worker` passes with Wrangler production dry-run. Production deployment and bounded online read-back completed on 2026-10-07; authenticated data-bearing fixtures were not available, so this is not a full production UI/API regression claim.
 - 预览、发布、暂停、复制、回滚动作有确认和 loading 状态。
