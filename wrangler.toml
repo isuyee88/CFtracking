@@ -1,6 +1,27 @@
 name = "cf-tracking-v2"
 main = "src/index.ts"
-compatibility_date = "2024-12-30"
+compatibility_date = "2024-01-01"
+
+# ============================================
+# Staging Environment
+# ============================================
+[env.staging]
+name = "cf-tracking-staging"
+vars = { ENVIRONMENT = "staging", DEBUG = "true" }
+
+# Note: You need to create staging resources separately:
+# 1. D1 Database: npx wrangler d1 create cf-tracking-staging-db
+# 2. KV Namespace: npx wrangler kv:namespace create "UNIQUENESS_KV" --env staging
+# 3. Update the IDs below with your staging resource IDs
+
+# [[env.staging.d1_databases]]
+# binding = "DB"
+# database_name = "cf-tracking-staging-db"
+# database_id = "your-staging-db-id"
+
+# [[env.staging.kv_namespaces]]
+# binding = "UNIQUENESS_KV"
+# id = "your-staging-kv-id"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
