@@ -302,7 +302,21 @@ export const EntityForm: React.FC<EntityFormProps> = ({
       case 'multiselect':
         // 如果有预定义选项，使用下拉选择模式
         if (field.options && field.options.length > 0) {
-          const selectedValues = value || [];
+          // Defensive: coerce non-array values (e.g. JSON strings from DB) to an array
+          const rawSelected = value as unknown;
+          let selectedValues: string[];
+          if (Array.isArray(rawSelected)) {
+            selectedValues = rawSelected;
+          } else if (typeof rawSelected === 'string' && rawSelected.trim() !== '') {
+            try {
+              const parsed = JSON.parse(rawSelected);
+              selectedValues = Array.isArray(parsed) ? parsed : [];
+            } catch {
+              selectedValues = [];
+            }
+          } else {
+            selectedValues = [];
+          }
           const availableOptions = field.options.filter(opt => !selectedValues.includes(opt.value));
           
           return (
@@ -389,10 +403,25 @@ export const EntityForm: React.FC<EntityFormProps> = ({
         }
         
         // 没有预定义选项时，使用手动输入模式
+        // Defensive: coerce non-array values to an array
+        const rawManual = value as unknown;
+        let manualValues: string[];
+        if (Array.isArray(rawManual)) {
+          manualValues = rawManual;
+        } else if (typeof rawManual === 'string' && rawManual.trim() !== '') {
+          try {
+            const parsed = JSON.parse(rawManual);
+            manualValues = Array.isArray(parsed) ? parsed : [];
+          } catch {
+            manualValues = [];
+          }
+        } else {
+          manualValues = [];
+        }
         return (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
-              {(value || []).map((item: string, idx: number) => (
+              {manualValues.map((item: string, idx: number) => (
                 <span
                   key={idx}
                   className="inline-flex items-center gap-1 px-3 py-1 bg-surface-container text-sm rounded-sm"
@@ -401,10 +430,10 @@ export const EntityForm: React.FC<EntityFormProps> = ({
                   {truncateLabel(item, optionLabelMaxLength)}
                   <button
                     type="button"
-                    onClick={() => {
-                      const newValue = (value || []).filter((_: any, i: number) => i !== idx);
-                      handleChange(field.name, newValue);
-                    }}
+                      onClick={() => {
+                        const newValue = manualValues.filter((_: any, i: number) => i !== idx);
+                        handleChange(field.name, newValue);
+                      }}
                     className="text-on-surface-variant hover:text-error"
                   >
                     <X size={14} />

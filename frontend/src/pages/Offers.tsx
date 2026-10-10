@@ -360,9 +360,23 @@ export const Offers = () => {
   const handleEditOffer = (offer: Offer) => {
     console.log('handleEditOffer called with:', offer);
     try {
+      // Normalize countries: DB may return a JSON string (e.g. '["US"]') — coerce to array
+      let countries: unknown = offer.countries;
+      if (typeof countries === 'string') {
+        try {
+          const parsed = JSON.parse(countries);
+          countries = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          countries = [];
+        }
+      }
+      if (!Array.isArray(countries)) {
+        countries = [];
+      }
       setFormMode('edit');
       setSelectedOffer({
         ...offer,
+        countries: countries as any,
         hostMode: inferOfferHostingMode(offer.url),
       });
       setIsFormOpen(true);
