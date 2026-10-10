@@ -7,12 +7,12 @@ import { BulkOperationsService } from './bulk-operations.service';
 // Mock D1 Database
 const createMockDB = () => {
   const batchResults: any[] = [];
-  
-  return {
+  const db: any = {
     prepare: (sql: string) => ({
       bind: (...params: any[]) => ({
         sql,
         params,
+        all: async () => db.all(),
       }),
     }),
     batch: async (statements: any[]) => {
@@ -21,6 +21,7 @@ const createMockDB = () => {
     },
     all: async () => ({ results: [] }),
   };
+  return db;
 };
 
 describe('BulkOperationsService', () => {
@@ -58,7 +59,7 @@ describe('BulkOperationsService', () => {
       expect(result.success).toBe(false);
       expect(result.failed).toBe(1);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].error).toBe('Database error');
+      expect(result.errors[0]!.error).toBe('Database error');
     });
   });
 

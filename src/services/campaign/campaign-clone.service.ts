@@ -292,10 +292,12 @@ export class CampaignCloneService {
   private async generateUniqueName(baseName: string): Promise<string> {
     let name = baseName;
     let counter = 0;
+    const copyBaseName = /^(.*) - Copy(?: \d+)?$/.exec(baseName)?.[1];
+    const suffixBaseName = copyBaseName ? `${copyBaseName} - Copy` : baseName;
     
     while (await this.nameExists(name)) {
       counter++;
-      name = `${baseName} - Copy ${counter}`;
+      name = `${suffixBaseName} ${counter}`;
     }
     
     return name;
@@ -309,7 +311,7 @@ export class CampaignCloneService {
       SELECT COUNT(*) as count FROM campaigns WHERE name = ?
     `).bind(name).first();
     
-    return result && (result.count as number) > 0;
+    return Boolean(result && (result.count as number) > 0);
   }
   
   /**
