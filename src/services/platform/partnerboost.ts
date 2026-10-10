@@ -2,14 +2,21 @@ import type { Env } from '@/config/env';
 import type { PlatformInfo, PlatformActionResult, PartnerBoostConfig } from '@/types/platform';
 import { PlatformAdapter } from './adapter';
 
-/** Read-only PartnerBoost adapter approved by the Phase 1 supplement ruling. */
+/**
+ * Read-only Partner API adapter.
+ *
+ * Contract source: https://docs.partnerboost.com/developers/publisher-api/
+ * Brand API credentials/endpoints are intentionally not accepted here.
+ */
 export class PartnerBoostAdapter extends PlatformAdapter<PartnerBoostConfig> {
+  static readonly API_BASE_URL = 'https://app.partnerboost.com/api.php';
+
   private initialized = false;
   private readonly baseUrl: string;
 
   constructor(config: PartnerBoostConfig, env?: Env) {
     super(config, env);
-    this.baseUrl = config.apiUrl || 'https://app.partnerboost.com/api.php';
+    this.baseUrl = config.apiUrl || PartnerBoostAdapter.API_BASE_URL;
   }
 
   getInfo(): PlatformInfo {
@@ -72,8 +79,14 @@ export class PartnerBoostAdapter extends PlatformAdapter<PartnerBoostConfig> {
   }
 
   private async getOfferDetails(offerId: string): Promise<PlatformActionResult> {
-    if (!offerId) return { success: false, message: 'offerId is required' };
-    return this.read('Offer details', { mod: 'datafeed', op: 'detail', product_id: offerId });
+    // The public Publisher API documentation confirms datafeed/list but does
+    // not document a product-detail operation. Do not invent an endpoint.
+    return {
+      success: false,
+      message: offerId
+        ? 'PartnerBoost product-detail endpoint is not documented; operation withheld'
+        : 'offerId is required',
+    };
   }
 
   private async getConversions(parameters: Record<string, unknown>): Promise<PlatformActionResult> {
@@ -85,7 +98,7 @@ export class PartnerBoostAdapter extends PlatformAdapter<PartnerBoostConfig> {
     return this.read('Conversions', {
       mod: 'medium',
       op: 'transaction',
-      start_date: startDate,
+      begin_date: startDate,
       end_date: endDate,
       page: 1,
       limit: 100,
