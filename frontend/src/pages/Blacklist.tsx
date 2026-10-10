@@ -26,16 +26,63 @@ import {
   User,
   Hash,
   MapPin,
-  Monitor
+  Monitor,
+  Building2,
+  Fingerprint
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { readBootstrapPage } from '../services/bootstrap';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { clampInput, truncateLabel } from '../utils/text';
+import {
+  createBlacklistEntry,
+  deleteBlacklistEntry,
+  fetchBlacklistEntries,
+  fetchTrafficSources,
+  syncBlacklist,
+  updateBlacklistEntry,
+} from '../services/api';
+import {
+  ListConditionsEditor,
+  type ListCondition,
+  type ListConditionMode,
+} from '../components/ListConditionsEditor';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-type BlacklistType = 'zone' | 'creative' | 'publisher' | 'sub_id' | 'geo' | 'device' | 'ip' | 'user_agent';
+function renderLengthCounter(value: string | undefined, maxLength: number) {
+  return (
+    <p className="mt-1 text-right text-[11px] text-on-surface-variant/70">
+      {(value || '').length}/{maxLength}
+    </p>
+  );
+}
+
+type BlacklistType =
+  | 'zone'
+  | 'creative'
+  | 'publisher'
+  | 'sub_id'
+  | 'geo'
+  | 'country'
+  | 'device'
+  | 'ip'
+  | 'user_agent'
+  | 'asn'
+  | 'isp'
+  | 'isp_type'
+  | 'visitor_id'
+  | 'org_exact'
+  | 'org_keyword'
+  | 'network_tag'
+  | 'allow_bias_org'
+  | 'allow_bias_isp_type'
+  | 'suspicious_reason'
+  | 'fingerprint'
+  | 'rule';
 type IpMatchMode = 'exact' | 'cidr';
 type UaMatchMode = 'exact' | 'contains';
 
@@ -54,6 +101,8 @@ interface BlacklistEntry {
   ipMatchMode?: IpMatchMode;
   uaMatchMode?: UaMatchMode;
   syncToPlatform?: boolean;
+  matchMode?: ListConditionMode;
+  conditions?: ListCondition[];
   createdAt: string;
   updatedAt: string;
 }
@@ -69,11 +118,15 @@ interface FormData {
   value: string;
   name: string;
   reason: string;
-  campaignId: string;
   ipMatchMode: IpMatchMode;
   uaMatchMode: UaMatchMode;
   syncToPlatform: boolean;
+  matchMode: ListConditionMode;
+  conditions: ListCondition[];
 }
+
+const GENERAL_TRAFFIC_SOURCE_ID = 'general';
+const GENERAL_TRAFFIC_SOURCE_NAME = 'General Traffic Source';
 
 const initialFormData: FormData = {
   trafficSourceId: '',
@@ -81,10 +134,11 @@ const initialFormData: FormData = {
   value: '',
   name: '',
   reason: '',
-  campaignId: '',
   ipMatchMode: 'exact',
   uaMatchMode: 'exact',
   syncToPlatform: true,
+  matchMode: 'all',
+  conditions: [],
 };
 
 const typeOptions: { value: BlacklistType; label: string; icon: React.ReactNode }[] = [
@@ -92,16 +146,69 @@ const typeOptions: { value: BlacklistType; label: string; icon: React.ReactNode 
   { value: 'creative', label: 'Creative', icon: <Palette size={16} /> },
   { value: 'publisher', label: 'Publisher', icon: <User size={16} /> },
   { value: 'sub_id', label: 'Sub ID', icon: <Hash size={16} /> },
-  { value: 'geo', label: 'Geo', icon: <MapPin size={16} /> },
+  { value: 'country', label: 'Country', icon: <MapPin size={16} /> },
   { value: 'device', label: 'Device', icon: <Smartphone size={16} /> },
   { value: 'ip', label: 'IP Address', icon: <Monitor size={16} /> },
   { value: 'user_agent', label: 'User Agent', icon: <ExternalLink size={16} /> },
+  { value: 'asn', label: 'ASN', icon: <Hash size={16} /> },
+  { value: 'isp', label: 'ISP', icon: <Building2 size={16} /> },
+  { value: 'isp_type', label: 'ISP Type', icon: <Building2 size={16} /> },
+  { value: 'visitor_id', label: 'Visitor ID', icon: <User size={16} /> },
+  { value: 'org_exact', label: 'Org Exact', icon: <Building2 size={16} /> },
+  { value: 'org_keyword', label: 'Org Keyword', icon: <Building2 size={16} /> },
+  { value: 'network_tag', label: 'Network Tag', icon: <Shield size={16} /> },
+  { value: 'allow_bias_org', label: 'Allow Bias Org', icon: <Building2 size={16} /> },
+  { value: 'allow_bias_isp_type', label: 'Allow Bias ISP Type', icon: <Building2 size={16} /> },
+  { value: 'suspicious_reason', label: 'Suspicious Reason', icon: <AlertTriangle size={16} /> },
+  { value: 'fingerprint', label: 'Fingerprint', icon: <Fingerprint size={16} /> },
+  { value: 'rule', label: 'Rule Group', icon: <Shield size={16} /> },
 ];
 
+const getBlacklistValueMaxLength = (type: BlacklistType) =>
+  type === 'user_agent' ? FIELD_MAX_LENGTH.USER_AGENT_VALUE : FIELD_MAX_LENGTH.TRAFFIC_ENTRY_VALUE;
+
+const normalizeDisplayType = (type: string): BlacklistType | string => (type === 'geo' ? 'country' : type);
+
+const normalizeCountryInput = (type: BlacklistType, value: string) =>
+  type === 'country' ? value.toUpperCase() : value;
+
+const shouldUseExpandedValueEditor = (type: BlacklistType) =>
+  [
+    'user_agent',
+    'org_exact',
+    'org_keyword',
+    'network_tag',
+    'allow_bias_org',
+    'allow_bias_isp_type',
+    'suspicious_reason',
+    'rule',
+  ].includes(type);
+
+const withGeneralTrafficSource = (sources: TrafficSource[]): TrafficSource[] => {
+  if (sources.some((source) => source.id === GENERAL_TRAFFIC_SOURCE_ID)) {
+    return sources;
+  }
+
+  return [
+    {
+      id: GENERAL_TRAFFIC_SOURCE_ID,
+      name: GENERAL_TRAFFIC_SOURCE_NAME,
+    },
+    ...sources,
+  ];
+};
+
 export const Blacklist = () => {
-  const [entries, setEntries] = useState<BlacklistEntry[]>([]);
-  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage<{
+    entries?: BlacklistEntry[];
+    trafficSources?: TrafficSource[];
+  }>('blacklist');
+  const hasBootstrap = Boolean(bootstrap);
+  const [entries, setEntries] = useState<BlacklistEntry[]>(Array.isArray(bootstrap?.data?.entries) ? bootstrap.data.entries : []);
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>(
+    withGeneralTrafficSource(Array.isArray(bootstrap?.data?.trafficSources) ? bootstrap.data.trafficSources : [])
+  );
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSource, setFilterSource] = useState<string>('all');
@@ -115,33 +222,62 @@ export const Blacklist = () => {
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormData, string>>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [showAdvancedLogic, setShowAdvancedLogic] = useState(false);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
+  const loadBootstrapData = () => {
+    const bundle = readBootstrapPage<{
+      entries?: BlacklistEntry[];
+      trafficSources?: TrafficSource[];
+    }>('blacklist');
+
+    return {
+      entries: Array.isArray(bundle?.data?.entries) ? bundle.data.entries : [],
+      trafficSources: withGeneralTrafficSource(
+        Array.isArray(bundle?.data?.trafficSources) ? bundle.data.trafficSources : []
+      ),
+    };
+  };
+
+  const clearFormError = (field: keyof FormData) => {
+    setFormErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  };
+
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, []);
 
   const fetchData = async () => {
     try {
-      setLoading(true);
-      // Fetch blacklist entries
-      const response = await fetch('/api/blacklist');
-      const data = await response.json();
-      if (data.success) {
-        setEntries(data.data || []);
+      if (!hasBootstrap && entries.length === 0) {
+        setLoading(true);
       }
 
-      // Fetch traffic sources for filter
-      const tsResponse = await fetch('/api/traffic-sources');
-      const tsData = await tsResponse.json();
-      if (tsData.success) {
-        setTrafficSources(tsData.data || []);
-      }
+      const [entriesPayload, trafficSourcesPayload] = await Promise.all([
+        fetchBlacklistEntries(),
+        fetchTrafficSources(false),
+      ]);
+
+      setEntries(Array.isArray(entriesPayload) ? entriesPayload : []);
+      setTrafficSources(
+        withGeneralTrafficSource(Array.isArray(trafficSourcesPayload) ? trafficSourcesPayload : [])
+      );
     } catch (err) {
       console.error('Failed to fetch blacklist:', err);
+      const fallback = loadBootstrapData();
+      setEntries(fallback.entries);
+      setTrafficSources(fallback.trafficSources);
     } finally {
       setLoading(false);
     }
@@ -150,13 +286,10 @@ export const Blacklist = () => {
   const handleSync = async (trafficSourceId: string) => {
     try {
       setSyncing(trafficSourceId);
-      const response = await fetch(`/api/blacklist/sync/${trafficSourceId}`, {
-        method: 'POST'
-      });
-      const data = await response.json();
+      const data = await syncBlacklist(trafficSourceId);
       if (data.success) {
         alert(`Sync completed: ${data.data.synced} synced, ${data.data.failed} failed`);
-        fetchData();
+        await fetchData();
       }
     } catch (err) {
       console.error('Failed to sync:', err);
@@ -169,12 +302,8 @@ export const Blacklist = () => {
     if (!confirm('Are you sure you want to remove this entry from blacklist?')) return;
     
     try {
-      const response = await fetch(`/api/blacklist/${id}`, {
-        method: 'DELETE'
-      });
-      if (response.ok) {
-        fetchData();
-      }
+      await deleteBlacklistEntry(id);
+      await fetchData();
     } catch (err) {
       console.error('Failed to remove:', err);
     }
@@ -184,24 +313,28 @@ export const Blacklist = () => {
     setIsEditMode(false);
     setEditingId(null);
     setFormData(initialFormData);
+    setShowAdvancedLogic(false);
     setFormErrors({});
     setIsModalOpen(true);
   };
 
   const openEditModal = (entry: BlacklistEntry) => {
+    const displayType = normalizeDisplayType(entry.type) as BlacklistType;
     setIsEditMode(true);
     setEditingId(entry.id);
     setFormData({
       trafficSourceId: entry.trafficSourceId,
-      type: entry.type,
-      value: entry.value,
-      name: entry.name || '',
-      reason: entry.reason || '',
-      campaignId: entry.campaignId || '',
+      type: displayType,
+      value: clampInput(normalizeCountryInput(displayType, entry.value), getBlacklistValueMaxLength(displayType)),
+      name: clampInput(entry.name || '', FIELD_MAX_LENGTH.NAME),
+      reason: clampInput(entry.reason || '', FIELD_MAX_LENGTH.REASON),
       ipMatchMode: entry.ipMatchMode || 'exact',
       uaMatchMode: entry.uaMatchMode || 'exact',
       syncToPlatform: entry.syncToPlatform !== false,
+      matchMode: entry.matchMode || 'all',
+      conditions: Array.isArray(entry.conditions) ? entry.conditions : [],
     });
+    setShowAdvancedLogic(Array.isArray(entry.conditions) && entry.conditions.length > 0);
     setFormErrors({});
     setIsModalOpen(true);
   };
@@ -209,6 +342,7 @@ export const Blacklist = () => {
   const closeModal = () => {
     setIsModalOpen(false);
     setFormData(initialFormData);
+    setShowAdvancedLogic(false);
     setFormErrors({});
   };
 
@@ -218,12 +352,17 @@ export const Blacklist = () => {
     if (!formData.trafficSourceId) {
       errors.trafficSourceId = 'Traffic source is required';
     }
-    if (!formData.value.trim()) {
+    const hasConditionRules = formData.conditions.length > 0;
+
+    if (!hasConditionRules && !formData.value.trim()) {
       errors.value = 'Value is required';
+    }
+    if (formData.type === 'rule' && !hasConditionRules) {
+      errors.conditions = 'Rule Group requires at least one condition';
     }
 
     // IP validation
-    if (formData.type === 'ip') {
+    if (!hasConditionRules && formData.type === 'ip') {
       if (formData.ipMatchMode === 'cidr') {
         const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
         if (!cidrRegex.test(formData.value)) {
@@ -238,8 +377,22 @@ export const Blacklist = () => {
     }
 
     // UA validation
-    if (formData.type === 'user_agent' && formData.value.length > 1000) {
+    if (!hasConditionRules && formData.type === 'user_agent' && formData.value.length > 1000) {
       errors.value = 'User Agent too long (max 1000 characters)';
+    }
+
+    if (!hasConditionRules && formData.type === 'asn') {
+      const asnRegex = /^(AS)?\d+$/i;
+      if (!asnRegex.test(formData.value.trim())) {
+        errors.value = 'Invalid ASN format. Expected: AS12345 or 12345';
+      }
+    }
+
+    if (!hasConditionRules && formData.type === 'country') {
+      const countryCodeRegex = /^[a-z]{2}$/i;
+      if (!countryCodeRegex.test(formData.value.trim())) {
+        errors.value = 'Invalid country code. Expected ISO 3166-1 alpha-2 like US';
+      }
     }
 
     setFormErrors(errors);
@@ -253,29 +406,19 @@ export const Blacklist = () => {
 
     setSubmitting(true);
     try {
-      const url = isEditMode ? `/api/blacklist/${editingId}` : '/api/blacklist';
-      const method = isEditMode ? 'PUT' : 'POST';
-      
       const payload = {
         ...formData,
         name: formData.name || undefined,
         reason: formData.reason || undefined,
-        campaignId: formData.campaignId || undefined,
       };
 
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        closeModal();
-        fetchData();
+      if (isEditMode && editingId) {
+        await updateBlacklistEntry(editingId, payload);
       } else {
-        const error = await response.json();
-        alert(error.message || 'Failed to save blacklist entry');
+        await createBlacklistEntry(payload);
       }
+        await fetchData();
+        closeModal();
     } catch (err) {
       console.error('Failed to save:', err);
       alert('Failed to save blacklist entry');
@@ -289,12 +432,12 @@ export const Blacklist = () => {
   };
 
   const getTypeLabel = (type: string) => {
-    const option = typeOptions.find(opt => opt.value === type);
+    const option = typeOptions.find(opt => opt.value === normalizeDisplayType(type));
     return option?.label || type;
   };
 
   const getTypeIcon = (type: string) => {
-    const option = typeOptions.find(opt => opt.value === type);
+    const option = typeOptions.find(opt => opt.value === normalizeDisplayType(type));
     return option?.icon || <Globe size={16} />;
   };
 
@@ -308,7 +451,7 @@ export const Blacklist = () => {
     const matchesSynced = filterSynced === 'all' || 
       (filterSynced === 'synced' && entry.synced) ||
       (filterSynced === 'unsynced' && !entry.synced);
-    const matchesType = filterType === 'all' || entry.type === filterType;
+    const matchesType = filterType === 'all' || normalizeDisplayType(entry.type) === filterType;
     return matchesSearch && matchesSource && matchesSynced && matchesType;
   });
 
@@ -334,12 +477,12 @@ export const Blacklist = () => {
         <div>
           <h1 className="text-3xl font-display font-bold text-primary">Blacklist</h1>
           <p className="text-sm text-on-surface-variant">
-            Manage blocked zones, creatives, IPs, user agents and other traffic sources
+            Manage blocked zones, IPs, visitor IDs, org signals, suspicious tags, and other traffic sources
           </p>
         </div>
         <div className="flex gap-3">
           <button 
-            onClick={fetchData}
+            onClick={() => window.location.reload()}
             className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
           >
             <RefreshCw size={16} />
@@ -404,8 +547,8 @@ export const Blacklist = () => {
       </div>
 
       {/* Filters */}
-      <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-wrap">
+      <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col gap-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(360px,1.4fr),220px,180px,180px]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
             <input 
@@ -413,23 +556,25 @@ export const Blacklist = () => {
               placeholder="Search by value, name or reason..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all min-w-[300px]"
+              className="h-12 w-full pl-10 pr-4 bg-surface text-base border border-outline-variant focus:border-primary outline-none transition-all"
             />
           </div>
           <select
             value={filterSource}
             onChange={(e) => setFilterSource(e.target.value)}
-            className="px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+            className="h-12 w-full px-4 bg-surface text-base border border-outline-variant focus:border-primary outline-none"
           >
             <option value="all">All Traffic Sources</option>
             {trafficSources.map(ts => (
-              <option key={ts.id} value={ts.id}>{ts.name}</option>
+              <option key={ts.id} value={ts.id} title={ts.name}>
+                {truncateLabel(ts.name, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
+              </option>
             ))}
           </select>
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+            className="h-12 w-full px-4 bg-surface text-base border border-outline-variant focus:border-primary outline-none"
           >
             <option value="all">All Types</option>
             {typeOptions.map(opt => (
@@ -439,19 +584,20 @@ export const Blacklist = () => {
           <select
             value={filterSynced}
             onChange={(e) => setFilterSynced(e.target.value)}
-            className="px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+            className="h-12 w-full px-4 bg-surface text-base border border-outline-variant focus:border-primary outline-none"
           >
             <option value="all">All Status</option>
             <option value="synced">Synced</option>
             <option value="unsynced">Not Synced</option>
           </select>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {trafficSources.map(ts => (
             <button
               key={ts.id}
               onClick={() => handleSync(ts.id)}
               disabled={syncing === ts.id}
+              title={`Sync ${ts.name}`}
               className="modal-btn-primary flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest disabled:opacity-50"
             >
               {syncing === ts.id ? (
@@ -459,7 +605,7 @@ export const Blacklist = () => {
               ) : (
                 <RefreshCw size={14} />
               )}
-              Sync {ts.name}
+              Sync {truncateLabel(ts.name, DISPLAY_MAX_LENGTH.BUTTON_LABEL)}
             </button>
           ))}
         </div>
@@ -488,16 +634,25 @@ export const Blacklist = () => {
                   className="border-t border-outline-variant/10 hover:bg-surface-container/50 transition-colors"
                 >
                   <td className="px-4 py-4">
-                    <div>
-                      <p className="font-bold text-primary">{entry.value}</p>
+                    <div className="min-w-0">
+                      <p className="font-bold text-primary truncate max-w-[220px]" title={entry.value}>
+                        {truncateLabel(entry.value, DISPLAY_MAX_LENGTH.TABLE_VALUE_TEXT)}
+                      </p>
                       {entry.name && (
-                        <p className="text-xs text-on-surface-variant">{entry.name}</p>
+                        <p className="text-xs text-on-surface-variant truncate max-w-[220px]" title={entry.name}>
+                          {truncateLabel(entry.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                        </p>
                       )}
                       {entry.type === 'ip' && entry.ipMatchMode && (
                         <p className="text-xs text-on-surface-variant/60">Mode: {entry.ipMatchMode}</p>
                       )}
                       {entry.type === 'user_agent' && entry.uaMatchMode && (
                         <p className="text-xs text-on-surface-variant/60">Mode: {entry.uaMatchMode}</p>
+                      )}
+                      {Array.isArray(entry.conditions) && entry.conditions.length > 0 && (
+                        <p className="text-xs text-on-surface-variant/60">
+                          Rule: {(entry.matchMode || 'all').toUpperCase()} / {entry.conditions.length} conditions
+                        </p>
                       )}
                     </div>
                   </td>
@@ -508,10 +663,14 @@ export const Blacklist = () => {
                     </span>
                   </td>
                   <td className="px-4 py-4">
-                    <span className="text-sm text-on-surface">{getTrafficSourceName(entry.trafficSourceId)}</span>
+                    <span className="text-sm text-on-surface inline-block max-w-[180px] truncate" title={getTrafficSourceName(entry.trafficSourceId)}>
+                      {truncateLabel(getTrafficSourceName(entry.trafficSourceId), DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                    </span>
                   </td>
                   <td className="px-4 py-4">
-                    <span className="text-sm text-on-surface-variant">{entry.reason || '-'}</span>
+                    <span className="text-sm text-on-surface-variant inline-block max-w-[220px] truncate" title={entry.reason || '-'}>
+                      {truncateLabel(entry.reason || '-', DISPLAY_MAX_LENGTH.TABLE_REASON_TEXT)}
+                    </span>
                   </td>
                   <td className="px-4 py-4">
                     <span className={cn(
@@ -626,7 +785,7 @@ export const Blacklist = () => {
       {/* Add/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface-container-lowest w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-surface-container-lowest w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h2 className="text-xl font-bold text-primary mb-4">
                 {isEditMode ? 'Edit Blacklist Entry' : 'Add Blacklist Entry'}
@@ -640,13 +799,18 @@ export const Blacklist = () => {
                   </label>
                   <select
                     value={formData.trafficSourceId}
-                    onChange={(e) => setFormData({ ...formData, trafficSourceId: e.target.value })}
+                    onChange={(e) => {
+                      clearFormError('trafficSourceId');
+                      setFormData({ ...formData, trafficSourceId: e.target.value });
+                    }}
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
                     disabled={isEditMode}
                   >
                     <option value="">Select traffic source</option>
                     {trafficSources.map(ts => (
-                      <option key={ts.id} value={ts.id}>{ts.name}</option>
+                      <option key={ts.id} value={ts.id} title={ts.name}>
+                        {truncateLabel(ts.name, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
+                      </option>
                     ))}
                   </select>
                   {formErrors.trafficSourceId && (
@@ -661,7 +825,16 @@ export const Blacklist = () => {
                   </label>
                   <select
                     value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value as BlacklistType })}
+                    onChange={(e) => {
+                      const nextType = e.target.value as BlacklistType;
+                      clearFormError('value');
+                      clearFormError('conditions');
+                      setFormData({
+                        ...formData,
+                        type: nextType,
+                        value: clampInput(normalizeCountryInput(nextType, formData.value), getBlacklistValueMaxLength(nextType)),
+                      });
+                    }}
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
                     disabled={isEditMode}
                   >
@@ -674,16 +847,94 @@ export const Blacklist = () => {
                 {/* Value */}
                 <div>
                   <label className="block text-sm font-medium text-on-surface mb-1">
-                    Value <span className="text-error">*</span>
+                    Value {formData.conditions.length === 0 && <span className="text-error">*</span>}
                   </label>
-                  <input
-                    type="text"
-                    value={formData.value}
-                    onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                    placeholder={formData.type === 'ip' ? '192.168.1.1' : formData.type === 'user_agent' ? 'Mozilla/5.0...' : 'Enter value'}
-                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
-                    disabled={isEditMode}
-                  />
+                  {shouldUseExpandedValueEditor(formData.type) ? (
+                    <textarea
+                      value={formData.value}
+                      onChange={(e) => {
+                        clearFormError('value');
+                        setFormData({
+                          ...formData,
+                          value: clampInput(
+                            normalizeCountryInput(formData.type, e.target.value),
+                            getBlacklistValueMaxLength(formData.type),
+                          ),
+                        });
+                      }}
+                      placeholder={
+                        formData.type === 'user_agent'
+                          ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)...'
+                          : formData.type === 'org_exact'
+                            ? 'Amazon.com'
+                            : formData.type === 'org_keyword'
+                              ? 'hosting'
+                            : formData.type === 'network_tag'
+                              ? 'global_db\nproxy\nbotnet_ips'
+                            : formData.type === 'suspicious_reason'
+                              ? 'no_js_data\ntz_discrepancy'
+                            : formData.type === 'allow_bias_org'
+                              ? 'Comcast Cable'
+                            : formData.type === 'allow_bias_isp_type'
+                              ? 'Mobile ISP'
+                            : formData.type === 'rule'
+                              ? 'Optional label for this rule group'
+                              : 'Enter value'
+                      }
+                      rows={4}
+                      className="w-full px-4 py-3 bg-surface text-sm border border-outline-variant focus:border-primary outline-none resize-y min-h-[112px]"
+                      disabled={isEditMode}
+                      maxLength={getBlacklistValueMaxLength(formData.type)}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.value}
+                      onChange={(e) => {
+                        clearFormError('value');
+                        setFormData({
+                          ...formData,
+                          value: clampInput(
+                            normalizeCountryInput(formData.type, e.target.value),
+                            getBlacklistValueMaxLength(formData.type),
+                          ),
+                        });
+                      }}
+                      placeholder={
+                        formData.type === 'ip'
+                          ? '192.168.1.1'
+                          : formData.type === 'user_agent'
+                            ? 'Mozilla/5.0...'
+                        : formData.type === 'asn'
+                              ? 'AS12345'
+                              : formData.type === 'country'
+                                ? 'US'
+                              : formData.type === 'visitor_id'
+                                ? 'visitor_abc123'
+                              : formData.type === 'org_exact'
+                                ? 'Amazon.com'
+                              : formData.type === 'org_keyword'
+                                ? 'hosting'
+                              : formData.type === 'isp_type'
+                                ? 'Data Center/Web Hosting/Transit'
+                              : formData.type === 'network_tag'
+                                ? 'global_db'
+                              : formData.type === 'suspicious_reason'
+                                ? 'no_js_data'
+                              : formData.type === 'allow_bias_org'
+                                ? 'Comcast Cable'
+                              : formData.type === 'allow_bias_isp_type'
+                                ? 'Mobile ISP'
+                              : formData.type === 'rule'
+                                ? 'Optional label for this rule group'
+                              : 'Enter value'
+                      }
+                      className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                      disabled={isEditMode}
+                      maxLength={getBlacklistValueMaxLength(formData.type)}
+                    />
+                  )}
+                  {renderLengthCounter(formData.value, getBlacklistValueMaxLength(formData.type))}
                   {formErrors.value && (
                     <p className="text-xs text-error mt-1">{formErrors.value}</p>
                   )}
@@ -697,10 +948,82 @@ export const Blacklist = () => {
                       Enter User Agent string or pattern
                     </p>
                   )}
+                  {formData.type === 'country' && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Enter ISO 3166-1 alpha-2 country code, for example US or DE
+                    </p>
+                  )}
+                  {(formData.type === 'org_exact' || formData.type === 'org_keyword' || formData.type === 'isp_type') && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Use the normalized organization or ISP label exactly as your detection pipeline emits it.
+                    </p>
+                  )}
+                  {(formData.type === 'network_tag' || formData.type === 'suspicious_reason') && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Good fits here are signals like <code>global_db</code>, <code>proxy</code>, or <code>no_js_data</code>.
+                    </p>
+                  )}
+                  {shouldUseExpandedValueEditor(formData.type) && !hasConditionRules && (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Larger input space is enabled for long labels, stacked tags, and reusable rule-group notes.
+                    </p>
+                  )}
+                  {hasConditionRules ? (
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      This value acts as the primary match. Use advanced logic below only when you need extra filters.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="rounded-sm border border-outline-variant/30 bg-surface-container/30 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-on-surface">Advanced Logic (Optional)</div>
+                      <p className="mt-1 text-xs text-on-surface-variant">
+                        Add extra AND / OR conditions only when the primary type and value above are not enough.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearFormError('conditions');
+                        setShowAdvancedLogic((current) => !current);
+                      }}
+                      className="px-3 py-2 border border-outline-variant text-primary text-xs font-semibold hover:bg-surface transition-colors"
+                    >
+                      {showAdvancedLogic ? 'Hide Logic' : hasConditionRules ? `Edit Logic (${formData.conditions.length})` : 'Configure Logic'}
+                    </button>
+                  </div>
+                  {hasConditionRules && !showAdvancedLogic ? (
+                    <p className="mt-3 text-xs text-on-surface-variant">
+                      {formData.matchMode.toUpperCase()} logic with {formData.conditions.length} condition{formData.conditions.length === 1 ? '' : 's'} configured.
+                    </p>
+                  ) : null}
+                  {showAdvancedLogic ? (
+                    <div className="mt-4 space-y-3">
+                      <ListConditionsEditor
+                        title="Additional Conditions"
+                        matchMode={formData.matchMode}
+                        conditions={formData.conditions}
+                        onMatchModeChange={(mode) => {
+                          clearFormError('conditions');
+                          setFormData({ ...formData, matchMode: mode });
+                        }}
+                        onConditionsChange={(conditions) => {
+                          clearFormError('conditions');
+                          clearFormError('value');
+                          setFormData({ ...formData, conditions });
+                        }}
+                      />
+                      {formErrors.conditions && (
+                        <p className="text-xs text-error -mt-2">{formErrors.conditions}</p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* IP Match Mode */}
-                {formData.type === 'ip' && (
+                {formData.type === 'ip' && !hasConditionRules && (
                   <div>
                     <label className="block text-sm font-medium text-on-surface mb-1">
                       Match Mode
@@ -731,7 +1054,7 @@ export const Blacklist = () => {
                 )}
 
                 {/* UA Match Mode */}
-                {formData.type === 'user_agent' && (
+                {formData.type === 'user_agent' && !hasConditionRules && (
                   <div>
                     <label className="block text-sm font-medium text-on-surface mb-1">
                       Match Mode
@@ -762,7 +1085,7 @@ export const Blacklist = () => {
                 )}
 
                 {/* Sync to Platform */}
-                {(formData.type === 'ip' || formData.type === 'user_agent') && (
+                {(formData.type === 'ip' || formData.type === 'user_agent') && !hasConditionRules && (
                   <div>
                     <label className="flex items-center gap-2">
                       <input
@@ -784,10 +1107,12 @@ export const Blacklist = () => {
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, name: clampInput(e.target.value, FIELD_MAX_LENGTH.NAME) })}
                     placeholder="Enter a descriptive name"
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
+                    maxLength={FIELD_MAX_LENGTH.NAME}
                   />
+                  {renderLengthCounter(formData.name, FIELD_MAX_LENGTH.NAME)}
                 </div>
 
                 {/* Reason */}
@@ -797,25 +1122,13 @@ export const Blacklist = () => {
                   </label>
                   <textarea
                     value={formData.reason}
-                    onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, reason: clampInput(e.target.value, FIELD_MAX_LENGTH.REASON) })}
                     placeholder="Why is this being blacklisted?"
                     rows={3}
                     className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none resize-none"
+                    maxLength={FIELD_MAX_LENGTH.REASON}
                   />
-                </div>
-
-                {/* Campaign ID */}
-                <div>
-                  <label className="block text-sm font-medium text-on-surface mb-1">
-                    Campaign ID (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.campaignId}
-                    onChange={(e) => setFormData({ ...formData, campaignId: e.target.value })}
-                    placeholder="Associated campaign ID"
-                    className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none"
-                  />
+                  {renderLengthCounter(formData.reason, FIELD_MAX_LENGTH.REASON)}
                 </div>
 
                 {/* Actions */}

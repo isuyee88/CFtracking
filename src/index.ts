@@ -161,8 +161,10 @@ import { userPreferenceRoutes } from '@/services/user-preferences/user-preferenc
 import { createMigrationRouter } from '@/services/migration/migration.routes';
 import { createCacheUpdateRoutes } from '@/services/cache/cache-update-service';
 import { SSECacheNotificationService } from '@/services/cache/sse-cache-notification';
+import { cloneRouter } from '@/routes/campaign-clone.routes';
 
 app.route('/api/campaigns', createCampaignRouter());
+app.route('/api', cloneRouter);
 app.route('/api/flows', createFlowRouter());
 app.route('/api/landing-pages', createLandingPageRouter());
 app.route('/api/offers', createOfferRouter());

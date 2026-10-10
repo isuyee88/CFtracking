@@ -34,6 +34,9 @@ import { ExportButton } from '../components/ExportButton';
 import { formatAffiliateNetworkForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { AFFILIATE_NETWORK_TEMPLATES, getAffiliateTemplateById, type AffiliateNetworkOfferParameter } from '../data/affiliateNetworkTemplates';
+import { readBootstrapPage } from '../services/bootstrap';
+import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -73,7 +76,8 @@ const NETWORK_FIELDS: FormField[] = [
     label: 'Network Name',
     type: 'text',
     required: true,
-    placeholder: 'Enter network name'
+    placeholder: 'Enter network name',
+    maxLength: FIELD_MAX_LENGTH.NAME,
   },
   {
     name: 'templateId',
@@ -109,6 +113,7 @@ const NETWORK_FIELDS: FormField[] = [
     label: 'API URL',
     type: 'url',
     placeholder: 'https://api.network.com/endpoint',
+    maxLength: FIELD_MAX_LENGTH.URL,
     validation: (value) => {
       if (!value) return null;
       try {
@@ -123,20 +128,23 @@ const NETWORK_FIELDS: FormField[] = [
     name: 'apiKey',
     label: 'API Key',
     type: 'text',
-    placeholder: 'Enter your API key'
+    placeholder: 'Enter your API key',
+    maxLength: FIELD_MAX_LENGTH.API_KEY,
   },
   {
     name: 'apiSecret',
     label: 'API Secret',
     type: 'text',
-    placeholder: 'Enter your API secret (if required)'
+    placeholder: 'Enter your API secret (if required)',
+    maxLength: FIELD_MAX_LENGTH.API_SECRET,
   },
   {
     name: 'postbackUrl',
     label: 'Postback URL',
     type: 'url',
     description: 'The URL where the affiliate network sends conversion notifications. Copy this to your affiliate network settings.',
-    placeholder: 'https://your-tracking-domain.com/postback?subid={{subid}}&status={status}'
+    placeholder: 'https://your-tracking-domain.com/postback?subid={{subid}}&status={status}',
+    maxLength: FIELD_MAX_LENGTH.URL,
   },
   {
     name: 'offerParameters',
@@ -159,13 +167,18 @@ const NETWORK_FIELDS: FormField[] = [
     name: 'notes',
     label: 'Notes',
     type: 'textarea',
-    placeholder: 'Add notes about this network...'
+    placeholder: 'Add notes about this network...',
+    maxLength: FIELD_MAX_LENGTH.NOTES,
   }
 ];
 
 export const AffiliateNetworks = () => {
-  const [networks, setNetworks] = useState<AffiliateNetwork[]>([]);
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage<{ affiliateNetworks?: AffiliateNetwork[] }>('affiliate-networks');
+  const hasBootstrap = Boolean(bootstrap);
+  const [networks, setNetworks] = useState<AffiliateNetwork[]>(
+    Array.isArray(bootstrap?.data?.affiliateNetworks) ? bootstrap.data.affiliateNetworks : []
+  );
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   
   // Form modal state
@@ -214,7 +227,9 @@ export const AffiliateNetworks = () => {
   useEffect(() => {
     const loadNetworks = async () => {
       try {
-        setLoading(true);
+        if (!hasBootstrap && networks.length === 0) {
+          setLoading(true);
+        }
         const data = await fetchAffiliateNetworks();
         if (Array.isArray(data)) {
           setNetworks(data);
@@ -276,7 +291,7 @@ export const AffiliateNetworks = () => {
     };
 
     loadNetworks();
-  }, []);
+  }, [hasBootstrap, networks.length]);
 
   const handleCreateNetwork = () => {
     setFormMode('create');
@@ -630,11 +645,15 @@ export const AffiliateNetworks = () => {
                       <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
                         <Network size={20} className="text-primary" />
                       </div>
-                      <div>
-                        <h3 className="font-bold text-primary">{network.name}</h3>
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-primary truncate max-w-[180px]" title={network.name}>
+                          {truncateLabel(network.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
+                        </h3>
                         <div className="flex items-center gap-2 text-xs text-on-surface-variant">
                           <Link size={12} />
-                          <span className="truncate max-w-[150px]">{network.apiUrl || 'No API URL'}</span>
+                          <span className="truncate max-w-[150px]" title={network.apiUrl || 'No API URL'}>
+                            {truncateLabel(network.apiUrl || 'No API URL', DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+                          </span>
                         </div>
                       </div>
                     </div>

@@ -383,10 +383,19 @@ export function useCloudSync(options: CloudSyncOptions) {
 }
 
 function getDeviceId(): string {
-  let deviceId = localStorage.getItem('cf_device_id');
+  let deviceId: string | null = null;
+  try {
+    deviceId = localStorage.getItem('cf_device_id');
+  } catch {
+    deviceId = null;
+  }
   if (!deviceId) {
     deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem('cf_device_id', deviceId);
+    try {
+      localStorage.setItem('cf_device_id', deviceId);
+    } catch {
+      // Ignore storage write failures in restricted contexts.
+    }
   }
   return deviceId;
 }

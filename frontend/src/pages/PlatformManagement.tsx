@@ -2,8 +2,8 @@
  * File: PlatformManagement.tsx
  * Purpose: 平台管理页面，管理外部平台集成
  * Input/Output: 显示平台列表，支持配置和测试连接
- * Logic: 从API获取平台数据，提供配置、测试连接功能
- * 前后端交互: 调用 /api/platforms 接口
+ * Logic: 从边缘 bootstrap 读取平台数据，提供配置、测试连接功能
+ * 前后端交互: 首屏读取 bootstrap，对平台配置与测试仍保留写接口
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -27,14 +27,17 @@ import {
   fetchPlatforms, configurePlatform, testPlatformConnection,
   type Platform 
 } from '../services/api';
+import { readBootstrapPage } from '../services/bootstrap';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 export const PlatformManagement = () => {
-  const [platforms, setPlatforms] = useState<Platform[]>([]);
-  const [loading, setLoading] = useState(true);
+  const bootstrap = readBootstrapPage<{ platforms?: Platform[] }>('platforms');
+  const hasBootstrap = Boolean(bootstrap);
+  const [platforms, setPlatforms] = useState<Platform[]>(Array.isArray(bootstrap?.data?.platforms) ? bootstrap.data.platforms : []);
+  const [loading, setLoading] = useState(!hasBootstrap);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(null);
@@ -55,6 +58,10 @@ export const PlatformManagement = () => {
     setError(null);
     
     try {
+      if (!hasBootstrap && platforms.length === 0) {
+        setLoading(true);
+      }
+
       const data = await fetchPlatforms();
       setPlatforms(data);
     } catch (err) {
@@ -63,7 +70,7 @@ export const PlatformManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [hasBootstrap, platforms.length]);
 
   useEffect(() => {
     loadPlatforms();

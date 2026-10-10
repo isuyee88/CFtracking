@@ -95,10 +95,18 @@ export function getTimezoneLabel(timezone: string): string {
 
 // Store timezone in localStorage
 export function storeTimezone(timezone: string): void {
-  localStorage.setItem('user_timezone', timezone);
+  try {
+    localStorage.setItem('user_timezone', timezone);
+  } catch {
+    // Ignore storage write failures in restricted contexts.
+  }
 }
 
 // Get stored timezone
 export function getStoredTimezone(): string {
-  return localStorage.getItem('user_timezone') || getLocalTimezone();
+  try {
+    return localStorage.getItem('user_timezone') || getLocalTimezone();
+  } catch {
+    return getLocalTimezone();
+  }
 }
