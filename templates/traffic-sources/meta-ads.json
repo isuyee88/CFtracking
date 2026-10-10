@@ -1,0 +1,46 @@
+{
+  "id": "meta-ads",
+  "name": "Meta Ads (Facebook)",
+  "category": "social",
+  "description": "Facebook and Instagram advertising platform",
+  "homepage": "https://business.facebook.com",
+  "documentation": "https://developers.facebook.com/docs/marketing-api",
+  "parameters": {
+    "clickId": "fbclid",
+    "campaignId": "campaign_id",
+    "adsetId": "adset_id",
+    "adId": "ad_id",
+    "placement": "placement"
+  },
+  "macros": {
+    "{{campaign.id}}": "Campaign ID",
+    "{{campaign.name}}": "Campaign name",
+    "{{adset.id}}": "Ad Set ID",
+    "{{adset.name}}": "Ad Set name",
+    "{{ad.id}}": "Ad ID",
+    "{{ad.name}}": "Ad name",
+    "{{placement}}": "Placement (feed, story, etc)",
+    "{{site_source_name}}": "Publisher (Facebook, Instagram, Messenger)"
+  },
+  "postbackTemplate": "https://graph.facebook.com/v18.0/{pixelId}/events?access_token={accessToken}",
+  "postbackMacros": {
+    "{pixelId}": "Your Facebook Pixel ID",
+    "{accessToken}": "Conversions API access token",
+    "event_name": "Purchase or other event",
+    "fbp": "Facebook browser ID cookie",
+    "fbc": "Facebook click ID from fbclid parameter"
+  },
+  "trackingUrlExample": "https://your-tracker.com/click?campaign={campaignId}&source=meta&fbclid={{click_id}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}",
+  "notes": [
+    "Meta uses Conversions API (CAPI) for server-side tracking",
+    "fbclid parameter is required for attribution",
+    "Requires Pixel ID and Access Token",
+    "Must hash PII (email, phone) with SHA-256",
+    "event_time should be within 7 days"
+  ],
+  "supportedFormats": ["feed", "story", "reel", "messenger", "audience-network"],
+  "regions": ["global"],
+  "minDeposit": 10,
+  "currency": "USD",
+  "paymentMethods": ["card", "paypal", "wire"]
+}
