@@ -1097,7 +1097,7 @@ export const Landings = () => {
                   <button
                     onClick={() => handleOpenVersions(row as LandingPage)}
                     className="rounded border border-primary/40 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-primary hover:bg-primary/10"
-                    title="Manage versions"
+                    title="Version History"
                   >
                     Versions
                   </button>
@@ -1111,7 +1111,7 @@ export const Landings = () => {
                   <button
                     onClick={() => handleDuplicateLanding(row as LandingPage)}
                     className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                    title="Duplicate as A/B variant"
+                    title="Duplicate"
                   >
                     <Copy size={16} />
                   </button>
