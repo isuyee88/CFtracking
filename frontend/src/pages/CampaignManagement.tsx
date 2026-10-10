@@ -790,7 +790,20 @@ export const CampaignManagement = () => {
           columns={[
             {
               key: 'select',
-              label: '',
+              label: (
+                <input
+                  type="checkbox"
+                  className="rounded border-border-default"
+                  checked={selectedItems.size > 0 && selectedItems.size === filteredCampaigns.length}
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate = selectedItems.size > 0 && selectedItems.size < filteredCampaigns.length;
+                    }
+                  }}
+                  onChange={handleSelectAll}
+                  aria-label="Select all campaigns"
+                />
+              ),
               width: '40px',
               align: 'center',
               render: (_: any, row: any) => (

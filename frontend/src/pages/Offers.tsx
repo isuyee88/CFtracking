@@ -772,7 +772,20 @@ export const Offers = () => {
           columns={[
             {
               key: 'select',
-              label: '',
+              label: (
+                <input
+                  type="checkbox"
+                  className="rounded border-outline-variant"
+                  checked={selectedItems.size > 0 && selectedItems.size === filteredOffers.length}
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate = selectedItems.size > 0 && selectedItems.size < filteredOffers.length;
+                    }
+                  }}
+                  onChange={handleSelectAll}
+                  aria-label="Select all offers"
+                />
+              ),
               width: '50px',
               render: (_, row) => (
                 <input

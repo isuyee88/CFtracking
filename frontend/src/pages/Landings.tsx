@@ -927,7 +927,20 @@ export const Landings = () => {
           columns={[
             {
               key: 'select',
-              label: '',
+              label: (
+                <input
+                  type="checkbox"
+                  className="rounded border-outline-variant"
+                  checked={selectedItems.size > 0 && selectedItems.size === filteredLandings.length}
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate = selectedItems.size > 0 && selectedItems.size < filteredLandings.length;
+                    }
+                  }}
+                  onChange={handleSelectAll}
+                  aria-label="Select all landing pages"
+                />
+              ),
               width: '50px',
               render: (_, row) => (
                 <input
