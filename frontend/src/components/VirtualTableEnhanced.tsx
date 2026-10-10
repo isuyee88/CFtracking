@@ -7,6 +7,7 @@
  */
 
 import React, { useRef, useMemo, useState, useCallback } from 'react';
+import { List } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { VirtualTableColumn } from './VirtualTable';
@@ -394,6 +395,7 @@ export function VirtualTableEnhanced<T = any>({
             title={`Row density: ${density} — click to switch (S/M/L)`}
             aria-label="Toggle table row density"
           >
+            <List size={12} aria-hidden="true" />
             {TABLE_DENSITY_LABELS[density]}
           </button>
         </div>

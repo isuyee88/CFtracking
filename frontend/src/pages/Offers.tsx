@@ -52,6 +52,15 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function formatOfferUrlForDisplay(value: string | undefined): string {
+  if (!value) return '—';
+  try {
+    return new URL(value).host;
+  } catch {
+    return truncateLabel(value, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT);
+  }
+}
+
 type RedirectType = 'http' | 'meta' | 'js' | 'js_blank' | 'double' | 'remote';
 type ActionType = 'local' | 'redirect' | 'preload' | 'action';
 type OfferHostingMode = 'hosted' | 'local' | 'zip';
@@ -838,7 +847,7 @@ export const Offers = () => {
                       title={row.url}
                     >
                       <span className="truncate">
-                        {truncateLabel(row.url, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+                        {formatOfferUrlForDisplay(row.url)}
                       </span>
                       <ExternalLink size={12} />
                     </a>

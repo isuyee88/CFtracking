@@ -44,6 +44,20 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function formatLandingUrlForDisplay(value: string | undefined): string {
+  if (!value) return '—';
+  try {
+    return new URL(value).host;
+  } catch {
+    return truncateLabel(value, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT);
+  }
+}
+
+function getLandingTypeLabel(landing: LandingPage): string {
+  const mode = landing.hostingMode || inferLandingHostingMode(landing.url);
+  return mode === 'zip' ? 'ZIP Archive' : mode === 'local' ? 'Local HTML' : 'Hosted URL';
+}
+
 interface LandingPage {
   id: string;
   displayId?: string;
@@ -978,6 +992,9 @@ export const Landings = () => {
                     >
                       {truncateLabel(row.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
                     </button>
+                    <span className="mt-0.5 inline-flex w-fit rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+                      {getLandingTypeLabel(row as LandingPage)}
+                    </span>
                     <a 
                       href={row.url} 
                       target="_blank" 
@@ -986,7 +1003,7 @@ export const Landings = () => {
                       title={row.url}
                     >
                       <span className="truncate">
-                        {truncateLabel(row.url, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
+                        {formatLandingUrlForDisplay(row.url)}
                       </span>
                       <ExternalLink size={12} />
                     </a>
