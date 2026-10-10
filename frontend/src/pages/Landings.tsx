@@ -920,7 +920,8 @@ export const Landings = () => {
       </div>
 
       {/* Landing Pages Table - 使用虚拟滚动 */}
-      <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
+      <div className="bg-surface-container-lowest whisper-shadow flex flex-col">
+        <div className="overflow-hidden">
         <VirtualTableEnhanced
           tableId="landings"
           columns={[
@@ -1114,6 +1115,7 @@ export const Landings = () => {
           getRowId={(row) => row.id}
           emptyMessage="No landing pages found"
         />
+        </div>
 
         {/* Pagination */}
         {totalPages > 1 && (
