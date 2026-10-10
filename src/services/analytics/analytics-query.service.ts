@@ -40,7 +40,7 @@ export class AnalyticsQueryService {
       }),
     });
 
-    const data = await response.json();
+    const data = await response.json() as { trends?: any[] };
     return data.trends || [];
   }
 
@@ -67,7 +67,7 @@ export class AnalyticsQueryService {
       }),
     });
 
-    const data = await response.json();
+    const data = await response.json() as { stats?: any[] };
     return data.stats || [];
   }
 }

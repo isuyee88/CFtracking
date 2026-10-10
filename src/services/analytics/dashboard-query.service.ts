@@ -132,9 +132,9 @@ export class DashboardQueryService {
         trackingDO.fetch(`http://do/entity-stats?range=${range}`),
       ]);
       
-      const stats = await statsResponse.json();
-      const chartData = await chartResponse.json();
-      const entityStatsData = await entityStatsResponse.json();
+      const stats = await statsResponse.json() as Record<string, any>;
+      const chartData = await chartResponse.json() as { chartData?: ChartDataPoint[] };
+      const entityStatsData = await entityStatsResponse.json() as { stats?: Record<string, EntityStatItem[]> };
       
       // 格式化指标数据
       const metrics = this.formatDOMetrics(stats);
@@ -198,7 +198,6 @@ export class DashboardQueryService {
     range?: string;
     campaignId?: string;
   }): Promise<{ list: any[]; total: number; dataSource: DataSource }> {
-    const dataSource: DataSource = 'D1';
     const clicks = await this.trafficRepo.getRecentClicks(params.limit || 50);
     return {
       list: clicks,
