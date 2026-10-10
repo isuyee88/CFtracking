@@ -4,7 +4,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { CampaignCloneService } from '../services/campaign/campaign-clone.service';
-import type { Env } from '../types/env';
+import type { Env } from '../config/env';
 
 const cloneRouter = new Hono<{ Bindings: Env }>();
 
@@ -60,10 +60,12 @@ cloneRouter.post('/campaigns/:id/clone', async (c) => {
       }, 400);
     }
     
-    if (error.message.includes('not found')) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    if (errorMessage.includes('not found')) {
       return c.json({
         success: false,
-        error: error.message
+        error: errorMessage
       }, 404);
     }
     
@@ -71,7 +73,7 @@ cloneRouter.post('/campaigns/:id/clone', async (c) => {
     return c.json({
       success: false,
       error: 'Failed to clone campaign',
-      details: error.message
+      details: errorMessage
     }, 500);
   }
 });

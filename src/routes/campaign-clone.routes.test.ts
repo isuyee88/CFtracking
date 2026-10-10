@@ -66,7 +66,11 @@ describe('Campaign Clone Routes', () => {
       }, mockEnv);
       
       expect(response.status).toBe(200);
-      const data = await response.json();
+      const data = await response.json() as {
+        success: boolean;
+        error?: string;
+        data: { clonedCampaign: { name: string } };
+      };
       expect(data.success).toBe(true);
       expect(data.data.clonedCampaign.name).toBe('Cloned Campaign');
     });
@@ -85,7 +89,11 @@ describe('Campaign Clone Routes', () => {
       }, mockEnv);
       
       expect(response.status).toBe(200);
-      const data = await response.json();
+      const data = await response.json() as {
+        success: boolean;
+        error?: string;
+        data: { clonedCampaign: { name: string } };
+      };
       expect(data.success).toBe(true);
     });
     
@@ -97,7 +105,11 @@ describe('Campaign Clone Routes', () => {
       }, mockEnv);
       
       expect(response.status).toBe(400);
-      const data = await response.json();
+      const data = await response.json() as {
+        success: boolean;
+        error?: string;
+        data: { clonedCampaign: { name: string } };
+      };
       expect(data.success).toBe(false);
       expect(data.error).toBe('Validation error');
     });
@@ -112,7 +124,11 @@ describe('Campaign Clone Routes', () => {
       }, mockEnv);
       
       expect(response.status).toBe(404);
-      const data = await response.json();
+      const data = await response.json() as {
+        success: boolean;
+        error?: string;
+        data: { clonedCampaign: { name: string } };
+      };
       expect(data.success).toBe(false);
       expect(data.error).toContain('not found');
     });
@@ -127,7 +143,11 @@ describe('Campaign Clone Routes', () => {
       }, mockEnv);
       
       expect(response.status).toBe(400);
-      const data = await response.json();
+      const data = await response.json() as {
+        success: boolean;
+        error?: string;
+        data: { clonedCampaign: { name: string } };
+      };
       expect(data.success).toBe(false);
     });
     
@@ -141,7 +161,11 @@ describe('Campaign Clone Routes', () => {
       }, mockEnv);
       
       expect(response.status).toBe(200);
-      const data = await response.json();
+      const data = await response.json() as {
+        success: boolean;
+        error?: string;
+        data: { clonedCampaign: { name: string } };
+      };
       expect(data.success).toBe(true);
       // 默认 options 应该被应用
     });
