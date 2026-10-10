@@ -1008,14 +1008,20 @@ export const Offers = () => {
               render: (_, row) => (
                 <div className="flex items-center gap-1">
                   <button 
-                    onClick={() => handleEditOffer(row as Offer)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditOffer(row as Offer);
+                    }}
                     className="p-2 text-on-surface-variant hover:text-primary transition-colors"
                     title="Edit"
                   >
                     <Edit3 size={16} />
                   </button>
                   <button 
-                    onClick={() => handleDeleteOffer(row.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteOffer(row.id);
+                    }}
                     className="p-2 text-on-surface-variant hover:text-error transition-colors"
                     title="Delete"
                   >
