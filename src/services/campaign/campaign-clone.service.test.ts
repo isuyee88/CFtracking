@@ -1,6 +1,6 @@
 // Campaign Clone Service - Unit Tests
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { CampaignCloneService } from './campaign-clone.service';
 
 // Mock D1 Database

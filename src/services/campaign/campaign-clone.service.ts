@@ -153,7 +153,7 @@ export class CampaignCloneService {
       };
       
     } catch (error) {
-      throw new Error(`Failed to clone campaign: ${error.message}`);
+      throw new Error(`Failed to clone campaign: ${(error as Error).message}`);
     }
   }
   
@@ -309,7 +309,7 @@ export class CampaignCloneService {
       SELECT COUNT(*) as count FROM campaigns WHERE name = ?
     `).bind(name).first();
     
-    return result && result.count > 0;
+    return result && (result.count as number) > 0;
   }
   
   /**
