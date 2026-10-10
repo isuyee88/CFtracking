@@ -7,6 +7,9 @@
 export interface Env {
   ENVIRONMENT: 'development' | 'staging' | 'production';
   JWT_SECRET: string;
+  /** 外部平台写操作保护；架构基线要求默认开启。 */
+  SIMULATION_MODE: boolean | string;
+  /** JWT 过期时间 */
   JWT_EXPIRES_IN: string;
   
   DB: D1Database;

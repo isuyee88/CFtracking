@@ -26,6 +26,8 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "production"
+# Architecture ruling: external write operations remain blocked by default.
+SIMULATION_MODE = true
 JWT_EXPIRES_IN = "24h"
 CDN_CACHE_TTL = "300"
 CACHE_TTL = "21600"
