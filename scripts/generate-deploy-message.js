@@ -61,7 +61,6 @@ function getGitInfo() {
     const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
     const message = execSync('git log -1 --pretty=%B', { encoding: 'utf8' }).trim();
     const author = execSync('git log -1 --pretty=%an', { encoding: 'utf8' }).trim();
-    const authorEmail = execSync('git log -1 --pretty=%ae', { encoding: 'utf8' }).trim();
     const commitDate = execSync('git log -1 --pretty=%ci', { encoding: 'utf8' }).trim();
     
     return {
@@ -70,7 +69,6 @@ function getGitInfo() {
       branch,
       message,
       author,
-      authorEmail,
       commitDate,
     };
   } catch (error) {
@@ -81,7 +79,6 @@ function getGitInfo() {
       branch: 'unknown',
       message: 'Unknown commit',
       author: 'unknown',
-      authorEmail: 'unknown',
       commitDate: new Date().toISOString(),
     };
   }

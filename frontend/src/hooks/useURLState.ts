@@ -5,7 +5,7 @@
  * Logic: 使用LZ-String压缩状态，编码到URL参数中
  */
 
-import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 // 压缩库使用简单的Base64编码，避免引入额外依赖
@@ -59,6 +59,17 @@ export interface DashboardState {
   filters?: Record<string, any>;
 }
 
+interface DashboardSearchState {
+  range?: string;
+  from?: string;
+  to?: string;
+  timezone?: string;
+  enabledMetrics?: string[];
+  enabledEntities?: string[];
+  lastClicksColumns?: string[];
+  selectedCampaign?: string | null;
+}
+
 // Campaigns页面状态接口
 export interface CampaignsState {
   // 排序
@@ -110,14 +121,10 @@ export function useURLState<T extends Record<string, any>>(
   // 同步URL到状态 - 只在URL参数变化时执行
   const prevUrlStateRef = useRef<string>('');
   useEffect(() => {
-    const currentPath = window.location.hash.replace('#', '') || '/';
-    if (currentPath === '/' || currentPath === '') {
-      const encoded = searchParams.get(paramName) || '';
-      // 只有URL真正变化时才更新状态
-      if (encoded !== prevUrlStateRef.current) {
-        prevUrlStateRef.current = encoded;
-        setInternalState(urlState);
-      }
+    const encoded = searchParams.get(paramName) || '';
+    if (encoded !== prevUrlStateRef.current) {
+      prevUrlStateRef.current = encoded;
+      setInternalState(urlState);
     }
   }, [urlState, paramName, searchParams]);
 
@@ -180,9 +187,204 @@ const DASHBOARD_DEFAULT_STATE: DashboardState = {
   filters: {}
 };
 
+function splitCsvParam(value: string | null): string[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const items = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return items.length > 0 ? items : undefined;
+}
+
+function parseDashboardSearchState(searchParams: URLSearchParams): DashboardSearchState | null {
+  const range = searchParams.get('range') || undefined;
+  const from = searchParams.get('from') || undefined;
+  const to = searchParams.get('to') || undefined;
+  const timezone = searchParams.get('tz') || undefined;
+  const selectedCampaign = searchParams.get('campaign');
+  const enabledMetrics = splitCsvParam(searchParams.get('metrics'));
+  const enabledEntities = splitCsvParam(searchParams.get('entities'));
+  const lastClicksColumns = splitCsvParam(searchParams.get('recent'));
+
+  if (
+    !range &&
+    !from &&
+    !to &&
+    !timezone &&
+    !selectedCampaign &&
+    !enabledMetrics &&
+    !enabledEntities &&
+    !lastClicksColumns
+  ) {
+    return null;
+  }
+
+  return {
+    range,
+    from,
+    to,
+    timezone,
+    enabledMetrics,
+    enabledEntities,
+    lastClicksColumns,
+    selectedCampaign: selectedCampaign || null,
+  };
+}
+
+function mergeDashboardState(searchState: DashboardSearchState | null): DashboardState {
+  const mergedRange = {
+    ...DASHBOARD_DEFAULT_STATE.range!,
+    ...(searchState?.range ? { interval: searchState.range as DashboardState['range']['interval'] } : {}),
+    ...(searchState?.from ? { from: searchState.from } : {}),
+    ...(searchState?.to ? { to: searchState.to } : {}),
+    ...(searchState?.timezone ? { timezone: searchState.timezone } : {}),
+  };
+
+  return {
+    ...DASHBOARD_DEFAULT_STATE,
+    ...(searchState?.enabledMetrics ? { enabledMetrics: searchState.enabledMetrics } : {}),
+    ...(searchState?.enabledEntities ? { enabledEntities: searchState.enabledEntities as DashboardState['enabledEntities'] } : {}),
+    ...(searchState?.lastClicksColumns ? { lastClicksColumns: searchState.lastClicksColumns } : {}),
+    ...(searchState?.selectedCampaign !== undefined ? { selectedCampaign: searchState.selectedCampaign } : {}),
+    range: mergedRange,
+  };
+}
+
+function buildDashboardSearchParams(state: DashboardState, currentSearchParams: URLSearchParams): URLSearchParams {
+  const nextSearchParams = new URLSearchParams(currentSearchParams);
+  nextSearchParams.delete('s');
+
+  const range = state.range?.interval || DASHBOARD_DEFAULT_STATE.range?.interval;
+  const from = state.range?.from || DASHBOARD_DEFAULT_STATE.range?.from;
+  const to = state.range?.to || DASHBOARD_DEFAULT_STATE.range?.to;
+  const timezone = state.range?.timezone || DASHBOARD_DEFAULT_STATE.range?.timezone;
+
+  if (range) {
+    nextSearchParams.set('range', range);
+  } else {
+    nextSearchParams.delete('range');
+  }
+
+  if (from) {
+    nextSearchParams.set('from', from);
+  } else {
+    nextSearchParams.delete('from');
+  }
+
+  if (to) {
+    nextSearchParams.set('to', to);
+  } else {
+    nextSearchParams.delete('to');
+  }
+
+  if (timezone) {
+    nextSearchParams.set('tz', timezone);
+  } else {
+    nextSearchParams.delete('tz');
+  }
+
+  if (state.enabledMetrics?.length) {
+    nextSearchParams.set('metrics', state.enabledMetrics.join(','));
+  } else {
+    nextSearchParams.delete('metrics');
+  }
+
+  if (state.enabledEntities?.length) {
+    nextSearchParams.set('entities', state.enabledEntities.join(','));
+  } else {
+    nextSearchParams.delete('entities');
+  }
+
+  if (state.lastClicksColumns?.length) {
+    nextSearchParams.set('recent', state.lastClicksColumns.join(','));
+  } else {
+    nextSearchParams.delete('recent');
+  }
+
+  if (state.selectedCampaign) {
+    nextSearchParams.set('campaign', state.selectedCampaign);
+  } else {
+    nextSearchParams.delete('campaign');
+  }
+
+  return nextSearchParams;
+}
+
 // Dashboard专用Hook
 export const useDashboardURLState = () => {
-  return useURLState<DashboardState>('s', DASHBOARD_DEFAULT_STATE);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const dashboardState = useMemo(() => {
+    const readableState = parseDashboardSearchState(searchParams);
+    if (readableState) {
+      return mergeDashboardState(readableState);
+    }
+
+    const legacyState = searchParams.get('s');
+    if (legacyState) {
+      const decoded = decodeState(legacyState);
+      if (decoded) {
+        return { ...DASHBOARD_DEFAULT_STATE, ...decoded };
+      }
+    }
+
+    return DASHBOARD_DEFAULT_STATE;
+  }, [searchParams]);
+
+  const [state, setInternalState] = useState<DashboardState>(dashboardState);
+  const previousStateRef = useRef('');
+
+  useEffect(() => {
+    const serializedState = JSON.stringify(dashboardState);
+    if (serializedState !== previousStateRef.current) {
+      previousStateRef.current = serializedState;
+      setInternalState(dashboardState);
+    }
+  }, [dashboardState]);
+
+  const setState = useCallback(
+    (newState: Partial<DashboardState> | ((prev: DashboardState) => Partial<DashboardState>)) => {
+      setInternalState((prev) => {
+        const partialState =
+          typeof newState === 'function'
+            ? (newState as (previous: DashboardState) => Partial<DashboardState>)(prev)
+            : newState;
+
+        const mergedState: DashboardState = {
+          ...prev,
+          ...partialState,
+          range: {
+            ...prev.range,
+            ...(partialState.range || {}),
+          },
+        };
+
+        const nextSearchParams = buildDashboardSearchParams(mergedState, searchParams);
+        const nextQuery = nextSearchParams.toString();
+        const currentQuery = searchParams.toString();
+
+        if (nextQuery !== currentQuery) {
+          setSearchParams(nextSearchParams, { replace: false });
+        }
+
+        return mergedState;
+      });
+    },
+    [searchParams, setSearchParams]
+  );
+
+  const resetState = useCallback(() => {
+    setInternalState(DASHBOARD_DEFAULT_STATE);
+    setSearchParams(buildDashboardSearchParams(DASHBOARD_DEFAULT_STATE, new URLSearchParams()), {
+      replace: true,
+    });
+  }, [setSearchParams]);
+
+  return { state, setState, resetState };
 };
 
 // Campaigns页面专用Hook

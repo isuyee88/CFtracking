@@ -1,0 +1,49 @@
+{
+  "id": "google-ads",
+  "name": "Google Ads",
+  "category": "search",
+  "description": "Google search, display, and video advertising",
+  "homepage": "https://ads.google.com",
+  "documentation": "https://support.google.com/google-ads",
+  "parameters": {
+    "clickId": "gclid",
+    "campaignId": "{campaignid}",
+    "adGroupId": "{adgroupid}",
+    "keyword": "{keyword}",
+    "matchType": "{matchtype}",
+    "device": "{device}",
+    "placement": "{placement}"
+  },
+  "macros": {
+    "{campaignid}": "Campaign ID",
+    "{adgroupid}": "Ad Group ID",
+    "{creative}": "Ad ID",
+    "{keyword}": "Keyword (search campaigns)",
+    "{matchtype}": "Keyword match type (exact, phrase, broad)",
+    "{device}": "Device type (m=mobile, t=tablet, c=computer)",
+    "{placement}": "Display network placement",
+    "{network}": "Network (s=search, d=display)",
+    "{loc_physical_ms}": "Physical location ID",
+    "{loc_interest_ms}": "Location of interest ID"
+  },
+  "postbackTemplate": "https://www.google.com/pagead/conversion/{conversionId}/?gclid={clickId}&value={revenue}&currency={currency}",
+  "postbackMacros": {
+    "{conversionId}": "Google Ads Conversion ID",
+    "{clickId}": "gclid from original click",
+    "{revenue}": "Conversion value",
+    "{currency}": "Currency code (USD, EUR, etc)"
+  },
+  "trackingUrlExample": "https://your-tracker.com/click?campaign={campaignId}&source=google&gclid={lpurl}&keyword={keyword}&device={device}",
+  "notes": [
+    "gclid parameter is required for conversion tracking",
+    "Use {lpurl} to get the full URL with gclid",
+    "Enhanced conversions require hashed user data",
+    "Conversion tracking requires gclid to be passed back",
+    "Auto-tagging must be enabled in Google Ads"
+  ],
+  "supportedFormats": ["search", "display", "video", "shopping", "app"],
+  "regions": ["global"],
+  "minDeposit": 0,
+  "currency": "USD",
+  "paymentMethods": ["card", "wire"]
+}

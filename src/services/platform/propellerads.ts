@@ -29,6 +29,8 @@ export class PropellerAdsAdapter extends PlatformAdapter<PropellerAdsConfig> {
         'adjust_bid',
         'exclude_zone',
         'include_zone',
+        'exclude_subzone',
+        'include_subzone',
         'get_campaign_data',
         'get_campaign_stats',
         'get_balance',
@@ -73,6 +75,16 @@ export class PropellerAdsAdapter extends PlatformAdapter<PropellerAdsConfig> {
         return this.includeZone(
           parameters.campaignId as string,
           parameters.zoneId as string | number
+        );
+      case 'exclude_subzone':
+        return this.excludeSubzone(
+          parameters.campaignId as string,
+          parameters.publisherId as string | number,
+        );
+      case 'include_subzone':
+        return this.includeSubzone(
+          parameters.campaignId as string,
+          parameters.publisherId as string | number,
         );
       default:
         return {
@@ -325,6 +337,76 @@ export class PropellerAdsAdapter extends PlatformAdapter<PropellerAdsConfig> {
       return {
         success: false,
         message: `Error including zone ${zoneId}: ${error}`,
+      };
+    }
+  }
+
+  private async excludeSubzone(
+    campaignId: string,
+    publisherId: string | number
+  ): Promise<PlatformActionResult> {
+    try {
+      const response = await this.makeRequest(
+        `/adv/campaigns/${campaignId}/targeting/exclude/subzone`,
+        'PUT',
+        {
+          subzones: [String(publisherId)],
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          success: true,
+          message: `Publisher ${publisherId} excluded from campaign ${campaignId} successfully`,
+          data: data as Record<string, unknown>,
+        };
+      }
+
+      const error = await response.text();
+      return {
+        success: false,
+        message: `Failed to exclude publisher ${publisherId}: ${error}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Error excluding publisher ${publisherId}: ${error}`,
+      };
+    }
+  }
+
+  private async includeSubzone(
+    campaignId: string,
+    publisherId: string | number
+  ): Promise<PlatformActionResult> {
+    try {
+      const response = await this.makeRequest(
+        `/adv/campaigns/${campaignId}/targeting/include/subzone`,
+        'PUT',
+        {
+          subzones: [String(publisherId)],
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          success: true,
+          message: `Publisher ${publisherId} included in campaign ${campaignId} successfully`,
+          data: data as Record<string, unknown>,
+        };
+      }
+
+      const error = await response.text();
+      return {
+        success: false,
+        message: `Failed to include publisher ${publisherId}: ${error}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Error including publisher ${publisherId}: ${error}`,
       };
     }
   }

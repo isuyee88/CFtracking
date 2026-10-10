@@ -24,6 +24,10 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
     } as LandingPage;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   async findByDisplayId(displayId: string): Promise<LandingPage | null> {
     const result = await this.db
       .prepare(`SELECT * FROM landingPages WHERE displayId = ?`)
@@ -42,10 +46,27 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
 
     await this.db
       .prepare(`
-        INSERT INTO landingPages (id, displayId, name, url, status, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO landingPages (
+          id, displayId, name, url, status, "group", hostingMode, assetId,
+          manifestJson, notes, sourceSlug, createdAt, updatedAt
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      .bind(displayId, displayId, data.name, data.url, 'active', now, now)
+      .bind(
+        displayId,
+        displayId,
+        data.name,
+        data.url,
+        'active',
+        data.group ?? null,
+        data.hostingMode ?? 'remote',
+        data.assetId ?? null,
+        data.manifestJson ?? null,
+        data.notes ?? null,
+        data.sourceSlug ?? null,
+        now,
+        now
+      )
       .run();
 
     const lp = await this.findById(displayId);
@@ -63,6 +84,11 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
     if (data.url !== undefined) { fields.push('url = ?'); values.push(data.url); }
     if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
     if (data.group !== undefined) { fields.push('"group" = ?'); values.push(data.group); }
+    if (data.hostingMode !== undefined) { fields.push('hostingMode = ?'); values.push(data.hostingMode); }
+    if (data.assetId !== undefined) { fields.push('assetId = ?'); values.push(data.assetId); }
+    if (data.manifestJson !== undefined) { fields.push('manifestJson = ?'); values.push(data.manifestJson); }
+    if (data.notes !== undefined) { fields.push('notes = ?'); values.push(data.notes); }
+    if (data.sourceSlug !== undefined) { fields.push('sourceSlug = ?'); values.push(data.sourceSlug); }
 
     if (fields.length === 0) {
       return this.findById(id);
@@ -103,6 +129,14 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
     return result !== null;
   }
 
+  async findBySourceSlug(sourceSlug: string): Promise<LandingPage | null> {
+    const result = await this.db
+      .prepare('SELECT * FROM landingPages WHERE sourceSlug = ? LIMIT 1')
+      .bind(sourceSlug)
+      .first();
+    return result ? this.transform(result as Record<string, unknown>) : null;
+  }
+
   /**
    * 获取关联的 Campaign 数量
    */
@@ -122,16 +156,33 @@ export class LandingPageRepository extends BaseRepository<LandingPage> {
   /**
    * 获取 Landing Page 统计数据 (clicks, conversions)
    */
-  async getStats(landingPageId: string): Promise<{ clicks: number; conversions: number }> {
+  async getStats(
+    landingPageId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<{ clicks: number; conversions: number }> {
+    let sql = `
+      SELECT 
+        COALESCE(SUM(clicks), 0) as clicks,
+        COALESCE(SUM(conversions), 0) as conversions
+      FROM trafficSummary
+      WHERE landingPageId = ?
+    `;
+    const params: unknown[] = [landingPageId];
+
+    if (startDate) {
+      sql += ' AND date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      sql += ' AND date <= ?';
+      params.push(endDate);
+    }
+
     const result = await this.db
-      .prepare(`
-        SELECT 
-          COALESCE(SUM(clicks), 0) as clicks,
-          COALESCE(SUM(conversions), 0) as conversions
-        FROM trafficSummary
-        WHERE landingPageId = ?
-      `)
-      .bind(landingPageId)
+      .prepare(sql)
+      .bind(...params)
       .first<{ clicks: number; conversions: number }>();
     return {
       clicks: result?.clicks || 0,

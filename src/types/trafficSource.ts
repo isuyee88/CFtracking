@@ -62,9 +62,9 @@ export interface TrafficSource {
   costModel: CostModel;
   costValue: number;
   currency: string;
-  parameters?: string;      // JSON string of ParameterTemplate[]
-  postbackConfig?: string;  // JSON string of PostbackConfig
-  apiConfig?: string;       // JSON string of TrafficSourceApiConfig
+  parameters?: ParameterTemplate[] | string;
+  postbackConfig?: PostbackConfig | string;
+  apiConfig?: TrafficSourceApiConfig | string;
   templateId?: string;      // 引用的预定义模板ID
   createdAt: string;
   updatedAt: string;
@@ -77,9 +77,9 @@ export interface CreateTrafficSourceDTO {
   costModel?: CostModel;
   costValue?: number;
   currency?: string;
-  parameters?: string;
-  postbackConfig?: PostbackConfig;
-  apiConfig?: TrafficSourceApiConfig;
+  parameters?: ParameterTemplate[] | string;
+  postbackConfig?: PostbackConfig | string;
+  apiConfig?: TrafficSourceApiConfig | string;
   templateId?: string;
 }
 
@@ -90,9 +90,9 @@ export interface UpdateTrafficSourceDTO {
   costModel?: CostModel;
   costValue?: number;
   currency?: string;
-  parameters?: string;
-  postbackConfig?: PostbackConfig;
-  apiConfig?: TrafficSourceApiConfig;
+  parameters?: ParameterTemplate[] | string;
+  postbackConfig?: PostbackConfig | string;
+  apiConfig?: TrafficSourceApiConfig | string;
   templateId?: string;
   status?: TrafficSourceStatus;
 }

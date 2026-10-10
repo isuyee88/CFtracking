@@ -1,0 +1,44 @@
+{
+  "id": "taboola",
+  "name": "Taboola",
+  "category": "native",
+  "description": "Taboola native advertising and content discovery platform",
+  "homepage": "https://taboola.com",
+  "documentation": "https://help.taboola.com",
+  "parameters": {
+    "clickId": "tblci",
+    "campaignId": "campaign",
+    "siteId": "site",
+    "platform": "platform",
+    "cost": "cpc"
+  },
+  "macros": {
+    "{click_id}": "Taboola click ID",
+    "{campaign_id}": "Campaign ID",
+    "{campaign_item_id}": "Campaign item ID",
+    "{site}": "Publisher site",
+    "{site_id}": "Publisher site ID",
+    "{platform}": "Device platform (Desktop, Mobile, Tablet)",
+    "{country}": "Country code",
+    "{region}": "Region code",
+    "{city}": "City name",
+    "{cpc}": "Cost per click"
+  },
+  "postbackTemplate": "https://trc.taboola.com/actions-handler/log/3/s2s-action?click-id={clickId}&name=conversion&revenue={revenue}",
+  "postbackMacros": {
+    "{clickId}": "Original Taboola click ID (tblci parameter)",
+    "{revenue}": "Conversion value in USD"
+  },
+  "trackingUrlExample": "https://your-tracker.com/click?campaign={campaignId}&source=taboola&tblci={click_id}&site={site}&platform={platform}&cpc={cpc}",
+  "notes": [
+    "Taboola uses 'tblci' parameter for click ID",
+    "Postback URL requires exact 'click-id' parameter name",
+    "Revenue should be in USD",
+    "S2S postback has specific endpoint format"
+  ],
+  "supportedFormats": ["native", "feed", "video"],
+  "regions": ["global"],
+  "minDeposit": 10000,
+  "currency": "USD",
+  "paymentMethods": ["card", "wire"]
+}

@@ -34,6 +34,10 @@ export class AffiliateNetworkRepository extends BaseRepository<AffiliateNetwork>
     return network;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   async findByDisplayId(displayId: string): Promise<AffiliateNetwork | null> {
     const result = await this.db
       .prepare(`SELECT * FROM affiliateNetworks WHERE displayId = ?`)

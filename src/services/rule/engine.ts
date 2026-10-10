@@ -60,12 +60,13 @@ export class RuleEngine {
    */
   async evaluateRule(rule: Rule): Promise<boolean> {
     const context = await this.buildEvaluationContext(rule);
+    const legacyConditions = this.toLegacyConditions(rule.conditions);
 
-    const conditionsMet = await this.evaluateConditions(rule.conditions, context);
+    const conditionsMet = await this.evaluateConditions(legacyConditions, context);
 
     if (conditionsMet) {
     await this.executeActions(rule, context);
-    await this.logExecution(rule, context, true);
+    await this.logExecution(rule, legacyConditions, context, true);
     return true;
     }
 
@@ -76,9 +77,10 @@ export class RuleEngine {
    * 构建评估上下文
    */
   private async buildEvaluationContext(rule: Rule): Promise<RuleEvaluationContext> {
-    const campaignId = rule.campaignId;
+    const campaignId = rule.campaignId || '';
+    const conditions = this.toLegacyConditions(rule.conditions);
     const now = new Date();
-    const duration = this.parseDuration(rule.conditions[0]?.duration);
+    const duration = this.parseDuration(conditions[0]?.duration);
     const startDate = new Date(now.getTime() - duration).toISOString().split('T')[0] || '';
     const endDate = now.toISOString().split('T')[0] || '';
     const metrics = await this.trafficRepo.getCampaignMetrics(
@@ -90,7 +92,7 @@ export class RuleEngine {
     return {
       campaignId,
       metrics,
-      timeRange: rule.conditions[0]?.duration || '24h',
+      timeRange: conditions[0]?.duration || '24h',
     };
   }
 
@@ -126,6 +128,9 @@ export class RuleEngine {
     conditions: Condition[],
     context: RuleEvaluationContext
   ): Promise<boolean> {
+    if (!Array.isArray(conditions) || conditions.length === 0) {
+      return false;
+    }
     for (const condition of conditions) {
       const value = this.getMetricValue(condition.metric, context.metrics);
       const met = this.compareValues(value, condition.operator, Number(condition.value));
@@ -210,6 +215,7 @@ export class RuleEngine {
    */
   private async logExecution(
     rule: Rule,
+    conditions: Condition[],
     context: RuleEvaluationContext,
     success: boolean
   ): Promise<void> {
@@ -217,7 +223,7 @@ export class RuleEngine {
       ruleId: rule.id,
       campaignId: context.campaignId,
       timestamp: new Date().toISOString(),
-      conditions: rule.conditions,
+      conditions,
       actions: rule.actions,
       executionResult: {
         success,
@@ -227,5 +233,13 @@ export class RuleEngine {
     };
 
     await this.ruleRepo.logExecution(log);
+  }
+
+  private toLegacyConditions(conditions: Rule['conditions']): Condition[] {
+    if (!Array.isArray(conditions)) {
+      return [];
+    }
+
+    return conditions as Condition[];
   }
 }

@@ -6,6 +6,13 @@
 
 import type { Env } from '@/config/env';
 
+interface AggregationResponse {
+  success?: boolean;
+  message?: string;
+  recordsProcessed?: number;
+  errors?: string[];
+}
+
 export class AggregationService {
   private env: Env;
 
@@ -36,7 +43,7 @@ export class AggregationService {
         body: JSON.stringify({ date }),
       });
 
-      const result = await response.json();
+      const result = await response.json() as AggregationResponse;
       return {
         success: result.success || false,
         message: result.message || 'Aggregation completed',
@@ -79,7 +86,7 @@ export class AggregationService {
         body: JSON.stringify({ startDate, endDate }),
       });
 
-      const result = await response.json();
+      const result = await response.json() as AggregationResponse;
       return {
         success: result.success || false,
         message: result.message || 'Historical aggregation completed',

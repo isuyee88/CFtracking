@@ -319,6 +319,74 @@ export function assessRisk(info: CloudflareRequestInfo): {
   };
 }
 
+export function normalizeConnectionType(value?: string | null): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (['wifi', 'wi-fi', 'wireless'].includes(normalized)) {
+    return 'wifi';
+  }
+
+  if (['2g', '3g', '4g', '5g'].includes(normalized)) {
+    return normalized;
+  }
+
+  if (['cellular', 'mobile'].includes(normalized)) {
+    return 'cellular';
+  }
+
+  if (['ethernet', 'wired'].includes(normalized)) {
+    return 'ethernet';
+  }
+
+  if (['fiber', 'dsl', 'cable', 'broadband'].includes(normalized)) {
+    return 'broadband';
+  }
+
+  if (['hosting', 'proxy', 'vpn'].includes(normalized)) {
+    return normalized;
+  }
+
+  return normalized;
+}
+
+export function inferConnectionType(
+  info?: Pick<CloudflareRequestInfo, 'asOrganization'> | null,
+  hints?: { explicit?: string | null; device?: string | null }
+): string | null {
+  const explicit = normalizeConnectionType(hints?.explicit);
+  if (explicit) {
+    return explicit;
+  }
+
+  const org = info?.asOrganization?.toLowerCase() || '';
+  if (org) {
+    if (/mobile|wireless|cellular/.test(org)) {
+      return 'cellular';
+    }
+    if (/vpn/.test(org)) {
+      return 'vpn';
+    }
+    if (/proxy/.test(org)) {
+      return 'proxy';
+    }
+    if (/hosting|datacenter|cloud|server|vps/.test(org)) {
+      return 'hosting';
+    }
+    if (/telecom|broadband|fiber|dsl|cable|internet/.test(org)) {
+      return 'broadband';
+    }
+  }
+
+  if ((hints?.device || '').toLowerCase() === 'mobile') {
+    return 'cellular';
+  }
+
+  return null;
+}
+
 /**
  * 获取客户端真实 IP (优先使用 CF-Connecting-IP)
  * @param c Hono Context

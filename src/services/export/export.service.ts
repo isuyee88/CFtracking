@@ -58,43 +58,49 @@ export interface ExportResult {
 }
 
 export class ExportService {
+  private env: Env;
+
+  constructor(env: Env) {
+    this.env = env;
+  }
+
   async exportCampaigns(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new CampaignRepository(db);
     const campaigns = await repo.findAll();
     return this.formatExportData('campaigns', campaigns as unknown as Record<string, unknown>[], request);
   }
 
   async exportLandingPages(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new LandingPageRepository(db);
     const pages = await repo.findAll();
     return this.formatExportData('landingPages', pages as unknown as Record<string, unknown>[], request);
   }
 
   async exportOffers(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new OfferRepository(db);
     const offers = await repo.findAll();
     return this.formatExportData('offers', offers as unknown as Record<string, unknown>[], request);
   }
 
   async exportTrafficSources(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new TrafficSourceRepository(db);
     const sources = await repo.findAll();
     return this.formatExportData('trafficSources', sources as unknown as Record<string, unknown>[], request);
   }
 
   async exportAffiliateNetworks(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new AffiliateNetworkRepository(db);
     const networks = await repo.findAll();
     return this.formatExportData('affiliateNetworks', networks as unknown as Record<string, unknown>[], request);
   }
 
   async exportClicks(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new ClickRepository(db);
     const { dateRange, filters } = request;
     
@@ -102,7 +108,25 @@ export class ExportService {
       startDate: dateRange?.startDate,
       endDate: dateRange?.endDate,
       campaignId: filters?.campaignId as string,
+      source: filters?.source as string,
+      zoneId: filters?.zoneId as string,
+      utmSource: filters?.utmSource as string,
+      utmCampaign: filters?.utmCampaign as string,
+      subId1: filters?.subId1 as string,
+      subId2: filters?.subId2 as string,
+      subId3: filters?.subId3 as string,
+      country: filters?.country as string,
+      device: filters?.device as string,
+      browser: filters?.browser as string,
+      os: filters?.os as string,
+      isp: filters?.isp as string,
+      fingerprint: filters?.fingerprint as string,
+      ip: filters?.ip as string,
+      visitorId: filters?.visitorId as string,
       offerId: filters?.offerId as string,
+      flowId: filters?.flowId as string,
+      isUnique: filters?.isUnique as boolean | undefined,
+      search: filters?.search as string,
       page: 1,
       pageSize: 10000,
     });
@@ -111,7 +135,7 @@ export class ExportService {
   }
 
   async exportConversions(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new ConversionRepository(db);
     const { dateRange, filters } = request;
     
@@ -129,7 +153,7 @@ export class ExportService {
 
   
   async exportFlows(request: ExportRequest): Promise<ExportResult> {
-    const db = getD1Connection({} as Env);
+    const db = getD1Connection(this.env);
     const repo = new FlowRepository(db);
     const flows = await repo.findAll();
     
@@ -180,6 +204,6 @@ export class ExportService {
   }
 }
 
-export function createExportService(): ExportService {
-  return new ExportService();
+export function createExportService(env: Env): ExportService {
+  return new ExportService(env);
 }

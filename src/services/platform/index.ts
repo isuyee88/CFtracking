@@ -10,6 +10,7 @@ export { PropellerAdsAdapter } from './propellerads';
 export { OddBytesAdapter } from './oddbytes';
 export { PlatformTaskProcessor } from './task.processor';
 export { handlePlatformCron, triggerRuleEvaluation, triggerTaskProcessing } from './cron.worker';
+export { handlePostbackRetryCron } from '@/services/postback/postback-retry.consumer';
 export { createPlatformRouter } from './platform.routes';
 
 export type { TaskPayload } from './task.processor';

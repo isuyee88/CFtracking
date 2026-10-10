@@ -27,6 +27,10 @@ export class RuleRepository extends BaseRepository<Rule> {
     } as Rule;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   async findByDisplayId(displayId: string): Promise<Rule | null> {
     const result = await this.db
       .prepare(`SELECT * FROM rules WHERE displayId = ?`)
@@ -110,6 +114,21 @@ export class RuleRepository extends BaseRepository<Rule> {
       .prepare('SELECT * FROM rules WHERE type = ? AND status = ? ORDER BY priority DESC')
       .bind(type, 'active')
       .all();
+    return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this));
+  }
+
+  async findManyByIds(ids: string[]): Promise<Rule[]> {
+    const normalized = ids.map((item) => String(item || '').trim()).filter(Boolean);
+    if (normalized.length === 0) {
+      return [];
+    }
+
+    const placeholders = normalized.map(() => '?').join(', ');
+    const result = await this.db
+      .prepare(`SELECT * FROM rules WHERE id IN (${placeholders}) OR displayId IN (${placeholders})`)
+      .bind(...normalized, ...normalized)
+      .all();
+
     return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this));
   }
 

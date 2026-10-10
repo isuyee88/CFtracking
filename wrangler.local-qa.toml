@@ -1,0 +1,155 @@
+﻿name = "cf-tracking-local-qa"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+
+
+[vars]
+ENVIRONMENT = "staging"
+JWT_EXPIRES_IN = "24h"
+CDN_CACHE_TTL = "300"
+CACHE_TTL = "21600"
+ENABLED_REGIONS = "HK,CN"
+REALTIME_ENABLED = true
+SSE_ENABLED = true
+AI_OPTIMIZATION_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+AI_OPTIMIZATION_GATEWAY_ID = ""
+AUTH_MODE = "on"
+# 管理员用户名（非敏感信息）
+ADMIN_USERNAME = "admin"
+# ⚠️ 安全配置：敏感信息已迁移到 Cloudflare Secrets
+# 以下变量已通过 `wrangler secret put` 设置：
+# - JWT_SECRET: JWT 签名密钥
+# - ADMIN_PASSWORD_HASH: 管理员密码哈希
+# - CF_ACCOUNT_ID: Cloudflare 账户 ID
+# 生产环境必须启用认证，禁止绕过
+
+[[queues.producers]]
+queue = "cache-refresh-queue-local-qa"
+binding = "CACHE_REFRESH_QUEUE"
+
+[[queues.consumers]]
+queue = "cache-refresh-queue-local-qa"
+max_batch_size = 10
+max_batch_timeout = 5
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cf-tracking-db-local-qa"
+migrations_dir = "schema/migrations"
+
+[[kv_namespaces]]
+binding = "UNIQUENESS_KV"
+
+# ⚠️ POSTBACK_KV 已废弃，迁移到D1数据库 (postback_idempotency表)
+# 原因: 免费账户KV写入限制1000次/天，无法满足生产需求
+# 迁移日期: 2026-04-07
+# 如需回滚，取消下方注释即可
+# [[kv_namespaces]]
+# binding = "POSTBACK_KV"
+# id = "0a7b2bfb5b6042c4adccc7b689eee0c4"
+
+[durable_objects]
+[[durable_objects.bindings]]
+name = "SESSION_DO"
+class_name = "SessionDurableObject"
+
+[[durable_objects.bindings]]
+name = "COUNTER_DO"
+class_name = "CounterDurableObject"
+
+[[durable_objects.bindings]]
+name = "QUEUE_DO"
+class_name = "QueueDurableObject"
+
+[[durable_objects.bindings]]
+name = "UNIQUE_DO"
+class_name = "UniquenessDurableObject"
+
+[[durable_objects.bindings]]
+name = "USER_PREFERENCE_DO"
+class_name = "UserPreferenceDurableObject"
+
+[[durable_objects.bindings]]
+name = "CACHE_EVENT_DO"
+class_name = "CacheEventBrokerDurableObject"
+
+[[durable_objects.bindings]]
+name = "CACHE_DO"
+class_name = "CacheDurableObject"
+
+[[durable_objects.bindings]]
+name = "EVENT_DO"
+class_name = "EventActor"
+
+[[durable_objects.bindings]]
+name = "STATS_DO"
+class_name = "StatsActor"
+
+[[durable_objects.bindings]]
+name = "TRACKING_STATS_DO"
+class_name = "TrackingStatsDO"
+
+[[durable_objects.sqlite_namespaces]]
+name = "TRACKING_STATS_DO_SQLITE"
+class_name = "TrackingStatsDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["UniquenessDurableObject"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["UserPreferenceDurableObject"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["CacheDurableObject"]
+
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["EventActor"]
+
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["StatsActor"]
+
+[[migrations]]
+tag = "v7"
+new_sqlite_classes = []
+
+[[migrations]]
+tag = "v8"
+new_sqlite_classes = []
+
+[[migrations]]
+tag = "v9"
+new_sqlite_classes = ["TrackingStatsDO"]
+
+[[migrations]]
+tag = "v10"
+new_sqlite_classes = ["CacheEventBrokerDurableObject"]
+
+[assets]
+directory = "./frontend/dist"
+binding = "ASSETS"
+html_handling = "none"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/events/*", "/hosted-assets/*", "/health", "/sw.js", "/__bootstrap/*", "/__bootstrap-object/*"]
+
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
+[observability]
+enabled = true
+
+[triggers]
+# 为什么只保留 0 2 * * *：线上现值即此（2026-03-20 创建），账号 cron 免费配额已满（5/5），
+# 部署多加会触发 10072；其余缓存刷新走 Queues（CACHE_REFRESH_QUEUE）
+crons = ["0 2 * * *"]
+
+[dev]
+port = 12342

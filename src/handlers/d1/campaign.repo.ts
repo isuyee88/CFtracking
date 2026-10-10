@@ -26,6 +26,10 @@ export class CampaignRepository extends BaseRepository<Campaign> {
     } as Campaign;
   }
 
+  protected hasDisplayIdColumn(): boolean {
+    return true;
+  }
+
   async findByDisplayId(displayId: string): Promise<Campaign | null> {
     const result = await this.db
       .prepare(`SELECT * FROM campaigns WHERE displayId = ?`)

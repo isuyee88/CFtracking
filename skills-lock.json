@@ -4,7 +4,7 @@
     "agents-sdk": {
       "source": "cloudflare/skills",
       "sourceType": "github",
-      "computedHash": "a57f4149f1127dc38201532adcdb2ddc5113bf360ba96cc7972bc6e6a173becc"
+      "computedHash": "01515ef239bee4ab1464d0eb735a857de3832a304fccd9315bf439837c053e62"
     },
     "building-ai-agent-on-cloudflare": {
       "source": "cloudflare/skills",
@@ -19,7 +19,12 @@
     "cloudflare": {
       "source": "cloudflare/skills",
       "sourceType": "github",
-      "computedHash": "eda55c320815013fcf93ba726bf324ea1710a64f0e2a9c136a4eb68d6f283acf"
+      "computedHash": "508ab2b558bfbe59f1a60d9f709afb70b3ba8acd1e7a368411d993671a775093"
+    },
+    "cloudflare-email-service": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "computedHash": "72992561f31a3e70cdaf7353610b8d2739fda6a6d519163539f658632f9c00d1"
     },
     "durable-objects": {
       "source": "cloudflare/skills",
@@ -44,7 +49,7 @@
     "wrangler": {
       "source": "cloudflare/skills",
       "sourceType": "github",
-      "computedHash": "2fdaf206b99722f8091ad55c98641f9e70aa9c73c3b6edc08671fc1978c23a89"
+      "computedHash": "d2094f7a5a76414fc0cd365fd8ddba3258c2135a1d468b78213c0fa02c309b9b"
     }
   }
 }

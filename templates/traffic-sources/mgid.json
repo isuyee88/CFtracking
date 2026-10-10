@@ -1,0 +1,45 @@
+{
+  "id": "mgid",
+  "name": "MGID",
+  "category": "native",
+  "description": "MGID native advertising and content discovery",
+  "homepage": "https://www.mgid.com",
+  "documentation": "https://help.mgid.com",
+  "parameters": {
+    "clickId": "{click_id}",
+    "campaignId": "{campaign_id}",
+    "widgetId": "{widget_id}",
+    "teaserId": "{teaser_id}"
+  },
+  "macros": {
+    "{click_id}": "MGID click ID",
+    "{campaign_id}": "Campaign ID",
+    "{campaign_name}": "Campaign name",
+    "{widget_id}": "Widget ID",
+    "{teaser_id}": "Teaser/Ad ID",
+    "{country}": "Country code",
+    "{region}": "Region name",
+    "{city}": "City name",
+    "{browser}": "Browser name",
+    "{os}": "Operating system",
+    "{device_type}": "Device type"
+  },
+  "postbackTemplate": "https://api.mgid.com/v1/postback?click_id={clickId}&payout={revenue}&status={status}",
+  "postbackMacros": {
+    "{clickId}": "Original MGID click_id",
+    "{revenue}": "Payout amount",
+    "{status}": "approved or rejected"
+  },
+  "trackingUrlExample": "https://your-tracker.com/click?campaign={campaignId}&source=mgid&click_id={click_id}&widget={widget_id}&teaser={teaser_id}&country={country}",
+  "notes": [
+    "MGID requires click_id for postback attribution",
+    "Postback should include payout and status",
+    "Supports both approved and rejected conversions",
+    "Use widget_id to track traffic source quality"
+  ],
+  "supportedFormats": ["native", "display"],
+  "regions": ["global"],
+  "minDeposit": 100,
+  "currency": "USD",
+  "paymentMethods": ["card", "paypal", "wire"]
+}

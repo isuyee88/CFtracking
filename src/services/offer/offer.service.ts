@@ -9,6 +9,8 @@ import { getD1Connection } from '@/handlers/d1';
 import type { Env } from '@/config/env';
 import type { Offer, CreateOfferDTO, UpdateOfferDTO } from '@/types/offer';
 import { NotFoundError, DuplicateError } from '@/middleware/error';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
+import { normalizeOptionalString, normalizeRequiredString } from '@/utils/fieldLength';
 
 export class OfferService {
   private repo: OfferRepository;
@@ -22,12 +24,13 @@ export class OfferService {
    * 创建 Offer
    */
   async create(data: CreateOfferDTO): Promise<Offer> {
-    const urlExists = await this.repo.urlExists(data.url);
+    const normalizedData = this.normalizeCreateInput(data);
+    const urlExists = await this.repo.urlExists(normalizedData.url);
     if (urlExists) {
-      throw new DuplicateError(`Offer with URL "${data.url}" already exists`);
+      throw new DuplicateError(`Offer with URL "${normalizedData.url}" already exists`);
     }
 
-    return this.repo.create(data);
+    return this.repo.create(normalizedData);
   }
 
   /**
@@ -64,19 +67,20 @@ export class OfferService {
    * 更新 Offer
    */
   async update(id: string, data: UpdateOfferDTO): Promise<Offer> {
+    const normalizedData = this.normalizeUpdateInput(data);
     const existing = await this.repo.findById(id);
     if (!existing) {
       throw new NotFoundError('Offer not found');
     }
 
-    if (data.url && data.url !== existing.url) {
-      const urlExists = await this.repo.urlExists(data.url, id);
+    if (normalizedData.url && normalizedData.url !== existing.url) {
+      const urlExists = await this.repo.urlExists(normalizedData.url, id);
       if (urlExists) {
-        throw new DuplicateError(`Offer with URL "${data.url}" already exists`);
+        throw new DuplicateError(`Offer with URL "${normalizedData.url}" already exists`);
       }
     }
 
-    const updated = await this.repo.update(id, data);
+    const updated = await this.repo.update(id, normalizedData);
     return updated!;
   }
 
@@ -95,11 +99,15 @@ export class OfferService {
   /**
    * 获取 Offer 详情（包含统计数据）
    */
-  async getDetail(id: string): Promise<Offer & { campaignCount: number; clicks: number; conversions: number; revenue: number; epc: number; cr: number }> {
+  async getDetail(
+    id: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<Offer & { campaignCount: number; clicks: number; conversions: number; revenue: number; epc: number; cr: number }> {
     const offer = await this.getById(id);
     const [campaignCount, stats] = await Promise.all([
       this.repo.getCampaignCount(id),
-      this.repo.getStats(id),
+      this.repo.getStats(id, startDate, endDate),
     ]);
 
     const epc = stats.clicks > 0 ? stats.revenue / stats.clicks : 0;
@@ -119,7 +127,7 @@ export class OfferService {
   /**
    * 获取 Offer 列表（包含统计数据）
    */
-  async getListWithStats(page = 1, pageSize = 20): Promise<{ 
+  async getListWithStats(page = 1, pageSize = 20, startDate?: string, endDate?: string): Promise<{ 
     list: (Offer & { campaignCount: number; clicks: number; conversions: number; revenue: number; epc: number; cr: number })[]; 
     total: number 
   }> {
@@ -129,7 +137,7 @@ export class OfferService {
       list.map(async (offer) => {
         const [campaignCount, stats] = await Promise.all([
           this.repo.getCampaignCount(offer.id),
-          this.repo.getStats(offer.id),
+          this.repo.getStats(offer.id, startDate, endDate),
         ]);
         const epc = stats.clicks > 0 ? stats.revenue / stats.clicks : 0;
         const cr = stats.clicks > 0 ? (stats.conversions / stats.clicks) * 100 : 0;
@@ -146,5 +154,61 @@ export class OfferService {
     );
 
     return { list: listWithStats, total };
+  }
+
+  private normalizeCreateInput(data: CreateOfferDTO): CreateOfferDTO {
+    return {
+      ...data,
+      name: normalizeRequiredString(data.name as unknown, {
+        field: 'offer.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      }),
+      url: normalizeRequiredString(data.url as unknown, {
+        field: 'offer.url',
+        maxLength: FIELD_MAX_LENGTH.URL,
+      }),
+      network: normalizeOptionalString(data.network as unknown, {
+        field: 'offer.network',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      }),
+      group: normalizeOptionalString(data.group as unknown, {
+        field: 'offer.group',
+        maxLength: FIELD_MAX_LENGTH.GROUP,
+      }),
+    };
+  }
+
+  private normalizeUpdateInput(data: UpdateOfferDTO): UpdateOfferDTO {
+    const normalizedData: UpdateOfferDTO = { ...data };
+
+    if (data.name !== undefined) {
+      normalizedData.name = normalizeRequiredString(data.name as unknown, {
+        field: 'offer.name',
+        maxLength: FIELD_MAX_LENGTH.NAME,
+      });
+    }
+
+    if (data.url !== undefined) {
+      normalizedData.url = normalizeRequiredString(data.url as unknown, {
+        field: 'offer.url',
+        maxLength: FIELD_MAX_LENGTH.URL,
+      });
+    }
+
+    if (data.network !== undefined) {
+      normalizedData.network = normalizeOptionalString(data.network as unknown, {
+        field: 'offer.network',
+        maxLength: FIELD_MAX_LENGTH.CAMPAIGN_ID,
+      });
+    }
+
+    if (data.group !== undefined) {
+      normalizedData.group = normalizeOptionalString(data.group as unknown, {
+        field: 'offer.group',
+        maxLength: FIELD_MAX_LENGTH.GROUP,
+      });
+    }
+
+    return normalizedData;
   }
 }

@@ -5,6 +5,7 @@
  */
 
 import { ERROR_CODES } from '@/config/constants';
+import { FIELD_MAX_LENGTH } from '@/config/field-constraints';
 
 export interface ValidationResult {
   valid: boolean;
@@ -28,7 +29,7 @@ export function isValidUrl(url: string): boolean {
 
 export function isValidAlias(alias: string): boolean {
   const aliasRegex = /^[a-z0-9-_]+$/i;
-  return alias.length >= 2 && alias.length <= 50 && aliasRegex.test(alias);
+  return alias.length >= 2 && alias.length <= FIELD_MAX_LENGTH.CAMPAIGN_ALIAS && aliasRegex.test(alias);
 }
 
 export function validateRequired(value: unknown, fieldName: string): ValidationResult {

@@ -6,6 +6,14 @@
 
 import type { Env } from '@/config/env';
 
+interface TrendReportResponse {
+  trends?: unknown[];
+}
+
+interface EntityStatsResponse {
+  stats?: unknown[];
+}
+
 export class AnalyticsQueryService {
   private env: Env;
 
@@ -40,7 +48,7 @@ export class AnalyticsQueryService {
       }),
     });
 
-    const data = await response.json();
+    const data = await response.json() as TrendReportResponse;
     return data.trends || [];
   }
 
@@ -67,7 +75,7 @@ export class AnalyticsQueryService {
       }),
     });
 
-    const data = await response.json();
+    const data = await response.json() as EntityStatsResponse;
     return data.stats || [];
   }
 }

@@ -1,0 +1,53 @@
+{
+  "id": "propellerads",
+  "name": "PropellerAds",
+  "category": "push",
+  "description": "PropellerAds push notification and pop traffic network",
+  "homepage": "https://propellerads.com",
+  "documentation": "https://docs.propellerads.com",
+  "parameters": {
+    "clickId": "cid",
+    "cost": "cost",
+    "subId1": "zoneid",
+    "subId2": "var1",
+    "subId3": "var2",
+    "subId4": "var3",
+    "subId5": "var4",
+    "country": "{country}",
+    "device": "{device}",
+    "os": "{os}",
+    "browser": "{browser}"
+  },
+  "macros": {
+    "{zoneid}": "Campaign/Zone ID",
+    "{clickid}": "Click ID for tracking",
+    "{cost}": "Cost per click",
+    "{country}": "2-letter country code (US, GB, etc)",
+    "{device}": "Device type (mobile, tablet, desktop)",
+    "{os}": "Operating system",
+    "{browser}": "Browser name",
+    "{var1}": "Custom variable 1",
+    "{var2}": "Custom variable 2",
+    "{var3}": "Custom variable 3",
+    "{var4}": "Custom variable 4"
+  },
+  "postbackTemplate": "https://ssp-api.propellerads.com/v1/cpa_goal?click_id={clickId}&amount={revenue}&currency={currency}&status={status}",
+  "postbackMacros": {
+    "{clickId}": "Original click ID from PropellerAds",
+    "{revenue}": "Conversion revenue/payout",
+    "{currency}": "Currency code (USD, EUR, etc)",
+    "{status}": "approved or rejected"
+  },
+  "trackingUrlExample": "https://your-tracker.com/click?campaign={campaignId}&source=propellerads&cid={clickid}&zoneid={zoneid}&cost={cost}&country={country}&device={device}",
+  "notes": [
+    "PropellerAds requires click_id in postback URL",
+    "Cost macro only available on CPC campaigns",
+    "Postback must include amount and currency",
+    "Status can be 'approved' or 'rejected'"
+  ],
+  "supportedFormats": ["push", "pop", "interstitial", "onclick"],
+  "regions": ["global"],
+  "minDeposit": 100,
+  "currency": "USD",
+  "paymentMethods": ["card", "paypal", "wire", "crypto"]
+}

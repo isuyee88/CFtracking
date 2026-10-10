@@ -1,0 +1,11 @@
+-- Migration: 077_legacy_schema_reconciliation.sql
+-- Purpose: record the legacy D1 migration reconciliation boundary.
+--
+-- The production database has a historical clicks table that already contains
+-- the subId/UTM/Cloudflare/governance columns from migrations 047/050/062/063,
+-- but those migrations were not recorded in d1_migrations. Cloudflare D1
+-- rejects replaying ALTER TABLE against that wide table. The deployment runbook
+-- repairs the migration ledger and adds only the missing hostedAssets storage
+-- columns before recording this no-op boundary. Fresh databases get the
+-- canonical columns from migrations 072/073 and need no extra DDL here.
+SELECT 1;

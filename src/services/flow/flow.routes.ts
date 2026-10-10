@@ -12,9 +12,10 @@
 import { Hono } from 'hono';
 import { FlowService } from './flow.service';
 import { FlowLogService } from './flow.log.service';
+import { FlowSimulationService } from './flow.simulation.service';
 import { FlowValidator } from './flow.validator';
 import { success, error } from '@/utils/response';
-import { validateRequired } from '@/utils/validator';
+import { validatePagination, validateRequired } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
 import type { FlowStatus } from '@/types/flow';
@@ -22,6 +23,57 @@ import { getAvailableOperators, getAvailableTargets } from '@/utils/flow.filters
 
 export function createFlowRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
+
+  /**
+   * Simulate deterministic flow selection without visitor binding or persistence.
+   */
+  router.post('/simulation', async (c) => {
+    try {
+      const body = await c.req.json();
+      if (!body?.context || !Array.isArray(body.schemas)) {
+        return c.json(error('context and schemas are required', ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+      }
+      const result = await new FlowSimulationService().simulate({
+        context: body.context,
+        schemas: body.schemas,
+        rotation: body.rotation === 'weight' ? 'weight' : 'position',
+        riskScore: typeof body.riskScore === 'number' ? body.riskScore : null,
+      });
+      return c.json(success({ ...result, simulated: true }));
+    } catch (err) {
+      return c.json(
+        error(err instanceof Error ? err.message : 'Failed to simulate flow', ERROR_CODES.VALIDATION),
+        HTTP_STATUS.BAD_REQUEST,
+      );
+    }
+  });
+
+
+  router.get('/', async (c) => {
+    const query = {
+      page: parseInt(c.req.query('page') || '1'),
+      pageSize: parseInt(c.req.query('pageSize') || '20'),
+      campaignId: c.req.query('campaignId') || undefined,
+      status: c.req.query('status') || undefined,
+    };
+
+    const { page, pageSize } = validatePagination(query.page, query.pageSize);
+    const service = new FlowService(c.env);
+    const result = await service.getList({
+      page,
+      pageSize,
+      campaignId: query.campaignId,
+      status: query.status,
+    });
+
+    return c.json(
+      success(result.list, {
+        page,
+        pageSize,
+        total: result.total,
+      })
+    );
+  });
 
   router.get('/campaign/:campaignId', async (c) => {
     const campaignId = c.req.param('campaignId');
@@ -64,6 +116,122 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
     const service = new FlowService(c.env);
     const offers = await service.getOffers(id);
     return c.json(success(offers));
+  });
+
+  router.get('/:id/autorule-binding', async (c) => {
+    const id = c.req.param('id');
+    const service = new FlowService(c.env);
+
+    try {
+      const binding = await service.getAutoruleBinding(id);
+      return c.json(success(binding));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Flow not found') {
+        return c.json(error('Flow not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
+  router.get('/:id/autorule-bindings', async (c) => {
+    const id = c.req.param('id');
+    const service = new FlowService(c.env);
+
+    try {
+      const bindings = await service.getAutoruleBindings(id);
+      return c.json(success(bindings));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Flow not found') {
+        return c.json(error('Flow not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
+  router.put('/:id/autorule-binding', async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const service = new FlowService(c.env);
+
+    const ruleValidation = validateRequired(body.ruleId, 'ruleId');
+    if (!ruleValidation.valid) {
+      return c.json(error(ruleValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+    }
+
+    try {
+      const binding = await service.setAutoruleBinding(id, String(body.ruleId));
+      return c.json(success(binding));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Flow not found') {
+        return c.json(error('Flow not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
+  router.put('/:id/autorule-bindings', async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const service = new FlowService(c.env);
+    const bindings = Array.isArray(body?.bindings) ? body.bindings : null;
+
+    if (!bindings) {
+      return c.json(error('bindings is required', ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+    }
+
+    for (let index = 0; index < bindings.length; index += 1) {
+      const item = bindings[index];
+      const ruleValidation = validateRequired(item?.ruleId, `bindings[${index}].ruleId`);
+      if (!ruleValidation.valid) {
+        return c.json(error(ruleValidation.message, ERROR_CODES.VALIDATION), HTTP_STATUS.BAD_REQUEST);
+      }
+    }
+
+    try {
+      const nextBindings = await service.replaceAutoruleBindings(
+        id,
+        bindings.map((item: { ruleId: unknown; priority?: unknown }) => ({
+          ruleId: String(item.ruleId),
+          priority: Number(item.priority || 0),
+        }))
+      );
+      return c.json(success(nextBindings));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Flow not found') {
+        return c.json(error('Flow not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
+  router.delete('/:id/autorule-binding', async (c) => {
+    const id = c.req.param('id');
+    const service = new FlowService(c.env);
+
+    try {
+      await service.clearAutoruleBinding(id);
+      return c.json(success({ cleared: true }));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Flow not found') {
+        return c.json(error('Flow not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
+  });
+
+  router.delete('/:id/autorule-bindings', async (c) => {
+    const id = c.req.param('id');
+    const service = new FlowService(c.env);
+
+    try {
+      await service.clearAutoruleBindings(id);
+      return c.json(success({ cleared: true }));
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Flow not found') {
+        return c.json(error('Flow not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+      throw err;
+    }
   });
 
   router.post('/', async (c) => {

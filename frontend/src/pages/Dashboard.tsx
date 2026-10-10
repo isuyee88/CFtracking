@@ -1,27 +1,14 @@
-/**
+﻿/**
  * File: Dashboard.tsx
- * Purpose: Dashboard主页面，参考Keitaro实现完整的布局自定义功能
- * Input/Output: 显示实时统计数据、图表、最近点击流，支持完整自定义
- * Logic: 使用useDashboardURLState管理URL状态，支持Metrics/Entities/Columns/Recent Clicks配置
- * 样式优化：统一主色调、玻璃拟态效果、自动昼夜模式
+ * Purpose: Main dashboard page with configurable metrics, charts, entity tables, and recent clicks.
+ * Input/Output: Renders analytics data, drill-down tables, and dashboard preferences.
+ * Logic: Uses useDashboardURLState to persist filters and visible blocks in the URL.
+ * Notes: Preserves the existing visual style and automatic dark-mode indicator behavior.
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { 
-  TrendingUp, 
-  ChevronRight,
-  MoreHorizontal,
-  Calendar,
-  RefreshCw,
-  Settings,
-  X,
-  GripVertical,
-  Eye,
-  EyeOff,
-  Sun,
-  Moon
-} from 'lucide-react';
+import { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
+import { Link } from 'react-router-dom';
+import { RefreshCw, Settings, Sun, Moon } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -29,21 +16,84 @@ import {
   ChartWrapper,
   LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer
 } from '../components/ChartWrapper';
+import { DeferredSection } from '../components/DeferredSection';
+import { QuickDateRangePicker } from '../components/DateRangePicker';
 import { useDashboardURLState } from '../hooks/useURLState';
-import { useTableScroll } from '../hooks/useTableScroll';
-import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
+import type { VirtualTableColumn } from '../components/VirtualTableEnhanced';
 import { DataSourceBadge, DataSourceInfo, DataSourceWarning } from '../components/DataSourceBadge';
-import { useInitialData } from '../App';
-const QuickDateRangePicker = lazy(() => import('@/components/DateRangePicker').then(m => ({ default: m.QuickDateRangePicker })));
-type DateRangeValue = { interval: string; from?: string; to?: string };
-import { fetchCampaigns, fetchOffers, fetchLandings, fetchTrafficSources, fetchDashboardStats, fetchRecentClicks, fetchEntityStats } from '../services/api';
+import { useInitialData } from '../contexts/InitialDataContext';
+import {
+  fetchDashboardStats,
+  fetchRecentClicks,
+  fetchEntityStats,
+  fetchCampaigns,
+  invalidateApiCache,
+} from '../services/api';
+import {
+  invalidateBootstrap,
+  isCurrentBootstrapTarget,
+  normalizeRangeParam,
+  refreshBootstrapIfVersionChanged,
+} from '../services/bootstrap';
 import { BrowserIcon, OSIcon } from '../components/BrandIcon';
+import { useSSECacheUpdate } from '../hooks/useSSECacheUpdate';
+import { SSEEventType, type SSEEvent } from '@/services/cache/sse-cache-notification';
+import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
+import { truncateLabel } from '../utils/text';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// 自动检测昼夜模式的 Hook
+const LazyVirtualTableEnhanced = lazy(() =>
+  import('../components/VirtualTableEnhanced').then(module => ({
+    default: module.VirtualTableEnhanced,
+  }))
+);
+
+const LazyDashboardPreferencesModal = lazy(() =>
+  import('../components/dashboard/DashboardPreferencesModal').then((module) => ({
+    default: module.DashboardPreferencesModal,
+  }))
+);
+
+const DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH = 36;
+
+function formatCampaignFilterLabel(name: string): string {
+  const normalized = String(name || '').trim();
+  if (!normalized) {
+    return '-';
+  }
+
+  const maxLength = Math.min(
+    DASHBOARD_CAMPAIGN_FILTER_MAX_LABEL_LENGTH,
+    DISPLAY_MAX_LENGTH.CAMPAIGN_OPTION_LABEL
+  );
+  return truncateLabel(normalized, maxLength);
+}
+
+function getDashboardEntityDrilldown(entityKey: string, row: Record<string, any>) {
+  const rowId = row.id ? String(row.id) : '';
+  const rowName = row.name ? String(row.name) : '';
+  const search = rowName ? `?search=${encodeURIComponent(rowName)}` : '';
+
+  switch (entityKey) {
+    case 'campaigns':
+      return rowId ? `/campaigns/${rowId}` : '/campaigns';
+    case 'offers':
+      return `/offers${search}`;
+    case 'landings':
+      return `/landings${search}`;
+    case 'sources':
+      return `/traffic-sources${search}`;
+    case 'affiliates':
+      return `/affiliate-networks${search}`;
+    default:
+      return null;
+  }
+}
+
+// Auto-detect dark mode based on local time.
 function useAutoDarkMode() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -52,14 +102,14 @@ function useAutoDarkMode() {
     const checkTime = () => {
       const now = new Date();
       const hour = now.getHours();
-      // 晚上6点到早上6点为暗色模式
+      // Legacy comment cleaned during recovery.
       const shouldBeDark = hour >= 18 || hour < 6;
       setIsDarkMode(shouldBeDark);
       setCurrentTime(now);
     };
 
     checkTime();
-    const interval = setInterval(checkTime, 60000); // 每分钟检查一次
+    const interval = setInterval(checkTime, 60000); // Re-check every minute.
 
     return () => clearInterval(interval);
   }, []);
@@ -67,9 +117,10 @@ function useAutoDarkMode() {
   return { isDarkMode, currentTime };
 }
 
-// ==================== 配置定义 ====================
 
-// 图表字段映射 - 将metrics key映射到API返回的字段名称
+// Configuration
+
+// Map dashboard metric keys to chart payload fields.
 const CHART_DATA_KEY_MAPPING: Record<string, string> = {
   'clicks': 'clicks',
   'unique_clicks_campaign': 'uniqueVisitors',
@@ -87,7 +138,7 @@ const CHART_DATA_KEY_MAPPING: Record<string, string> = {
   'cr': 'cr',
 };
 
-// 所有可用的Metrics
+// All available metrics.
 const ALL_METRICS = [
   { key: 'clicks', label: 'Clicks', format: 'number', category: 'basic' },
   { key: 'unique_clicks_campaign', label: 'Unique clicks (campaign)', format: 'number', category: 'basic' },
@@ -106,12 +157,12 @@ const ALL_METRICS = [
   { key: 'cvr', label: 'CVR', format: 'percentage', category: 'performance' },
   { key: 'deposits', label: 'Deposits', format: 'number', category: 'financial' },
   { key: 'visitors', label: 'Visitors', format: 'number', category: 'basic' },
-  // 兼容旧版本的key映射
+  // Legacy comment cleaned during recovery.
   { key: 'campaign_unique_clicks', label: 'UC (campaign)', format: 'number', category: 'basic' },
   { key: 'sale_revenue', label: 'Revenue', format: 'currency', category: 'financial' },
 ];
 
-// Entities配置 - 扩展为完整的Top Blocks
+// Entity configuration for the dashboard top blocks.
 const ENTITY_CONFIGS = {
   // Campaign & Traffic
   campaigns: {
@@ -399,9 +450,9 @@ const ENTITY_CONFIGS = {
   },
 };
 
-// Recent Clicks列配置 - 基于RawClick数据模型
+// Recent-click table columns based on the raw click model.
 const RECENT_CLICKS_COLUMNS = [
-  // 基础信息 (Basic)
+  // Basic fields.
   { key: 'event_id', label: 'Event ID', width: '120px', category: 'Basic' },
   { key: 'datetime', label: 'Date and Time', width: '150px', category: 'Basic' },
   { key: 'visitor_code', label: 'Visitor Code', width: '120px', category: 'Basic' },
@@ -413,7 +464,7 @@ const RECENT_CLICKS_COLUMNS = [
   { key: 'offer', label: 'Offer', width: '150px', category: 'Campaign' },
   { key: 'source', label: 'Traffic Source', width: '150px', category: 'Campaign' },
 
-  // Geo 信息
+  // Geo fields.
   { key: 'country', label: 'Country', width: '100px', category: 'Geo' },
   { key: 'region', label: 'Region/State', width: '120px', category: 'Geo' },
   { key: 'city', label: 'City', width: '120px', category: 'Geo' },
@@ -468,7 +519,6 @@ const RECENT_CLICKS_COLUMNS = [
   { key: 'user_agent', label: 'User Agent', width: '300px', category: 'User Agent' },
 ];
 
-// 辅助函数：为 Recent Clicks 列生成 sorter 函数
 function getRecentClicksSorter(key: string) {
   switch(key) {
     case 'event_id': return (a: any, b: any) => a.event_id.localeCompare(b.event_id);
@@ -517,300 +567,126 @@ function getRecentClicksSorter(key: string) {
   }
 }
 
-// 时间范围选项 - 使用新的日期选择器组件
-const TIME_RANGES = [
-  { value: 'today', label: 'Today' },
-  { value: 'yesterday', label: 'Yesterday' },
-  { value: 'last7days', label: 'Last 7 Days' },
-  { value: 'last30days', label: 'Last 30 Days' },
-  { value: 'thismonth', label: 'This Month' },
-  { value: 'lastmonth', label: 'Last Month' },
-  { value: 'thisyear', label: 'This Year' },
-  { value: 'lastyear', label: 'Last Year' },
-];
+// Data builders
 
-// ==================== 数据生成函数 ====================
-
-// 加载状态组件
-const LoadingSpinner = ({ size = 24 }: { size?: number }) => (
-  <div className="flex items-center justify-center">
-    <div className="animate-spin rounded-full h-{size} w-{size} border-t-2 border-b-2 border-primary"></div>
-  </div>
-);
-
-// 错误提示组件
 const ErrorMessage = ({ message }: { message: string }) => (
   <div className="text-red-500 text-sm p-4 bg-red-50 rounded-lg">
     {message}
   </div>
 );
 
-// ==================== 组件 ====================
-
-// Preferences弹窗组件
-const PreferencesModal = ({ 
-  isOpen, 
-  onClose, 
-  config, 
-  onConfigChange 
-}: { 
-  isOpen: boolean; 
-  onClose: () => void; 
-  config: any; 
-  onConfigChange: (newConfig: any) => void;
-}) => {
-  const [localConfig, setLocalConfig] = useState(config);
-  
-  useEffect(() => {
-    setLocalConfig(config);
-  }, [config]);
-  
-  if (!isOpen) return null;
-  
-  const toggleMetric = (key: string) => {
-    const current = localConfig.metrics || [];
-    const newMetrics = current.includes(key)
-      ? current.filter((m: string) => m !== key)
-      : [...current, key];
-    setLocalConfig({ ...localConfig, metrics: newMetrics });
-  };
-  
-  const toggleEntity = (key: string) => {
-    const current = localConfig.entities || [];
-    const newEntities = current.includes(key)
-      ? current.filter((e: string) => e !== key)
-      : [...current, key];
-    setLocalConfig({ ...localConfig, entities: newEntities });
-  };
-  
-  const toggleRecentClickColumn = (key: string) => {
-    const current = localConfig.recentClicksColumns || [];
-    const newColumns = current.includes(key)
-      ? current.filter((c: string) => c !== key)
-      : [...current, key];
-    setLocalConfig({ ...localConfig, recentClicksColumns: newColumns });
-  };
-  
-  const handleApply = () => {
-    onConfigChange(localConfig);
-    onClose();
-  };
-  
-  const handleRestoreDefault = () => {
-    setLocalConfig({
-      metrics: ['clicks', 'unique_clicks_campaign', 'conversions', 'cost', 'revenue_confirmed', 'profit_confirmed', 'roi_confirmed'],
-      entities: ['campaigns', 'landings', 'offers', 'sources'],
-      recentClicksColumns: ['event_id', 'datetime', 'campaign', 'os_icon', 'browser_icon', 'ip', 'destination']
-    });
-  };
-  
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-surface border border-border-default rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border-default">
-          <h2 className="text-lg font-display font-semibold text-fg-default">Preferences</h2>
-          <button onClick={onClose} className="p-1 hover:bg-surface-container rounded-lg transition-colors">
-            <X size={20} className="text-fg-muted" />
-          </button>
-        </div>
-        
-        {/* Content */}
-        <div className="p-4 overflow-y-auto max-h-[60vh] bg-surface">
-          {/* Metrics Section */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-fg-muted mb-3 uppercase tracking-wider">Metrics</h3>
-            <div className="flex flex-wrap gap-2">
-              {(localConfig.metrics || []).map((key: string) => {
-                const metric = ALL_METRICS.find(m => m.key === key);
-                return (
-                  <span
-                    key={key}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-accent-muted text-accent-fg text-xs rounded-lg"
-                  >
-                    {metric?.label || key}
-                    <button onClick={() => toggleMetric(key)} className="hover:opacity-70 transition-opacity">
-                      <X size={12} />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-            <div className="mt-2 relative">
-              <select
-                className="w-full p-2 border border-border-default rounded-lg text-sm bg-canvas focus:border-accent-fg focus:outline-none transition-colors"
-                onChange={(e) => { if (e.target.value) { toggleMetric(e.target.value); e.target.value = ''; }}}
-                value=""
-              >
-                <option value="">Add metric...</option>
-                {ALL_METRICS.filter(m => !(localConfig.metrics || []).includes(m.key)).map(m => (
-                  <option key={m.key} value={m.key}>{m.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Entities Section */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-fg-muted mb-3 uppercase tracking-wider">Top Blocks (Entities)</h3>
-            <div className="flex flex-wrap gap-2">
-              {(localConfig.entities || []).map((key: string) => {
-                const entity = ENTITY_CONFIGS[key as keyof typeof ENTITY_CONFIGS];
-                return (
-                  <span
-                    key={key}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-surface-container text-fg-default text-xs rounded-lg border border-border-default"
-                  >
-                    {entity?.label || key}
-                    <button onClick={() => toggleEntity(key)} className="hover:text-fg-muted transition-colors">
-                      <X size={12} />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-            <div className="mt-2">
-              <select
-                className="w-full p-2 border border-border-default rounded-lg text-sm bg-canvas focus:border-accent-fg focus:outline-none transition-colors"
-                onChange={(e) => { if (e.target.value) { toggleEntity(e.target.value); e.target.value = ''; }}}
-                value=""
-              >
-                <option value="">Add entity...</option>
-                {/* 按分类分组显示 */}
-                {(() => {
-                  const categories = [...new Set(Object.values(ENTITY_CONFIGS).map(e => e.category))];
-                  return categories.map(category => {
-                    const entitiesInCategory = Object.entries(ENTITY_CONFIGS).filter(
-                      ([key, config]) => config.category === category && !(localConfig.entities || []).includes(key)
-                    );
-                    if (entitiesInCategory.length === 0) return null;
-                    return (
-                      <optgroup key={category} label={category}>
-                        {entitiesInCategory.map(([key, config]) => (
-                          <option key={key} value={key}>{config.label}</option>
-                        ))}
-                      </optgroup>
-                    );
-                  });
-                })()}
-              </select>
-            </div>
-          </div>
-
-          {/* Recent Clicks Columns Section */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-fg-muted mb-3 uppercase tracking-wider">Recent Clicks Columns</h3>
-            <div className="flex flex-wrap gap-2">
-              {(localConfig.recentClicksColumns || []).map((key: string) => {
-                const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
-                return (
-                  <span
-                    key={key}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-surface-container-low text-fg-default text-xs rounded-lg border border-border-default"
-                  >
-                    {col?.label || key}
-                    <button onClick={() => toggleRecentClickColumn(key)} className="hover:text-fg-muted transition-colors">
-                      <X size={12} />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-            <div className="mt-2">
-              <select
-                className="w-full p-2 border border-border-default rounded-lg text-sm bg-canvas focus:border-accent-fg focus:outline-none transition-colors"
-                onChange={(e) => { if (e.target.value) { toggleRecentClickColumn(e.target.value); e.target.value = ''; }}}
-                value=""
-              >
-                <option value="">Add column...</option>
-                {/* 按分类分组显示 */}
-                {(() => {
-                  const categories = [...new Set(RECENT_CLICKS_COLUMNS.map(c => c.category))];
-                  return categories.map(category => {
-                    const colsInCategory = RECENT_CLICKS_COLUMNS.filter(
-                      c => c.category === category && !(localConfig.recentClicksColumns || []).includes(c.key)
-                    );
-                    if (colsInCategory.length === 0) return null;
-                    return (
-                      <optgroup key={category} label={category}>
-                        {colsInCategory.map(c => (
-                          <option key={c.key} value={c.key}>{c.label}</option>
-                        ))}
-                      </optgroup>
-                    );
-                  });
-                })()}
-              </select>
-            </div>
-          </div>
-        </div>
-        
-        {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-border-default bg-surface-container">
-          <button
-            onClick={handleRestoreDefault}
-            className="text-sm text-fg-muted hover:text-fg-default transition-colors"
-          >
-            Restore to default
-          </button>
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm border border-border-default rounded-lg hover:bg-surface-container-high transition-colors text-fg-default"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleApply}
-              className="px-4 py-2 text-sm bg-fg-default text-canvas rounded-lg hover:opacity-85 transition-opacity"
-            >
-              Apply
-            </button>
-          </div>
-        </div>
+const TableSkeleton = ({ height }: { height: number }) => (
+  <div
+    className="rounded-md border border-outline-variant/20 bg-surface-container-low p-4"
+    style={{ height }}
+    aria-hidden="true"
+  >
+    <div className="flex h-full flex-col gap-3">
+      <div className="h-4 w-36 rounded-full bg-surface-container" />
+      <div className="grid gap-2">
+        {Array.from({ length: Math.max(4, Math.floor(height / 72)) }).map((_, index) => (
+          <div key={index} className="h-11 rounded-md bg-surface-container" />
+        ))}
       </div>
     </div>
-  );
-};
+  </div>
+);
 
-// ==================== 主组件 ====================
+const EntityTablesSkeleton = ({ count }: { count: number }) => (
+  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2" aria-hidden="true">
+    {Array.from({ length: count }).map((_, index) => (
+      <div key={index} className="section-card overflow-hidden">
+        <div className="section-header">
+          <div className="h-5 w-32 rounded-full bg-surface-container" />
+        </div>
+        <TableSkeleton height={300} />
+      </div>
+    ))}
+  </div>
+);
+
+
+
+// Dashboard component
 
 export const Dashboard = () => {
-  // URL状态管理
+  // URL state management
   const { state, setState } = useDashboardURLState();
-  const navigate = useNavigate();
   
-  // 获取初始数据
+  // Read initial bootstrap data.
   const { data: initialData } = useInitialData();
+  const initialSnapshot = (initialData as any) || null;
+  const hasInitialBootstrap = initialSnapshot?.scope?.page === 'dashboard';
   
-  // 自动昼夜模式
+  // Auto dark-mode state.
   const { isDarkMode, currentTime } = useAutoDarkMode();
   
-  // 本地状态 - 优先使用 SSR 初始数据
-  const [stats, setStats] = useState<any[]>(initialData?.metrics || []);
-  const [chartData, setChartData] = useState<any[]>(initialData?.chartData || []);
-  const [recentClicks, setRecentClicks] = useState<any[]>(initialData?.recentClicks || []);
-  const [entityData, setEntityData] = useState<Record<string, any[]>>(initialData?.entityData || {});
+  // Local state, seeded from bootstrap data when available.
+  const [stats, setStats] = useState<any[]>(initialSnapshot?.metrics || []);
+  const [chartData, setChartData] = useState<any[]>(initialSnapshot?.chartData || []);
+  const [recentClicks, setRecentClicks] = useState<any[]>(initialSnapshot?.recentClicks || []);
+  const [entityData, setEntityData] = useState<Record<string, any[]>>(initialSnapshot?.entityData || {});
+  const [campaignOptions, setCampaignOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
-  const [dataSource, setDataSource] = useState<'DO' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT'>(initialData?.dataSource || 'DO');
-  const [queryTime, setQueryTime] = useState<string | null>(initialData?.queryTime || null);
-  const [loading, setLoading] = useState({
-    stats: true,
-    recentClicks: true,
-    entities: true
-  });
+  const [dataSource, setDataSource] = useState<'DO' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT'>(
+    initialSnapshot?.dataSource || 'CACHE'
+  );
+  const [queryTime, setQueryTime] = useState<string | null>(initialSnapshot?.queryTime || null);
+  const [hasResolvedBootstrap, setHasResolvedBootstrap] = useState(hasInitialBootstrap);
+  const [loading, setLoading] = useState(() => ({
+    stats: !hasInitialBootstrap && !(initialSnapshot?.metrics?.length > 0),
+    recentClicks: !hasInitialBootstrap && !(initialSnapshot?.recentClicks?.length > 0),
+    entities: !hasInitialBootstrap && !(initialSnapshot?.entityData && Object.keys(initialSnapshot.entityData).length > 0)
+  }));
   const [errors, setErrors] = useState({
     stats: '',
     recentClicks: '',
     entities: ''
   });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCampaignOptions = async () => {
+      try {
+        const campaigns = await fetchCampaigns();
+        if (!isMounted || !Array.isArray(campaigns)) {
+          return;
+        }
+
+        setCampaignOptions(
+          campaigns
+            .filter((campaign) => campaign && campaign.id && campaign.name)
+            .map((campaign) => ({
+              id: String(campaign.id),
+              name: String(campaign.name),
+            }))
+        );
+      } catch (error) {
+        console.error('[Dashboard] Failed to load campaign options:', error);
+      }
+    };
+
+    void loadCampaignOptions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
-  // 初始数据已加载标记
-  const initialDataLoaded = useRef(initialData?.metrics?.length > 0);
+  // Initial data bootstrap marker
+  const initialDataLoaded = useRef(
+    Boolean(
+      hasInitialBootstrap ||
+        initialSnapshot?.metrics?.length ||
+        initialSnapshot?.recentClicks?.length ||
+        (initialSnapshot?.entityData && Object.keys(initialSnapshot.entityData).length > 0)
+    )
+  );
   
-  // 应用暗色模式类
+  // Legacy comment cleaned during recovery.
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark-mode');
@@ -819,13 +695,13 @@ export const Dashboard = () => {
     }
   }, [isDarkMode]);
   
-  // Key映射表 - 兼容旧版本
+  // Legacy comment cleaned during recovery.
   const keyMapping: Record<string, string> = {
     'campaign_unique_clicks': 'unique_clicks_campaign',
     'sale_revenue': 'revenue_confirmed'
   };
   
-  // 清理metrics，转换旧key
+  // Legacy comment cleaned during recovery.
   const cleanMetrics = (metrics: string[] | undefined): string[] => {
     if (!metrics || metrics.length === 0) {
       return ['clicks', 'unique_clicks_campaign', 'conversions', 'cost', 'revenue_confirmed', 'profit_confirmed', 'roi_confirmed'];
@@ -833,30 +709,43 @@ export const Dashboard = () => {
     return metrics.map(m => keyMapping[m] || m).filter(m => ALL_METRICS.some(am => am.key === m));
   };
   
-  // 配置状态
+  // Legacy comment cleaned during recovery.
   const [config, setConfig] = useState({
     metrics: cleanMetrics(state.enabledMetrics),
     entities: state.enabledEntities || ['campaigns', 'landings', 'offers', 'sources'],
     recentClicksColumns: state.lastClicksColumns || ['event_id', 'datetime', 'campaign', 'os_icon', 'browser_icon', 'ip', 'destination']
   });
   
-  // 使用 useMemo 稳定依赖值，避免无限循环
+  // Legacy comment cleaned during recovery.
   const metricsKey = useMemo(() => config.metrics.join(','), [config.metrics]);
   const entitiesKey = useMemo(() => config.entities.join(','), [config.entities]);
-  const timeRangeKey = useMemo(() => state.range?.interval || 'today', [state.range?.interval]);
+  const timeRangeKey = useMemo(() => normalizeRangeParam(state.range?.interval), [state.range?.interval]);
+  const selectedCampaignKey = useMemo(() => state.selectedCampaign || 'all', [state.selectedCampaign]);
+  const analyticsEdgeKeys = useMemo(
+    () => ({
+      dashboard: `cftrack:v1:dashboard:${timeRangeKey}:${selectedCampaignKey}`,
+      recentClicks: `cftrack:v1:recent-clicks:${timeRangeKey}:limit-10:${selectedCampaignKey}`,
+      entities: config.entities.map((entityKey) => `cftrack:v1:entity-stats:${entityKey}:${timeRangeKey}:${selectedCampaignKey}`),
+    }),
+    [config.entities, selectedCampaignKey, timeRangeKey]
+  );
   
-  // 刷新统计数据和实体数据 - 仅在配置或时间范围变化时
-  const refreshStatsAndEntities = useCallback(async () => {
+  // Legacy comment cleaned during recovery.
+  const refreshStatsAndEntities = useCallback(async (options: { background?: boolean } = {}) => {
+    const background = options.background ?? hasResolvedBootstrap;
+
     setIsRefreshing(true);
-    setLoading(prev => ({ ...prev, stats: true, entities: true }));
+    if (!background) {
+      setLoading(prev => ({ ...prev, stats: true, entities: true }));
+    }
     setErrors(prev => ({ ...prev, stats: '', entities: '' }));
 
     try {
-      const statsData = await fetchDashboardStats(timeRangeKey);
+      const statsData = await fetchDashboardStats(timeRangeKey, state.selectedCampaign);
 
       if (statsData) {
         setStats(statsData.metrics || []);
-        // 转换chartData中的字符串值为数字
+        // Legacy comment cleaned during recovery.
         const processedChartData = (statsData.chartData || []).map((item: any) => ({
           ...item,
           clicks: parseInt(item.clicks) || 0,
@@ -868,14 +757,14 @@ export const Dashboard = () => {
           roi: parseFloat(item.roi) || 0,
         }));
         setChartData(processedChartData);
-        // 更新数据源信息
+        // Legacy comment cleaned during recovery.
         setDataSource(statsData.dataSource || 'DO');
         setQueryTime(statsData.queryTime || new Date().toISOString());
       }
 
       const currentEntities = config.entities;
       const entityPromises = currentEntities.map(entityKey =>
-        fetchEntityStats(entityKey, timeRangeKey)
+        fetchEntityStats(entityKey, timeRangeKey, state.selectedCampaign)
       );
 
       const entityResults = await Promise.all(entityPromises);
@@ -886,6 +775,7 @@ export const Dashboard = () => {
       });
 
       setEntityData(newEntityData);
+      setHasResolvedBootstrap(true);
 
     } catch (error) {
       console.error('Error refreshing stats:', error);
@@ -899,58 +789,104 @@ export const Dashboard = () => {
       setLastUpdated(new Date());
       setIsRefreshing(false);
     }
-  // 使用稳定的字符串依赖而非数组引用
+  // Legacy comment cleaned during recovery.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entitiesKey, timeRangeKey]);
+  }, [entitiesKey, hasResolvedBootstrap, state.selectedCampaign, timeRangeKey]);
 
-  // 单独刷新 Recent Clicks 数据
-  const refreshRecentClicks = useCallback(async () => {
-    setLoading(prev => ({ ...prev, recentClicks: true }));
+  // Legacy comment cleaned during recovery.
+  const refreshRecentClicks = useCallback(async (options: { background?: boolean } = {}) => {
+    const background = options.background ?? hasResolvedBootstrap;
+
+    if (!background) {
+      setLoading(prev => ({ ...prev, recentClicks: true }));
+    }
     setErrors(prev => ({ ...prev, recentClicks: '' }));
 
     try {
-      const clicksData = await fetchRecentClicks(10);
+      const clicksData = await fetchRecentClicks(10, timeRangeKey, state.selectedCampaign);
       setRecentClicks(clicksData || []);
+      setHasResolvedBootstrap(true);
     } catch (error) {
       console.error('Error refreshing recent clicks:', error);
       setErrors(prev => ({ ...prev, recentClicks: 'Failed to fetch recent clicks' }));
     } finally {
       setLoading(prev => ({ ...prev, recentClicks: false }));
     }
-  }, []);
+  }, [hasResolvedBootstrap, state.selectedCampaign, timeRangeKey]);
 
-  // 初始加载标记 - 避免重复请求
+  // Legacy comment cleaned during recovery.
   const isInitialMount = useRef(true);
+  const previousQueryScopeRef = useRef(`${timeRangeKey}:${selectedCampaignKey}`);
   
-  // 数据加载 - 统一管理，避免重复请求
+  // Data loading orchestration to avoid duplicate requests
   useEffect(() => {
-    // 首次加载时执行
+    // Legacy comment cleaned during recovery.
     if (isInitialMount.current) {
       isInitialMount.current = false;
       
-      // 如果初始数据已加载，跳过首次加载
+      // Legacy comment cleaned during recovery.
       if (initialDataLoaded.current) {
-        console.log('[Dashboard] Initial data already loaded, skipping initial fetch');
         setLoading({ stats: false, recentClicks: false, entities: false });
+        previousQueryScopeRef.current = `${timeRangeKey}:${selectedCampaignKey}`;
         return;
       }
       
-      refreshStatsAndEntities();
-      refreshRecentClicks();
+      void refreshStatsAndEntities();
+      void refreshRecentClicks();
+
+      previousQueryScopeRef.current = `${timeRangeKey}:${selectedCampaignKey}`;
       return;
     }
     
-    // 配置或时间范围变化时刷新 - 仅刷新统计数据
-    // Recent Clicks 有独立的定时刷新机制
-    refreshStatsAndEntities();
+    // Legacy comment cleaned during recovery.
+    void refreshStatsAndEntities();
+
+    if (previousQueryScopeRef.current !== `${timeRangeKey}:${selectedCampaignKey}`) {
+      void refreshRecentClicks();
+      previousQueryScopeRef.current = `${timeRangeKey}:${selectedCampaignKey}`;
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metricsKey, entitiesKey, timeRangeKey]);
+  }, [entitiesKey, metricsKey, selectedCampaignKey, timeRangeKey]);
 
-  // Recent Clicks 手动刷新功能 - 移除自动刷新，由用户手动控制
-  const refreshRecentClicksRef = useRef<() => Promise<void>>(refreshRecentClicks);
-  refreshRecentClicksRef.current = refreshRecentClicks;
+  const handleRealtimeEvent = useCallback((event: SSEEvent) => {
+    if (
+      event.type === SSEEventType.CACHE_UPDATED &&
+      isCurrentBootstrapTarget(event.page, event.scopeHash)
+    ) {
+      void refreshBootstrapIfVersionChanged(event.version).then((bundle) => {
+        if (!bundle || bundle.page !== 'dashboard') {
+          return;
+        }
 
-  // 处理配置变化
+        void refreshStatsAndEntities({ background: true });
+        void refreshRecentClicks({ background: true });
+      });
+      return;
+    }
+
+    const isRelevantCacheKey =
+      event.cacheKey === '*' ||
+      event.cacheKey === analyticsEdgeKeys.dashboard ||
+      event.cacheKey === analyticsEdgeKeys.recentClicks ||
+      analyticsEdgeKeys.entities.includes(event.cacheKey);
+
+    const isRelevantDataChange = event.type === SSEEventType.DATA_CHANGED;
+
+    if (!isRelevantCacheKey && !isRelevantDataChange) {
+      return;
+    }
+
+    invalidateBootstrap((bootstrap) => bootstrap?.scope?.page === 'dashboard');
+    invalidateApiCache('/api/analytics/');
+    void refreshStatsAndEntities({ background: true });
+    void refreshRecentClicks({ background: true });
+  }, [analyticsEdgeKeys, refreshRecentClicks, refreshStatsAndEntities]);
+
+  const { isConnected: isRealtimeConnected } = useSSECacheUpdate({
+    onEvent: handleRealtimeEvent,
+  });
+
+  // Legacy comment cleaned during recovery.
   const handleConfigChange = (newConfig: any) => {
     setConfig(newConfig);
     setState({
@@ -960,31 +896,19 @@ export const Dashboard = () => {
     });
   };
   
-  // 处理时间范围切换
-  const handleTimeRangeChange = (range: string) => {
-    const today = new Date().toISOString().split('T')[0];
-    setState(prev => ({
-      range: {
-        ...prev.range,
-        interval: range as any,
-        from: today,
-        to: today
-      }
-    }));
-  };
-  
-  // 格式化时间
+  // Time formatter
+  // Time formatter
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
     });
   };
   
-  // 获取指标样式 - 统一使用主色调渐变
+  // Legacy comment cleaned during recovery.
   const getMetricStyle = (index: number) => {
-    // 使用两种主色调渐变交替，保持视觉统一
+    // Legacy comment cleaned during recovery.
     const styles = [
       { gradient: 'metric-gradient', accent: 'from-secondary-fixed-dim/20' },
       { gradient: 'metric-gradient-alt', accent: 'from-secondary/20' },
@@ -993,97 +917,143 @@ export const Dashboard = () => {
   };
   
   return (
-    <div className="min-h-screen bg-canvas-inset dark:bg-surface">
-      {/* Preferences Modal */}
-      <PreferencesModal 
-        isOpen={showPreferences}
-        onClose={() => setShowPreferences(false)}
-        config={config}
-        onConfigChange={handleConfigChange}
-      />
+    <div className="min-h-full bg-canvas-inset dark:bg-surface">
+      {showPreferences ? (
+        <Suspense fallback={null}>
+          <LazyDashboardPreferencesModal
+            isOpen={showPreferences}
+            onClose={() => setShowPreferences(false)}
+            config={config}
+            onConfigChange={handleConfigChange}
+            metricsCatalog={ALL_METRICS}
+            entityConfigs={ENTITY_CONFIGS}
+            recentClicksColumnsCatalog={RECENT_CLICKS_COLUMNS}
+          />
+        </Suspense>
+      ) : null}
       
       {/* Header */}
       <div className="bg-surface-container-lowest dark:bg-surface-container px-6 py-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-display font-bold text-on-surface">Dashboard</h1>
-              {/* 昼夜模式指示器 */}
+              {/* UI section */}
               <div className={cn(
                 "flex items-center gap-1.5 px-2 py-1 rounded-sm text-xs font-medium transition-colors",
                 isDarkMode 
-                  ? "bg-primary/10 text-primary" 
-                  : "bg-secondary/10 text-secondary"
+                  ? "bg-accent-muted text-accent-fg" 
+                  : "bg-accent-muted text-accent-fg"
               )}>
                 {isDarkMode ? <Moon size={12} /> : <Sun size={12} />}
                 {isDarkMode ? 'Night Mode' : 'Day Mode'}
               </div>
-              {/* 数据源指示器 */}
+              {/* UI section */}
               <DataSourceBadge dataSource={dataSource} size="sm" showLabel={false} />
             </div>
-            <div className="flex items-center gap-3 text-sm text-on-surface-variant mt-1">
-              <span>Real-time tracking overview</span>
+            <div className="mt-1 flex min-h-[3.5rem] flex-col items-start gap-1 text-sm text-on-surface-variant sm:min-h-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <span className="leading-5">Real-time tracking overview</span>
+              <span>Updated {formatTime(lastUpdated)}</span>
+              <span>Local {formatTime(currentTime)}</span>
+              <span
+                className={cn(
+                  'rounded-full px-2 py-0.5 text-[12px] font-semibold',
+                  isRealtimeConnected
+                    ? 'bg-success-fg/12 text-success-fg'
+                    : 'bg-amber-100 text-amber-800'
+                )}
+              >
+                {isRealtimeConnected ? 'Edge sync live' : 'Realtime reconnecting'}
+              </span>
               <DataSourceInfo dataSource={dataSource} queryTime={queryTime || undefined} />
             </div>
             <DataSourceWarning dataSource={dataSource} className="mt-1" />
           </div>
           
-          <div className="flex items-center gap-2">
-            {/* Campaign 选择 */}
-            <select className="px-3 py-2 border border-outline-variant/20 rounded-sm text-sm bg-surface-container-lowest focus:border-primary focus:outline-none transition-colors">
-              <option>Campaigns</option>
-              <option>All Campaigns</option>
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
+            {/* UI section */}
+            <select
+              aria-label="Select campaign scope"
+              value={state.selectedCampaign || 'all'}
+              onChange={(event) => {
+                setState({
+                  selectedCampaign: event.target.value === 'all' ? null : event.target.value,
+                });
+              }}
+              className="w-full rounded-sm border border-outline-variant/20 bg-surface-container-lowest px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none sm:w-[320px] xl:w-[320px] xl:flex-none"
+            >
+              <option value="all">All Campaigns</option>
+              {campaignOptions.map((campaign) => (
+                <option key={campaign.id} value={campaign.id} title={campaign.name}>
+                  {formatCampaignFilterLabel(campaign.name)}
+                </option>
+              ))}
+              {state.selectedCampaign &&
+              !campaignOptions.some((campaign) => campaign.id === state.selectedCampaign) ? (
+                <option value={state.selectedCampaign} title={state.selectedCampaign}>
+                  {formatCampaignFilterLabel(`Campaign: ${state.selectedCampaign}`)}
+                </option>
+              ) : null}
             </select>
             
-            {/* 时间范围 - 使用新的日期选择器组件 */}
-            <div className="w-[320px]">
-              <Suspense fallback={<div className="h-10 w-full bg-surface-container rounded animate-pulse" />}>
-                <QuickDateRangePicker
-                  value={state.range?.interval || 'today'}
-                  onChange={(preset, range) => {
-                    if (range) {
-                      setState(prev => ({
-                        range: {
-                          interval: preset as any,
-                          from: range.startDate.split('T')[0],
-                          to: range.endDate.split('T')[0]
-                        }
-                      }));
-                    }
-                  }}
-                  showTime={false}
-                  maxRangeDays={365}
-                />
-              </Suspense>
+            {/* UI section */}
+            <div className="w-full xl:w-[440px] xl:flex-none">
+              <QuickDateRangePicker
+                value={state.range?.interval || 'today'}
+                onChange={(preset, range) => {
+                  if (range) {
+                    setState(prev => ({
+                      range: {
+                        interval: normalizeRangeParam(preset) as any,
+                        from: range.startDate.split('T')[0],
+                        to: range.endDate.split('T')[0]
+                      }
+                    }));
+                  }
+                }}
+                showTime={false}
+                maxRangeDays={365}
+              />
             </div>
             
-            {/* 刷新按钮 */}
-            <button
-              onClick={() => { refreshStatsAndEntities(); refreshRecentClicks(); }}
-              disabled={isRefreshing}
-              className={cn(
-                "p-2 border border-outline-variant/20 rounded-sm hover:bg-surface-container transition-colors",
-                isRefreshing && "animate-spin"
-              )}
-            >
-              <RefreshCw size={18} className="text-on-surface-variant" />
-            </button>
-            
-            {/* 设置按钮 */}
-            <button 
-              onClick={() => setShowPreferences(true)}
-              className="p-2 border border-outline-variant/20 rounded-sm hover:bg-surface-container transition-colors"
-            >
-              <Settings size={18} className="text-on-surface-variant" />
-            </button>
+            {/* UI section */}
+            <div className="flex items-center gap-4 xl:ml-6 xl:flex-none xl:shrink-0">
+              <button
+                onClick={() => {
+                  invalidateBootstrap((bootstrap) => bootstrap?.scope?.page === 'dashboard');
+                  invalidateApiCache('/api/analytics/');
+                  void refreshStatsAndEntities();
+                  void refreshRecentClicks();
+                }}
+                disabled={isRefreshing}
+                aria-label="Refresh dashboard data"
+                title="Refresh dashboard data"
+                className={cn(
+                  "min-h-11 min-w-11 rounded-sm border border-outline-variant/20 p-2.5 transition-colors hover:bg-surface-container",
+                  isRefreshing && "opacity-70"
+                )}
+              >
+                <RefreshCw size={18} className="text-on-surface-variant" />
+              </button>
+              
+              {/* UI section */}
+              <button 
+                onClick={() => setShowPreferences(true)}
+                aria-label="Open dashboard preferences"
+                title="Open dashboard preferences"
+                className="min-h-11 min-w-11 rounded-sm border border-outline-variant/20 p-2.5 transition-colors hover:bg-surface-container"
+              >
+                <Settings size={18} className="text-on-surface-variant" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
       
       <div className="p-6 space-y-6">
-        {/* Metrics Cards - 统一主色调样式 */}
+        {/* UI section */}
         {config.metrics.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
             {loading.stats ? (
               Array(config.metrics.length).fill(0).map((_, index) => {
                 const style = getMetricStyle(index);
@@ -1091,13 +1061,12 @@ export const Dashboard = () => {
                   <div 
                     key={index} 
                     className={cn("metric-card metric-card-hover", style.gradient)}
+                    aria-hidden="true"
                   >
                     <div className={cn("metric-card-accent", style.accent)} />
-                    <p className="metric-label">Loading...</p>
-                    <h3 className="metric-value">
-                      <LoadingSpinner size={20} />
-                    </h3>
-                    <p className="metric-trend">--</p>
+                    <div className="metric-label h-4 w-24 rounded-full bg-surface-container" />
+                    <div className="mt-4 h-8 w-20 rounded-full bg-surface-container" />
+                    <div className="mt-3 h-3 w-12 rounded-full bg-surface-container" />
                   </div>
                 );
               })
@@ -1106,23 +1075,32 @@ export const Dashboard = () => {
                 <ErrorMessage message={errors.stats} />
               </div>
             ) : (
-              stats.filter(Boolean).map((stat: any, index: number) => {
+              (stats.filter(Boolean).length > 0 ? stats.filter(Boolean) : config.metrics.map(metricKey => {
+                const fallbackMetric = ALL_METRICS.find(metric => metric.key === metricKey);
+                return {
+                  key: metricKey,
+                  label: fallbackMetric?.label || 'Unknown',
+                  value: '-',
+                  isPositive: true,
+                  trend: '',
+                };
+              })).map((stat: any, index: number) => {
                 const style = getMetricStyle(index);
                 return (
                   <div 
                     key={stat?.key || index} 
                     className={cn("metric-card metric-card-hover", style.gradient)}
                   >
-                    {/* 装饰性渐变光晕 */}
+                    {/* UI section */}
                     <div className={cn("metric-card-accent", style.accent)} />
                     
                     <p className="metric-label">{stat?.label || 'Unknown'}</p>
-                    <h3 className="metric-value">{stat?.value || '-'}</h3>
+                    <p className="metric-value">{stat?.value || '-'}</p>
                     <p className={cn(
                       "metric-trend",
                       stat?.isPositive ? "metric-trend-up" : "metric-trend-down"
                     )}>
-                      {stat?.isPositive ? '↑' : '↓'} {stat?.trend || ''}
+                      {stat?.isPositive ? 'UP' : 'DOWN'} {stat?.trend || ''}
                     </p>
                   </div>
                 );
@@ -1131,15 +1109,15 @@ export const Dashboard = () => {
           </div>
         )}
         
-        {/* Chart - 玻璃拟态效果 */}
+        {/* UI section */}
         <div className="chart-container">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="chart-title">Clicks & Conversions</h3>
-            <div className="flex gap-4 text-sm flex-wrap">
+          <div className="chart-header">
+            <h2 className="chart-title">Clicks & Conversions</h2>
+            <div className="chart-legend-wrap">
               {config.metrics.slice(0, 7).map((metric, idx) => {
                 const m = ALL_METRICS.find(am => am.key === metric);
                 if (!m) return null;
-                // Stitch 规范：亮色/暗色模式图表颜色
+                // Legacy comment cleaned during recovery.
                 const lightColors = [
                   '#041627', '#1a2b3c', '#006b5c', '#0d2137', 
                   '#38485a', '#005145', '#44ddc1'
@@ -1150,19 +1128,25 @@ export const Dashboard = () => {
                 ];
                 const colors = isDarkMode ? darkColors : lightColors;
                 return (
-                  <div key={metric} className="flex items-center gap-1.5">
+                  <div
+                    key={metric}
+                    className={cn(
+                      "items-center gap-1.5",
+                      idx > 3 ? "hidden md:flex" : "flex"
+                    )}
+                  >
                     <span 
                       className="w-3 h-3 rounded-sm" 
                       style={{ backgroundColor: colors[idx % colors.length] }}
                     />
-                    <span className="text-on-surface-variant text-xs">{m.label}</span>
+                    <span className="text-on-surface text-xs">{m.label}</span>
                   </div>
                 );
               }).filter(Boolean)}
             </div>
           </div>
           <ChartWrapper height={300}>
-            <Suspense fallback={<div className="h-full flex items-center justify-center text-on-surface-variant">Loading chart...</div>}>
+            <Suspense fallback={null}>
               <LazyResponsiveContainer width="100%" height={300} debounce={50}>
                 <LazyAreaChart data={chartData}>
                 <defs>
@@ -1248,9 +1232,16 @@ export const Dashboard = () => {
           </ChartWrapper>
         </div>
         
-        {/* Entity Tables - 使用虚拟滚动 */}
+        {/* UI section */}
         {config.entities.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <DeferredSection
+            minHeight={900}
+            fallback={<EntityTablesSkeleton count={Math.max(config.entities.length, 2)} />}
+          >
+            <div
+              className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+              style={{ contentVisibility: 'auto', containIntrinsicSize: '900px' }}
+            >
             {config.entities.map(entityKey => {
               const entityConfig = ENTITY_CONFIGS[entityKey as keyof typeof ENTITY_CONFIGS];
               const data = entityData[entityKey] || [];
@@ -1258,9 +1249,9 @@ export const Dashboard = () => {
               // Skip if entity config not found
               if (!entityConfig) return null;
               
-              // 转换为 VirtualTable 列配置
+              // Legacy comment cleaned during recovery.
               const virtualColumns: VirtualTableColumn[] = entityConfig.columns.map(col => {
-                // 为数值列添加排序功能
+                // Legacy comment cleaned during recovery.
                 const isNumeric = ['clicks', 'unique_clicks', 'conversions', 'cost', 'revenue', 'profit', 'roi', 'cr', 'epc'].includes(col.key);
                 const sorter = isNumeric 
                   ? (a: any, b: any) => (a[col.key] || 0) - (b[col.key] || 0)
@@ -1275,9 +1266,15 @@ export const Dashboard = () => {
                   showSorter: true,
                   render: (value: any, row: any) => {
                     if (col.key === 'name') {
+                      const drilldownPath = getDashboardEntityDrilldown(entityKey, row);
+
+                      if (!drilldownPath) {
+                        return <span className="font-semibold text-high-contrast">{value}</span>;
+                      }
+
                       return (
                         <Link 
-                          to={`/${entityKey}/${row.id}`}
+                          to={drilldownPath}
                           className="font-semibold text-high-contrast hover:text-secondary transition-colors cursor-pointer link-primary"
                         >
                           {value}
@@ -1292,31 +1289,53 @@ export const Dashboard = () => {
               return (
                 <div key={entityKey} className="section-card overflow-hidden">
                   <div className="section-header">
-                    <h3 className="font-display font-semibold text-on-surface">{entityConfig?.label || entityKey}</h3>
+                    <h2 className="font-display font-semibold text-on-surface">{entityConfig?.label || entityKey}</h2>
                   </div>
-                  <VirtualTableEnhanced
-                    tableId={`dashboard-${entityKey}`}
-                    columns={virtualColumns}
-                    data={data}
-                    rowHeight={48}
-                    height={300}
-                    overscan={5}
-                    emptyMessage={`No ${entityConfig?.label || entityKey} found`}
-                  />
+                  <Suspense fallback={<TableSkeleton height={300} />}>
+                    <LazyVirtualTableEnhanced
+                      tableId={`dashboard-${entityKey}`}
+                      columns={virtualColumns}
+                      data={data}
+                      rowHeight={48}
+                      height={300}
+                      overscan={5}
+                      emptyMessage={`No ${entityConfig?.label || entityKey} found`}
+                    />
+                  </Suspense>
                 </div>
               );
             })}
-          </div>
+            </div>
+          </DeferredSection>
         )}
         
-        {/* Recent Clicks - 新样式 */}
+        {/* UI section */}
         {config.recentClicksColumns.length > 0 && (
-          <div className="section-card overflow-hidden">
+          <DeferredSection
+            minHeight={560}
+            fallback={
+              <div className="section-card overflow-hidden">
+                <div className="section-header flex items-center justify-between">
+                  <h2 className="font-display font-semibold text-on-surface">Recent Clicks</h2>
+                </div>
+                <div className="p-4">
+                  <TableSkeleton height={400} />
+                </div>
+              </div>
+            }
+          >
+            <div
+              className="section-card overflow-hidden"
+              style={{ contentVisibility: 'auto', containIntrinsicSize: '560px' }}
+            >
             <div className="section-header flex items-center justify-between">
-              <h3 className="font-display font-semibold text-on-surface">Recent Clicks</h3>
+              <h2 className="font-display font-semibold text-on-surface">Recent Clicks</h2>
               <button
-                onClick={() => refreshRecentClicksRef.current()?.catch(console.error)}
+                onClick={() => {
+                  void refreshRecentClicks();
+                }}
                 disabled={loading.recentClicks}
+                aria-label="Refresh recent clicks data"
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-medium transition-all",
                   loading.recentClicks
@@ -1327,25 +1346,26 @@ export const Dashboard = () => {
               >
                 <RefreshCw 
                   size={14} 
-                  className={cn(loading.recentClicks && "animate-spin")}
+                  className={cn(loading.recentClicks && "opacity-70")}
                 />
                 <span>Refresh</span>
               </button>
             </div>
             {loading.recentClicks ? (
-              <div className="p-8 flex items-center justify-center">
-                <LoadingSpinner size={40} />
+              <div className="p-4">
+                <TableSkeleton height={400} />
               </div>
             ) : errors.recentClicks ? (
               <div className="p-4">
                 <ErrorMessage message={errors.recentClicks} />
               </div>
             ) : (
-              <VirtualTableEnhanced
+              <Suspense fallback={<TableSkeleton height={400} />}>
+                <LazyVirtualTableEnhanced
                 tableId="dashboard-recent-clicks"
                 columns={config.recentClicksColumns.map(key => {
                   const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
-                  // 动态添加 sorter 函数
+                  // Legacy comment cleaned during recovery.
                   const sorter = getRecentClicksSorter(key);
                   return {
                     key: key,
@@ -1404,9 +1424,11 @@ export const Dashboard = () => {
                 height={400}
                 overscan={5}
                 emptyMessage="No recent clicks found"
-              />
+                />
+              </Suspense>
             )}
-          </div>
+            </div>
+          </DeferredSection>
         )}
       </div>
     </div>
@@ -1414,3 +1436,4 @@ export const Dashboard = () => {
 };
 
 export default Dashboard;
+

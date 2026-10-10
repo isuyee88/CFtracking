@@ -1,6 +1,6 @@
 /**
  * @fileoverview Click 数据仓库
- * @description 封装 Click 相关的所有数据库操作，包括查询点击日志等
+ * @description 封装 Click 相关的所有数据库操作，支持FTS5全文搜索和查询缓存
  * @module handlers/d1/click.repo
  *
  * 输入: ClickData 对象、查询参数（分页、筛选条件）
@@ -9,12 +9,14 @@
  *   - 继承 BaseRepository 获取基础 CRUD 能力
  *   - ClickService 调用本文件保存点击
  *   - Analytics routes 使用本文件查询点击数据
+ *   - QueryCache 提供查询结果缓存
  * 前后端交互: 通过 D1 数据库进行数据读写
  */
 
 import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
 import type { ClickData } from '@/types/tracking';
+import { QueryCache, buildQueryCacheKey } from '@/utils/queryCache';
 
 export interface ClickQueryParams {
   page?: number;
@@ -22,10 +24,30 @@ export interface ClickQueryParams {
   campaignId?: string;
   startDate?: string;
   endDate?: string;
+  source?: string;
+  zoneId?: string;
+  utmSource?: string;
+  utmCampaign?: string;
+  subId1?: string;
+  subId2?: string;
+  subId3?: string;
+  subId4?: string;
+  subId5?: string;
+  subId6?: string;
+  subId7?: string;
+  subId8?: string;
+  subId9?: string;
+  subId10?: string;
+  minCost?: number;
+  maxCost?: number;
+  minRiskScore?: number;
+  maxRiskScore?: number;
   country?: string;
   device?: string;
   browser?: string;
   os?: string;
+  isp?: string;
+  fingerprint?: string;
   ip?: string;
   visitorId?: string;
   offerId?: string;
@@ -41,124 +63,206 @@ export interface ClickListResult {
   pageSize: number;
 }
 
+const GOVERNANCE_COLUMN_NAMES = ['governanceAction', 'matchedRuleId', 'matchedRuleLayer', 'matchedRuleReason'] as const;
+
+const BASE_CLICK_COLUMNS = [
+  'clickId', 'campaignId', 'flowId', 'landingPageId', 'offerId',
+  'timestamp', 'ip', 'userAgent', 'referer', 'country', 'city',
+  'device', 'browser', 'os', 'isp', 'connectionType', 'visitorId',
+  'subId1', 'subId2', 'subId3', 'subId4', 'subId5',
+  'subId6', 'subId7', 'subId8', 'subId9', 'subId10',
+  'subId11', 'subId12', 'subId13', 'subId14', 'subId15',
+  'subId16', 'subId17', 'subId18', 'subId19', 'subId20',
+  'subId21', 'subId22', 'subId23', 'subId24', 'subId25',
+  'subId26', 'subId27', 'subId28', 'subId29', 'subId30',
+  'cost', 'isUnique', 'redirectUrl',
+  'utmSource', 'utmMedium', 'utmCampaign', 'utmTerm', 'utmContent',
+  'fingerprint', 'riskScore', 'isBot', 'isSuspicious', 'riskReasons',
+  'ruleMatched', 'ruleBlocked',
+];
+
+const QUERY_TIMEOUT_MS = 5000;
+
 export class ClickRepository extends BaseRepository<ClickData> {
+  private readonly queryCache: QueryCache;
+  private clickColumnsPromise: Promise<string[]> | null = null;
+
   constructor(db: D1Database) {
     super(db, 'clicks');
+    this.queryCache = QueryCache.getInstance();
   }
 
-  /**
-   * 保存点击记录到数据库
-   */
   async saveClick(data: ClickData): Promise<void> {
     const now = new Date().toISOString();
+    const availableColumns = await this.getClickColumns();
+    const availableGovernanceColumns = GOVERNANCE_COLUMN_NAMES.filter((column) => availableColumns.includes(column));
+
+    const columns = [
+      'id', 'clickId', 'campaignId', 'flowId', 'landingPageId', 'offerId',
+      'timestamp', 'ip', 'userAgent', 'referer', 'country', 'city',
+      'device', 'browser', 'os', 'isp', 'connectionType', 'visitorId',
+      'subId1', 'subId2', 'subId3', 'subId4', 'subId5',
+      'subId6', 'subId7', 'subId8', 'subId9', 'subId10',
+      'subId11', 'subId12', 'subId13', 'subId14', 'subId15',
+      'subId16', 'subId17', 'subId18', 'subId19', 'subId20',
+      'subId21', 'subId22', 'subId23', 'subId24', 'subId25',
+      'subId26', 'subId27', 'subId28', 'subId29', 'subId30',
+      'cost', 'isUnique', 'redirectUrl',
+      'utmSource', 'utmMedium', 'utmCampaign', 'utmTerm', 'utmContent',
+      'fingerprint', 'riskScore', 'isBot', 'isSuspicious', 'riskReasons',
+      'ruleMatched', 'ruleBlocked',
+      'createdAt',
+    ];
+
+    if (availableGovernanceColumns.length > 0) {
+      columns.splice(columns.length - 1, 0, ...availableGovernanceColumns);
+    }
+
+    const placeholders = columns.map(() => '?').join(', ');
+    const normalizedRiskReasons = this.normalizeRiskReasons(data, new Set(availableGovernanceColumns));
+
+    const values = [
+      data.clickId,
+      data.clickId,
+      data.campaignId,
+      data.flowId ?? null,
+      data.landingPageId ?? null,
+      data.offerId ?? null,
+      data.timestamp,
+      data.ip,
+      data.userAgent,
+      data.referer ?? null,
+      data.country ?? null,
+      data.city ?? null,
+      data.device ?? null,
+      data.browser ?? null,
+      data.os ?? null,
+      data.isp ?? null,
+      data.connectionType ?? null,
+      data.visitorId,
+      data.subId1 ?? null,
+      data.subId2 ?? null,
+      data.subId3 ?? null,
+      data.subId4 ?? null,
+      data.subId5 ?? null,
+      data.subId6 ?? null,
+      data.subId7 ?? null,
+      data.subId8 ?? null,
+      data.subId9 ?? null,
+      data.subId10 ?? null,
+      data.subId11 ?? null,
+      data.subId12 ?? null,
+      data.subId13 ?? null,
+      data.subId14 ?? null,
+      data.subId15 ?? null,
+      data.subId16 ?? null,
+      data.subId17 ?? null,
+      data.subId18 ?? null,
+      data.subId19 ?? null,
+      data.subId20 ?? null,
+      data.subId21 ?? null,
+      data.subId22 ?? null,
+      data.subId23 ?? null,
+      data.subId24 ?? null,
+      data.subId25 ?? null,
+      data.subId26 ?? null,
+      data.subId27 ?? null,
+      data.subId28 ?? null,
+      data.subId29 ?? null,
+      data.subId30 ?? null,
+      data.cost ?? 0,
+      (data.isUnique ?? true) ? 1 : 0,
+      data.redirectUrl ?? null,
+      data.utmSource ?? null,
+      data.utmMedium ?? null,
+      data.utmCampaign ?? null,
+      data.utmTerm ?? null,
+      data.utmContent ?? null,
+      data.fingerprint ?? null,
+      data.riskScore ?? 0,
+      data.isBot ? 1 : 0,
+      data.isSuspicious ? 1 : 0,
+      normalizedRiskReasons,
+      data.ruleMatched ? 1 : 0,
+      data.ruleBlocked ? 1 : 0,
+      now,
+    ];
+
+    if (availableGovernanceColumns.length > 0) {
+      const governanceValues = availableGovernanceColumns.map((column) => {
+        switch (column) {
+          case 'governanceAction':
+            return data.governanceAction ?? null;
+          case 'matchedRuleId':
+            return data.matchedRuleId ?? null;
+          case 'matchedRuleLayer':
+            return data.matchedRuleLayer ?? null;
+          case 'matchedRuleReason':
+            return data.matchedRuleReason ?? null;
+        }
+      });
+      values.splice(values.length - 1, 0, ...governanceValues);
+    }
 
     try {
-      await this.db
-        .prepare(`
-          INSERT INTO clicks (
-            id, clickId, campaignId, flowId, landingPageId, offerId,
-            timestamp, ip, userAgent, referer, country, city,
-            device, browser, os, isp, connectionType, visitorId,
-            subId1, subId2, subId3, cost, isUnique, redirectUrl, createdAt
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        .bind(
-          data.clickId,
-          data.clickId,
-          data.campaignId,
-          data.flowId,
-          data.landingPageId,
-          data.offerId,
-          data.timestamp,
-          data.ip,
-          data.userAgent,
-          data.referer,
-          data.country,
-          data.city,
-          data.device,
-          data.browser,
-          data.os,
-          data.isp,
-          data.connectionType,
-          data.visitorId,
-          data.subId1,
-          data.subId2,
-          data.subId3,
-          data.cost,
-          1,
-          data.redirectUrl,
-          now
-        )
-        .run();
+      const sql = `INSERT INTO clicks (${columns.join(', ')}) VALUES (${placeholders})`;
+      console.log('[ClickRepository] SQL columns:', columns.length, 'values:', values.length);
+      await this.db.prepare(sql).bind(...values).run();
+
+      this.queryCache.invalidateByPrefix('query:clicks:');
     } catch (error) {
       console.error('[ClickRepository] saveClick error:', error);
       throw error;
     }
   }
 
-  // /**
-  //  * 保存点击记录到数据库
-  //  */
-  // async saveClick(data: ClickData): Promise<void> {
-  //   const now = new Date().toISOString();
-  //
-  //   try {
-  //     await this.db
-  //       .prepare(`
-  //         INSERT INTO clicks (
-  //           id, clickId, campaignId, flowId, landingPageId, offerId,
-  //           timestamp, ip, userAgent, referer, country, city,
-  //           device, browser, os, isp, connectionType, visitorId,
-  //           subId1, subId2, subId3, cost, isUnique, redirectUrl, createdAt
-  //         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  //       `)
-  //       .bind(
-  //         data.clickId,
-  //         data.clickId,
-  //         data.campaignId,
-  //         data.flowId,
-  //         data.landingPageId,
-  //         data.offerId,
-  //         data.timestamp,
-  //         data.ip,
-  //         data.userAgent,
-  //         data.referer,
-  //         data.country,
-  //         data.city,
-  //         data.device,
-  //         data.browser,
-  //         data.os,
-  //         data.isp,
-  //         data.connectionType,
-  //         data.visitorId,
-  //         data.subId1,
-  //         data.subId2,
-  //         data.subId3,
-  //         data.cost,
-  //         1,
-  //         null,
-  //         now
-  //       )
-  //       .run();
-  //   } catch (error) {
-  //     console.error('Error saving click to D1:', error);
-  //   }
-  // }
-
-  /**
-   * 查询点击日志列表（支持分页和筛选）
-   */
   async findClicks(params: ClickQueryParams): Promise<ClickListResult> {
+    const cacheKey = buildQueryCacheKey('clicks', params);
+    const cached = this.queryCache.get<ClickListResult>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.withTimeout(
+      this.executeFindClicks(params),
+      QUERY_TIMEOUT_MS,
+    );
+
+    this.queryCache.set(cacheKey, result, 30);
+    return result;
+  }
+
+  private async executeFindClicks(params: ClickQueryParams): Promise<ClickListResult> {
     const {
       page = 1,
       pageSize = 20,
       campaignId,
       startDate,
       endDate,
+      source,
+      zoneId,
+      utmSource,
+      utmCampaign,
+      subId1,
+      subId2,
+      subId3,
+      subId4,
+      subId5,
+      subId6,
+      subId7,
+      subId8,
+      subId9,
+      subId10,
+      minCost,
+      maxCost,
+      minRiskScore,
+      maxRiskScore,
       country,
       device,
       browser,
       os,
+      isp,
+      fingerprint,
       ip,
       visitorId,
       offerId,
@@ -169,82 +273,173 @@ export class ClickRepository extends BaseRepository<ClickData> {
 
     const conditions: string[] = [];
     const values: (string | number)[] = [];
+    const normalizedStartDate = this.normalizeDateBoundary(startDate, 'start');
+    const normalizedEndDate = this.normalizeDateBoundary(endDate, 'end');
 
     if (campaignId) {
-      conditions.push('campaignId = ?');
+      conditions.push('c.campaignId = ?');
       values.push(campaignId);
     }
-    if (startDate) {
-      conditions.push('timestamp >= ?');
-      values.push(startDate);
+    if (normalizedStartDate) {
+      conditions.push('c.timestamp >= ?');
+      values.push(normalizedStartDate);
     }
-    if (endDate) {
-      conditions.push('timestamp <= ?');
-      values.push(endDate);
+    if (normalizedEndDate) {
+      conditions.push('c.timestamp <= ?');
+      values.push(normalizedEndDate);
+    }
+    if (source) {
+      conditions.push("COALESCE(NULLIF(ts.name, ''), NULLIF(cmp.trafficSource, '')) = ?");
+      values.push(source);
+    }
+    if (zoneId) {
+      conditions.push("COALESCE(NULLIF(c.subId1, ''), NULLIF(c.subId2, ''), NULLIF(c.subId3, '')) = ?");
+      values.push(zoneId);
+    }
+    if (utmSource) {
+      conditions.push('c.utmSource = ?');
+      values.push(utmSource);
+    }
+    if (utmCampaign) {
+      conditions.push('c.utmCampaign = ?');
+      values.push(utmCampaign);
+    }
+    if (subId1) {
+      conditions.push('c.subId1 = ?');
+      values.push(subId1);
+    }
+    if (subId2) {
+      conditions.push('c.subId2 = ?');
+      values.push(subId2);
+    }
+    if (subId3) {
+      conditions.push('c.subId3 = ?');
+      values.push(subId3);
+    }
+    // subId4-10 逐位等值筛选（高级搜索面板）
+    const subIdN: [string, string | undefined][] = [
+      ['subId4', subId4],
+      ['subId5', subId5],
+      ['subId6', subId6],
+      ['subId7', subId7],
+      ['subId8', subId8],
+      ['subId9', subId9],
+      ['subId10', subId10],
+    ];
+    for (const [col, val] of subIdN) {
+      if (val) {
+        conditions.push(`c.${col} = ?`);
+        values.push(val);
+      }
+    }
+    if (minCost !== undefined) {
+      conditions.push('c.cost >= ?');
+      values.push(minCost);
+    }
+    if (maxCost !== undefined) {
+      conditions.push('c.cost <= ?');
+      values.push(maxCost);
+    }
+    if (minRiskScore !== undefined) {
+      conditions.push('c.riskScore >= ?');
+      values.push(minRiskScore);
+    }
+    if (maxRiskScore !== undefined) {
+      conditions.push('c.riskScore <= ?');
+      values.push(maxRiskScore);
     }
     if (country) {
-      conditions.push('country = ?');
+      conditions.push('c.country = ?');
       values.push(country);
     }
     if (device) {
-      conditions.push('device = ?');
+      conditions.push('c.device = ?');
       values.push(device);
     }
     if (browser) {
-      conditions.push('browser = ?');
+      conditions.push('c.browser = ?');
       values.push(browser);
     }
     if (os) {
-      conditions.push('os = ?');
+      conditions.push('c.os = ?');
       values.push(os);
     }
+    if (isp) {
+      conditions.push('c.isp = ?');
+      values.push(isp);
+    }
+    if (fingerprint) {
+      conditions.push('c.fingerprint = ?');
+      values.push(fingerprint);
+    }
     if (ip) {
-      conditions.push('ip = ?');
+      conditions.push('c.ip = ?');
       values.push(ip);
     }
     if (visitorId) {
-      conditions.push('visitorId = ?');
+      conditions.push('c.visitorId = ?');
       values.push(visitorId);
     }
     if (offerId) {
-      conditions.push('offerId = ?');
+      conditions.push('c.offerId = ?');
       values.push(offerId);
     }
     if (flowId) {
-      conditions.push('flowId = ?');
+      conditions.push('c.flowId = ?');
       values.push(flowId);
     }
     if (isUnique !== undefined) {
-      conditions.push('isUnique = ?');
+      conditions.push('c.isUnique = ?');
       values.push(isUnique ? 1 : 0);
     }
-    if (search) {
-      conditions.push('(clickId LIKE ? OR ip LIKE ? OR visitorId LIKE ? OR userAgent LIKE ?)');
-      const searchPattern = `%${search}%`;
-      values.push(searchPattern, searchPattern, searchPattern, searchPattern);
+
+    let ftsCondition = '';
+    let ftsValues: string[] = [];
+    if (search && search.trim()) {
+      const escapedSearch = search
+        .replace(/"/g, '""')
+        .replace(/'/g, "''");
+      ftsCondition = `c.rowid IN (SELECT rowid FROM clicks_fts WHERE clicks_fts MATCH ?)`;
+      ftsValues.push(`"${escapedSearch}"`);
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const allConditions = [...conditions];
+    if (ftsCondition) {
+      allConditions.push(ftsCondition);
+    }
+
+    const whereClause = allConditions.length > 0
+      ? `WHERE ${allConditions.join(' AND ')}`
+      : '';
+
     const offset = (page - 1) * pageSize;
 
-    const countSql = `SELECT COUNT(*) as total FROM clicks ${whereClause}`;
+    const allValues = [...values, ...ftsValues];
+    const joins = `
+      LEFT JOIN campaigns cmp ON cmp.id = c.campaignId
+      LEFT JOIN trafficSources ts ON ts.id = cmp.trafficSource
+    `;
+    const countSql = `SELECT COUNT(*) as total FROM clicks c ${joins} ${whereClause}`;
     const countStmt = this.db.prepare(countSql);
-    const countResult = await (values.length > 0 ? countStmt.bind(...values) : countStmt).first();
+    const countResult = await (allValues.length > 0
+      ? countStmt.bind(...allValues)
+      : countStmt).first();
     const total = (countResult?.total as number) || 0;
+    const clickColumns = await this.getSelectableColumns();
 
     const listSql = `
-      SELECT 
-        clickId, campaignId, flowId, landingPageId, offerId,
-        timestamp, ip, userAgent, referer, country, city,
-        device, browser, os, isp, connectionType, visitorId,
-        subId1, subId2, subId3, cost
-      FROM clicks 
+      SELECT
+        ${clickColumns},
+        COALESCE(NULLIF(ts.name, ''), NULLIF(cmp.trafficSource, '')) as source,
+        COALESCE(NULLIF(c.subId1, ''), NULLIF(c.subId2, ''), NULLIF(c.subId3, '')) as zoneId
+      FROM clicks c
+      ${joins}
       ${whereClause}
-      ORDER BY timestamp DESC
+      ORDER BY c.timestamp DESC
       LIMIT ? OFFSET ?
     `;
-    
-    const listValues = [...values, pageSize, offset];
+
+    const listValues = [...allValues, pageSize, offset];
     const listResult = await this.db.prepare(listSql).bind(...listValues).all();
     const list = (listResult.results as unknown as ClickData[]) || [];
 
@@ -256,120 +451,357 @@ export class ClickRepository extends BaseRepository<ClickData> {
     };
   }
 
-  /**
-   * 根据 clickId 获取单条点击详情
-   */
   async findByClickId(clickId: string): Promise<ClickData | null> {
+    const cacheKey = `query:clicks:detail:${clickId}`;
+    const cached = this.queryCache.get<ClickData>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const clickColumns = await this.getSelectableColumns();
+
     const result = await this.db
       .prepare(`
-        SELECT 
-          clickId, campaignId, flowId, landingPageId, offerId,
-          timestamp, ip, userAgent, referer, country, city,
-          device, browser, os, isp, connectionType, visitorId,
-          subId1, subId2, subId3, cost
-        FROM clicks 
+        SELECT ${clickColumns}
+        FROM clicks
         WHERE clickId = ?
       `)
       .bind(clickId)
       .first();
-    
-    return result as ClickData | null;
-  }
 
-  /**
-   * 获取最近的点击记录（用于 SSE 实时流）
-   */
-  async getRecentClicks(limit: number = 50, afterTimestamp?: string): Promise<ClickData[]> {
-    let sql = `
-      SELECT 
-        clickId, campaignId, flowId, landingPageId, offerId,
-        timestamp, ip, userAgent, referer, country, city,
-        device, browser, os, isp, connectionType, visitorId,
-        subId1, subId2, subId3, cost
-      FROM clicks 
-    `;
-    
-    const values: (string | number)[] = [];
-    
-    if (afterTimestamp) {
-      sql += ' WHERE timestamp > ?';
-      values.push(afterTimestamp);
+    const data = result as ClickData | null;
+    if (data) {
+      this.queryCache.set(cacheKey, data, 60);
     }
-    
-    sql += ' ORDER BY timestamp DESC LIMIT ?';
-    values.push(limit);
-
-    const result = await this.db.prepare(sql).bind(...values).all();
-    return (result.results as unknown as ClickData[]) || [];
+    return data;
   }
 
-  /**
-   * 获取点击统计概览
-   */
-  async getClickStats(startDate: string, endDate: string, campaignId?: string): Promise<{
+  async getRecentClicks(limit: number = 50, afterTimestamp?: string): Promise<ClickData[]> {
+    const cacheKey = `query:clicks:recent:${limit}:${afterTimestamp ?? 'all'}`;
+    return this.queryCache.getOrFetch(cacheKey, async () => {
+      const clickColumns = await this.getSelectableColumns();
+      let sql = `SELECT ${clickColumns} FROM clicks`;
+      const values: (string | number)[] = [];
+
+      if (afterTimestamp) {
+        sql += ' WHERE timestamp > ?';
+        values.push(afterTimestamp);
+      }
+
+      sql += ' ORDER BY timestamp DESC LIMIT ?';
+      values.push(limit);
+
+      const result = await this.db.prepare(sql).bind(...values).all();
+      return (result.results as unknown as ClickData[]) || [];
+    }, 15);
+  }
+
+  async getClickStats(
+    startDate: string,
+    endDate: string,
+    campaignIdOrFilters?: string | Omit<ClickQueryParams, 'page' | 'pageSize' | 'startDate' | 'endDate'>,
+  ): Promise<{
     totalClicks: number;
     uniqueClicks: number;
     countries: number;
     deviceTypes: number;
   }> {
-    let sql = `
-      SELECT 
-        COUNT(*) as totalClicks,
-        SUM(CASE WHEN isUnique = 1 THEN 1 ELSE 0 END) as uniqueClicks,
-        COUNT(DISTINCT country) as countries,
-        COUNT(DISTINCT device) as deviceTypes
-      FROM clicks 
-      WHERE timestamp >= ? AND timestamp <= ?
-    `;
-    
-    const values: (string | number)[] = [startDate, endDate];
-    
-    if (campaignId) {
-      sql += ' AND campaignId = ?';
-      values.push(campaignId);
-    }
+    const filters =
+      typeof campaignIdOrFilters === 'string'
+        ? { campaignId: campaignIdOrFilters }
+        : (campaignIdOrFilters || {});
+    const cacheKey = buildQueryCacheKey('clicks:stats', {
+      startDate,
+      endDate,
+      ...filters,
+    });
+    return this.queryCache.getOrFetch(cacheKey, async () => {
+      const {
+        campaignId,
+        source,
+        zoneId,
+        utmSource,
+        utmCampaign,
+        subId1,
+        subId2,
+        subId3,
+        country,
+        device,
+        browser,
+        os,
+        isp,
+        fingerprint,
+        ip,
+        visitorId,
+        offerId,
+        flowId,
+        isUnique,
+        search,
+      } = filters;
 
-    const result = await this.db.prepare(sql).bind(...values).first();
-    
-    return {
-      totalClicks: (result?.totalClicks as number) || 0,
-      uniqueClicks: (result?.uniqueClicks as number) || 0,
-      countries: (result?.countries as number) || 0,
-      deviceTypes: (result?.deviceTypes as number) || 0,
-    };
+      let sql = `
+        SELECT
+          COUNT(*) as totalClicks,
+          SUM(CASE WHEN isUnique = 1 THEN 1 ELSE 0 END) as uniqueClicks,
+          COUNT(DISTINCT country) as countries,
+          COUNT(DISTINCT device) as deviceTypes
+        FROM clicks c
+        LEFT JOIN campaigns cmp ON cmp.id = c.campaignId
+        LEFT JOIN trafficSources ts ON ts.id = cmp.trafficSource
+        WHERE c.timestamp >= ? AND c.timestamp <= ?
+      `;
+
+      const normalizedStartDate = this.normalizeDateBoundary(startDate, 'start') || startDate;
+      const normalizedEndDate = this.normalizeDateBoundary(endDate, 'end') || endDate;
+      const values: (string | number)[] = [normalizedStartDate, normalizedEndDate];
+
+      if (campaignId) {
+        sql += ' AND c.campaignId = ?';
+        values.push(campaignId);
+      }
+      if (source) {
+        sql += " AND COALESCE(NULLIF(ts.name, ''), NULLIF(cmp.trafficSource, '')) = ?";
+        values.push(source);
+      }
+      if (zoneId) {
+        sql += " AND COALESCE(NULLIF(c.subId1, ''), NULLIF(c.subId2, ''), NULLIF(c.subId3, '')) = ?";
+        values.push(zoneId);
+      }
+      if (utmSource) {
+        sql += ' AND c.utmSource = ?';
+        values.push(utmSource);
+      }
+      if (utmCampaign) {
+        sql += ' AND c.utmCampaign = ?';
+        values.push(utmCampaign);
+      }
+      if (subId1) {
+        sql += ' AND c.subId1 = ?';
+        values.push(subId1);
+      }
+      if (subId2) {
+        sql += ' AND c.subId2 = ?';
+        values.push(subId2);
+      }
+      if (subId3) {
+        sql += ' AND c.subId3 = ?';
+        values.push(subId3);
+      }
+      if (country) {
+        sql += ' AND c.country = ?';
+        values.push(country);
+      }
+      if (device) {
+        sql += ' AND c.device = ?';
+        values.push(device);
+      }
+      if (browser) {
+        sql += ' AND c.browser = ?';
+        values.push(browser);
+      }
+      if (os) {
+        sql += ' AND c.os = ?';
+        values.push(os);
+      }
+      if (isp) {
+        sql += ' AND c.isp = ?';
+        values.push(isp);
+      }
+      if (fingerprint) {
+        sql += ' AND c.fingerprint = ?';
+        values.push(fingerprint);
+      }
+      if (ip) {
+        sql += ' AND c.ip = ?';
+        values.push(ip);
+      }
+      if (visitorId) {
+        sql += ' AND c.visitorId = ?';
+        values.push(visitorId);
+      }
+      if (offerId) {
+        sql += ' AND c.offerId = ?';
+        values.push(offerId);
+      }
+      if (flowId) {
+        sql += ' AND c.flowId = ?';
+        values.push(flowId);
+      }
+      if (isUnique !== undefined) {
+        sql += ' AND c.isUnique = ?';
+        values.push(isUnique ? 1 : 0);
+      }
+      if (search && search.trim()) {
+        const escapedSearch = search
+          .replace(/"/g, '""')
+          .replace(/'/g, "''");
+        sql += ' AND c.rowid IN (SELECT rowid FROM clicks_fts WHERE clicks_fts MATCH ?)';
+        values.push(`"${escapedSearch}"`);
+      }
+
+      const result = await this.db.prepare(sql).bind(...values).first();
+
+      return {
+        totalClicks: (result?.totalClicks as number) || 0,
+        uniqueClicks: (result?.uniqueClicks as number) || 0,
+        countries: (result?.countries as number) || 0,
+        deviceTypes: (result?.deviceTypes as number) || 0,
+      };
+    }, 30);
   }
 
-  /**
-   * 根据 visitorId 获取该访客的所有点击记录
-   */
   async findByVisitorId(visitorId: string, limit: number = 100): Promise<ClickData[]> {
-    const result = await this.db
-      .prepare(`
-        SELECT 
-          clickId, campaignId, flowId, landingPageId, offerId,
-          timestamp, ip, userAgent, referer, country, city,
-          device, browser, os, isp, connectionType, visitorId,
-          subId1, subId2, subId3, cost
-        FROM clicks 
-        WHERE visitorId = ?
-        ORDER BY timestamp DESC
-        LIMIT ?
-      `)
-      .bind(visitorId, limit)
-      .all();
-    
-    return (result.results as unknown as ClickData[]) || [];
+    const cacheKey = `query:clicks:visitor:${visitorId}:${limit}`;
+    return this.queryCache.getOrFetch(cacheKey, async () => {
+      const clickColumns = await this.getSelectableColumns();
+      const result = await this.db
+        .prepare(`
+          SELECT ${clickColumns}
+          FROM clicks
+          WHERE visitorId = ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `)
+        .bind(visitorId, limit)
+        .all();
+
+      return (result.results as unknown as ClickData[]) || [];
+    }, 30);
   }
 
-  /**
-   * 更新点击记录的 isUnique 状态
-   */
+  async getRecentVisitMetrics(params: {
+    visitorId?: string;
+    ip?: string;
+    lookbackHours?: number;
+  }): Promise<{
+    visitorRepeat: number;
+    ipRepeat: number;
+    campaignCount: number;
+  }> {
+    const visitorId = String(params.visitorId || '').trim();
+    const ip = String(params.ip || '').trim();
+    const lookbackHours = Number.isFinite(params.lookbackHours) ? Math.max(1, Number(params.lookbackHours)) : 24;
+    const since = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString();
+    const cacheKey = `query:clicks:recent-metrics:${visitorId}:${ip}:${lookbackHours}`;
+
+    return this.queryCache.getOrFetch(cacheKey, async () => {
+      const result = await this.db
+        .prepare(`
+          SELECT
+            (
+              SELECT COUNT(*)
+              FROM clicks
+              WHERE ? <> '' AND visitorId = ? AND timestamp >= ?
+            ) AS visitorRepeat,
+            (
+              SELECT COUNT(*)
+              FROM clicks
+              WHERE ? <> '' AND ip = ? AND timestamp >= ?
+            ) AS ipRepeat,
+            (
+              SELECT COUNT(DISTINCT campaignId)
+              FROM clicks
+              WHERE timestamp >= ?
+                AND (
+                  (? <> '' AND visitorId = ?)
+                  OR (? <> '' AND ip = ?)
+                )
+            ) AS campaignCount
+        `)
+        .bind(
+          visitorId, visitorId, since,
+          ip, ip, since,
+          since,
+          visitorId, visitorId,
+          ip, ip,
+        )
+        .first<{ visitorRepeat: number; ipRepeat: number; campaignCount: number }>();
+
+      return {
+        visitorRepeat: Number(result?.visitorRepeat || 0),
+        ipRepeat: Number(result?.ipRepeat || 0),
+        campaignCount: Number(result?.campaignCount || 0),
+      };
+    }, 30);
+  }
+
   async updateUniqueStatus(clickId: string, isUnique: boolean): Promise<boolean> {
     const result = await this.db
       .prepare('UPDATE clicks SET isUnique = ? WHERE clickId = ?')
       .bind(isUnique ? 1 : 0, clickId)
       .run();
-    
+
+    this.queryCache.invalidate(`query:clicks:detail:${clickId}`);
+    this.queryCache.invalidateByPrefix('query:clicks:');
+
     return result.success;
+  }
+
+  private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Query timeout after ${ms}ms`)), ms),
+      ),
+    ]);
+  }
+
+  private async getClickColumns(): Promise<string[]> {
+    if (!this.clickColumnsPromise) {
+      this.clickColumnsPromise = this.db
+        .prepare('PRAGMA table_info(clicks)')
+        .all<{ name: string }>()
+        .then((result) => (result.results || [])
+          .map((item) => item.name)
+          .filter((name): name is string => typeof name === 'string' && name.length > 0));
+    }
+
+    return this.clickColumnsPromise;
+  }
+
+  private async getSelectableColumns(): Promise<string> {
+    const availableColumns = await this.getClickColumns();
+    return [
+      ...BASE_CLICK_COLUMNS,
+      ...GOVERNANCE_COLUMN_NAMES.filter((column) => availableColumns.includes(column)),
+    ].join(', ');
+  }
+
+  private normalizeRiskReasons(data: ClickData, availableGovernanceColumns: Set<string>): string | null {
+    const reasons = Array.isArray(data.riskReasons)
+      ? data.riskReasons.filter((reason): reason is string => typeof reason === 'string' && reason.trim().length > 0)
+      : [];
+
+    if (!availableGovernanceColumns.has('governanceAction')) {
+      this.pushUniqueReason(reasons, data.governanceAction ? `governance_action:${data.governanceAction}` : null);
+    }
+    if (!availableGovernanceColumns.has('matchedRuleLayer')) {
+      this.pushUniqueReason(reasons, data.matchedRuleLayer ? `governance_layer:${data.matchedRuleLayer}` : null);
+    }
+    if (!availableGovernanceColumns.has('matchedRuleId')) {
+      this.pushUniqueReason(reasons, data.matchedRuleId ? `governance_rule:${data.matchedRuleId}` : null);
+    }
+    if (!availableGovernanceColumns.has('matchedRuleReason')) {
+      this.pushUniqueReason(reasons, data.matchedRuleReason ? `governance_reason:${data.matchedRuleReason}` : null);
+    }
+
+    return reasons.length > 0 ? JSON.stringify(reasons) : null;
+  }
+
+  private pushUniqueReason(reasons: string[], value: string | null): void {
+    if (!value || reasons.includes(value)) {
+      return;
+    }
+
+    reasons.push(value);
+  }
+
+  private normalizeDateBoundary(value: string | undefined, boundary: 'start' | 'end'): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    return value.includes('T')
+      ? value
+      : `${value}${boundary === 'start' ? 'T00:00:00.000Z' : 'T23:59:59.999Z'}`;
   }
 }
