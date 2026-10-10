@@ -238,7 +238,7 @@ export default {
       const frontendRoutes = [
         '/login', '/dashboard', '/campaigns', '/flows', '/offers', 
         '/landings', '/traffic-sources', '/affiliate-networks', '/rules',
-        '/reports', '/settings', '/help', '/admin'
+        '/reports', '/settings', '/help', '/admin', '/audit', '/conversions'
       ];
       
       const isFrontendRoute = frontendRoutes.some(route => 
