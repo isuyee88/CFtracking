@@ -55,59 +55,18 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
         search: c.req.query('search') || undefined,
       };
 
-      if (startDate && isWithinThreeMonths(startDate)) {
-        const analyticsQuery = createAnalyticsQueryService(c.env);
-        const aeResult = await analyticsQuery.getRecentClicks({
-          limit: pageSize,
-          campaignId: params.campaignId,
-          country: params.country,
-          device: params.device,
-        });
+      // Use D1 database for all queries
+      const db = getD1Connection(c.env);
+      const clickRepo = new ClickRepository(db);
+      const result = await clickRepo.findClicks(params);
 
-        const formattedList = aeResult.list.map((item) => ({
-          clickId: item.clickId,
-          campaignId: item.campaignId,
-          flowId: item.flowId,
-          landingPageId: item.landingPageId,
-          offerId: item.offerId,
-          timestamp: item.timestamp,
-          ip: item.ip,
-          userAgent: '',
-          referer: item.referer,
-          country: item.country,
-          city: item.city,
-          device: item.device,
-          browser: item.browser,
-          os: item.os,
-          isp: '',
-          connectionType: null,
-          visitorId: item.visitorId,
-          subId1: item.subId1,
-          subId2: item.subId2,
-          subId3: item.subId3,
-          cost: item.cost,
-        }));
-
-        return c.json(success(formattedList, {
-          page,
-          pageSize,
-          total: aeResult.total,
-          totalPages: Math.ceil(aeResult.total / pageSize),
-          dataSource: 'd1_database',
-        }));
-      } else {
-        const db = getD1Connection(c.env);
-        const clickRepo = new ClickRepository(db);
-        const result = await clickRepo.findClicks(params);
-
-        return c.json(success(result.list, {
-          page: result.page,
-          pageSize: result.pageSize,
-          total: result.total,
-          totalPages: Math.ceil(result.total / result.pageSize),
-          dataSource: 'd1_database',
-        }));
-      }
+      return c.json(success(result.list, {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: Math.ceil(result.total / result.pageSize),
+        dataSource: 'd1_database',
+      }));
     } catch (err) {
       console.error('[ClickLog] Failed to fetch clicks:', err);
       return c.json(
@@ -141,34 +100,15 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
         );
       }
 
-      if (isWithinThreeMonths(startDate)) {
-        const analyticsQuery = createAnalyticsQueryService(c.env);
-        const aeResult = await analyticsQuery.getRecentClicks({
-          limit: 1000,
-          campaignId,
-        });
+      // Use D1 database for all queries
+      const db = getD1Connection(c.env);
+      const clickRepo = new ClickRepository(db);
+      const stats = await clickRepo.getClickStats(startDate, endDate, campaignId);
 
-        const uniqueVisitors = new Set(aeResult.list.map(c => c.visitorId)).size;
-        const countries = new Set(aeResult.list.map(c => c.country)).size;
-        const devices = new Set(aeResult.list.map(c => c.device)).size;
-
-        return c.json(success({
-          totalClicks: aeResult.total,
-          uniqueClicks: uniqueVisitors,
-          countries,
-          deviceTypes: devices,
-          dataSource: 'd1_database',
-        }));
-      } else {
-        const db = getD1Connection(c.env);
-        const clickRepo = new ClickRepository(db);
-        const stats = await clickRepo.getClickStats(startDate, endDate, campaignId);
-
-        return c.json(success({
-          ...stats,
-          dataSource: 'd1_database',
-        }));
-      }
+      return c.json(success({
+        ...stats,
+        dataSource: 'd1_database',
+      }));
     } catch (err) {
       console.error('[ClickLog] Failed to fetch stats:', err);
       return c.json(
