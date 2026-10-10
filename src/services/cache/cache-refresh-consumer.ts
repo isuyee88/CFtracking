@@ -33,9 +33,9 @@ export class CacheRefreshConsumer {
    * 处理队列消息
    */
   static async handle(
-    batch: Message<CacheRefreshMessage>[],
+    batch: MessageBatch<CacheRefreshMessage>,
     env: Env,
-    ctx: ExecutionContext
+    _ctx: ExecutionContext
   ): Promise<void> {
     console.log(`[Queue Consumer] Processing ${batch.messages.length} messages`);
     
@@ -105,7 +105,7 @@ export class CacheRefreshConsumer {
       cron: '*/5 * * * *',
     };
     
-    await cacheUpdate.handleScheduled(event);
+    await cacheUpdate.handleScheduled(event as unknown as ScheduledEvent);
   }
   
   /**
@@ -123,7 +123,7 @@ export class CacheRefreshConsumer {
       cron: '0 * * * *',
     };
     
-    await cacheUpdate.handleScheduled(event);
+    await cacheUpdate.handleScheduled(event as unknown as ScheduledEvent);
   }
   
   /**
@@ -141,7 +141,7 @@ export class CacheRefreshConsumer {
       cron: '0 0 * * *',
     };
     
-    await cacheUpdate.handleScheduled(event);
+    await cacheUpdate.handleScheduled(event as unknown as ScheduledEvent);
   }
   
   /**
@@ -149,7 +149,7 @@ export class CacheRefreshConsumer {
    */
   private static async warmup(
     cacheUpdate: ReturnType<typeof createCacheUpdateRoutes>,
-    task: CacheRefreshMessage
+    _task: CacheRefreshMessage
   ): Promise<void> {
     console.log('[Queue Consumer] Warming up cache...');
     
