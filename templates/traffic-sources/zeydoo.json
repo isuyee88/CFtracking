@@ -1,0 +1,55 @@
+{
+  "id": "zeydoo",
+  "name": "Zeydoo",
+  "category": "push",
+  "description": "Zeydoo push notification and native traffic network",
+  "homepage": "https://zeydoo.com",
+  "documentation": "https://zeydoo.com/docs",
+  "parameters": {
+    "clickId": "{click_id}",
+    "campaignId": "{campaign_id}",
+    "cost": "{cost}",
+    "country": "{country}",
+    "device": "{device}",
+    "os": "{os}",
+    "browser": "{browser}",
+    "sourceId": "{source_id}"
+  },
+  "macros": {
+    "{click_id}": "Zeydoo click ID",
+    "{campaign_id}": "Campaign ID",
+    "{cost}": "Cost per click",
+    "{country}": "Country code (ISO 2-letter)",
+    "{country_name}": "Country full name",
+    "{city}": "City name",
+    "{region}": "Region/State",
+    "{device}": "Device type (mobile, tablet, desktop)",
+    "{os}": "Operating system",
+    "{os_version}": "OS version",
+    "{browser}": "Browser name",
+    "{browser_version}": "Browser version",
+    "{source_id}": "Traffic source ID",
+    "{language}": "Browser language",
+    "{ip}": "User IP address"
+  },
+  "postbackTemplate": "https://api.zeydoo.com/postback?click_id={clickId}&payout={revenue}&status={status}",
+  "postbackMacros": {
+    "{clickId}": "Original Zeydoo click_id",
+    "{revenue}": "Conversion payout amount",
+    "{status}": "approved or rejected"
+  },
+  "trackingUrlExample": "https://your-tracker.com/click?campaign={campaignId}&source=zeydoo&click_id={click_id}&cost={cost}&country={country}&device={device}&source={source_id}",
+  "notes": [
+    "Zeydoo requires click_id for postback attribution",
+    "Cost macro available on CPC campaigns only",
+    "Postback must include payout and status",
+    "source_id helps identify traffic source quality",
+    "Supports both push and native ad formats",
+    "Currency is always in USD for postbacks"
+  ],
+  "supportedFormats": ["push", "native", "pops"],
+  "regions": ["global"],
+  "minDeposit": 100,
+  "currency": "USD",
+  "paymentMethods": ["card", "wire", "paypal", "paxum", "capitalist"]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "push-house",
+  "name": "Push.House",
+  "category": "push",
+  "description": "Push.House push notification traffic network",
+  "homepage": "https://push.house",
+  "documentation": "https://push.house/docs",
+  "parameters": {
+    "clickId": "{clickid}",
+    "campaignId": "{campaign_id}",
+    "cost": "{cost}",
+    "country": "{country}",
+    "city": "{city}",
+    "device": "{device}",
+    "os": "{os}",
+    "browser": "{browser}",
+    "subscription": "{subscription_id}"
+  },
+  "macros": {
+    "{clickid}": "Unique click ID",
+    "{campaign_id}": "Campaign ID",
+    "{cost}": "Cost per click",
+    "{country}": "Country code",
+    "{city}": "City name",
+    "{region}": "Region name",
+    "{device}": "Device type (mobile, desktop, tablet)",
+    "{os}": "Operating system",
+    "{os_version}": "OS version",
+    "{browser}": "Browser name",
+    "{browser_version}": "Browser version",
+    "{subscription_id}": "Push subscription ID",
+    "{language}": "Browser language"
+  },
+  "postbackTemplate": "https://push.house/postback?click_id={clickId}&payout={revenue}&status={status}",
+  "postbackMacros": {
+    "{clickId}": "Original Push.House click ID",
+    "{revenue}": "Conversion value",
+    "{status}": "approved or rejected"
+  },
+  "trackingUrlExample": "https://your-tracker.com/click?campaign={campaignId}&source=pushhouse&clickid={clickid}&cost={cost}&country={country}&device={device}",
+  "notes": [
+    "Click ID is required for postback tracking",
+    "Cost macro only available on CPC campaigns",
+    "Postback must include payout and status",
+    "Use subscription_id to track subscriber quality",
+    "Supports mobile and desktop push notifications"
+  ],
+  "supportedFormats": ["push", "in-page-push"],
+  "regions": ["global"],
+  "minDeposit": 50,
+  "currency": "USD",
+  "paymentMethods": ["card", "paypal", "wire", "crypto"]
+}

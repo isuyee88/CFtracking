@@ -1,0 +1,51 @@
+{
+  "id": "outbrain",
+  "name": "Outbrain",
+  "category": "native",
+  "description": "Outbrain native advertising and content discovery",
+  "homepage": "https://www.outbrain.com",
+  "documentation": "https://www.outbrain.com/help",
+  "parameters": {
+    "clickId": "{{ob_click_id}}",
+    "campaignId": "{{campaign_id}}",
+    "adId": "{{ad_id}}",
+    "sectionId": "{{section_id}}",
+    "publisherId": "{{publisher_id}}"
+  },
+  "macros": {
+    "{{ob_click_id}}": "Outbrain click ID",
+    "{{campaign_id}}": "Campaign ID",
+    "{{campaign_name}}": "Campaign name",
+    "{{ad_id}}": "Ad/Creative ID",
+    "{{section_id}}": "Widget/Section ID",
+    "{{section_name}}": "Widget/Section name",
+    "{{publisher_id}}": "Publisher ID",
+    "{{publisher_name}}": "Publisher name",
+    "{{source_id}}": "Traffic source ID",
+    "{{device}}": "Device type",
+    "{{os}}": "Operating system",
+    "{{browser}}": "Browser name",
+    "{{country}}": "Country code",
+    "{{region}}": "Region name",
+    "{{city}}": "City name"
+  },
+  "postbackTemplate": "https://traffic.outbrain.com/network/trackconv?obClickId={{ob_click_id}}&revenue={{revenue}}&currency={{currency}}",
+  "postbackMacros": {
+    "{{ob_click_id}}": "Original Outbrain click ID",
+    "{{revenue}}": "Conversion revenue",
+    "{{currency}}": "Currency code (USD, EUR, etc)"
+  },
+  "trackingUrlExample": "https://your-tracker.com/click?campaign={campaignId}&source=outbrain&obclid={{ob_click_id}}&campaign_id={{campaign_id}}&section={{section_id}}&publisher={{publisher_id}}",
+  "notes": [
+    "Outbrain uses double curly braces {{}} for macros",
+    "ob_click_id is required for conversion tracking",
+    "Postback URL must include obClickId parameter",
+    "Revenue tracking requires currency parameter",
+    "Section ID helps identify high-quality publishers"
+  ],
+  "supportedFormats": ["native", "video", "carousel"],
+  "regions": ["global"],
+  "minDeposit": 1000,
+  "currency": "USD",
+  "paymentMethods": ["card", "wire"]
+}
