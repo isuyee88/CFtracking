@@ -591,7 +591,7 @@ export const Offers = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-full">
       {/* Entity Form Modal */}
       <EntityForm
         key={`${formMode}-${selectedOffer?.id || 'new'}`}
@@ -605,7 +605,7 @@ export const Offers = () => {
       />
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex-none flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-3xl font-display font-bold text-primary">Offers</h1>
           <p className="text-sm text-on-surface-variant">Manage your affiliate offers and payouts</p>
@@ -655,13 +655,13 @@ export const Offers = () => {
       </div>
 
       {error ? (
-        <div className="rounded-sm border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+        <div className="flex-none rounded-sm border border-error/30 bg-error/10 px-4 py-3 text-sm text-error mb-6">
           {error}
         </div>
       ) : null}
 
       {/* Toolbar */}
-      <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex-none bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-2">
           {selectedItems.size > 0 && (
             <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
@@ -743,7 +743,7 @@ export const Offers = () => {
       </div>
 
       {/* Offers Table - 使用虚拟滚动 */}
-      <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
+      <div className="flex-1 bg-surface-container-lowest whisper-shadow overflow-hidden flex flex-col min-h-0">
         <VirtualTableEnhanced
           tableId="offers"
           columns={[

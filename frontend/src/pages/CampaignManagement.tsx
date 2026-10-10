@@ -616,7 +616,7 @@ export const CampaignManagement = () => {
   }
   
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col h-full">
       {/* Campaign Form Modal */}
       <CampaignForm
         isOpen={isFormOpen}

@@ -340,7 +340,7 @@ export const TrafficSources = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-full">
       {/* Traffic Source Form Modal */}
       <TrafficSourceForm
         isOpen={isFormOpen}
