@@ -6,7 +6,7 @@
 import { DurableObject } from 'cloudflare:workers';
 
 export class CacheDurableObject extends DurableObject {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(_request: Request): Promise<Response> {
     return new Response('CacheDurableObject is deprecated', { status: 410 });
   }
 }

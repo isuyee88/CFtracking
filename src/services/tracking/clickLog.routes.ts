@@ -14,7 +14,7 @@
 import { Hono } from 'hono';
 import { ClickRepository } from '@/handlers/d1/click.repo';
 import { getD1Connection } from '@/handlers/d1';
-import { getTrackingStatsStub } from '@/handlers/do';
+
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
