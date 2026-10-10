@@ -873,8 +873,20 @@ export const Offers = () => {
               label: 'Countries',
               width: '150px',
               render: (_, row) => {
-                const countries = row.countries || [];
-                if (countries.length === 0) {
+                // 安全解析 countries：数据库存储的是 JSON 字符串
+                let countries: string[] = [];
+                try {
+                  if (typeof row.countries === 'string') {
+                    countries = JSON.parse(row.countries);
+                  } else if (Array.isArray(row.countries)) {
+                    countries = row.countries;
+                  }
+                } catch (e) {
+                  // JSON 解析失败，使用空数组
+                  countries = [];
+                }
+                
+                if (!Array.isArray(countries) || countries.length === 0) {
                   return <span className="text-xs text-on-surface-variant">All</span>;
                 }
                 if (countries.length <= 3) {
