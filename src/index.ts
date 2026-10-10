@@ -59,43 +59,12 @@ app.use('*', async (c, next) => {
     c.header('X-Cloudflare-Worker-Timestamp', env.CF_VERSION_METADATA.timestamp);
   }
   
-  // 动态读取部署信息文件
-  let deployInfo = {
-    timestamp: new Date().toISOString(),
-    hash: "unknown",
-    shortHash: "unknown",
-    branch: "unknown",
-    message: "Unknown deployment",
-    author: "unknown",
-    authorEmail: "unknown",
-    commitDate: new Date().toISOString(),
-    environment: "production",
-    deployer: "unknown"
+  const deployInfo = {
+    timestamp: new Date().toISOString(), hash: 'unknown', shortHash: 'unknown',
+    branch: 'unknown', message: 'Unknown deployment', author: 'unknown',
+    authorEmail: 'unknown', commitDate: new Date().toISOString(),
+    environment: 'production', deployer: 'unknown',
   };
-  
-  try {
-    // 尝试不同的路径
-    const paths = [
-      './dist/deploy-info.json',
-      '../dist/deploy-info.json',
-      '../../dist/deploy-info.json'
-    ];
-    
-    for (const deployInfoPath of paths) {
-      try {
-        if (fs.existsSync(deployInfoPath)) {
-          const deployInfoContent = fs.readFileSync(deployInfoPath, 'utf8');
-          deployInfo = JSON.parse(deployInfoContent);
-          break;
-        }
-      } catch (error) {
-        // 继续尝试下一个路径
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to read deploy info file:', error);
-  }
-  
   c.header('X-Deployment-Hash', deployInfo.shortHash);
   c.header('X-Deployment-Branch', deployInfo.branch);
   c.header('X-Deployment-Message', deployInfo.message);
