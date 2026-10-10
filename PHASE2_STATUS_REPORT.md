@@ -1,6 +1,6 @@
 # Phase 2 任务完整检查报告
 
-**检查时间**: 2026-10-13 08:20；Round 1 实施中  
+**检查时间**: 2026-10-13 08:20；Round 1 首批已部署并回归  
 **方法**: 源码审查  
 **目的**: 确定哪些 P2 任务已完成，哪些需要实施  
 
@@ -37,7 +37,9 @@
 - [x] P2-3 Offer URL 显示域名，完整 URL 保留在 `title`
 - [x] P2-4 Landing 类型标签：Hosted URL / Local HTML / ZIP Archive
 - [x] P2-7 density 控件增加列表图标，保留 S/M/L 和 aria-label
-- [ ] 生产部署与真实浏览器验证
+- [x] 生产部署与真实浏览器验证：版本 `1db7d9bc-bc9d-4d4c-8814-800006a33ceb`
+- [x] `/audit?...` 真实浏览器加载成功，显示 Click Log、筛选器及空状态；不再出现 `Campaign not found` / `Error loading clicks`
+- [x] 修复 `/audit` SPA 路由拦截：提交 `79b8d41`
 
 ---
 
