@@ -1113,7 +1113,9 @@ export async function fetchOffers(
     startDate: dateParams.startDate,
     endDate: dateParams.endDate,
   });
-  return fetchListResult<any>(`/api/offers${query}`);
+  const result = await fetchListResult<any>(`/api/offers${query}`);
+  // fetchListResult returns the data array directly, but ensure it's an array
+  return Array.isArray(result) ? result : [];
 }
 
 export async function fetchOffer(id: string | number) {
