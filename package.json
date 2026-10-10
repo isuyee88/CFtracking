@@ -36,6 +36,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@hono/zod-validator": "^0.9.1",
     "antd": "^6.3.2",
     "axios": "^1.13.6",
     "hono": "^4.6.0",

@@ -20,7 +20,6 @@ import { CacheDurableObject } from '@/ssr/cache-do';
 import { EventActor, StatsActor } from '@/handlers/do/deprecated-do';
 import { createAggregationService } from '@/services/analytics/aggregation.service';
 import { handlePlatformCron } from '@/services/platform';
-import fs from 'fs';
 
 // 导出 Durable Objects（Cloudflare Workers 要求）
 export {
