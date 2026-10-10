@@ -30,7 +30,7 @@ app.post('/login', async (c) => {
 
     if (!username || !password) {
       return c.json(
-        error('Username and password are required', ERROR_CODES.VALIDATION_ERROR),
+        error('Username and password are required', ERROR_CODES.VALIDATION),
         400
       );
     }
@@ -98,7 +98,7 @@ app.get('/verify', async (c) => {
     const jwtSecret = c.env.JWT_SECRET || 'default-secret-key-change-in-production';
 
     try {
-      const payload = await verify(token, jwtSecret);
+      const payload = await verify(token, jwtSecret, 'HS256');
 
       return c.json(
         success({
@@ -145,7 +145,7 @@ app.get('/me', async (c) => {
     const jwtSecret = c.env.JWT_SECRET || 'default-secret-key-change-in-production';
 
     try {
-      const payload = await verify(token, jwtSecret);
+      const payload = await verify(token, jwtSecret, 'HS256');
 
       return c.json(
         success({
