@@ -8,6 +8,7 @@ import {
   Pause, 
   Trash2, 
   Edit3,
+  Copy,
   Check,
   X,
   Loader2,
@@ -28,6 +29,7 @@ import {
 } from '../services/api';
 import { CampaignForm } from '../components/CampaignForm';
 import { CampaignAutoruleBindingsModal } from '../components/CampaignAutoruleBindingsModal';
+import { CampaignCloneDialog } from '../components/CampaignCloneDialog';
 import { ExportButton } from '../components/ExportButton';
 import { formatCampaignForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
@@ -293,6 +295,10 @@ export const CampaignManagement = () => {
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
+  // Clone dialog state
+  const [isCloneDialogOpen, setIsCloneDialogOpen] = useState(false);
+  const [campaignToClone, setCampaignToClone] = useState<{ id: string; name: string } | null>(null);
+
   const [groupByStates, setGroupByStates] = useState<GroupByState[]>([]);
 
   const getRangeFromDates = (from: string, to: string): string => {
@@ -412,6 +418,16 @@ export const CampaignManagement = () => {
   const handleConfigureAutorules = (campaign: Campaign) => {
     setSelectedCampaignForAutorules(campaign);
     setIsAutoruleModalOpen(true);
+  };
+
+  const handleCloneCampaign = (campaign: Campaign) => {
+    setCampaignToClone({ id: campaign.id, name: campaign.name });
+    setIsCloneDialogOpen(true);
+  };
+
+  const handleCloneSuccess = async () => {
+    await loadCampaignsWithStats();
+    toast.success('Campaign Cloned', 'Campaign has been cloned successfully.');
   };
   
   const handleFormSubmit = async (formData: any) => {
@@ -627,6 +643,17 @@ export const CampaignManagement = () => {
           );
         }}
       />
+
+      {/* Campaign Clone Dialog */}
+      {campaignToClone && (
+        <CampaignCloneDialog
+          open={isCloneDialogOpen}
+          onOpenChange={setIsCloneDialogOpen}
+          campaignId={campaignToClone.id}
+          campaignName={campaignToClone.name}
+          onSuccess={handleCloneSuccess}
+        />
+      )}
       
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -940,7 +967,7 @@ export const CampaignManagement = () => {
             {
               key: 'actions',
               label: '',
-              width: '120px',
+              width: '140px',
               align: 'center',
               render: (_: any, row: any) => (
                 <div className="flex items-center gap-1">
@@ -967,6 +994,13 @@ export const CampaignManagement = () => {
                     title="Edit"
                   >
                     <Edit3 size={16} />
+                  </button>
+                  <button
+                    onClick={() => handleCloneCampaign(row)}
+                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    title="Clone"
+                  >
+                    <Copy size={16} />
                   </button>
                   <button
                     onClick={() => handleConfigureAutorules(row)}
