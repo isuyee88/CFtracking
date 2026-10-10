@@ -427,7 +427,7 @@ export const CampaignManagement = () => {
 
   const handleCloneSuccess = async () => {
     await loadCampaignsWithStats();
-    toast.success('Campaign Cloned', 'Campaign has been cloned successfully.');
+    toast.success('Campaign Duplicated', 'Campaign has been duplicated successfully.');
   };
   
   const handleFormSubmit = async (formData: any) => {
@@ -664,6 +664,7 @@ export const CampaignManagement = () => {
         <div className="flex flex-wrap gap-3 items-center">
           {/* Date Range Picker */}
           <div className="w-[280px] min-w-[220px]">
+            <label className="block text-xs font-medium text-fg-muted mb-1">Statistics Period</label>
             <QuickDateRangePicker
               value={initialDateRange.pickerValue}
               onChange={(preset, range) => {
@@ -743,7 +744,7 @@ export const CampaignManagement = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" size={16} />
             <input 
               type="text" 
-              placeholder="Search by name, alias, ID, or group..."
+              placeholder="Search campaigns..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-canvas text-sm border border-border-default focus:border-accent-fg focus:ring-2 focus:ring-accent-subtle rounded-md outline-none transition-all text-fg-default placeholder:text-fg-subtle"
@@ -998,7 +999,7 @@ export const CampaignManagement = () => {
                   <button
                     onClick={() => handleCloneCampaign(row)}
                     className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                    title="Clone"
+                    title="Duplicate"
                   >
                     <Copy size={16} />
                   </button>

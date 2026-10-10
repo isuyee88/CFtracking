@@ -809,7 +809,7 @@ export const ClicksLog = () => {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" />
             <input
               type="text"
-              placeholder="Search by click ID, IP, visitor ID..."
+              placeholder="Search clicks..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
