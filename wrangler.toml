@@ -78,16 +78,12 @@ class_name = "StatsActor"
 name = "TRACKING_STATS_DO"
 class_name = "TrackingStatsDO"
 
-# Durable Objects SQLite 命名空间（免费版必须）
-[[durable_objects.sqlite_namespaces]]
-name = "TRACKING_STATS_DO_SQLITE"
-class_name = "TrackingStatsDO"
-
 # Durable Objects 迁移配置
-# v1-v8 已在线上应用，v9 新增 TrackingStatsDO
+# Cloudflare 免费计划要求所有 DO 使用 new_sqlite_classes
+# 注意：修改已有 migration 可能导致问题，但这是 Cloudflare 要求
 [[migrations]]
 tag = "v1"
-new_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject"]
+new_sqlite_classes = ["SessionDurableObject", "CounterDurableObject", "QueueDurableObject"]
 
 [[migrations]]
 tag = "v2"
