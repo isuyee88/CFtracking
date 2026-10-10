@@ -1,20 +1,8 @@
 // Campaign Clone Dialog Component
-// 克隆 Campaign 的对话框组件
+// 克隆 Campaign 的对话框组件 - 使用项目原生样式
 
 import React, { useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Copy, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Copy, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface CloneOptions {
   cloneStatus: boolean;
@@ -53,6 +41,8 @@ export function CampaignCloneDialog({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  if (!open) return null;
+
   const handleClone = async () => {
     if (!newName.trim()) {
       setError('Please enter a name for the cloned campaign');
@@ -84,7 +74,6 @@ export function CampaignCloneDialog({
       setTimeout(() => {
         onOpenChange(false);
         onSuccess?.();
-        // Reset state
         setNewName(`${campaignName} - Copy`);
         setSuccess(false);
         setError(null);
@@ -96,176 +85,90 @@ export function CampaignCloneDialog({
     }
   };
 
-  const handleOptionChange = (key: keyof CloneOptions, checked: boolean) => {
-    setOptions((prev) => ({ ...prev, [key]: checked }));
-  };
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2">
             <Copy className="h-5 w-5" />
-            Clone Campaign
-          </DialogTitle>
-          <DialogDescription>
-            Create a copy of "{campaignName}" with all its settings and related data.
-          </DialogDescription>
-        </DialogHeader>
+            <h2 className="text-xl font-semibold">Clone Campaign</h2>
+          </div>
+          <button onClick={() => onOpenChange(false)} disabled={loading || success}>
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-        <div className="space-y-4 py-4">
-          {/* Campaign Name Input */}
-          <div className="space-y-2">
-            <Label htmlFor="newName">New Campaign Name</Label>
-            <Input
-              id="newName"
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-gray-600">
+            Create a copy of "{campaignName}" with all its settings.
+          </p>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">New Campaign Name</label>
+            <input
+              type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="Enter campaign name"
               disabled={loading || success}
+              className="w-full px-3 py-2 border rounded-md"
             />
           </div>
 
-          {/* Clone Options */}
-          <div className="space-y-3">
-            <Label>Clone Options</Label>
-            
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="cloneStatus"
-                  checked={options.cloneStatus}
-                  onCheckedChange={(checked) =>
-                    handleOptionChange('cloneStatus', checked as boolean)
-                  }
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">Options</label>
+            {[
+              { key: 'cloneStatus' as const, label: 'Preserve status' },
+              { key: 'cloneFlows' as const, label: 'Clone Flows' },
+              { key: 'cloneOffers' as const, label: 'Clone Offers' },
+              { key: 'cloneLandings' as const, label: 'Clone Landings' },
+              { key: 'cloneAutorules' as const, label: 'Clone Auto-rules' },
+              { key: 'cloneCostSettings' as const, label: 'Clone Cost Settings' },
+            ].map(({ key, label }) => (
+              <label key={key} className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={options[key]}
+                  onChange={(e) => setOptions(prev => ({ ...prev, [key]: e.target.checked }))}
                   disabled={loading || success}
                 />
-                <Label
-                  htmlFor="cloneStatus"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  Preserve campaign status (default: paused)
-                </Label>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="cloneFlows"
-                  checked={options.cloneFlows}
-                  onCheckedChange={(checked) =>
-                    handleOptionChange('cloneFlows', checked as boolean)
-                  }
-                  disabled={loading || success}
-                />
-                <Label
-                  htmlFor="cloneFlows"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  Clone Flows
-                </Label>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="cloneOffers"
-                  checked={options.cloneOffers}
-                  onCheckedChange={(checked) =>
-                    handleOptionChange('cloneOffers', checked as boolean)
-                  }
-                  disabled={loading || success}
-                />
-                <Label
-                  htmlFor="cloneOffers"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  Clone Offers
-                </Label>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="cloneLandings"
-                  checked={options.cloneLandings}
-                  onCheckedChange={(checked) =>
-                    handleOptionChange('cloneLandings', checked as boolean)
-                  }
-                  disabled={loading || success}
-                />
-                <Label
-                  htmlFor="cloneLandings"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  Clone Landing Pages
-                </Label>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="cloneAutorules"
-                  checked={options.cloneAutorules}
-                  onCheckedChange={(checked) =>
-                    handleOptionChange('cloneAutorules', checked as boolean)
-                  }
-                  disabled={loading || success}
-                />
-                <Label
-                  htmlFor="cloneAutorules"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  Clone Auto-rules
-                </Label>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="cloneCostSettings"
-                  checked={options.cloneCostSettings}
-                  onCheckedChange={(checked) =>
-                    handleOptionChange('cloneCostSettings', checked as boolean)
-                  }
-                  disabled={loading || success}
-                />
-                <Label
-                  htmlFor="cloneCostSettings"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  Clone Cost Settings
-                </Label>
-              </div>
-            </div>
+                <span className="text-sm">{label}</span>
+              </label>
+            ))}
           </div>
 
-          {/* Error Message */}
           {error && (
-            <div className="flex items-center gap-2 p-3 text-sm text-red-600 bg-red-50 rounded-md">
-              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            <div className="flex items-center gap-2 p-3 text-sm text-red-600 bg-red-50 rounded">
+              <AlertCircle className="h-4 w-4" />
               <p>{error}</p>
             </div>
           )}
 
-          {/* Success Message */}
           {success && (
-            <div className="flex items-center gap-2 p-3 text-sm text-green-600 bg-green-50 rounded-md">
-              <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+            <div className="flex items-center gap-2 p-3 text-sm text-green-600 bg-green-50 rounded">
+              <CheckCircle2 className="h-4 w-4" />
               <p>Campaign cloned successfully!</p>
             </div>
           )}
         </div>
 
-        <DialogFooter>
-          <Button
-            variant="outline"
+        <div className="flex justify-end gap-3 p-6 border-t">
+          <button
             onClick={() => onOpenChange(false)}
             disabled={loading || success}
+            className="px-4 py-2 text-sm border rounded-md"
           >
             Cancel
-          </Button>
-          <Button onClick={handleClone} disabled={loading || success}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {success ? 'Cloned!' : 'Clone Campaign'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </button>
+          <button
+            onClick={handleClone}
+            disabled={loading || success}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-blue-600 rounded-md"
+          >
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {success ? 'Cloned!' : 'Clone'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
