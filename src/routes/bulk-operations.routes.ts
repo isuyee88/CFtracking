@@ -5,8 +5,9 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { BulkOperationsService } from '../services/campaign/bulk-operations.service';
+import type { Env } from '../config/env';
 
-const app = new Hono();
+const app = new Hono<{ Bindings: Env }>();
 
 // Zod Schema for bulk operations
 const bulkActivateSchema = z.object({
