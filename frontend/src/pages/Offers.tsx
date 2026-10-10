@@ -358,12 +358,19 @@ export const Offers = () => {
   };
 
   const handleEditOffer = (offer: Offer) => {
-    setFormMode('edit');
-    setSelectedOffer({
-      ...offer,
-      hostMode: inferOfferHostingMode(offer.url),
-    });
-    setIsFormOpen(true);
+    console.log('handleEditOffer called with:', offer);
+    try {
+      setFormMode('edit');
+      setSelectedOffer({
+        ...offer,
+        hostMode: inferOfferHostingMode(offer.url),
+      });
+      setIsFormOpen(true);
+      console.log('Form opened successfully');
+    } catch (error) {
+      console.error('Error in handleEditOffer:', error);
+      alert('Error opening edit form: ' + error);
+    }
   };
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
