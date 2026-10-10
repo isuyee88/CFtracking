@@ -1421,7 +1421,7 @@ export const Dashboard = () => {
                 })}
                 data={recentClicks}
                 rowHeight={48}
-                height={400}
+                height="100%"
                 overscan={5}
                 emptyMessage="No recent clicks found"
                 />

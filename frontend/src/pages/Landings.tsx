@@ -1105,8 +1105,8 @@ export const Landings = () => {
             },
           ]}
           data={paginatedLandings}
-          rowHeight={72}
-          height={400}
+          rowHeight={80}
+          height="100%"
           overscan={5}
           selectable={false}
           selectedRows={selectedItems}

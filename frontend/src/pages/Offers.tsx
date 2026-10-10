@@ -1027,7 +1027,7 @@ export const Offers = () => {
           ]}
           data={paginatedOffers}
           rowHeight={72}
-          height={400}
+          height="100%"
           overscan={5}
           selectable={false}
           selectedRows={selectedItems}
