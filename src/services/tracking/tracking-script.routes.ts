@@ -216,11 +216,6 @@ export function createTrackingScriptRouter() {
         return c.json(error('campaignId and clickId are required'), HTTP_STATUS.BAD_REQUEST);
       }
 
-      // 写入 TrackingStatsDO（这里简化处理，实际可能需要更复杂的逻辑）
-      const trackingDO = c.env.TRACKING_STATS_DO.get(
-        c.env.TRACKING_STATS_DO.idFromName('global-stats')
-      );
-
       return c.json(success({
         updated: true,
         clickId: body.clickId,
