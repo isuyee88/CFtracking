@@ -743,7 +743,8 @@ export const Offers = () => {
       </div>
 
       {/* Offers Table - 使用虚拟滚动 */}
-      <div className="flex-1 bg-surface-container-lowest whisper-shadow overflow-hidden flex flex-col min-h-0">
+      <div className="flex-1 bg-surface-container-lowest whisper-shadow flex flex-col min-h-0">
+        <div className="flex-1 overflow-hidden">
         <VirtualTableEnhanced
           tableId="offers"
           columns={[
@@ -1041,6 +1042,7 @@ export const Offers = () => {
           getRowId={(row) => row.id}
           emptyMessage="No offers found"
         />
+        </div>
 
         {/* Pagination */}
         {totalPages > 1 && (
