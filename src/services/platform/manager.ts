@@ -100,10 +100,10 @@ export class PlatformManager {
   /**
    * 创建默认管理器实例
    */
-  static createDefault(): PlatformManager {
+  static createDefault(env?: import('@/config/env').Env): PlatformManager {
     const manager = new PlatformManager();
     manager.registerAdapter(new OddBytesAdapter({ wsdlUrl: '', apiKey: '' } as any));
-    manager.registerAdapter(new PropellerAdsAdapter({ apiKey: '' } as any));
+    manager.registerAdapter(new PropellerAdsAdapter({ apiKey: '' } as any, env));
     manager.registerAdapter(new ClickBankAdapter({ apiKey: '', accountNickname: '' } as any));
     return manager;
   }

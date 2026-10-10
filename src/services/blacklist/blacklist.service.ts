@@ -266,7 +266,7 @@ export class BlacklistService {
       const adapter = new PropellerAdsAdapter({
         apiKey: apiConfig.apiKey,
         apiUrl: apiConfig.baseUrl,
-      });
+      }, this.env);
 
       await adapter.initialize();
 
@@ -365,7 +365,7 @@ export class BlacklistService {
       const adapter = new PropellerAdsAdapter({
         apiKey: apiConfig.apiKey,
         apiUrl: apiConfig.baseUrl,
-      });
+      }, this.env);
 
       await adapter.initialize();
       await adapter.execute('include_zone', {

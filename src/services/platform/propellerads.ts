@@ -11,8 +11,8 @@ export class PropellerAdsAdapter extends PlatformAdapter<PropellerAdsConfig> {
   private initialized = false;
   private baseUrl: string;
 
-  constructor(config: PropellerAdsConfig) {
-    super(config);
+  constructor(config: PropellerAdsConfig, env?: import('@/config/env').Env) {
+    super(config, env);
     this.baseUrl = config.apiUrl || 'https://ssp-api.propellerads.com/v5';
   }
 
@@ -96,6 +96,7 @@ export class PropellerAdsAdapter extends PlatformAdapter<PropellerAdsConfig> {
   }
 
   private async pauseCampaign(campaignId: string): Promise<PlatformActionResult> {
+    this.simulationGuard('pauseCampaign');
     try {
       const response = await this.makeRequest(`/campaigns/${campaignId}`, 'PATCH', {
         status: 3,
@@ -122,6 +123,7 @@ export class PropellerAdsAdapter extends PlatformAdapter<PropellerAdsConfig> {
   }
 
   private async startCampaign(campaignId: string): Promise<PlatformActionResult> {
+    this.simulationGuard('startCampaign');
     try {
       const response = await this.makeRequest(`/campaigns/${campaignId}`, 'PATCH', {
         status: 1,
@@ -148,6 +150,7 @@ export class PropellerAdsAdapter extends PlatformAdapter<PropellerAdsConfig> {
   }
 
   private async adjustBid(campaignId: string, bid: number): Promise<PlatformActionResult> {
+    this.simulationGuard('adjustBid');
     try {
       const response = await this.makeRequest(`/campaigns/${campaignId}`, 'PATCH', {
         cpc: bid,
@@ -259,6 +262,7 @@ export class PropellerAdsAdapter extends PlatformAdapter<PropellerAdsConfig> {
     campaignId: string,
     zoneId: string | number
   ): Promise<PlatformActionResult> {
+    this.simulationGuard('excludeZone');
     try {
       const response = await this.makeRequest(
         `/adv/campaigns/${campaignId}/targeting/exclude/zone`,
@@ -298,6 +302,7 @@ export class PropellerAdsAdapter extends PlatformAdapter<PropellerAdsConfig> {
     campaignId: string,
     zoneId: string | number
   ): Promise<PlatformActionResult> {
+    this.simulationGuard('includeZone');
     try {
       const response = await this.makeRequest(
         `/adv/campaigns/${campaignId}/targeting/include/zone`,

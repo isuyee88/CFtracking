@@ -48,6 +48,13 @@ export interface PropellerAdsConfig extends PlatformCredentials {
   apiUrl?: string;
 }
 
+export interface PartnerBoostConfig extends PlatformCredentials {
+  apiToken: string;
+  apiUrl?: string;
+  bid?: string;
+  secret?: string;
+}
+
 export interface ClickBankConfig extends PlatformCredentials {
   apiKey: string;
   accountNickname: string;

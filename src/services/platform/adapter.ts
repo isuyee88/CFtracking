@@ -4,13 +4,27 @@
  * @module services/platform/adapter
  */
 
-import type { PlatformInfo, PlatformActionResult } from '@/types/platform';
+import type { Env } from '../../config/env';
+import { simulationGuard } from '../../utils/simulation-guard';
+import type { PlatformInfo, PlatformActionResult } from '../../types/platform';
 
 export abstract class PlatformAdapter<TConfig = Record<string, unknown>> {
   protected config: TConfig;
+  protected env?: Env;
 
-  constructor(config: TConfig) {
+  constructor(config: TConfig, env?: Env) {
     this.config = config;
+    this.env = env;
+  }
+
+  /** Block external writes while the architecture baseline is in simulation mode. */
+  protected simulationGuard(operation: string): void {
+    simulationGuard(
+      { SIMULATION_MODE: this.env?.SIMULATION_MODE ?? true },
+      operation,
+      this.getInfo().id,
+      'write'
+    );
   }
 
   /**

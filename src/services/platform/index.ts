@@ -7,6 +7,7 @@
 export { PlatformAdapter } from './adapter';
 export { PlatformManager } from './manager';
 export { PropellerAdsAdapter } from './propellerads';
+export { PartnerBoostAdapter } from './partnerboost';
 export { OddBytesAdapter } from './oddbytes';
 export { PlatformTaskProcessor } from './task.processor';
 export { handlePlatformCron, triggerRuleEvaluation, triggerTaskProcessing } from './cron.worker';
