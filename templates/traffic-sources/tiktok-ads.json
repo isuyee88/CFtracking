@@ -1,0 +1,46 @@
+{
+  "id": "tiktok-ads",
+  "name": "TikTok Ads",
+  "category": "social",
+  "description": "TikTok video advertising platform",
+  "homepage": "https://ads.tiktok.com",
+  "documentation": "https://ads.tiktok.com/help",
+  "parameters": {
+    "clickId": "ttclid",
+    "campaignId": "__CAMPAIGN_ID__",
+    "adGroupId": "__AID__",
+    "creativeId": "__CID__"
+  },
+  "macros": {
+    "__CAMPAIGN_ID__": "Campaign ID",
+    "__CAMPAIGN_NAME__": "Campaign name",
+    "__AID__": "Ad Group ID",
+    "__ADGROUP_NAME__": "Ad Group name",
+    "__CID__": "Creative/Ad ID",
+    "__CREATIVE_NAME__": "Creative name",
+    "__PLACEMENT__": "Placement (TikTok, Pangle, etc)",
+    "__OS__": "Operating system",
+    "__CARRIER__": "Mobile carrier"
+  },
+  "postbackTemplate": "https://business-api.tiktok.com/open_api/v1.3/event/track/",
+  "postbackMacros": {
+    "pixel_code": "Your TikTok Pixel ID",
+    "event": "CompletePayment or other event",
+    "ttclid": "TikTok click ID",
+    "value": "Conversion value",
+    "currency": "Currency code"
+  },
+  "trackingUrlExample": "https://your-tracker.com/click?campaign={campaignId}&source=tiktok&ttclid={ttclid}&campaign_id=__CAMPAIGN_ID__&aid=__AID__&cid=__CID__",
+  "notes": [
+    "TikTok uses Events API for server-side tracking",
+    "ttclid parameter required for attribution",
+    "Requires Pixel Code and Access Token",
+    "Must send event within 28 days of click",
+    "Supports web and app conversions"
+  ],
+  "supportedFormats": ["in-feed", "top-view", "branded-hashtag", "branded-effects"],
+  "regions": ["global"],
+  "minDeposit": 500,
+  "currency": "USD",
+  "paymentMethods": ["card", "wire"]
+}
