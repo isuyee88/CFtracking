@@ -915,7 +915,7 @@ export const Offers = () => {
             {
               key: 'network',
               label: 'Network',
-              width: '200px',
+              width: '160px',
               // 筛选配置
               filters: [
                 { text: 'Default', value: 'Default' },
@@ -961,8 +961,8 @@ export const Offers = () => {
             },
             {
               key: 'conversions',
-              label: 'Conv.',
-              width: '80px',
+              label: 'Conversions',
+              width: '110px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
@@ -971,7 +971,7 @@ export const Offers = () => {
             {
               key: 'revenue',
               label: 'Revenue',
-              width: '100px',
+              width: '110px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-secondary">
