@@ -56,17 +56,17 @@ export class TrackingStatsDO extends DurableObject {
     hourlyStats: new Map<string, HourlyStats>(),
   };
   
-  private initialized = false;
   private db: any = null;
+  private d1: D1Database | undefined;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.d1 = env.DB;
     
     // 初始化时从 SQLite 加载今日统计
     this.ctx.blockConcurrencyWhile(async () => {
       await this.initializeDatabase();
       await this.loadTodayStats();
-      this.initialized = true;
     });
   }
 
@@ -207,7 +207,7 @@ export class TrackingStatsDO extends DurableObject {
    * 处理转化追踪
    */
   private async handleTrackConversion(request: Request): Promise<Response> {
-    const data = await request.json();
+    const data = await request.json() as { clickId: string; revenue?: number };
     const { clickId, revenue = 0 } = data;
     
     // 1. 更新内存统计
@@ -452,7 +452,7 @@ export class TrackingStatsDO extends DurableObject {
    * 处理每日数据聚合
    */
   private async handleAggregateDaily(request: Request): Promise<Response> {
-    const data = await request.json();
+    const data = await request.json() as { date?: string };
     const { date } = data;
     
     try {
@@ -475,15 +475,15 @@ export class TrackingStatsDO extends DurableObject {
       `, startTimestamp, endTimestamp);
       
       // 2. 写入 D1 数据库
-      if (this.env.DB) {
+      if (this.d1) {
         for (const item of dailyData) {
           try {
-            await this.env.DB.exec(`
+            await this.d1.prepare(`
               INSERT OR REPLACE INTO daily_stats (
                 date, campaign_id, campaign_name, 
                 clicks, conversions, revenue, cost
               ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            `, 
+            `).bind(
             targetDate.toISOString().split('T')[0],
             item.campaign_id,
             item.campaign_name,
@@ -491,7 +491,7 @@ export class TrackingStatsDO extends DurableObject {
             item.conversions,
             item.revenue,
             item.cost
-            );
+            ).run();
           } catch (e) {
             console.warn('[AggregateDaily] Failed to insert into D1:', e);
           }
@@ -697,7 +697,7 @@ export class TrackingStatsDO extends DurableObject {
    * 处理历史数据聚合
    */
   private async handleAggregateHistorical(request: Request): Promise<Response> {
-    const data = await request.json();
+    const data = await request.json() as { startDate: string; endDate: string };
     const { startDate, endDate } = data;
     
     try {
@@ -721,16 +721,16 @@ export class TrackingStatsDO extends DurableObject {
       `, startTimestamp, endTimestamp);
       
       // 2. 批量写入 D1 数据库
-      if (this.env.DB) {
+      if (this.d1) {
         let processed = 0;
         for (const item of historicalData) {
           try {
-            await this.env.DB.exec(`
+            await this.d1.prepare(`
               INSERT OR REPLACE INTO daily_stats (
                 date, campaign_id, campaign_name, 
                 clicks, conversions, revenue, cost
               ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            `, 
+            `).bind(
             item.date,
             item.campaign_id,
             item.campaign_name,
@@ -738,7 +738,7 @@ export class TrackingStatsDO extends DurableObject {
             item.conversions,
             item.revenue,
             item.cost
-            );
+            ).run();
             processed++;
           } catch (e) {
             console.warn('[AggregateHistorical] Failed to insert into D1:', e);
