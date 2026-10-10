@@ -951,6 +951,7 @@ export const Landings = () => {
                     e.stopPropagation();
                     handleSelectItem(row.id);
                   }}
+                  aria-label={`Select ${row.name}`}
                 />
               ),
             },

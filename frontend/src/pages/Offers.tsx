@@ -796,6 +796,7 @@ export const Offers = () => {
                     e.stopPropagation();
                     handleSelectItem(row.id);
                   }}
+                  aria-label={`Select ${row.name}`}
                 />
               ),
             },

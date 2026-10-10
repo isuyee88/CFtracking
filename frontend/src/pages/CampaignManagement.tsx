@@ -812,6 +812,7 @@ export const CampaignManagement = () => {
                   className="rounded border-border-default"
                   checked={selectedItems.has(row.id)}
                   onChange={() => handleSelectItem(row.id)}
+                  aria-label={`Select ${row.name}`}
                 />
               ),
             },
