@@ -954,9 +954,16 @@ export const Landings = () => {
                     <Image size={20} className="text-primary" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-bold text-primary truncate max-w-[220px]" title={row.name}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditLanding(row as Landing);
+                      }}
+                      className="font-bold text-primary hover:text-secondary cursor-pointer truncate max-w-[220px] text-left"
+                      title={`Edit ${row.name}`}
+                    >
                       {truncateLabel(row.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
-                    </h3>
+                    </button>
                     <a 
                       href={row.url} 
                       target="_blank" 
@@ -1119,7 +1126,7 @@ export const Landings = () => {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t border-outline-variant/10">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-outline-variant/10">
             <span className="text-sm text-on-surface-variant">
               Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredLandings.length)} of {filteredLandings.length}
             </span>
