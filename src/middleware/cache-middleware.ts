@@ -184,18 +184,15 @@ export function createCacheStatsMiddleware() {
  * 缓存预热中间件
  */
 export function createCacheWarmupMiddleware() {
-  return async (c: Context<{ Bindings: Env }>, next: Next) => {
+  return async (c: Context<{ Bindings: Env; Variables: { isWarmup?: boolean } }>, next: Next) => {
     const request = c.req.raw;
     const url = new URL(request.url);
-    
-    // 检查是否是预热请求
+
     if (url.searchParams.get('warmup') === 'true') {
       console.log('[CacheWarmup] Warmup request detected');
-      
-      // 标记为预热请求
       c.set('isWarmup', true);
     }
-    
+
     await next();
   };
 }

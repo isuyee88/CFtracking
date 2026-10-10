@@ -36,7 +36,9 @@ export class AggregationService {
         body: JSON.stringify({ date }),
       });
 
-      const result = await response.json();
+      const result = await response.json() as {
+        success?: boolean; message?: string; recordsProcessed?: number; errors?: string[];
+      };
       return {
         success: result.success || false,
         message: result.message || 'Aggregation completed',
@@ -79,7 +81,9 @@ export class AggregationService {
         body: JSON.stringify({ startDate, endDate }),
       });
 
-      const result = await response.json();
+      const result = await response.json() as {
+        success?: boolean; message?: string; recordsProcessed?: number; errors?: string[];
+      };
       return {
         success: result.success || false,
         message: result.message || 'Historical aggregation completed',
