@@ -5,6 +5,7 @@
 
 import { Hono } from 'hono';
 import { LandingPageRepository } from '@/handlers/d1/landingPage.repo';
+import { renderBettingComparisonTemplate } from '@/templates/landing/render-betting-comparison';
 import type { Env } from '@/config/env';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -42,8 +43,16 @@ app.get('/lp/:slug', async (c) => {
       })
     );
     
-    // 4. 渲染 HTML（暂时返回简单页面）
-    const html = renderLandingPage(lp, country);
+    // 4. 渲染 HTML（使用完整模板）
+    const html = renderBettingComparisonTemplate(
+      lp.content || { header: {}, offers: [], compliance: {} } as any,
+      {
+        title: lp.seo_title || lp.name,
+        description: lp.seo_description || '',
+        country: country,
+        landingPageId: lp.id
+      }
+    );
     
     return c.html(html);
   } catch (error) {
@@ -53,7 +62,8 @@ app.get('/lp/:slug', async (c) => {
 });
 
 /**
- * 简单的 HTML 渲染器（Phase 2 临时实现）
+ * 简单的 HTML 渲染器（Phase 2 临时实现，已废弃）
+ * @deprecated 使用 renderBettingComparisonTemplate 替代
  */
 function renderLandingPage(lp: any, country: string): string {
   const content = lp.content || {};

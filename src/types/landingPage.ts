@@ -52,13 +52,22 @@ export interface LandingPageContent {
   offers: Array<{
     offerId: string;
     rank: number;
+    badge?: string;
     rating: number;
+    logo: string;
     name: string;
     headline: string;
     features: string[];
     ctaText: string;
     ctaUrl: string;
+    disclaimer: string;
   }>;
+  compliance: {
+    ageRestriction: string;
+    termsText: string;
+    responsibleGamblingText: string;
+    affiliateDisclosure: string;
+  };
 }
 
 export interface CreateLandingPageDTO {

@@ -226,11 +226,23 @@ def fetch_impact_catalogs(sid: str, token: str, campaign_id: int) -> List[Dict]:
 
 def fetch_impact_contract(sid: str, token: str, campaign_id: int) -> Dict:
     """获取 Active contract；payout/币种只以 contract 为准。"""
-    response = requests.get(
-        f"{IMPACT_API_BASE}/Mediapartners/{sid}/Campaigns/{campaign_id}/Contracts/Active",
-        auth=(sid, token),
-        headers={'IR-Version': IMPACT_API_VERSION, 'Accept': 'application/json'},
-        params={'summary': 'false'}, timeout=30)
+    response = None
+    for attempt in range(3):
+        try:
+            response = requests.get(
+                f"{IMPACT_API_BASE}/Mediapartners/{sid}/Campaigns/{campaign_id}/Contracts/Active",
+                auth=(sid, token),
+                headers={'IR-Version': IMPACT_API_VERSION, 'Accept': 'application/json'},
+                params={'summary': 'false'}, timeout=30)
+            break
+        except requests.RequestException as exc:
+            if attempt == 2:
+                print(f"   ⚠️  contract 网络失败，跳过 campaign {campaign_id}: {exc}")
+                return {}
+            time.sleep(2 ** attempt)
+    if response is None:
+        print("   ⚠️  contract 获取失败: no response")
+        return {}
     if response.status_code != 200:
         print(f"   ⚠️  contract 获取失败: HTTP {response.status_code}")
         return {}
@@ -506,7 +518,12 @@ def main():
                 print("   ⚠️  缺少 CampaignId，跳过")
                 failed_count += 1
                 continue
-            contract = fetch_impact_contract(impact_creds['sid'], impact_creds['token'], int(campaign_id))
+            try:
+                contract = fetch_impact_contract(impact_creds['sid'], impact_creds['token'], int(campaign_id))
+            except requests.RequestException as exc:
+                print(f"   ⚠️  contract 请求失败，跳过: {exc}")
+                failed_count += 1
+                continue
             if not contract or contract.get('Status') != 'ACTIVE':
                 print("   ⚠️  无 ACTIVE contract，跳过")
                 failed_count += 1
