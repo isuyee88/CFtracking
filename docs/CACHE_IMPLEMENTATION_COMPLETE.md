@@ -32,8 +32,7 @@
 #### ✅ wrangler.toml
 ```toml
 [vars]
-CACHE_UPDATE_TOKEN = "cftrack-cache-update-2026-secure-token"
-
+# CACHE_UPDATE_TOKEN is provisioned as a Wrangler secret; never commit it.
 [triggers]
 crons = [
   "*/5 * * * *",   # 每5分钟刷新实时数据
