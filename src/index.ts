@@ -216,8 +216,8 @@ export default {
       
       if (!isStaticResource && !isFrontendRoute) {
         const pathParts = url.pathname.split('/').filter(Boolean);
-        if (pathParts.length === 1) {
-          const campaignAlias = pathParts[0];
+        if (pathParts.length === 1 || (pathParts.length === 2 && pathParts[0] === 'click')) {
+          const campaignAlias = pathParts.length === 1 ? pathParts[0] : pathParts[1];
           console.log('[Tracking] Campaign alias:', campaignAlias, 'Original URL:', request.url);
           const trackingUrl = new URL('/api/tracking/click/' + campaignAlias, url.origin);
           trackingUrl.search = url.search;

@@ -20,7 +20,7 @@ export function createTrackingScriptRouter() {
    * GET /api/tracking/script/code
    * 获取跟踪脚本代码
    */
-  router.get('/script/code', async (c) => {
+  router.get('/code', async (c) => {
     try {
       const campaignId = c.req.query('campaignId');
       const domain = c.req.query('domain') || new URL(c.req.url).host;
@@ -66,7 +66,7 @@ export function createTrackingScriptRouter() {
    * 数据写入格式与 AnalyticsService.trackClick() 保持一致
    * 确保所有点击事件在 Analytics Engine 中使用相同的字段映射
    */
-  router.post('/script/track', async (c) => {
+  router.post('/track', async (c) => {
     try {
       const body = await c.req.json<{
         campaignId: string;
@@ -152,7 +152,7 @@ export function createTrackingScriptRouter() {
    * POST /api/tracking/script/conversion
    * 处理转化上报
    */
-  router.post('/script/conversion', async (c) => {
+  router.post('/conversion', async (c) => {
     try {
       const body = await c.req.json<{
         campaignId: string;
@@ -204,7 +204,7 @@ export function createTrackingScriptRouter() {
    * POST /api/tracking/script/update
    * 更新点击参数
    */
-  router.post('/script/update', async (c) => {
+  router.post('/update', async (c) => {
     try {
       const body = await c.req.json<{
         campaignId: string;
@@ -234,7 +234,7 @@ export function createTrackingScriptRouter() {
    * POST /api/tracking/kclient/process
    * KClient JS 流量处理
    */
-  router.post('/kclient/process', async (c) => {
+  router.post('/process', async (c) => {
     try {
       const body = await c.req.json<{
         campaignId: string;
