@@ -22,9 +22,12 @@ export class LandingPageService {
    * 创建 Landing Page
    */
   async create(data: CreateLandingPageDTO): Promise<LandingPage> {
-    const urlExists = await this.repo.urlExists(data.url);
-    if (urlExists) {
-      throw new DuplicateError(`Landing Page with URL "${data.url}" already exists`);
+    // 检查 URL 是否已被使用（如果提供了 URL）
+    if (data.url) {
+      const urlExists = await this.repo.urlExists(data.url);
+      if (urlExists) {
+        throw new DuplicateError(`Landing Page with URL "${data.url}" already exists`);
+      }
     }
 
     return this.repo.create(data);

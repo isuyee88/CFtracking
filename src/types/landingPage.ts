@@ -68,6 +68,8 @@ export interface CreateLandingPageDTO {
   template?: LandingPageTemplate;
   content?: LandingPageContent;
   seo_title?: string;
+  seo_description?: string;
+  geo_targeting?: string[];
   is_public?: boolean;
   group?: string;
 }
@@ -80,6 +82,8 @@ export interface UpdateLandingPageDTO {
   template?: LandingPageTemplate;
   content?: LandingPageContent;
   seo_title?: string;
+  seo_description?: string;
+  geo_targeting?: string[];
   is_public?: boolean;
   group?: string;
 }

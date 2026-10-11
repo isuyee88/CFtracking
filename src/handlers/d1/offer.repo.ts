@@ -18,10 +18,17 @@ export class OfferRepository extends BaseRepository<Offer> {
   }
 
   protected transform(row: Record<string, unknown>): Offer {
-    return {
+    const offer = {
       ...row,
       id: row.displayId || row.id,
     } as Offer;
+    if (typeof row.countries === 'string') {
+      try { offer.countries = JSON.parse(row.countries); } catch { offer.countries = []; }
+    }
+    if (typeof row.metadata === 'string') {
+      try { offer.metadata = JSON.parse(row.metadata); } catch { offer.metadata = {}; }
+    }
+    return offer;
   }
 
   protected getExcludedStatusesCondition(): string {
@@ -95,8 +102,8 @@ export class OfferRepository extends BaseRepository<Offer> {
 
     await this.db
       .prepare(`
-        INSERT INTO offers (id, displayId, name, url, payout, currency, payoutType, redirectType, network, "group", status, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO offers (id, displayId, name, url, payout, currency, payoutType, redirectType, network, "group", externalId, countries, metadata, status, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         displayId, 
@@ -109,6 +116,9 @@ export class OfferRepository extends BaseRepository<Offer> {
         data.redirectType || 'http',
         data.network || '',
         data.group || '',
+        data.externalId || null,
+        data.countries ? JSON.stringify(data.countries) : null,
+        data.metadata ? JSON.stringify(data.metadata) : null,
         'active', 
         now, 
         now
@@ -135,6 +145,9 @@ export class OfferRepository extends BaseRepository<Offer> {
     if (data.network !== undefined) { fields.push('network = ?'); values.push(data.network); }
     if (data.group !== undefined) { fields.push('"group" = ?'); values.push(data.group); }
     if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
+    if (data.externalId !== undefined) { fields.push('externalId = ?'); values.push(data.externalId); }
+    if (data.countries !== undefined) { fields.push('countries = ?'); values.push(JSON.stringify(data.countries)); }
+    if (data.metadata !== undefined) { fields.push('metadata = ?'); values.push(JSON.stringify(data.metadata)); }
 
     if (fields.length === 0) {
       return this.findById(id);
@@ -157,6 +170,11 @@ export class OfferRepository extends BaseRepository<Offer> {
    */
   async findByStatus(status: string): Promise<Offer[]> {
     return this.findBy('status', status);
+  }
+
+  async findByExternalId(externalId: string): Promise<Offer | null> {
+    const result = await this.db.prepare('SELECT * FROM offers WHERE externalId = ? LIMIT 1').bind(externalId).first();
+    return result ? this.transform(result as Record<string, unknown>) : null;
   }
 
   /**

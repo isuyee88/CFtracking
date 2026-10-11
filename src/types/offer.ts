@@ -29,6 +29,9 @@ export interface Offer {
   redirectType: RedirectType;
   network: string;
   group: string;
+  externalId?: string;
+  countries?: string[];
+  metadata?: Record<string, unknown>;
   status: OfferStatus;
   createdAt: string;
   updatedAt: string;
@@ -43,6 +46,9 @@ export interface CreateOfferDTO {
   redirectType?: RedirectType;
   network?: string;
   group?: string;
+  externalId?: string;
+  countries?: string[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface UpdateOfferDTO {
@@ -54,5 +60,8 @@ export interface UpdateOfferDTO {
   redirectType?: RedirectType;
   network?: string;
   group?: string;
+  externalId?: string;
+  countries?: string[];
+  metadata?: Record<string, unknown>;
   status?: OfferStatus;
 }

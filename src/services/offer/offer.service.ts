@@ -41,6 +41,10 @@ export class OfferService {
     return offer;
   }
 
+  async getByExternalId(externalId: string): Promise<Offer | null> {
+    return this.repo.findByExternalId(externalId);
+  }
+
   /**
    * 获取 Offer 列表
    */

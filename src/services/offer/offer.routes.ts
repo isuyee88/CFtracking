@@ -42,6 +42,12 @@ export function createOfferRouter(): Hono<{ Bindings: Env }> {
     return c.json(success(offers));
   });
 
+  router.get('/by-external-id/:externalId', async (c) => {
+    const service = new OfferService(c.env);
+    const offer = await service.getByExternalId(c.req.param('externalId'));
+    return offer ? c.json(success(offer)) : c.json(error('Offer not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+  });
+
   router.get('/:id', async (c) => {
     const id = c.req.param('id');
     const withStats = c.req.query('withStats') === 'true';

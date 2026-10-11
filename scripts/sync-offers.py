@@ -10,6 +10,7 @@ import json
 import time
 import requests
 import winreg
+import re
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -17,7 +18,7 @@ from typing import List, Dict, Optional
 # 配置
 # =============================================================================
 
-CF_TRACKING_API = "https://cf-tracking-v2.suyee88.workers.dev/api"
+CF_TRACKING_API = os.environ.get("CF_TRACKING_API", "https://cf-tracking-v2.suyee88.workers.dev/api")
 AFFILIATE_OPS_HOME = os.environ.get('AFFILIATE_OPS_HOME', 
                                    r'C:\Users\isuye\Documents\richang\affiliate-ops')
 
@@ -27,6 +28,41 @@ IMPACT_API_VERSION = "14"  # 必须设置，否则会报错
 
 # MyLead API  
 MYLEAD_API_BASE = "https://api.mylead.global/api/external/v1"
+POSTBACK_URL = f"{CF_TRACKING_API}/tracking/conversion/postback"
+
+def normalize_impact_countries(regions: List[str]) -> List[str]:
+    """将 Impact 的无空格国家名转换为平台使用的 ISO-3166 alpha-2；未知值拒绝同步。"""
+    country_file = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'src', 'data', 'countries.ts')
+    text = open(country_file, encoding='utf-8').read()
+    mapping = {re.sub(r'[^A-Z]', '', label.upper()): code for code, label in re.findall(r"value: '([A-Z]{2})', label: '([^']+)'", text)}
+    aliases = {
+        'UNITEDSTATES': 'US', 'US': 'US', 'UNITEDKINGDOM': 'GB', 'UK': 'GB', 'CANADA': 'CA', 'BRUNEIDARUSSALAM': 'BN', 'CZECHREPUBLIC': 'CZ',
+        'REUNION': 'RE', 'ANTIGUABARBUDA': 'AG', 'GREENLAND': 'GL', 'SAINTHELENA': 'SH', 'GUADELOUPE': 'GP',
+        'MARTINIQUE': 'MQ', 'FRENCHGUIANA': 'GF', 'FRENCHPOLYNESIA': 'PF', 'NEWCALEDONIA': 'NC', 'WALLISFUTUNA': 'WF',
+        'NORFOLKISLAND': 'NF', 'CHRISTMASISLAND': 'CX', 'COCOSISLANDS': 'CC', 'FALKLANDISLANDS': 'FK', 'BERMUDA': 'BM',
+        'BRITISHVIRGINISLANDS': 'VG', 'USVIRGINISLANDS': 'VI', 'CAYMANISLANDS': 'KY', 'TURKSCAICOSISLANDS': 'TC',
+        'PUERTORICO': 'PR', 'GUAM': 'GU', 'AMERICANSAMOA': 'AS', 'NORTHERNMARIANAISLANDS': 'MP', 'MACAO': 'MO',
+        'MAYOTTE': 'YT', 'SAINTPIERREMIQUELON': 'PM', 'SAINTBARTHELEMY': 'BL', 'SINTMAARTEN': 'SX', 'MONTSERRAT': 'MS',
+        'ARUBA': 'AW', 'CURACAO': 'CW', 'BONAIRE': 'BQ', 'SABA': 'BQ', 'SAINTMARTIN': 'MF', 'ANGUILLA': 'AI',
+        'COOKISLANDS': 'CK', 'NIUE': 'NU', 'TOKELAU': 'TK', 'PITCAIRN': 'PN', 'SOLOMONISLANDS': 'SB', 'VANUATU': 'VU',
+        'EASTTIMOR': 'TL', 'TIMOR': 'TL', 'SWAZILAND': 'SZ', 'MACEDONIA': 'MK', 'YOGOSLAVIA': 'RS', 'CONGO': 'CG',
+        'DEMOCRATICREPUBLICCONGO': 'CD', 'IVORYCOAST': 'CI', 'SAOTOME': 'ST', 'VATICAN': 'VA', 'UAE': 'AE',
+        'DJIBOUTI': 'DJ', 'DIJIBOUTI': 'DJ', 'NETHERLANDSANTILLES': 'AN', 'ANTARCTICA': 'AQ', 'FRENCHSOUTHERNTERRITORIES': 'TF',
+        'TRINIDADTOBAGO': 'TT', 'SAINTVINCENTGRENADINES': 'VC', 'BOSNIAHERZEGOVINA': 'BA', 'CAPVERDE': 'CV', 'GIBRALTAR': 'GI', 'SOUTHKOREA': 'KR', 'NORTHKOREA': 'KP', 'FAROEISLANDS': 'FO', 'GUERNSEY': 'GG', 'SAINTKITTSNEVIS': 'KN', 'BRITISHINDIANOCEANTERRITORY': 'IO', 'LICHTENSTEIN': 'LI', 'PALESTINIANTERRITORY': 'PS', 'SVALBARDJANMAYEN': 'SJ',
+        'WESTERNSAHARA': 'EH', 'TAIWAN': 'TW', 'KOSOVO': 'XK', 'MOLDOVA': 'MD', 'RUSSIA': 'RU',
+    }
+    result = []
+    unknown = []
+    for region in regions:
+        key = re.sub(r'[^A-Z]', '', str(region).upper())
+        if not key:
+            continue
+        code = aliases.get(key) or mapping.get(key)
+        if code: result.append(code)
+        else: unknown.append(region)
+    if unknown:
+        raise ValueError(f"Impact countries not mapped to ISO-2: {unknown[:5]}")
+    return sorted(set(result))
 
 # =============================================================================
 # 凭据管理
@@ -101,7 +137,7 @@ def get_mylead_token() -> Optional[str]:
 # Impact API
 # =============================================================================
 
-def fetch_impact_campaigns(sid: str, token: str, max_campaigns: int = 20) -> List[Dict]:
+def fetch_impact_campaigns(sid: str, token: str, max_campaigns: int = 10000) -> List[Dict]:
     """获取 Impact 已批准的 campaigns"""
     print(f"\n📥 正在从 Impact 获取 campaigns (最多 {max_campaigns} 个)...")
     print(f"   API Base: {IMPACT_API_BASE}")
@@ -188,6 +224,18 @@ def fetch_impact_catalogs(sid: str, token: str, campaign_id: int) -> List[Dict]:
         print(f"⚠️  获取 catalog 失败 (campaign {campaign_id}): {e}")
         return []
 
+def fetch_impact_contract(sid: str, token: str, campaign_id: int) -> Dict:
+    """获取 Active contract；payout/币种只以 contract 为准。"""
+    response = requests.get(
+        f"{IMPACT_API_BASE}/Mediapartners/{sid}/Campaigns/{campaign_id}/Contracts/Active",
+        auth=(sid, token),
+        headers={'IR-Version': IMPACT_API_VERSION, 'Accept': 'application/json'},
+        params={'summary': 'false'}, timeout=30)
+    if response.status_code != 200:
+        print(f"   ⚠️  contract 获取失败: HTTP {response.status_code}")
+        return {}
+    return response.json()
+
 # =============================================================================
 # MyLead API
 # =============================================================================
@@ -255,8 +303,20 @@ def get_cf_tracking_token() -> Optional[str]:
 def sync_offer_to_cf_tracking(token: str, offer_data: Dict) -> bool:
     """同步一个 offer 到 CF-Tracking"""
     try:
-        response = requests.post(
-            f"{CF_TRACKING_API}/offers",
+        external_id = offer_data['externalId']
+        lookup = requests.get(
+            f"{CF_TRACKING_API}/offers/by-external-id/{external_id}",
+            headers={'Authorization': f'Bearer {token}'}, timeout=10)
+        if lookup.status_code == 200:
+            existing = lookup.json().get('data', {})
+            method, url = 'put', f"{CF_TRACKING_API}/offers/{existing.get('id')}"
+        elif lookup.status_code == 404:
+            method, url = 'post', f"{CF_TRACKING_API}/offers"
+        else:
+            print(f"   ❌ 查询已有 offer 失败: HTTP {lookup.status_code}")
+            return False
+        response = getattr(requests, method)(
+            url,
             headers={
                 'Authorization': f'Bearer {token}',
                 'Content-Type': 'application/json'
@@ -270,6 +330,32 @@ def sync_offer_to_cf_tracking(token: str, offer_data: Dict) -> bool:
         print(f"   ❌ 同步失败: {e}")
         return False
 
+def ensure_impact_network(token: str) -> Optional[str]:
+    """确保 Impact 联盟记录存在，并返回平台 network id。"""
+    response = requests.get(f"{CF_TRACKING_API}/affiliate-networks/active", headers={'Authorization': f'Bearer {token}'}, timeout=10)
+    if response.status_code != 200:
+        print(f"❌ 查询 Impact 联盟失败: HTTP {response.status_code}")
+        return None
+    networks = response.json().get('data', [])
+    existing = next((n for n in networks if n.get('name') == 'Impact'), None)
+    if existing:
+        expected_postback = POSTBACK_URL + '?clickid={SubId1}&payout={Payout}&status={Status}&transaction_id={ActionId}&currency={Currency}'
+        if existing.get('postbackUrl') != expected_postback:
+            update = requests.put(f"{CF_TRACKING_API}/affiliate-networks/{existing.get('id')}", headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}, json={'postbackUrl': expected_postback}, timeout=10)
+            if update.status_code not in [200, 201]:
+                print(f"❌ Impact 回传配置更新失败: HTTP {update.status_code}")
+                return None
+        return existing.get('id')
+    response = requests.post(f"{CF_TRACKING_API}/affiliate-networks", headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}, json={
+        'name': 'Impact', 'type': 'api', 'apiUrl': IMPACT_API_BASE,
+        'postbackUrl': POSTBACK_URL + '?clickid={SubId1}&payout={Payout}&status={Status}&transaction_id={ActionId}&currency={Currency}',
+        'notes': 'Synchronized from approved Impact contracts; review terms before paid traffic.'
+    }, timeout=10)
+    if response.status_code not in [200, 201]:
+        print(f"❌ 创建 Impact 联盟失败: HTTP {response.status_code}")
+        return None
+    return response.json().get('data', {}).get('id')
+
 # =============================================================================
 # 数据转换
 # =============================================================================
@@ -280,18 +366,35 @@ def convert_impact_campaign_to_offer(campaign: Dict, catalogs: List[Dict]) -> Di
     campaign_name = campaign.get('CampaignName', 'Unknown')
     
     # 生成 tracking URL（使用实际的 Impact tracking link）
-    tracking_url = f"https://impact.sjv.io/c/1140684/{campaign_id}"
+    tracking_url = campaign.get('TrackingLink', '')
+    if not tracking_url:
+        raise ValueError(f"Impact campaign {campaign_id} has no TrackingLink")
+
+    countries = normalize_impact_countries(campaign.get('ShippingRegions') or [])
+    terms = campaign.get('Terms') or {}
+    payouts = terms.get('EventPayouts') or []
+    payout_rules = []
+    for event in payouts:
+        for group in event.get('PayoutGroups') or []:
+            payout_rules.append({
+                'event_type': event.get('EventTypeName'),
+                'event_category': event.get('EventCategory'),
+                'payout': group.get('Payout'),
+                'rules': group.get('Rules') or [],
+            })
+    default_rate = next((e.get('DefaultPayoutRate') for e in payouts if e.get('DefaultPayoutRate') not in (None, '')), None)
+    payout_value = float(default_rate) if default_rate not in (None, '') else 0.0
+    payout_type = 'revshare' if any(e.get('PayoutLevel') == 'ORDER' and float(e.get('DefaultPayoutRate') or 0) > 0 for e in payouts) else 'fixed'
     
     return {
         'name': campaign_name,
         'url': tracking_url,  # 必需字段
-        'external_id': f"IMPACT-{campaign_id}",
-        'network': 'Impact',
-        'network_id': str(campaign_id),
-        'payout': extract_payout(campaign),
-        'payout_type': 'percentage',  # 或 'fixed'，需要解析
-        'currency': campaign.get('Currency', 'USD'),
-        'countries': ['US', 'CA'],  # 需要从 campaign 解析
+        'externalId': f"IMPACT-{campaign_id}",
+        'network': campaign.get('_platform_network_id', 'Impact'),
+        'payout': payout_value,
+        'payoutType': payout_type,
+        'currency': terms.get('Currency') or 'USD',
+        'countries': countries,
         'preview_url': campaign.get('PreviewUrl', ''),
         'status': 'active',
         'has_catalog': len(catalogs) > 0,
@@ -299,7 +402,15 @@ def convert_impact_campaign_to_offer(campaign: Dict, catalogs: List[Dict]) -> Di
         'metadata': {
             'campaign_id': campaign_id,
             'campaign_url': campaign.get('CampaignUrl', ''),
-            'default_payout': campaign.get('DefaultPayout'),
+            'contract_status': campaign.get('ContractStatus'),
+            'contract_uri': campaign.get('ContractUri'),
+            'allows_deeplinking': campaign.get('AllowsDeeplinking'),
+            'payout_rules': payout_rules,
+            'valid_referrals': terms.get('ValidReferrals') or [],
+            'locking': terms.get('Locking'),
+            'payout_scheduling': terms.get('PayoutScheduling'),
+            'credit_policy': terms.get('CreditPolicy'),
+            'special_terms': terms.get('SpecialTermsList') or [],
             'catalogs': [c.get('Id') for c in catalogs]
         }
     }
@@ -378,6 +489,10 @@ def main():
         print("📦 处理 Impact")
         print("="*70)
         
+        impact_network_id = ensure_impact_network(cf_token)
+        if not impact_network_id:
+            print("❌ Impact 联盟未就绪，停止同步以避免孤立 offer")
+            return 1
         campaigns = fetch_impact_campaigns(impact_creds['sid'], impact_creds['token'])
         
         for i, campaign in enumerate(campaigns, 1):
@@ -386,6 +501,19 @@ def main():
             
             print(f"\n[{i}/{len(campaigns)}] {campaign_name} (ID: {campaign_id})")
             
+            # 获取 Active contract；没有 contract 不同步，避免国家/payout 使用猜测值
+            if not campaign_id:
+                print("   ⚠️  缺少 CampaignId，跳过")
+                failed_count += 1
+                continue
+            contract = fetch_impact_contract(impact_creds['sid'], impact_creds['token'], int(campaign_id))
+            if not contract or contract.get('Status') != 'ACTIVE':
+                print("   ⚠️  无 ACTIVE contract，跳过")
+                failed_count += 1
+                continue
+            campaign['Terms'] = contract.get('Terms', {})
+            campaign['_platform_network_id'] = impact_network_id
+
             # 获取 catalogs
             catalogs = []
             if campaign_id:

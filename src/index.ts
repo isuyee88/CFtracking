@@ -111,6 +111,7 @@ app.get('/api/deployment/info', (c) => {
 import { createCampaignRouter } from '@/services/campaign/campaign.routes';
 import { createFlowRouter } from '@/services/flow/flow.routes';
 import { createLandingPageRouter } from '@/services/landingPage/lp.routes';
+import publicLandingRoutes from '@/routes/public-landing.routes';
 import { createOfferRouter } from '@/services/offer/offer.routes';
 import { createTrafficSourceRouter } from '@/services/trafficSource/trafficSource.routes';
 import { createAffiliateNetworkRouter } from '@/services/affiliateNetwork/affiliateNetwork.routes';
@@ -140,6 +141,7 @@ app.route('/api', cloneRouter);
 app.route('/api/campaigns', bulkOperationsRouter);
 app.route('/api/flows', createFlowRouter());
 app.route('/api/landing-pages', createLandingPageRouter());
+app.route('/', publicLandingRoutes); // 公开访问路由
 app.route('/api/offers', createOfferRouter());
 app.route('/api/traffic-sources', createTrafficSourceRouter());
 app.route('/api/affiliate-networks', createAffiliateNetworkRouter());
