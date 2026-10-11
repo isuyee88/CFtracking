@@ -287,14 +287,57 @@ export class ActionExecutor {
   private async createCampaign(
     action: Extract<RuleAction, { type: 'create_campaign' }>
   ): Promise<ActionResult> {
-    // TODO: 调用流量平台 API
-    console.log(`[ActionExecutor] Create campaign on ${action.platform}`);
+    if (this.context.simulation_mode) {
+      console.log(`[ActionExecutor] [SIMULATION] Create campaign on ${action.platform}`);
+      return {
+        action: 'create_campaign',
+        result: 'skipped',
+        details: { simulation: true, platform: action.platform }
+      };
+    }
 
-    return {
-      action: 'create_campaign',
-      result: 'success',
-      details: { platform: action.platform }
-    };
+    try {
+      // 如果指定了模板 ID，使用模板生成配置
+      let campaignConfig = action.config || {};
+      
+      if (action.template_id) {
+        const { CampaignTemplateService } = await import('./campaign-template.service');
+        const templateService = new CampaignTemplateService(this.env.DB);
+        campaignConfig = await templateService.generateCampaignConfig(
+          action.template_id,
+          action.config
+        );
+      }
+
+      // 调用平台 API 创建 Campaign
+      const result = await this.platformManager.createCampaign(
+        action.platform,
+        campaignConfig
+      );
+
+      if (result.success) {
+        console.log(`[ActionExecutor] Created campaign: ${result.campaignId}`);
+      }
+
+      return {
+        action: 'create_campaign',
+        result: result.success ? 'success' : 'failed',
+        details: { 
+          platform: action.platform, 
+          campaign_id: result.campaignId,
+          error: result.error
+        }
+      };
+    } catch (error) {
+      return {
+        action: 'create_campaign',
+        result: 'failed',
+        details: { 
+          platform: action.platform,
+          error: error instanceof Error ? error.message : String(error)
+        }
+      };
+    }
   }
 
   /**
