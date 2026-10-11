@@ -352,7 +352,7 @@ def sync_offer_to_cf_tracking(token: str, offer_data: Dict) -> bool:
     return False
 
 def ensure_impact_network(token: str) -> Optional[str]:
-    """确保 Impact 联盟记录存在，并返回平台 network id。"""
+    """确保 Impact 联盟记录存在；不写入未经验证的 Impact 回传宏。"""
     response = requests.get(f"{CF_TRACKING_API}/affiliate-networks/active", headers={'Authorization': f'Bearer {token}'}, timeout=10)
     if response.status_code != 200:
         print(f"❌ 查询 Impact 联盟失败: HTTP {response.status_code}")
@@ -360,17 +360,10 @@ def ensure_impact_network(token: str) -> Optional[str]:
     networks = response.json().get('data', [])
     existing = next((n for n in networks if n.get('name') == 'Impact'), None)
     if existing:
-        expected_postback = POSTBACK_URL + '?clickid={SubId1}&payout={Payout}&status={Status}&transaction_id={ActionId}&currency={Currency}'
-        if existing.get('postbackUrl') != expected_postback:
-            update = requests.put(f"{CF_TRACKING_API}/affiliate-networks/{existing.get('id')}", headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}, json={'postbackUrl': expected_postback}, timeout=10)
-            if update.status_code not in [200, 201]:
-                print(f"❌ Impact 回传配置更新失败: HTTP {update.status_code}")
-                return None
         return existing.get('id')
     response = requests.post(f"{CF_TRACKING_API}/affiliate-networks", headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}, json={
         'name': 'Impact', 'type': 'api', 'apiUrl': IMPACT_API_BASE,
-        'postbackUrl': POSTBACK_URL + '?clickid={SubId1}&payout={Payout}&status={Status}&transaction_id={ActionId}&currency={Currency}',
-        'notes': 'Synchronized from approved Impact contracts; review terms before paid traffic.'
+        'notes': 'Impact partner network. Configure and test postback parameters from current official Impact docs before use.'
     }, timeout=10)
     if response.status_code not in [200, 201]:
         print(f"❌ 创建 Impact 联盟失败: HTTP {response.status_code}")
@@ -391,8 +384,14 @@ def convert_impact_campaign_to_offer(campaign: Dict, catalogs: List[Dict]) -> Di
     if not tracking_url:
         raise ValueError(f"Impact campaign {campaign_id} has no TrackingLink")
 
-    countries = normalize_impact_countries(campaign.get('ShippingRegions') or [])
+    raw_countries = campaign.get('ShippingRegions') or []
+    if not raw_countries:
+        raise ValueError(f"Impact campaign {campaign_id} has no ShippingRegions")
+    countries = normalize_impact_countries(raw_countries)
     terms = campaign.get('Terms') or {}
+    currency = terms.get('Currency')
+    if not currency:
+        raise ValueError(f"Impact campaign {campaign_id} has no contract currency")
     payouts = terms.get('EventPayouts') or []
     payout_rules = []
     for event in payouts:
@@ -404,17 +403,28 @@ def convert_impact_campaign_to_offer(campaign: Dict, catalogs: List[Dict]) -> Di
                 'rules': group.get('Rules') or [],
             })
     default_rate = next((e.get('DefaultPayoutRate') for e in payouts if e.get('DefaultPayoutRate') not in (None, '')), None)
-    payout_value = float(default_rate) if default_rate not in (None, '') else 0.0
-    payout_type = 'revshare' if any(e.get('PayoutLevel') == 'ORDER' and float(e.get('DefaultPayoutRate') or 0) > 0 for e in payouts) else 'fixed'
+    if default_rate in (None, ''):
+        raise ValueError(f"Impact campaign {campaign_id} has no default payout rate")
+    try:
+        payout_value = float(default_rate)
+    except (TypeError, ValueError):
+        raise ValueError(f"Impact campaign {campaign_id} has invalid default payout rate")
+    payout_levels = {str(e.get('PayoutLevel', '')).upper() for e in payouts}
+    if 'ORDER' in payout_levels:
+        payout_type = 'revshare'
+    elif any(str(e.get('EventTypeName', '')).upper() in ('SALE', 'ORDER') for e in payouts):
+        payout_type = 'cpa'
+    else:
+        payout_type = 'fixed'
     
     return {
         'name': campaign_name,
         'url': tracking_url,  # 必需字段
         'externalId': f"IMPACT-{campaign_id}",
-        'network': campaign.get('_platform_network_id', 'Impact'),
+        'network': 'Impact',
         'payout': payout_value,
         'payoutType': payout_type,
-        'currency': terms.get('Currency') or 'USD',
+        'currency': currency,
         'countries': countries,
         'preview_url': campaign.get('PreviewUrl', ''),
         'status': 'active',
@@ -549,8 +559,13 @@ def main():
                     campaign_id
                 )
             
-            # 转换并同步
-            offer_data = convert_impact_campaign_to_offer(campaign, catalogs)
+            # 转换并同步；单个 offer 数据不完整时跳过，不得中断整批
+            try:
+                offer_data = convert_impact_campaign_to_offer(campaign, catalogs)
+            except ValueError as exc:
+                print(f"   ⚠️  {exc}")
+                failed_count += 1
+                continue
             
             if sync_offer_to_cf_tracking(cf_token, offer_data):
                 print(f"   ✅ 同步成功")
