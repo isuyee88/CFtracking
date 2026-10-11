@@ -16,6 +16,8 @@ export interface Env {
   
   /** 去重专用 KV 存储 */
   UNIQUENESS_KV: KVNamespace;
+  /** Landing Page 缓存 */
+  LANDING_PAGE_CACHE: KVNamespace;
   
   SESSION_DO: DurableObjectNamespace;
   COUNTER_DO: DurableObjectNamespace;
