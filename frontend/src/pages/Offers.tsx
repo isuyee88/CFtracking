@@ -635,15 +635,15 @@ export const Offers = () => {
       />
 
       {/* Header */}
-      <div className="flex-none flex flex-col xl:flex-row xl:items-start justify-between gap-4 mb-6">
-        <div>
+      <div className="flex-none flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1 className="text-3xl font-display font-bold text-primary">Offers</h1>
-          <p className="text-sm text-on-surface-variant">Manage your affiliate offers and payouts</p>
+          <p className="border-l border-outline-variant/40 pl-3 text-sm text-on-surface-variant">Manage your affiliate offers and payouts</p>
         </div>
-        <div className="flex w-full xl:w-auto flex-wrap justify-start xl:justify-end items-end gap-3">
+        <div className="flex w-full xl:w-auto flex-wrap justify-start xl:justify-end items-center gap-2">
           {/* Date Range Picker */}
-          <div className="w-full sm:w-[280px] shrink-0">
-            <label className="block text-xs font-medium text-on-surface-variant mb-1">Statistics Period</label>
+          <div className="w-full sm:w-[280px] shrink-0" aria-label="Statistics period">
+            <span className="sr-only">Statistics Period</span>
             <QuickDateRangePicker
               value="today"
               onChange={(preset, range) => {
@@ -660,7 +660,7 @@ export const Offers = () => {
           </div>
           <button 
             onClick={() => setIsFilterOpen(true)}
-            className="flex h-10 shrink-0 items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+            className="flex h-9 shrink-0 items-center gap-2 px-3 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
           >
             <Filter size={16} />
             Filters
@@ -677,7 +677,7 @@ export const Offers = () => {
           />
           <button 
             onClick={handleCreateOffer}
-            className="btn-create flex h-10 shrink-0 items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
+            className="btn-create flex h-9 shrink-0 items-center gap-2 px-5 py-2 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
           >
             <Plus size={18} />
             New Offer
@@ -692,7 +692,7 @@ export const Offers = () => {
       ) : null}
 
       {/* Toolbar */}
-      <div className="flex-none bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div className="flex-none bg-surface-container-lowest p-3 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2">
           {selectedItems.size > 0 && (
             <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
