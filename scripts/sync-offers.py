@@ -293,12 +293,14 @@ def fetch_mylead_offers(token: str) -> List[Dict]:
 def get_cf_tracking_token() -> Optional[str]:
     """登录 CF-Tracking 获取 token"""
     try:
+        username = os.environ.get('CF_TRACKING_USERNAME')
+        password = os.environ.get('CF_TRACKING_PASSWORD')
+        if not username or not password:
+            print("❌ 请配置 CF_TRACKING_USERNAME 和 CF_TRACKING_PASSWORD 环境变量")
+            return None
         response = requests.post(
             f"{CF_TRACKING_API}/auth/login",
-            json={
-                'username': 'admin',
-                'password': 'admin123'
-            },
+            json={'username': username, 'password': password},
             timeout=10
         )
         
@@ -314,7 +316,8 @@ def get_cf_tracking_token() -> Optional[str]:
 
 def sync_offer_to_cf_tracking(token: str, offer_data: Dict) -> bool:
     """同步一个 offer 到 CF-Tracking"""
-    try:
+    for attempt in range(3):
+      try:
         external_id = offer_data['externalId']
         lookup = requests.get(
             f"{CF_TRACKING_API}/offers/by-external-id/{external_id}",
@@ -337,10 +340,16 @@ def sync_offer_to_cf_tracking(token: str, offer_data: Dict) -> bool:
             timeout=10
         )
         
-        return response.status_code in [200, 201]
-    except Exception as e:
-        print(f"   ❌ 同步失败: {e}")
+        if response.status_code in [200, 201]:
+            return True
+        print(f"   ❌ 同步失败: HTTP {response.status_code}")
         return False
+      except requests.RequestException as e:
+        if attempt == 2:
+            print(f"   ❌ 同步失败 (重试 3 次): {e}")
+            return False
+        time.sleep(2 ** attempt)
+    return False
 
 def ensure_impact_network(token: str) -> Optional[str]:
     """确保 Impact 联盟记录存在，并返回平台 network id。"""

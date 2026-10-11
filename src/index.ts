@@ -279,7 +279,7 @@ export default {
       );
     }
 
-    // 每小时: 刷新小时缓存数据 + 预渲染 Landing Pages + 执行自动化规则
+    // 每小时: 刷新小时缓存数据 + 预渲染 Landing Pages + ROI 监控 + 执行自动化规则
     if (cronExpression === '0 * * * *') {
       ctx.waitUntil(
         cacheUpdate.handleScheduled(event).catch(err => 
@@ -295,6 +295,19 @@ export default {
             await preRenderLandingPages(env);
           } catch (err) {
             console.error(`[Cron] Landing page pre-render failed:`, err);
+          }
+        })()
+      );
+      
+      // ROI 监控和数据聚合
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const { ROIMonitoringService } = await import('@/services/automation/roi-monitoring.service');
+            const monitor = new ROIMonitoringService(env);
+            await monitor.aggregatePerformanceData(24);
+          } catch (err) {
+            console.error(`[Cron] ROI monitoring failed:`, err);
           }
         })()
       );
