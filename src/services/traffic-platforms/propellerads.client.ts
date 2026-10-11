@@ -174,7 +174,7 @@ export class PropellerAdsClient {
         return { success: false, error };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { id: string };
       return { success: true, campaignId: data.id };
     } catch (error) {
       return { 
