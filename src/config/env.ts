@@ -30,6 +30,7 @@ export interface Env {
   ASSETS: Fetcher;
   
   REALTIME_ENABLED?: boolean;
+  CACHE_UPDATE_TOKEN?: string;
   /** SSR 动态渲染开关 */
   SSE_ENABLED: boolean;
   /** Cloudflare API 配置 */

@@ -143,7 +143,7 @@ export class SSEConnectionManager {
 export class SSECacheNotificationService {
   private connectionManager: SSEConnectionManager;
   
-  constructor(private env: Env) {
+  constructor(_env: Env) {
     this.connectionManager = new SSEConnectionManager();
   }
   

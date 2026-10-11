@@ -10,7 +10,7 @@
  */
 
 import type { Env } from '@/config/env';
-import { UnifiedCacheManager, CacheKeyBuilder } from './unified-cache-manager';
+import { UnifiedCacheManager, CacheStrategy } from './unified-cache-manager';
 
 /**
  * 缓存类型枚举
@@ -111,7 +111,7 @@ export class ETagGenerator {
 export class ETagCacheManager {
   private cacheManager: UnifiedCacheManager;
   
-  constructor(private env: Env) {
+  constructor(env: Env) {
     this.cacheManager = new UnifiedCacheManager(env);
   }
   
@@ -141,7 +141,7 @@ export class ETagCacheManager {
       request,
       fetcher,
       {
-        strategy: 'cache-first',
+        strategy: CacheStrategy.CACHE_FIRST,
         cacheKey: key,
         edgeTTL: config.maxAge,
         workersTTL: Math.floor(config.maxAge / 2),

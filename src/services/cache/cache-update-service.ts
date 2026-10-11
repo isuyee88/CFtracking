@@ -10,8 +10,8 @@
  */
 
 import type { Env } from '@/config/env';
-import { UnifiedCacheManager, CacheKeyBuilder, CacheStrategy } from './unified-cache-manager';
-import { SSECacheNotificationService, SSEEventType } from './sse-cache-notification';
+import { UnifiedCacheManager, CacheKeyBuilder } from './unified-cache-manager';
+import { SSECacheNotificationService } from './sse-cache-notification';
 
 /**
  * 缓存更新方式
@@ -389,7 +389,7 @@ export class CacheUpdateService {
   /**
    * 获取相关缓存键
    */
-  private getRelatedCacheKeys(entity: string, id: string, action: string): string[] {
+  private getRelatedCacheKeys(entity: string, id: string, _action: string): string[] {
     const keys: string[] = [];
     
     // 实体列表缓存
@@ -415,7 +415,7 @@ export class CacheUpdateService {
    */
   private async warmupEntityCache(entity: string, id: string): Promise<void> {
     // 预热实体详情
-    const detailKey = CacheKeyBuilder.entityDetail(entity, id);
+    CacheKeyBuilder.entityDetail(entity, id);
     // 实际实现中需要获取实体数据并缓存
     // const data = await this.fetchEntityDetail(entity, id);
     // await this.cacheManager.fetch(...)
@@ -424,7 +424,7 @@ export class CacheUpdateService {
   /**
    * 预热Dashboard数据
    */
-  private async warmupDashboardData(range: string): Promise<void> {
+  private async warmupDashboardData(_range: string): Promise<void> {
     // 实际实现中需要调用DashboardQueryService获取数据
     // const data = await this.dashboardService.getDashboardStats(range);
     // 然后通过cacheManager.fetch()方法缓存
@@ -433,7 +433,7 @@ export class CacheUpdateService {
   /**
    * 预热实体列表
    */
-  private async warmupEntityList(entity: string): Promise<void> {
+  private async warmupEntityList(_entity: string): Promise<void> {
     // 实际实现中需要调用对应的Repository获取列表
     // const data = await this.repository.list(entity);
     // 然后通过cacheManager.fetch()方法缓存

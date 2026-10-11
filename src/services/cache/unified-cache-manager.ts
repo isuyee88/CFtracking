@@ -196,7 +196,7 @@ export class UnifiedCacheManager {
     workersMisses: 0,
   };
   
-  constructor(private env: Env) {
+  constructor(_env: Env) {
     this.edgeCache = caches.default;
     this.memoryCache = new WorkersMemoryCache();
   }
@@ -208,7 +208,7 @@ export class UnifiedCacheManager {
   async fetch<T>(
     request: Request,
     fetcher: () => Promise<T>,
-    config: CacheConfig = {}
+    config: Partial<CacheConfig> = {}
   ): Promise<{ data: T; etag?: string }> {
     const {
       strategy = CacheStrategy.CACHE_FIRST,
