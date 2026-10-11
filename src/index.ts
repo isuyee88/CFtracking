@@ -198,6 +198,11 @@ export default {
       return app.fetch(request, env, ctx);
     }
     
+    // 处理公开 Landing Page 请求
+    if (url.pathname.startsWith('/lp/')) {
+      return app.fetch(request, env, ctx);
+    }
+    
     // 处理直接通过域名访问的追踪请求
     // 格式：http://custom-domain.com/:campaignAlias
     // 注意：排除静态资源文件（.html, .svg, .png, .ico, .css, .js, .woff2 等）
