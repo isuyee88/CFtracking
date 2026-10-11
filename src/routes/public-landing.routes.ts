@@ -5,33 +5,52 @@
 
 import { Hono } from 'hono';
 import { LandingPageRepository } from '@/handlers/d1/landingPage.repo';
+import { LandingPageCacheService } from '@/services/landing-page-cache.service';
 import { renderBettingComparisonTemplate } from '@/templates/landing/render-betting-comparison';
 import type { Env } from '@/config/env';
 
 const app = new Hono<{ Bindings: Env }>();
 
 /**
- * GET /lp/:slug - 访问公开的 Landing Page
+ * GET /lp/:slug - 访问公开的 Landing Page（带智能缓存）
  */
 app.get('/lp/:slug', async (c) => {
   const { slug } = c.req.param();
-  const repo = new LandingPageRepository(c.env.DB);
+  const startTime = Date.now();
   
   try {
-    // 1. 查询 Landing Page
+    // 1. 检查 KV 缓存
+    const cacheService = new LandingPageCacheService(
+      c.env.LANDING_PAGE_CACHE,
+      c.env.DB
+    );
+    
+    const cachedHtml = await cacheService.get(slug);
+    if (cachedHtml) {
+      const renderTime = Date.now() - startTime;
+      return c.html(cachedHtml, 200, {
+        'X-Cache': 'HIT',
+        'X-Cache-Layer': 'KV',
+        'X-Render-Time': `${renderTime}ms`,
+        'Cache-Control': 'public, max-age=300'
+      });
+    }
+    
+    // 2. KV 未命中，查询数据库
+    const repo = new LandingPageRepository(c.env.DB);
     const lp = await repo.findBySlug(slug);
     
     if (!lp) {
       return c.notFound();
     }
     
-    // 2. 获取访问者信息
+    // 3. 获取访问者信息
     const visitor_id = c.req.header('cf-connecting-ip') || crypto.randomUUID();
     const country = c.req.header('cf-ipcountry') || 'UNKNOWN';
     const referrer = c.req.header('referer') || '';
     const session_id = crypto.randomUUID();
     
-    // 3. 记录访问（异步，不阻塞响应）
+    // 4. 记录访问（异步，不阻塞响应）
     c.executionCtx.waitUntil(
       repo.recordView({
         landingPageId: lp.id,
@@ -43,7 +62,7 @@ app.get('/lp/:slug', async (c) => {
       })
     );
     
-    // 4. 渲染 HTML（使用完整模板）
+    // 5. 渲染 HTML
     const html = renderBettingComparisonTemplate(
       lp.content || { header: {}, offers: [], compliance: {} } as any,
       {
@@ -54,7 +73,16 @@ app.get('/lp/:slug', async (c) => {
       }
     );
     
-    return c.html(html);
+    // 6. 异步写入 KV 缓存
+    c.executionCtx.waitUntil(cacheService.set(slug, html));
+    
+    const renderTime = Date.now() - startTime;
+    return c.html(html, 200, {
+      'X-Cache': 'MISS',
+      'X-Cache-Layer': 'SSR',
+      'X-Render-Time': `${renderTime}ms`,
+      'Cache-Control': 'public, max-age=300'
+    });
   } catch (error) {
     console.error('Error rendering landing page:', error);
     return c.text('Internal Server Error', 500);

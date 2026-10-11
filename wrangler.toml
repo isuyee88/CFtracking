@@ -60,6 +60,10 @@ migrations_dir = "schema/migrations"
 binding = "UNIQUENESS_KV"
 id = "7cdc9c88e1964bff954835d91f98bd74"
 
+[[kv_namespaces]]
+binding = "LANDING_PAGE_CACHE"
+id = "5764bac0333c4fe5873bebc2085c6a42"
+
 # Durable Objects - 原有 DO
 [durable_objects]
 [[durable_objects.bindings]]
