@@ -796,14 +796,14 @@ export const Landings = () => {
       />
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-primary">Landing Pages</h1>
           <p className="text-sm text-on-surface-variant">Manage and optimize your landing pages</p>
         </div>
-        <div className="flex gap-3 items-center">
+        <div className="flex w-full xl:w-auto flex-wrap justify-start xl:justify-end items-end gap-3">
           {/* Date Range Picker */}
-          <div className="w-[280px]">
+          <div className="w-full sm:w-[280px] shrink-0">
             <QuickDateRangePicker
               value="today"
               onChange={(preset, range) => {
@@ -820,7 +820,7 @@ export const Landings = () => {
           </div>
           <button 
             onClick={() => setIsFilterOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+            className="flex h-10 shrink-0 items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
           >
             <Filter size={16} />
             Filters
@@ -837,7 +837,7 @@ export const Landings = () => {
           />
           <button 
             onClick={handleCreateLanding}
-            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
+            className="btn-create flex h-10 shrink-0 items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
           >
             <Plus size={18} />
             New Landing Page

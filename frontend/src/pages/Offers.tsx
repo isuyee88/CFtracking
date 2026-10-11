@@ -635,14 +635,14 @@ export const Offers = () => {
       />
 
       {/* Header */}
-      <div className="flex-none flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div className="flex-none flex flex-col xl:flex-row xl:items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-3xl font-display font-bold text-primary">Offers</h1>
           <p className="text-sm text-on-surface-variant">Manage your affiliate offers and payouts</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex w-full xl:w-auto flex-wrap justify-start xl:justify-end items-end gap-3">
           {/* Date Range Picker */}
-          <div className="w-[280px]">
+          <div className="w-full sm:w-[280px] shrink-0">
             <label className="block text-xs font-medium text-on-surface-variant mb-1">Statistics Period</label>
             <QuickDateRangePicker
               value="today"
@@ -660,7 +660,7 @@ export const Offers = () => {
           </div>
           <button 
             onClick={() => setIsFilterOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+            className="flex h-10 shrink-0 items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
           >
             <Filter size={16} />
             Filters
@@ -677,7 +677,7 @@ export const Offers = () => {
           />
           <button 
             onClick={handleCreateOffer}
-            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
+            className="btn-create flex h-10 shrink-0 items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
           >
             <Plus size={18} />
             New Offer

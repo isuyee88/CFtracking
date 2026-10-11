@@ -2182,10 +2182,7 @@ textarea.form-input {
     display: none !important;
   }
   
-  /* Adjust main content for bottom nav */
-  main {
-    padding-bottom: 72px !important;
-  }
+  /* Page content owns the mobile safe area via the Layout scroll container. */
 }
 
 /* Desktop - Hide bottom navigation */

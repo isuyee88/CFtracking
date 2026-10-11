@@ -153,8 +153,8 @@ export function Breadcrumb() {
     [location.pathname]
   );
 
-  // 仅当多于 1 项时渲染（单 item 表示在首页，无需面包屑）
-  if (items.length <= 1) {
+  // 顶级页面已有侧栏选中态和 H1；仅在嵌套页面保留面包屑，避免重复显示当前页名称。
+  if (items.length <= 2) {
     return null;
   }
 

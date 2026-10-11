@@ -19,7 +19,6 @@ import {
   HelpCircle,
   Menu,
   X,
-  Search,
   Bell,
   TrendingUp,
   Wallet,
@@ -340,10 +339,10 @@ export const Layout = () => {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header - Stitch Design: No-Line 规则 */}
         <header 
-          className="h-16 bg-surface-container-lowest dark:bg-surface-container flex items-center justify-between px-6" 
+          className="h-16 bg-surface-container-lowest dark:bg-surface-container flex items-center justify-between px-4 sm:px-6"
           role="banner"
         >
-          <div className="flex items-center gap-4 flex-1 max-w-md">
+          <div className="flex items-center gap-4 flex-1">
             <button
               type="button"
               className="rounded-md p-2 text-fg-muted transition-colors hover:bg-surface-container hover:text-fg-default xl:hidden"
@@ -352,20 +351,14 @@ export const Layout = () => {
             >
               <Menu size={18} aria-hidden="true" />
             </button>
-            <Search size={18} className="text-fg-subtle" aria-hidden="true" />
-            <input 
-              type="text" 
-              placeholder="Search analytics, links..." 
-              className="bg-transparent border-none focus:ring-0 text-sm w-full placeholder:text-fg-subtle text-fg-default focus-visible:outline-none"
-              aria-label="Search analytics and links"
-            />
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             {/* 优化：昼夜模式切换按钮 - 添加ARIA标签 */}
             <button
               onClick={toggleDarkMode}
               className={cn(
+                "hidden sm:block",
                 "p-2 rounded-md transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2",
                 isDarkMode 
                   ? "bg-surface-container-low text-fg-muted hover:text-fg-default hover:bg-surface-container-high" 
@@ -396,8 +389,8 @@ export const Layout = () => {
               aria-label="User Name Elite Partner user menu"
             >
               <div className="text-right">
-                <p className="text-sm font-semibold text-fg-default group-hover:text-accent-fg transition-colors">User Name</p>
-                <p className="text-xs text-fg-muted">Elite Partner</p>
+                <p className="hidden md:block text-sm font-semibold text-fg-default group-hover:text-accent-fg transition-colors">User Name</p>
+                <p className="hidden lg:block text-xs text-fg-muted">Elite Partner</p>
               </div>
               <div
                 className="flex h-8 w-8 items-center justify-center rounded-md border border-border-default bg-surface-container text-xs font-semibold text-fg-default"
@@ -414,7 +407,7 @@ export const Layout = () => {
 
         {/* Page Content - 优化：添加ARIA标签 */}
         <div 
-          className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar"
+          className="flex-1 overflow-y-auto p-6 pb-[calc(64px+env(safe-area-inset-bottom)+1.5rem)] md:pb-6 space-y-6 no-scrollbar"
           role="main"
           aria-label="Page content"
         >

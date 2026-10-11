@@ -655,15 +655,14 @@ export const CampaignManagement = () => {
         />
       )}
       
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-fg-default">Campaign Management</h1>
           <p className="text-sm text-fg-muted">Manage your tracking campaigns and traffic distribution</p>
         </div>
-        <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex w-full xl:w-auto flex-wrap justify-start xl:justify-end gap-3 items-end">
           {/* Date Range Picker */}
-          <div className="w-[280px] min-w-[220px]">
+          <div className="w-full sm:w-[280px] min-w-[220px] shrink-0">
             <label className="block text-xs font-medium text-fg-muted mb-1">Statistics Period</label>
             <QuickDateRangePicker
               value={initialDateRange.pickerValue}
