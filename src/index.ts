@@ -279,7 +279,7 @@ export default {
       );
     }
 
-    // 每小时: 刷新小时缓存数据 + 预渲染 Landing Pages
+    // 每小时: 刷新小时缓存数据 + 预渲染 Landing Pages + 执行自动化规则
     if (cronExpression === '0 * * * *') {
       ctx.waitUntil(
         cacheUpdate.handleScheduled(event).catch(err => 
@@ -295,6 +295,19 @@ export default {
             await preRenderLandingPages(env);
           } catch (err) {
             console.error(`[Cron] Landing page pre-render failed:`, err);
+          }
+        })()
+      );
+      
+      // 执行自动化规则（盈利扩量）
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const { RuleEngine } = await import('@/services/automation/rule-engine');
+            const engine = new RuleEngine(env);
+            await engine.executeCronRules('0 * * * *');
+          } catch (err) {
+            console.error(`[Cron] Rule engine failed:`, err);
           }
         })()
       );
