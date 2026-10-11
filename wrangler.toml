@@ -37,8 +37,7 @@ SSE_ENABLED = true
 # Cloudflare API 配置
 CF_ACCOUNT_ID = "d1215a30b84b673ef0367010b0e78c10"
 # 缓存更新令牌(用于手动触发缓存更新API)
-CACHE_UPDATE_TOKEN = "cftrack-cache-update-2026-secure-token"
-
+# CACHE_UPDATE_TOKEN is provisioned as a Wrangler secret; never commit it.
 # Cloudflare Queues配置 (替代Cron,无数量限制)
 [[queues.producers]]
 queue = "cache-refresh-queue"

@@ -38,8 +38,7 @@ crons = [
 
 # 添加环境变量
 [vars]
-CACHE_UPDATE_TOKEN = "your-secure-token-here"
-
+# CACHE_UPDATE_TOKEN is provisioned as a Wrangler secret; never commit it.
 # 启用日志
 [observability]
 enabled = true
