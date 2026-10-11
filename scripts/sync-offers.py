@@ -317,38 +317,50 @@ def get_cf_tracking_token() -> Optional[str]:
 def sync_offer_to_cf_tracking(token: str, offer_data: Dict) -> bool:
     """同步一个 offer 到 CF-Tracking"""
     for attempt in range(3):
-      try:
-        external_id = offer_data['externalId']
-        lookup = requests.get(
-            f"{CF_TRACKING_API}/offers/by-external-id/{external_id}",
-            headers={'Authorization': f'Bearer {token}'}, timeout=10)
-        if lookup.status_code == 200:
-            existing = lookup.json().get('data', {})
-            method, url = 'put', f"{CF_TRACKING_API}/offers/{existing.get('id')}"
-        elif lookup.status_code == 404:
-            method, url = 'post', f"{CF_TRACKING_API}/offers"
-        else:
-            print(f"   ❌ 查询已有 offer 失败: HTTP {lookup.status_code}")
+        try:
+            external_id = offer_data['externalId']
+            lookup = requests.get(
+                f"{CF_TRACKING_API}/offers/by-external-id/{external_id}",
+                headers={'Authorization': f'Bearer {token}'}, timeout=10)
+            if lookup.status_code == 200:
+                existing = lookup.json().get('data', {})
+                method, url = 'put', f"{CF_TRACKING_API}/offers/{existing.get('id')}"
+            elif lookup.status_code == 404:
+                method, url = 'post', f"{CF_TRACKING_API}/offers"
+            else:
+                print(f"   ❌ 查询已有 offer 失败: HTTP {lookup.status_code}")
+                return False
+            response = getattr(requests, method)(
+                url,
+                headers={
+                    'Authorization': f'Bearer {token}',
+                    'Content-Type': 'application/json'
+                },
+                json=offer_data,
+                timeout=10
+            )
+
+            if response.status_code in [200, 201]:
+                verify = requests.get(
+                    f"{CF_TRACKING_API}/offers/by-external-id/{external_id}",
+                    headers={'Authorization': f'Bearer {token}'}, timeout=10)
+                if verify.status_code != 200:
+                    print(f"   ❌ 写入后读回失败: HTTP {verify.status_code}")
+                    return False
+                actual = verify.json().get('data', {})
+                checks = ('externalId', 'network', 'countries', 'payout', 'payoutType', 'currency', 'url')
+                mismatches = [key for key in checks if actual.get(key) != offer_data.get(key)]
+                if mismatches:
+                    print(f"   ❌ 写入后字段不一致: {', '.join(mismatches)}")
+                    return False
+                return True
+            print(f"   ❌ 同步失败: HTTP {response.status_code}")
             return False
-        response = getattr(requests, method)(
-            url,
-            headers={
-                'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json'
-            },
-            json=offer_data,
-            timeout=10
-        )
-        
-        if response.status_code in [200, 201]:
-            return True
-        print(f"   ❌ 同步失败: HTTP {response.status_code}")
-        return False
-      except requests.RequestException as e:
-        if attempt == 2:
-            print(f"   ❌ 同步失败 (重试 3 次): {e}")
-            return False
-        time.sleep(2 ** attempt)
+        except requests.RequestException as e:
+            if attempt == 2:
+                print(f"   ❌ 同步失败 (重试 3 次): {e}")
+                return False
+            time.sleep(2 ** attempt)
     return False
 
 def ensure_impact_network(token: str) -> Optional[str]:
@@ -374,7 +386,7 @@ def ensure_impact_network(token: str) -> Optional[str]:
 # 数据转换
 # =============================================================================
 
-def convert_impact_campaign_to_offer(campaign: Dict, catalogs: List[Dict]) -> Dict:
+def convert_impact_campaign_to_offer(campaign: Dict, catalogs: List[Dict], network_id: str) -> Dict:
     """将 Impact campaign 转换为 CF-Tracking offer 格式"""
     campaign_id = campaign.get('CampaignId')
     campaign_name = campaign.get('CampaignName', 'Unknown')
@@ -421,7 +433,8 @@ def convert_impact_campaign_to_offer(campaign: Dict, catalogs: List[Dict]) -> Di
         'name': campaign_name,
         'url': tracking_url,  # 必需字段
         'externalId': f"IMPACT-{campaign_id}",
-        'network': 'Impact',
+        # 平台的 offer.network 存 affiliateNetworks.id/displayId，不是网络名称
+        'network': network_id,
         'payout': payout_value,
         'payoutType': payout_type,
         'currency': currency,
@@ -561,7 +574,7 @@ def main():
             
             # 转换并同步；单个 offer 数据不完整时跳过，不得中断整批
             try:
-                offer_data = convert_impact_campaign_to_offer(campaign, catalogs)
+                offer_data = convert_impact_campaign_to_offer(campaign, catalogs, impact_network_id)
             except ValueError as exc:
                 print(f"   ⚠️  {exc}")
                 failed_count += 1

@@ -19,6 +19,11 @@ export interface Env {
   /** Landing Page 缓存 */
   LANDING_PAGE_CACHE: KVNamespace;
   
+  /** 流量平台 API Tokens */
+  PROPELLERADS_API_TOKEN?: string;
+  MAXCONV_API_TOKEN?: string;
+  MONETIZER_API_TOKEN?: string;
+  
   SESSION_DO: DurableObjectNamespace;
   COUNTER_DO: DurableObjectNamespace;
   QUEUE_DO: DurableObjectNamespace;

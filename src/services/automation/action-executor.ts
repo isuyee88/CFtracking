@@ -10,9 +10,14 @@ import type {
   OptimizationTarget 
 } from '@/types/automationRule';
 import type { Env } from '@/config/env';
+import { TrafficPlatformManager } from '@/services/traffic-platforms/platform-manager';
 
 export class ActionExecutor {
-  constructor(private env: Env, private context: ExecutionContext) {}
+  private platformManager: TrafficPlatformManager;
+
+  constructor(private env: Env, private context: ExecutionContext) {
+    this.platformManager = new TrafficPlatformManager(env);
+  }
 
   /**
    * 执行所有动作
@@ -166,13 +171,47 @@ export class ActionExecutor {
     action: Extract<RuleAction, { type: 'increase_bid' }>,
     targets: OptimizationTarget[]
   ): Promise<ActionResult> {
-    // TODO: 调用流量平台 API
-    console.log(`[ActionExecutor] Increase bid: ${action.percentage}%`);
+    if (this.context.simulation_mode) {
+      console.log(`[ActionExecutor] [SIMULATION] Increase bid: ${action.percentage}%`);
+      return {
+        action: 'increase_bid',
+        result: 'skipped',
+        details: { simulation: true, platform: action.platform, percentage: action.percentage }
+      };
+    }
+
+    const results: any[] = [];
+
+    for (const target of targets) {
+      if (target.platform === action.platform && target.zone_id) {
+        // 计算新出价
+        const currentBid = 1.0; // TODO: 从 Campaign 获取当前出价
+        const increase = action.percentage ? (action.percentage / 100) : 0;
+        const newBid = currentBid * (1 + increase) + (action.amount || 0);
+
+        // 调用平台 API
+        const result = await this.platformManager.updateBid(
+          action.platform,
+          target.zone_id, // 或 campaign_id
+          newBid
+        );
+
+        results.push({
+          zone_id: target.zone_id,
+          old_bid: currentBid,
+          new_bid: newBid,
+          success: result.success,
+          error: result.error
+        });
+      }
+    }
+
+    console.log(`[ActionExecutor] Increased bid for ${results.length} zones`);
 
     return {
       action: 'increase_bid',
-      result: 'success',
-      details: { platform: action.platform, percentage: action.percentage }
+      result: results.every(r => r.success) ? 'success' : 'failed',
+      details: { platform: action.platform, percentage: action.percentage, results }
     };
   }
 
@@ -200,13 +239,45 @@ export class ActionExecutor {
     action: Extract<RuleAction, { type: 'increase_budget' }>,
     targets: OptimizationTarget[]
   ): Promise<ActionResult> {
-    // TODO: 调用流量平台 API
-    console.log(`[ActionExecutor] Increase budget: ${action.percentage}%`);
+    if (this.context.simulation_mode) {
+      console.log(`[ActionExecutor] [SIMULATION] Increase budget: ${action.percentage}%`);
+      return {
+        action: 'increase_budget',
+        result: 'skipped',
+        details: { simulation: true, platform: action.platform, percentage: action.percentage }
+      };
+    }
+
+    const results: any[] = [];
+
+    for (const target of targets) {
+      if (target.platform === action.platform && target.zone_id) {
+        const currentBudget = 100.0; // TODO: 从 Campaign 获取当前预算
+        const increase = action.percentage ? (action.percentage / 100) : 0;
+        const newBudget = currentBudget * (1 + increase) + (action.amount || 0);
+
+        const result = await this.platformManager.updateBudget(
+          action.platform,
+          target.zone_id,
+          newBudget
+        );
+
+        results.push({
+          zone_id: target.zone_id,
+          old_budget: currentBudget,
+          new_budget: newBudget,
+          success: result.success,
+          error: result.error
+        });
+      }
+    }
+
+    console.log(`[ActionExecutor] Increased budget for ${results.length} zones`);
 
     return {
       action: 'increase_budget',
-      result: 'success',
-      details: { platform: action.platform, percentage: action.percentage }
+      result: results.every(r => r.success) ? 'success' : 'failed',
+      details: { platform: action.platform, percentage: action.percentage, results }
     };
   }
 
