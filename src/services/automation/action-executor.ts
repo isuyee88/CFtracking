@@ -82,6 +82,9 @@ export class ActionExecutor {
       case 'pause_campaign':
         return await this.pauseCampaign(action);
       
+      case 'generate_creative':
+        return await this.generateCreative(action);
+      
       case 'send_notification':
         return await this.sendNotification(action, targets);
       
@@ -354,6 +357,57 @@ export class ActionExecutor {
       result: 'success',
       details: { platform: action.platform, campaign_id: action.campaign_id }
     };
+  }
+
+  /**
+   * 生成广告素材
+   */
+  private async generateCreative(
+    action: Extract<RuleAction, { type: 'generate_creative' }>
+  ): Promise<ActionResult> {
+    if (this.context.simulation_mode) {
+      console.log(`[ActionExecutor] [SIMULATION] Generate ${action.count} creatives`);
+      return {
+        action: 'generate_creative',
+        result: 'skipped',
+        details: { simulation: true, count: action.count }
+      };
+    }
+
+    try {
+      const { CreativeGenerationService } = await import('./creative-generation.service');
+      const creativeService = new CreativeGenerationService(this.env.DB);
+
+      const result = await creativeService.generateAndUpload(
+        {
+          template_id: action.template,
+          platform: 'propellerads', // TODO: 从规则上下文获取
+          format: 'push',
+          count: action.count
+        },
+        'campaign-id-placeholder' // TODO: 从规则上下文获取
+      );
+
+      console.log(`[ActionExecutor] Generated ${result.creatives.length} creatives`);
+
+      return {
+        action: 'generate_creative',
+        result: result.success ? 'success' : 'failed',
+        details: { 
+          count: result.creatives.length,
+          creative_ids: result.creatives.map(c => c.id),
+          errors: result.errors
+        }
+      };
+    } catch (error) {
+      return {
+        action: 'generate_creative',
+        result: 'failed',
+        details: { 
+          error: error instanceof Error ? error.message : String(error)
+        }
+      };
+    }
   }
 
   /**
