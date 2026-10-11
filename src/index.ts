@@ -279,12 +279,24 @@ export default {
       );
     }
 
-    // 每小时: 刷新小时缓存数据
+    // 每小时: 刷新小时缓存数据 + 预渲染 Landing Pages
     if (cronExpression === '0 * * * *') {
       ctx.waitUntil(
         cacheUpdate.handleScheduled(event).catch(err => 
           console.error(`[Cron] Hourly cache refresh failed:`, err)
         )
+      );
+      
+      // 预渲染 Landing Pages
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const { preRenderLandingPages } = await import('@/services/cron/landing-page-prerender');
+            await preRenderLandingPages(env);
+          } catch (err) {
+            console.error(`[Cron] Landing page pre-render failed:`, err);
+          }
+        })()
       );
     }
 
