@@ -1186,9 +1186,9 @@ export const Landings = () => {
               render: (_, row) => (
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => handleOpenVersions(row as LandingPage)}
-                    className="rounded border border-primary/40 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-primary hover:bg-primary/10"
-                    title="Version History"
+                    disabled
+                    title="Version management disabled (backend API not implemented)"
+                    className="rounded border border-gray-400/40 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-400 cursor-not-allowed opacity-50"
                   >
                     Versions
                   </button>
