@@ -1279,7 +1279,8 @@ export const Landings = () => {
         )}
       </div>
 
-      {renderVersionManagement()}
+      {/* Version Management - DISABLED: Backend API not implemented */}
+      {/* {renderVersionManagement()} */}
 
       {/* Filter Panel */}
       <FilterPanel
