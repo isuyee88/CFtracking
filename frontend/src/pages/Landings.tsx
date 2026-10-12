@@ -73,6 +73,16 @@ interface LandingPage {
   cr: number | string;
   campaignCount?: number;
   updatedAt: string;
+  
+  // 新增字段（Phase 1-4）
+  slug?: string;
+  template?: string;
+  content?: any;
+  seo_title?: string;
+  seo_description?: string;
+  seo_keywords?: string;
+  geo_targeting?: string[];
+  is_public?: boolean;
 }
 
 type LandingHostingMode = 'hosted' | 'local' | 'zip';
@@ -162,6 +172,70 @@ const LANDING_FIELDS: FormField[] = [
     maxFileSizeMB: 8,
     description: 'Upload a ZIP package. System stores archive and provides hosted asset URL.',
     showWhen: (data) => data.hostMode === 'zip',
+  },
+  {
+    name: 'slug',
+    label: 'URL Slug',
+    type: 'text',
+    placeholder: 'my-landing-page',
+    maxLength: 100,
+    description: 'URL-friendly identifier for public access (e.g., /lp/my-landing-page)',
+    validation: (value) => {
+      if (!value) return null;
+      if (!/^[a-z0-9-]+$/.test(value)) {
+        return 'Slug must contain only lowercase letters, numbers, and hyphens';
+      }
+      return null;
+    }
+  },
+  {
+    name: 'template',
+    label: 'Template',
+    type: 'select',
+    options: [
+      { value: 'betting-comparison', label: 'Betting Comparison' },
+      { value: 'offer-card', label: 'Offer Card' },
+      { value: 'custom', label: 'Custom' },
+    ],
+    description: 'Template type for server-side rendering (if is_public enabled)',
+  },
+  {
+    name: 'seo_title',
+    label: 'SEO Title',
+    type: 'text',
+    placeholder: 'Best Betting Sites 2026 - Expert Reviews',
+    maxLength: 60,
+    description: 'Page title for SEO (recommended: 50-60 characters)',
+  },
+  {
+    name: 'seo_description',
+    label: 'SEO Description',
+    type: 'textarea',
+    placeholder: 'Discover the top betting sites with exclusive bonuses...',
+    maxLength: 160,
+    rows: 3,
+    description: 'Meta description for search engines (recommended: 150-160 characters)',
+  },
+  {
+    name: 'seo_keywords',
+    label: 'SEO Keywords',
+    type: 'text',
+    placeholder: 'betting sites, sports betting, online casino',
+    maxLength: 200,
+    description: 'Comma-separated keywords for SEO',
+  },
+  {
+    name: 'geo_targeting',
+    label: 'Geo Targeting',
+    type: 'text',
+    placeholder: 'US,CA,UK,AU (comma-separated country codes)',
+    description: 'Target countries (ISO 3166-1 alpha-2 codes)',
+  },
+  {
+    name: 'is_public',
+    label: 'Public Access',
+    type: 'checkbox',
+    description: 'Enable public access via /lp/:slug route with SSR and caching',
   },
   {
     name: 'group',
