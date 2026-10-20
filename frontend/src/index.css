@@ -1,12 +1,23 @@
-/**
+﻿/**
  * File: index.css
- * Purpose: 全局样式和主题变量定义 - Linear Design System
- * Input/Output: 定义颜色系统、字体、工具类，供全应用使用
- * Logic: 使用 Linear 现代极简配色方案，高对比度，纯黑/纯白设计
+ * Purpose: 鍏ㄥ眬鏍峰紡鍜屼富棰樺彉閲忓畾涔?- Linear Design System
+ * Input/Output: 瀹氫箟棰滆壊绯荤粺銆佸瓧浣撱€佸伐鍏风被锛屼緵鍏ㄥ簲鐢ㄤ娇鐢?
+ * Logic: 浣跨敤 Linear 鐜颁唬鏋佺畝閰嶈壊鏂规锛岄珮瀵规瘮搴︼紝绾粦/绾櫧璁捐
  */
 
 /* Font loaded via HTML link for better performance */
 @import "tailwindcss";
+
+/* 搴旂敤涓婚锛歞ark: 鍙樹綋璺熼殢 .dark-mode锛岃€屼笉鏄搷浣滅郴缁熷獟浣撴煡璇€?*/
+@custom-variant dark (&:where(.dark-mode, .dark-mode *));
+
+:root {
+  color-scheme: light;
+}
+
+.dark-mode {
+  color-scheme: dark;
+}
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -15,87 +26,96 @@
   /* ============================================
      Linear Color System - Light Mode
      ============================================ */
-  
-  /* Background - 背景层级 */
+
+  /* Background - 鑳屾櫙灞傜骇 */
   --color-bg-primary: #ffffff;
   --color-bg-secondary: #fafafa;
   --color-bg-tertiary: #f5f5f5;
   --color-bg-elevated: #ffffff;
-  
-  /* Text Colors - 文字颜色 */
+
+  /* Text Colors - 鏂囧瓧棰滆壊 (WCAG AA 瀵规瘮搴?>= 4.5:1) */
   --color-text-primary: #111111;
-  --color-text-secondary: #515866;
-  --color-text-tertiary: #6f7785;
-  --color-text-disabled: #bbbbbb;
-  
-  /* Border & Divider - 边框 */
+  --color-text-secondary: #595959;      /* 瀵规瘮搴?7:1 - AAA */
+  --color-text-tertiary: #767676;       /* 瀵规瘮搴?4.54:1 - AA */
+  --color-text-disabled: #9e9e9e;       /* 瀵规瘮搴?3.1:1 - 鐢ㄤ簬绂佺敤鐘舵€?*/
+
+  /* Border & Divider - 杈规 */
   --color-border: #e5e5e5;
   --color-border-strong: #d4d4d4;
-  
-  /* Accent Colors - 强调色 */
+
+  /* Accent Colors - 寮鸿皟鑹?*/
   --color-accent: #5e6ad2;
   --color-accent-hover: #4f5ac0;
   --color-accent-light: rgba(94, 106, 210, 0.1);
-  
-  /* Status Colors - 状态色 */
+
+  /* Status Colors - 鐘舵€佽壊 */
   --color-success: #2ea043;
   --color-warning: #d4a72c;
   --color-danger: #f85149;
   --color-info: #58a6ff;
-  
-  /* Legacy compatibility - 兼容旧变量名 */
+
+  /* Legacy compatibility - 鍏煎鏃у彉閲忓悕 */
   --color-primary: #111111;
   --color-primary-container: #2a2a2a;
   --color-on-primary: #ffffff;
-  
+
   --color-secondary: #5e6ad2;
   --color-secondary-container: rgba(94, 106, 210, 0.1);
   --color-secondary-fixed-dim: #4f5ac0;
-  
+
   --color-surface: #ffffff;
   --color-surface-container: #fafafa;
   --color-surface-container-low: #f5f5f5;
   --color-surface-container-lowest: #ffffff;
   --color-surface-container-high: #f0f0f0;
-  
+
   --color-on-surface: #111111;
-  --color-on-surface-variant: #515866;
+  --color-on-surface-variant: #666666;
   --color-outline-variant: #e5e5e5;
-  
+
   --color-error: #f85149;
-  
-  /* Button text colors - 按钮文字颜色 */
+
+  /* Button text colors - 鎸夐挳鏂囧瓧棰滆壊 */
   --color-btn-primary-text: #ffffff;
   --color-btn-secondary-text: #111111;
   --color-btn-ghost-text: #666666;
   --color-btn-ghost-text-hover: #111111;
-  
+
   /* Linear specific */
   --color-fg-default: #111111;
-  --color-fg-muted: #515866;
-  --color-fg-subtle: #6f7785;
+  --color-fg-muted: #666666;
+  --color-fg-subtle: #6b7280;
   --color-fg-on-emphasis: #ffffff;
-  
+
   --color-canvas: #ffffff;
   --color-canvas-inset: #fafafa;
   --color-border-default: #e5e5e5;
   --color-border-muted: #f0f0f0;
-  
-  --color-accent-fg: #4653c3;
-  --color-accent-emphasis: #4653c3;
-  --color-accent-muted: rgba(70, 83, 195, 0.12);
-  --color-accent-subtle: rgba(70, 83, 195, 0.07);
-  
-  --color-success-fg: #1f7a34;
+
+  --color-accent-fg: #5e6ad2;
+  --color-accent-emphasis: #5e6ad2;
+  --color-accent-muted: rgba(94, 106, 210, 0.1);
+  --color-accent-subtle: rgba(94, 106, 210, 0.05);
+
+  --color-success-fg: #2ea043;
   --color-danger-fg: #f85149;
   --color-warning-fg: #d4a72c;
+
+  /* Chart Colors - 鍥捐〃涓撶敤棰滆壊 */
+  --color-chart-1: #5e6ad2;
+  --color-chart-2: #2ea043;
+  --color-chart-3: #d4a72c;
+  --color-chart-4: #f85149;
+  --color-chart-5: #58a6ff;
+  --color-chart-6: #8b5cf6;
+  --color-chart-7: #ec4899;
 }
 
 @layer base {
   html, body {
     overflow-x: hidden;
   }
-  
+
   body {
     background-color: var(--color-canvas-inset);
     color: var(--color-fg-default);
@@ -103,20 +123,20 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  
+
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     letter-spacing: -0.02em;
     color: var(--color-fg-default);
   }
-  
-  /* 优化：全局焦点指示器 - 无障碍支持 */
+
+  /* 浼樺寲锛氬叏灞€鐒︾偣鎸囩ず鍣?- 鏃犻殰纰嶆敮鎸?*/
   *:focus-visible {
     outline: 2px solid var(--color-accent-fg);
     outline-offset: 2px;
   }
-  
-  /* 优化：减少动画支持 - 无障碍 */
+
+  /* 浼樺寲锛氬噺灏戝姩鐢绘敮鎸?- 鏃犻殰纰?*/
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -130,7 +150,7 @@
 }
 
 /* ============================================
-   主题切换过渡动画 - 平滑切换
+   涓婚鍒囨崲杩囨浮鍔ㄧ敾 - 骞虫粦鍒囨崲
    ============================================ */
 
 html {
@@ -141,8 +161,8 @@ html.theme-transitioning,
 html.theme-transitioning *,
 html.theme-transitioning *::before,
 html.theme-transitioning *::after {
-  transition: background-color 0.2s ease, 
-              border-color 0.2s ease, 
+  transition: background-color 0.2s ease,
+              border-color 0.2s ease,
               color 0.2s ease,
               box-shadow 0.2s ease !important;
 }
@@ -151,7 +171,7 @@ html.theme-transitioning *::after {
    Dark Mode - Linear Style
    ============================================ */
 
-/* 修复：确保 body 在 dark-mode 下背景色正确 */
+/* 淇锛氱‘淇?body 鍦?dark-mode 涓嬭儗鏅壊姝ｇ‘ */
 .dark-mode, .dark-mode body {
   background-color: var(--color-bg-primary) !important;
   color: var(--color-text-primary) !important;
@@ -160,47 +180,47 @@ html.theme-transitioning *::after {
 .dark-mode {
   /* ============================================
      Stitch Design System - Dark Mode Colors
-     基于 "The Precision Observer" 设计理念
+     鍩轰簬 "The Precision Observer" 璁捐鐞嗗康
      ============================================ */
-  
-  /* Background - Stitch 规范：非纯黑，使用层级背景 */
-  --color-bg-primary: #121416;      /* surface - 主背景 */
+
+  /* Background - Stitch 瑙勮寖锛氶潪绾粦锛屼娇鐢ㄥ眰绾ц儗鏅?*/
+  --color-bg-primary: #121416;      /* surface - 涓昏儗鏅?*/
   --color-bg-secondary: #1e2022;    /* surface_container */
   --color-bg-tertiary: #282a2c;     /* surface_container_high */
   --color-bg-elevated: #333537;     /* surface_container_highest */
-  
-  /* Text - Stitch 规范：非纯白，柔和文字 */
+
+  /* Text - Stitch 瑙勮寖锛氶潪绾櫧锛屾煍鍜屾枃瀛?*/
   --color-text-primary: #e2e2e5;
   --color-text-secondary: #c2c6d6;
   --color-text-tertiary: #8c909f;
   --color-text-disabled: #424754;
-  
-  /* Border - Stitch 规范：Ghost Border */
+
+  /* Border - Stitch 瑙勮寖锛欸host Border */
   --color-border: rgba(66, 71, 84, 0.5);    /* outline_variant at 50% */
   --color-border-strong: #424754;
-  
-  /* Surface Hierarchy - Stitch 规范：层级系统 */
-  --color-surface: #121416;                    /* 基础层 */
-  --color-surface-container: #1e2022;          /* 结构区域 */
-  --color-surface-container-low: #1a1c1e;      /* 低对比区域 */
-  --color-surface-container-lowest: #0c0e10;   /* 最深背景 */
-  --color-surface-container-high: #282a2c;     /* 交互组件 */
-  
+
+  /* Surface Hierarchy - Stitch 瑙勮寖锛氬眰绾х郴缁?*/
+  --color-surface: #121416;                    /* 鍩虹灞?*/
+  --color-surface-container: #1e2022;          /* 缁撴瀯鍖哄煙 */
+  --color-surface-container-low: #1a1c1e;      /* 浣庡姣斿尯鍩?*/
+  --color-surface-container-lowest: #0c0e10;   /* 鏈€娣辫儗鏅?*/
+  --color-surface-container-high: #282a2c;     /* 浜や簰缁勪欢 */
+
   --color-on-surface: #e2e2e5;
   --color-on-surface-variant: #c2c6d6;
   --color-outline-variant: #424754;
-  
+
   --color-fg-default: #e2e2e5;
   --color-fg-muted: #c2c6d6;
   --color-fg-subtle: #8c909f;
   --color-fg-on-emphasis: #000000;
-  
+
   --color-canvas: #121416;
   --color-canvas-inset: #0c0e10;
   --color-border-default: rgba(66, 71, 84, 0.5);
   --color-border-muted: #1a1c1e;
-  
-  /* Accent Colors - Stitch 规范：Primary & Secondary */
+
+  /* Accent Colors - Stitch 瑙勮寖锛歅rimary & Secondary */
   --color-accent: #aec6ff;
   --color-accent-hover: #5e6ad2;
   --color-accent-light: rgba(174, 198, 255, 0.1);
@@ -208,13 +228,13 @@ html.theme-transitioning *::after {
   --color-accent-emphasis: #186ee6;            /* primary_container */
   --color-accent-muted: rgba(174, 198, 255, 0.15);
   --color-accent-subtle: rgba(174, 198, 255, 0.05);
-  
-  /* Secondary - 用于增长/积极指标 */
+
+  /* Secondary - 鐢ㄤ簬澧為暱/绉瀬鎸囨爣 */
   --color-secondary: #53dcbc;
   --color-secondary-container: rgba(83, 220, 188, 0.15);
   --color-secondary-fixed-dim: #53dcbc;
-  
-  /* Status Colors - Stitch 规范：调整饱和度 */
+
+  /* Status Colors - Stitch 瑙勮寖锛氳皟鏁撮ケ鍜屽害 */
   --color-success: #4ade80;
   --color-success-fg: #4ade80;
   --color-warning: #fbbf24;
@@ -222,21 +242,21 @@ html.theme-transitioning *::after {
   --color-danger: #f87171;
   --color-danger-fg: #f87171;
   --color-info: #7dd3fc;
-  
+
   /* Button text colors */
   --color-btn-primary-text: #002e6b;           /* on_primary */
   --color-btn-secondary-text: #e2e2e5;
   --color-btn-ghost-text: #c2c6d6;
   --color-btn-ghost-text-hover: #e2e2e5;
-  
+
   /* Legacy compatibility */
   --color-primary: #e2e2e5;
   --color-primary-container: #aec6ff;
   --color-on-primary: #002e6b;
-  
+
   --color-error: #ffb4ab;
-  
-  /* 图表专用颜色 - 高对比度 */
+
+  /* 鍥捐〃涓撶敤棰滆壊 - 楂樺姣斿害 */
   --color-chart-1: #aec6ff;
   --color-chart-2: #53dcbc;
   --color-chart-3: #c0c1ff;
@@ -408,7 +428,7 @@ html.theme-transitioning *::after {
 
 /* ============================================
    Scrollable Table Container with Gradient Shadow
-   横向滚动渐变阴影提示
+   妯悜婊氬姩娓愬彉闃村奖鎻愮ず
    ============================================ */
 
 .table-container {
@@ -440,7 +460,7 @@ html.theme-transitioning *::after {
   opacity: 0;
 }
 
-/* 暗黑模式适配 */
+/* 鏆楅粦妯″紡閫傞厤 */
 .dark-mode .table-container::after {
   background: linear-gradient(
     to right,
@@ -450,7 +470,7 @@ html.theme-transitioning *::after {
   );
 }
 
-/* 左侧阴影（滚动时显示） */
+/* 宸︿晶闃村奖锛堟粴鍔ㄦ椂鏄剧ず锛?*/
 .table-container::before {
   content: '';
   position: absolute;
@@ -484,7 +504,7 @@ html.theme-transitioning *::after {
 }
 
 /* ============================================
-   Gesture Hint Animation - 首次访问手势提示
+   Gesture Hint Animation - 棣栨璁块棶鎵嬪娍鎻愮ず
    ============================================ */
 
 @keyframes swipe-hint {
@@ -515,16 +535,16 @@ html.theme-transitioning *::after {
   );
 }
 
-/* 移动端优化 */
+/* 绉诲姩绔紭鍖?*/
 @media (max-width: 768px) {
   .table-container {
     -webkit-overflow-scrolling: touch;
   }
-  
+
   .table-container::after {
     width: 30px;
   }
-  
+
   .table-container::before {
     width: 30px;
   }
@@ -532,7 +552,7 @@ html.theme-transitioning *::after {
 
 /* ============================================
    Card & Container Styles - Stitch Design
-   No-Line 规则：使用背景色层级而非边框分隔
+   No-Line 瑙勫垯锛氫娇鐢ㄨ儗鏅壊灞傜骇鑰岄潪杈规鍒嗛殧
    ============================================ */
 
 .card {
@@ -556,17 +576,17 @@ html.theme-transitioning *::after {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-/* 优化：黑夜模式图片适配 */
+/* 浼樺寲锛氶粦澶滄ā寮忓浘鐗囬€傞厤 */
 .dark-mode img {
   filter: brightness(0.9) contrast(1.05);
 }
 
-/* 优化：黑夜模式图表适配 - 降低饱和度 */
+/* 浼樺寲锛氶粦澶滄ā寮忓浘琛ㄩ€傞厤 - 闄嶄綆楗卞拰搴?*/
 .dark-mode .chart-container {
   filter: saturate(0.85);
 }
 
-/* 优化：黑夜模式图表线条颜色调整 */
+/* 浼樺寲锛氶粦澶滄ā寮忓浘琛ㄧ嚎鏉￠鑹茶皟鏁?*/
 .dark-mode .recharts-surface {
   filter: saturate(0.9);
 }
@@ -585,16 +605,11 @@ html.theme-transitioning *::after {
   padding: 1.25rem;
 }
 
-/* Section Card - No-Line 规则 */
+/* Section Card - No-Line 瑙勫垯 */
 .section-card {
   background-color: var(--color-surface-container-lowest);
   border-radius: 8px;
   overflow: hidden;
-}
-
-.deferred-section {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 720px;
 }
 
 .dark-mode .section-card {
@@ -618,7 +633,7 @@ html.theme-transitioning *::after {
 
 /* ============================================
    Button Styles - Stitch Design
-   Glass & Gradient 规则：主按钮使用渐变
+   Glass & Gradient 瑙勫垯锛氫富鎸夐挳浣跨敤娓愬彉
    ============================================ */
 
 .btn {
@@ -636,12 +651,12 @@ html.theme-transitioning *::after {
   outline: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  min-height: 36px; /* 统一最小高度 */
+  min-height: 36px; /* 缁熶竴鏈€灏忛珮搴?*/
 }
 
-/* 移动端触摸目标优化 */
+/* 绉诲姩绔Е鎽哥洰鏍囦紭鍖?*/
 @media (max-width: 768px) {
-  .btn, 
+  .btn,
   button[class*="btn-"],
   .modal-btn-primary,
   .modal-btn-secondary,
@@ -653,17 +668,17 @@ html.theme-transitioning *::after {
   }
 }
 
-/* 优化：按钮点击反馈动画 - scale + opacity */
+/* 浼樺寲锛氭寜閽偣鍑诲弽棣堝姩鐢?- scale + opacity */
 .btn:active {
   transform: scale(0.97);
 }
 
-/* 优化：按钮焦点状态 - 无障碍 */
+/* 浼樺寲锛氭寜閽劍鐐圭姸鎬?- 鏃犻殰纰?*/
 .btn:focus-visible {
   box-shadow: 0 0 0 2px var(--color-canvas), 0 0 0 4px var(--color-accent-fg);
 }
 
-/* Primary Button - Stitch 规范：渐变效果 */
+/* Primary Button - Stitch 瑙勮寖锛氭笎鍙樻晥鏋?*/
 .btn-primary {
   background: linear-gradient(135deg, var(--color-accent-emphasis, #186ee6) 0%, var(--color-accent-fg, #aec6ff) 100%);
   color: var(--color-btn-primary-text);
@@ -686,7 +701,7 @@ html.theme-transitioning *::after {
   color: var(--color-btn-primary-text);
 }
 
-/* Secondary Button - Stitch 规范：Ghost Border */
+/* Secondary Button - Stitch 瑙勮寖锛欸host Border */
 .btn-secondary {
   background-color: var(--color-surface-container);
   color: var(--color-btn-secondary-text);
@@ -704,7 +719,7 @@ html.theme-transitioning *::after {
   background-color: var(--color-surface-container-high);
 }
 
-/* Ghost Button - Stitch 规范：无背景 */
+/* Ghost Button - Stitch 瑙勮寖锛氭棤鑳屾櫙 */
 .btn-ghost {
   background-color: transparent;
   color: var(--color-btn-ghost-text);
@@ -721,7 +736,7 @@ html.theme-transitioning *::after {
   background-color: var(--color-surface-container-low);
 }
 
-/* Accent Button - 强调色 */
+/* Accent Button - 寮鸿皟鑹?*/
 .btn-accent {
   background: linear-gradient(135deg, var(--color-accent, #5e6ad2) 0%, var(--color-accent-hover, #4f5ac0) 100%);
   color: #ffffff;
@@ -744,7 +759,7 @@ html.theme-transitioning *::after {
   filter: brightness(0.95);
 }
 
-/* Success Button - 增长/积极操作 */
+/* Success Button - 澧為暱/绉瀬鎿嶄綔 */
 .btn-success {
   background: linear-gradient(135deg, #00af91 0%, #53dcbc 100%);
   color: #ffffff;
@@ -765,7 +780,7 @@ html.theme-transitioning *::after {
   filter: brightness(0.95);
 }
 
-/* Danger Button - 危险操作 */
+/* Danger Button - 鍗遍櫓鎿嶄綔 */
 .btn-danger {
   background: linear-gradient(135deg, #dc2626 0%, #f87171 100%);
   color: #ffffff;
@@ -783,7 +798,7 @@ html.theme-transitioning *::after {
 
 /* ============================================
    Form Elements - Stitch Design
-   左侧高亮边框聚焦效果
+   宸︿晶楂樹寒杈规鑱氱劍鏁堟灉
    ============================================ */
 
 .form-input {
@@ -799,7 +814,7 @@ html.theme-transitioning *::after {
   outline: none;
 }
 
-/* Stitch 规范：聚焦时使用左侧高亮边框 */
+/* Stitch 瑙勮寖锛氳仛鐒︽椂浣跨敤宸︿晶楂樹寒杈规 */
 .form-input:focus {
   border-color: transparent;
   border-left: 2px solid var(--color-accent-fg);
@@ -817,7 +832,7 @@ html.theme-transitioning *::after {
   color: var(--color-fg-subtle);
 }
 
-/* 禁用状态 */
+/* 绂佺敤鐘舵€?*/
 .form-input:disabled {
   background-color: var(--color-surface-container);
   color: var(--color-fg-subtle);
@@ -825,7 +840,7 @@ html.theme-transitioning *::after {
   opacity: 0.6;
 }
 
-/* 错误状态 */
+/* 閿欒鐘舵€?*/
 .form-input.error,
 .form-input:invalid:not(:placeholder-shown) {
   border-color: var(--color-danger-fg);
@@ -837,7 +852,7 @@ html.theme-transitioning *::after {
   box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.15);
 }
 
-/* 成功状态 */
+/* 鎴愬姛鐘舵€?*/
 .form-input.success {
   border-color: var(--color-success-fg);
 }
@@ -865,7 +880,7 @@ textarea.form-input {
   resize: vertical;
 }
 
-/* Checkbox & Radio - Stitch 规范 */
+/* Checkbox & Radio - Stitch 瑙勮寖 */
 .form-checkbox,
 .form-radio {
   width: 1rem;
@@ -918,9 +933,6 @@ textarea.form-input {
   border-radius: 8px;
   padding: 1.5rem;
   position: relative;
-  display: grid;
-  grid-template-rows: 4rem minmax(0, 1fr);
-  height: 27rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
@@ -933,34 +945,17 @@ textarea.form-input {
   font-size: 1rem;
   font-weight: 600;
   color: var(--color-fg-default);
+  margin-bottom: 1rem;
   font-family: var(--font-display);
 }
 
-.chart-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  height: 4rem;
-}
-
-.chart-legend-wrap {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-content: flex-start;
-  gap: 0.75rem 1rem;
-  overflow: hidden;
-}
-
-/* 图表网格线 - Stitch 规范：10% opacity */
+/* 鍥捐〃缃戞牸绾?- Stitch 瑙勮寖锛?0% opacity */
 .chart-grid-line {
   stroke: var(--color-outline-variant);
   stroke-opacity: 0.1;
 }
 
-/* 图表 Tooltip - Stitch 规范：Glassmorphism */
+/* 鍥捐〃 Tooltip - Stitch 瑙勮寖锛欸lassmorphism */
 .chart-tooltip {
   background-color: var(--color-surface-container-highest);
   border-radius: 8px;
@@ -987,7 +982,7 @@ textarea.form-input {
   color: var(--color-fg-default);
 }
 
-/* 图表图例 */
+/* 鍥捐〃鍥句緥 */
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1011,7 +1006,7 @@ textarea.form-input {
 
 /* ============================================
    Status Badges - Stitch Design
-   使用 full 圆角，与矩形布局形成对比
+   浣跨敤 full 鍦嗚锛屼笌鐭╁舰甯冨眬褰㈡垚瀵规瘮
    ============================================ */
 
 .badge {
@@ -1166,10 +1161,6 @@ textarea.form-input {
   background-color: #ffffff;
   border-radius: 8px;
   padding: 1.25rem;
-  min-height: 9.5rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
   transition: box-shadow 0.2s ease, transform 0.2s ease;
   will-change: box-shadow, transform;
   position: relative;
@@ -1191,7 +1182,7 @@ textarea.form-input {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-/* Metric Card 装饰性渐变 */
+/* Metric Card 瑁呴グ鎬ф笎鍙?*/
 .metric-card-accent {
   position: absolute;
   top: 0;
@@ -1213,8 +1204,6 @@ textarea.form-input {
   color: var(--color-fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  min-height: 2rem;
-  line-height: 1.25;
 }
 
 .metric-value {
@@ -1223,32 +1212,12 @@ textarea.form-input {
   color: var(--color-fg-default);
   margin-top: 0.25rem;
   font-family: var(--font-display);
-  min-height: 2.5rem;
-  display: flex;
-  align-items: center;
 }
 
 .metric-trend {
   font-size: 0.75rem;
   font-weight: 500;
   margin-top: 0.5rem;
-  min-height: 1.25rem;
-}
-
-@media (max-width: 768px) {
-  .chart-container {
-    grid-template-rows: 7.5rem minmax(0, 1fr);
-    height: 34rem;
-  }
-
-  .chart-header {
-    flex-direction: column;
-    height: 7.5rem;
-  }
-
-  .chart-legend-wrap {
-    justify-content: flex-start;
-  }
 }
 
 .metric-trend-up {
@@ -1259,7 +1228,7 @@ textarea.form-input {
   color: var(--color-danger-fg);
 }
 
-/* Metric Card 渐变背景变体 */
+/* Metric Card 娓愬彉鑳屾櫙鍙樹綋 */
 .metric-gradient {
   background: linear-gradient(135deg, #ffffff 0%, #f7f9fb 100%);
 }
@@ -1366,7 +1335,7 @@ textarea.form-input {
   }
 }
 
-/* 用于 overlay 的简单淡入动画 */
+/* 鐢ㄤ簬 overlay 鐨勭畝鍗曟贰鍏ュ姩鐢?*/
 .animate-fade-in {
   animation: fadeInOverlay 0.2s ease-out forwards;
 }
@@ -1380,7 +1349,7 @@ textarea.form-input {
   }
 }
 
-/* Metric card hover effect - CSS 替代 motion */
+/* Metric card hover effect - CSS 鏇夸唬 motion */
 .metric-card-hover {
   transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
 }
@@ -1392,7 +1361,7 @@ textarea.form-input {
 
 /* ============================================
    Ant Design Dark Mode Overrides - Stitch Design
-   修复时间组件白底问题
+   淇鏃堕棿缁勪欢鐧藉簳闂
    ============================================ */
 
 .dark-mode .ant-picker {
@@ -1549,7 +1518,7 @@ textarea.form-input {
 
 /* ============================================
    Native Date/Time Input Dark Mode
-   原生日期时间输入框暗黑模式样式
+   鍘熺敓鏃ユ湡鏃堕棿杈撳叆妗嗘殫榛戞ā寮忔牱寮?
    ============================================ */
 
 .dark-mode input[type="date"],
@@ -1591,7 +1560,7 @@ textarea.form-input {
 
 /* ============================================
    Status Badge Dynamic Colors - Stitch Design
-   动态配色方案：Active绿色，Paused黄灰色
+   鍔ㄦ€侀厤鑹叉柟妗堬細Active缁胯壊锛孭aused榛勭伆鑹?
    ============================================ */
 
 .status-active {
@@ -1687,7 +1656,7 @@ textarea.form-input {
 
 /* ============================================
    Browser & OS Brand Icons - Dynamic Display
-   品牌图标动态显示方案
+   鍝佺墝鍥炬爣鍔ㄦ€佹樉绀烘柟妗?
    ============================================ */
 
 .brand-icon {
@@ -1773,7 +1742,7 @@ textarea.form-input {
 
 /* ============================================
    Action Buttons - Dynamic Colors
-   操作按钮动态配色：创建绿色、暂停黄色、删除红色
+   鎿嶄綔鎸夐挳鍔ㄦ€侀厤鑹诧細鍒涘缓缁胯壊銆佹殏鍋滈粍鑹层€佸垹闄ょ孩鑹?
    ============================================ */
 
 /* Create/New Button - Green */
@@ -1929,7 +1898,7 @@ textarea.form-input {
 
 /* ============================================
    Modal/Dialog Button Styles
-   弹窗按钮样式
+   寮圭獥鎸夐挳鏍峰紡
    ============================================ */
 
 .modal-btn-primary {
@@ -1985,7 +1954,7 @@ textarea.form-input {
 
 /* ============================================
    No-Line Rule - Background Color Layering
-   使用背景色层次代替边框分隔
+   浣跨敤鑳屾櫙鑹插眰娆′唬鏇胯竟妗嗗垎闅?
    ============================================ */
 
 /* Section Dividers - Use background shift instead of border */
@@ -2109,7 +2078,7 @@ textarea.form-input {
 
 /* ============================================
    Mobile Chart Tabs - Trends Page
-   移动端图表 Tab 切换组件
+   绉诲姩绔浘琛?Tab 鍒囨崲缁勪欢
    ============================================ */
 
 .mobile-chart-tabs {
@@ -2168,31 +2137,65 @@ textarea.form-input {
 
 /* ============================================
    Mobile Responsive Optimizations - Stitch Design
-   移动端响应式优化
+   绉诲姩绔搷搴斿紡浼樺寲
    ============================================ */
 
-/* Mobile Bottom Navigation - Show only on mobile (< 768px) */
-@media (max-width: 768px) {
+/* Mobile Bottom Navigation - Show only on phones (< 640px) */
+@media (max-width: 639px) {
   .mobile-bottom-nav {
-    display: flex !important; /* 强制显示底部导航 */
+    display: flex !important;
   }
-  
-  /* Hide sidebar on mobile - completely remove from layout */
-  aside {
+
+  /* Hide sidebar on mobile */
+  .app-sidebar {
     display: none !important;
   }
-  
-  /* Page content owns the mobile safe area via the Layout scroll container. */
+
+  /* Adjust main content for bottom nav */
+  main {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* Tablet: 72px icon rail (640鈥?023px) */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .app-sidebar {
+    display: flex !important;
+    width: 72px !important;
+    transform: none !important;
+  }
+
+  .app-sidebar > div:first-child {
+    padding: 16px 8px;
+    justify-content: center;
+  }
+
+  .app-sidebar > div:first-child h1,
+  .app-sidebar nav p,
+  .app-sidebar nav span {
+    display: none;
+  }
+
+  .app-sidebar nav a {
+    justify-content: center;
+    padding: 12px 0;
+    margin-inline: 8px;
+    gap: 0;
+  }
+
+  main {
+    margin-left: 72px;
+  }
 }
 
 /* Desktop - Hide bottom navigation */
-@media (min-width: 769px) {
+@media (min-width: 640px) {
   .mobile-bottom-nav {
     display: none !important;
   }
 }
 
-/* Mobile Bottom Navigation Bar - 支持横向滚动 */
+/* Mobile Bottom Navigation Bar - 鏀寔妯悜婊氬姩 */
 .mobile-bottom-nav {
   display: none;
   position: fixed;
@@ -2204,32 +2207,24 @@ textarea.form-input {
   border-top: none;
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
   z-index: 100;
-  padding: 0 8px;
-  justify-content: flex-start; /* 改为左对齐以支持滚动 */
+  padding: 0 4px;
+  justify-content: space-around;
   align-items: center;
-  overflow-x: auto; /* 允许横向滚动 */
+  overflow: hidden;
   overflow-y: hidden;
-  white-space: nowrap; /* 防止换行 */
-  -webkit-overflow-scrolling: touch; /* iOS 平滑滚动 */
-  scrollbar-width: none; /* Firefox 隐藏滚动条 */
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch; /* iOS 骞虫粦婊氬姩 */
+  scrollbar-width: none; /* Firefox 闅愯棌婊氬姩鏉?*/
 }
 
-/* 隐藏滚动条但保留滚动功能 */
+/* 闅愯棌婊氬姩鏉′絾淇濈暀婊氬姩鍔熻兘 */
 .mobile-bottom-nav::-webkit-scrollbar {
   display: none;
 }
 
-/* 滚动提示渐变遮罩 - 暗示右侧有更多内容 */
+/* 婊氬姩鎻愮ず娓愬彉閬僵 - 5 椤瑰浐瀹氬竷灞€涓嬩笉鍐嶉渶瑕?*/
 .mobile-bottom-nav::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 40px;
-  background: linear-gradient(90deg, transparent, var(--color-surface-container));
-  pointer-events: none;
-  z-index: 1;
+  display: none;
 }
 
 .dark-mode .mobile-bottom-nav::after {
@@ -2246,13 +2241,21 @@ textarea.form-input {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 16px;
+  padding: 8px 6px;
   border-radius: 12px;
   transition: all 0.2s ease;
   color: var(--color-fg-muted);
   text-decoration: none;
   gap: 4px;
-  flex-shrink: 0;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+button.mobile-nav-item {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
 
 .mobile-nav-item:active {
@@ -2275,16 +2278,11 @@ textarea.form-input {
 
 /* ============================================
    Tablet adjustments (769px - 1024px)
-   平板适配
+   骞虫澘閫傞厤
    ============================================ */
 
-/* Tablet sidebar - narrower */
-@media (min-width: 769px) and (max-width: 1024px) {
-  aside {
-    width: 200px !important;
-  }
-
-  /* Tablet content padding */
+/* Tablet content padding (rail handles width in the 640鈥?023px block) */
+@media (min-width: 769px) and (max-width: 1023px) {
   main > div[role="main"] {
     padding: 16px !important;
   }
@@ -2292,7 +2290,7 @@ textarea.form-input {
 
 /* ============================================
    Small mobile devices (< 375px)
-   小屏手机适配
+   灏忓睆鎵嬫満閫傞厤
    ============================================ */
 
 /* Small mobile devices */
@@ -2331,4 +2329,123 @@ textarea.form-input {
       padding-bottom: calc(64px + env(safe-area-inset-bottom));
     }
   }
+}
+
+/* ============================================
+   Error Boundary Styles
+   閿欒杈圭晫鏍峰紡
+   ============================================ */
+
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background-color: var(--color-canvas-inset);
+}
+
+.error-boundary-content {
+  max-width: 480px;
+  text-align: center;
+}
+
+.error-boundary-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+  color: var(--color-warning-fg);
+}
+
+.error-boundary-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-fg-default);
+  margin-bottom: 12px;
+}
+
+.error-boundary-message {
+  font-size: 1rem;
+  color: var(--color-fg-muted);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.error-boundary-details {
+  text-align: left;
+  margin-bottom: 24px;
+  padding: 16px;
+  background-color: var(--color-surface-container);
+  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+}
+
+.error-boundary-details summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  margin-bottom: 8px;
+}
+
+.error-boundary-stack {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--color-danger-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  padding: 12px;
+  background-color: var(--color-surface-container-low);
+  border-radius: 4px;
+  overflow-x: auto;
+  max-height: 200px;
+}
+
+.error-boundary-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.error-boundary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.error-boundary-button.primary {
+  background-color: var(--color-accent-fg);
+  color: var(--color-fg-on-emphasis);
+}
+
+.error-boundary-button.primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.error-boundary-button.secondary {
+  background-color: var(--color-surface-container-high);
+  color: var(--color-fg-default);
+  border: 1px solid var(--color-border-default);
+}
+
+.error-boundary-button.secondary:hover {
+  background-color: var(--color-surface-container);
+}
+
+.dark-mode .error-boundary-details {
+  background-color: var(--color-surface-container);
+}
+
+.dark-mode .error-boundary-stack {
+  background-color: var(--color-surface-container-low);
 }
