@@ -261,8 +261,8 @@ export const ConversionsLog = () => {
       render: (conv) => (
         <span className={cn(
           'text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm',
-          conv.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
-            conv.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-error/10 text-error',
+          conv.status === 'Approved' ? 'bg-success/10 text-success' :
+            conv.status === 'Pending' ? 'bg-warning/10 text-warning' : 'bg-error/10 text-error',
         )}>{conv.status}</span>
       ),
     },
@@ -272,8 +272,8 @@ export const ConversionsLog = () => {
       render: (conv) => (
         <span className={cn(
           'text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm',
-          conv.postbackStatus === 'Success' ? 'bg-emerald-100 text-emerald-700' :
-            conv.postbackStatus === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-error/10 text-error',
+          conv.postbackStatus === 'Success' ? 'bg-success/10 text-success' :
+            conv.postbackStatus === 'Pending' ? 'bg-warning/10 text-warning' : 'bg-error/10 text-error',
         )}>{conv.postbackStatus}</span>
       ),
     },
@@ -361,7 +361,7 @@ export const ConversionsLog = () => {
         </div>
         <div className="bg-surface-container-lowest p-4 whisper-shadow">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-100 text-emerald-700 rounded-sm">
+            <div className="p-2 bg-success/10 text-success rounded-sm">
               <TrendingUp size={20} />
             </div>
             <div>
@@ -383,7 +383,7 @@ export const ConversionsLog = () => {
         </div>
         <div className="bg-surface-container-lowest p-4 whisper-shadow">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 text-amber-700 rounded-sm">
+            <div className="p-2 bg-warning/10 text-warning rounded-sm">
               <DollarSign size={20} />
             </div>
             <div>
@@ -523,11 +523,11 @@ export const ConversionsLog = () => {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className={cn(
                 'rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest',
-                conv.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : conv.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-error/10 text-error'
+                conv.status === 'Approved' ? 'bg-success/10 text-success' : conv.status === 'Pending' ? 'bg-warning/10 text-warning' : 'bg-error/10 text-error'
               )}>{conv.status}</span>
               <span className={cn(
                 'rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest',
-                conv.postbackStatus === 'Success' ? 'bg-emerald-100 text-emerald-700' : conv.postbackStatus === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-error/10 text-error'
+                conv.postbackStatus === 'Success' ? 'bg-success/10 text-success' : conv.postbackStatus === 'Pending' ? 'bg-warning/10 text-warning' : 'bg-error/10 text-error'
               )}>{conv.postbackStatus}</span>
               <span className="text-xs text-on-surface-variant">{conv.offer}</span>
             </div>

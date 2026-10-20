@@ -554,8 +554,46 @@ export const Landings = () => {
         />
       </div>
 
+      <div className="md:hidden">
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredLandings.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          label="landings"
+        />
+      </div>
+
+      <div className="space-y-3 md:hidden">
+        {paginatedLandings.map((landing) => (
+          <article key={landing.id} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-bold text-primary">{landing.name}</h2>
+                <p className="mt-0.5 truncate text-xs text-on-surface-variant">{landing.url || 'No URL'}</p>
+              </div>
+              <span className={landing.status === 'active' ? 'shrink-0 rounded-full bg-success/10 px-2 py-1 text-[10px] font-bold uppercase text-success' : 'shrink-0 rounded-full bg-warning/10 px-2 py-1 text-[10px] font-bold uppercase text-warning'}>{landing.status}</span>
+            </div>
+            <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
+              <div><dt className="text-fg-subtle">Clicks</dt><dd className="mt-0.5 font-mono text-fg-default">{(landing.clicks || 0).toLocaleString()}</dd></div>
+              <div><dt className="text-fg-subtle">Conv.</dt><dd className="mt-0.5 font-mono text-fg-default">{(landing.conversions || 0).toLocaleString()}</dd></div>
+              <div><dt className="text-fg-subtle">CR</dt><dd className="mt-0.5 font-mono text-secondary">{typeof landing.cr === 'number' ? String(landing.cr) + '%' : landing.cr}</dd></div>
+            </dl>
+            <div className="mt-3 flex items-center justify-between border-t border-outline-variant/10 pt-2">
+              <span className="text-xs text-on-surface-variant">{landing.group || 'Default'}</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => handleEditLanding(landing as LandingPage)} className="rounded-md border border-outline-variant/30 px-3 py-1.5 text-xs text-fg-default">Edit</button>
+                <button type="button" onClick={() => handleDeleteLanding(landing.id)} className="rounded-md border border-error/20 px-3 py-1.5 text-xs text-error">Delete</button>
+              </div>
+            </div>
+          </article>
+        ))}
+        {paginatedLandings.length === 0 && <div className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">No landing pages found</div>}
+      </div>
+
       {/* Landing Pages Table - 使用虚拟滚动 */}
-      <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
+      <div className="hidden bg-surface-container-lowest whisper-shadow overflow-hidden md:block">
         <VirtualTableEnhanced
           tableId="landings"
           columns={[
