@@ -261,8 +261,28 @@ export const RuleManagement = () => {
         </div>
       </div>
 
+      <div className="space-y-3 md:hidden">
+        {filteredRules.map((rule) => (
+          <article key={rule.id} className="rounded-xl border border-border-default bg-surface p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-bold text-fg-default">{rule.name}</h2>
+                <p className="mt-0.5 text-xs text-fg-muted">{rule.type} · priority {rule.priority}</p>
+              </div>
+              <span className={rule.status === 'active' ? 'shrink-0 rounded-full bg-success/10 px-2 py-1 text-[10px] font-bold uppercase text-success' : 'shrink-0 rounded-full bg-warning/10 px-2 py-1 text-[10px] font-bold uppercase text-warning'}>{rule.status}</span>
+            </div>
+            <div className="mt-3 flex justify-end gap-2 border-t border-border-default pt-2">
+              <button type="button" onClick={() => handleToggleStatus(rule)} className="rounded-md border border-border-default px-3 py-1.5 text-xs text-fg-default">{rule.enabled ? 'Disable' : 'Enable'}</button>
+              <button type="button" onClick={() => handleEdit(rule)} className="rounded-md border border-border-default px-3 py-1.5 text-xs text-fg-default">Edit</button>
+              <button type="button" onClick={() => handleDelete(rule.id)} className="rounded-md border border-error/20 px-3 py-1.5 text-xs text-error">Delete</button>
+            </div>
+          </article>
+        ))}
+        {filteredRules.length === 0 && <div className="rounded-xl border border-dashed border-border-default p-8 text-center text-sm text-fg-muted">No rules found</div>}
+      </div>
+
       {/* Rules Table */}
-      <div className="bg-surface rounded-lg border border-border-default overflow-hidden">
+      <div className="hidden overflow-hidden rounded-lg border border-border-default bg-surface md:block">
         <div className="overflow-x-auto">
           {filteredRules.length > 0 ? (
                     <VirtualTableEnhanced

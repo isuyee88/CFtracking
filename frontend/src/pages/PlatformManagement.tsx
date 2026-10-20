@@ -199,8 +199,30 @@ export const PlatformManagement = () => {
         </div>
       </div>
 
+      <div className="space-y-3 md:hidden">
+        {filteredPlatforms.map((platform) => (
+          <article key={platform.id} className="rounded-xl border border-border-default bg-surface p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-bold text-fg-default">{platform.name}</h2>
+                <p className="mt-0.5 text-xs text-fg-muted">{platform.type.toUpperCase()} · {platform.version}</p>
+              </div>
+              <span className={platform.status === 'active' ? 'shrink-0 rounded-full bg-success/10 px-2 py-1 text-[10px] font-bold uppercase text-success' : 'shrink-0 rounded-full bg-fg-muted/10 px-2 py-1 text-[10px] font-bold uppercase text-fg-muted'}>{platform.status === 'active' ? 'Active' : 'Inactive'}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border-default pt-2">
+              <span className="text-xs text-fg-muted">{platform.configured ? 'Configured' : 'Not configured'}</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => handleConfigure(platform)} className="rounded-md border border-border-default px-3 py-1.5 text-xs text-fg-default">Configure</button>
+                <button type="button" onClick={() => handleTestConnection(platform)} disabled={testingId === platform.id || !platform.configured} className="rounded-md border border-border-default px-3 py-1.5 text-xs text-fg-default disabled:opacity-40">Test</button>
+              </div>
+            </div>
+          </article>
+        ))}
+        {filteredPlatforms.length === 0 && <div className="rounded-xl border border-dashed border-border-default p-8 text-center text-sm text-fg-muted">No platforms found</div>}
+      </div>
+
       {/* Platforms Table */}
-      <div className="bg-surface rounded-lg border border-border-default overflow-hidden">
+      <div className="hidden overflow-hidden rounded-lg border border-border-default bg-surface md:block">
         <div className="overflow-x-auto">
           {filteredPlatforms.length > 0 ? (
                     <VirtualTableEnhanced
