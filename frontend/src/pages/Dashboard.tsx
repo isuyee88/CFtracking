@@ -1308,6 +1308,7 @@ export const Dashboard = () => {
                   </div>
                   <VirtualTableEnhanced
                     tableId={`dashboard-${entityKey}`}
+                    compactToolbar
                     columns={virtualColumns}
                     data={data}
                     rowHeight={48}
@@ -1355,6 +1356,7 @@ export const Dashboard = () => {
             ) : (
               <VirtualTableEnhanced
                 tableId="dashboard-recent-clicks"
+                compactToolbar
                 columns={config.recentClicksColumns.map(key => {
                   const col = RECENT_CLICKS_COLUMNS.find(c => c.key === key);
                   // 鍔ㄦ€佹坊鍔?sorter 鍑芥暟

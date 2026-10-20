@@ -1,4 +1,4 @@
-﻿/**
+/**
  * File: index.css
  * Purpose: 鍏ㄥ眬鏍峰紡鍜屼富棰樺彉閲忓畾涔?- Linear Design System
  * Input/Output: 瀹氫箟棰滆壊绯荤粺銆佸瓧浣撱€佸伐鍏风被锛屼緵鍏ㄥ簲鐢ㄤ娇鐢?
@@ -2449,3 +2449,34 @@ button.mobile-nav-item {
 .dark-mode .error-boundary-stack {
   background-color: var(--color-surface-container-low);
 }
+
+/* Date range controls must shrink inside mobile toolbars. */
+.date-range-picker-wrapper {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.date-range-picker-wrapper .ant-picker {
+  width: 100%;
+  min-width: 0;
+}
+
+.date-range-picker-wrapper .ant-picker-input {
+  min-width: 0;
+}
+
+.date-range-picker-wrapper .ant-picker-input > input {
+  min-width: 0;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .date-range-picker-wrapper .ant-picker {
+    padding-inline: 8px;
+  }
+
+  .date-range-picker-wrapper .ant-picker-input > input {
+    font-size: 12px;
+  }
+}
+

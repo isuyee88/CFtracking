@@ -419,9 +419,9 @@ export const Landings = () => {
           <h1 className="text-3xl font-display font-bold text-primary">Landing Pages</h1>
           <p className="text-sm text-on-surface-variant">Manage and optimize your landing pages</p>
         </div>
-        <div className="flex gap-3 items-center">
+        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
           {/* Date Range Picker */}
-          <div className="w-[280px]">
+          <div className="w-full sm:w-[280px]">
             <QuickDateRangePicker
               value="today"
               onChange={(preset, range) => {

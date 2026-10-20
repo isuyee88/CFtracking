@@ -460,9 +460,9 @@ export const TrafficSources = () => {
           <h1 className="text-3xl font-display font-bold text-primary">Traffic Sources</h1>
           <p className="text-sm text-on-surface-variant">Manage your traffic sources and campaigns</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex w-full flex-wrap gap-3">
           {/* Date Range Picker */}
-          <div className="w-[280px]">
+          <div className="w-full sm:w-[280px]">
             <QuickDateRangePicker
               value="today"
               onChange={(preset, range) => {

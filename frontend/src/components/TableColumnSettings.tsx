@@ -104,12 +104,14 @@ export function TableColumnSettings({
   onToggle,
   onMove,
   onReset,
+  compact = false,
 }: {
   items: TableColumnItem[];
   visible: string[];
   onToggle: (key: string) => void;
   onMove: (key: string, direction: -1 | 1) => void;
   onReset: () => void;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -130,10 +132,16 @@ export function TableColumnSettings({
         className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-default bg-surface px-2.5 text-xs font-medium text-fg-default hover:bg-surface-container-high focus-visible:ring-2 focus-visible:ring-accent-fg"
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label="Table columns"
+        title="Table columns"
       >
         <Columns3 size={14} aria-hidden="true" />
-        Columns
-        <span className="rounded bg-surface-container-high px-1 text-[10px] text-fg-subtle">{visible.length}</span>
+        {!compact && (
+          <>
+            Columns
+            <span className="rounded bg-surface-container-high px-1 text-[10px] text-fg-subtle">{visible.length}</span>
+          </>
+        )}
       </button>
 
       {open && typeof document !== 'undefined' && createPortal(

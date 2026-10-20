@@ -38,6 +38,7 @@ export interface VirtualTableEnhancedProps<T = any> {
   onRowClick?: (row: T, index: number) => void;
   headerClassName?: string;
   rowClassName?: (row: T, index: number) => string;
+  compactToolbar?: boolean;
 
   // === 新增：筛选和排序配置 ===
   tableId?: string; // 表格唯一标识，用于 localStorage 持久化
@@ -61,6 +62,7 @@ export function VirtualTableEnhanced<T = any>({
   onRowClick,
   headerClassName,
   rowClassName,
+  compactToolbar = false,
   tableId = 'default-table',
   onChange,
 }: VirtualTableEnhancedProps<T>) {
@@ -244,15 +246,18 @@ export function VirtualTableEnhanced<T = any>({
 
   return (
     <div className={cn('relative rounded-md border border-gray-200 bg-surface', className)}>
-      <div className="flex h-9 items-center justify-between gap-2 border-b border-outline-variant/20 px-2">
-        <span className="text-[11px] font-medium text-fg-subtle">{processedData.length} rows</span>
-        <TableColumnSettings
-          items={columnItems}
-          visible={visible}
-          onToggle={toggle}
-          onMove={move}
-          onReset={reset}
-        />
+      <div className={`flex items-center justify-between gap-2 border-b border-outline-variant/20 px-2 ${compactToolbar ? 'h-8' : 'h-9'}`}>
+        {!compactToolbar && <span className="text-[11px] font-medium text-fg-subtle">{processedData.length} rows</span>}
+        <div className={compactToolbar ? 'ms-auto' : undefined}>
+          <TableColumnSettings
+            items={columnItems}
+            visible={visible}
+            onToggle={toggle}
+            onMove={move}
+            onReset={reset}
+            compact={compactToolbar}
+          />
+        </div>
       </div>
       <div
         ref={containerRef}
