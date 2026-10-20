@@ -1,210 +1,132 @@
-/**
+﻿/**
  * File: Layout.tsx
- * Purpose: 主布局组件，包含侧边栏、头部导航和昼夜模式切换
- * Input/Output: 接收子组件，渲染完整页面布局
- * Logic: 提供导航、用户信息和全局昼夜模式切换功能
+ * Purpose: 涓诲竷灞€缁勪欢锛屽寘鍚晶杈规爮銆佸ご閮ㄥ鑸拰鏄煎妯″紡鍒囨崲
+ * Input/Output: 鎺ユ敹瀛愮粍浠讹紝娓叉煋瀹屾暣椤甸潰甯冨眬
+ * Logic: 鎻愪緵瀵艰埅銆佺敤鎴蜂俊鎭拰鍏ㄥ眬鏄煎妯″紡鍒囨崲鍔熻兘
  */
 
 import React, { useState, useEffect } from 'react';
 import {
-  LayoutDashboard, 
-  Zap, 
-  Image, 
-  Gift, 
-  Globe, 
-  Network, 
-  BarChart3, 
-  History, 
-  Settings, 
+  LayoutDashboard,
+  Zap,
+  Image,
+  Gift,
+  Globe,
+  Network,
+  Settings,
   HelpCircle,
-  Menu,
+  Search,
   X,
-  Bell,
+  MoreHorizontal,
   TrendingUp,
-  Wallet,
   Sun,
   Moon,
-  FlaskConical,
+  Monitor,
   LineChart,
   MousePointerClick,
   CheckCircle,
   Shield,
   ThumbsUp,
   Target,
-  Home,
-  FileDown,
-  Calculator,
-  Brain,
-  Filter
+  BarChart3,
+  Layers
 } from 'lucide-react';
-import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
+import { Link, useLocation, Outlet } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { loadBootstrapForLocation } from '../services/bootstrap';
-import { Breadcrumb } from './Breadcrumb';
+import { preloadPage, preloadOnIdle } from '../utils/preload';
+import { useTheme } from '../context/ThemeContext';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-function safeGetStorageItem(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
+// 涓婚鐢?ThemeProvider 缁熶竴绠＄悊锛屽竷灞€灞傚彧娑堣垂鐘舵€併€?
 
-function safeSetStorageItem(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // Ignore storage failures in restricted contexts.
-  }
-}
+// 浼樺寲锛氭坊鍔燗RIA鏍囩鍜屾棤闅滅鏀寔鐨凷idebarItem
+const SidebarItem = ({
+  icon: Icon,
+  label,
+  to,
+  active = false,
+  onClick
+}: {
+  icon: any,
+  label: string,
+  to: string,
+  active?: boolean,
+  onClick?: () => void
+}) => {
+  // 鎮仠鏃堕鍔犺浇椤甸潰
+  const handleMouseEnter = () => {
+    preloadPage(to);
+  };
 
-// 昼夜模式 Hook - Stitch Design: 添加过渡动画
-function useDarkMode() {
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    // 从 localStorage 读取用户偏好，如果没有则根据时间自动判断
-    const saved = safeGetStorageItem('dark-mode');
-    if (saved !== null) {
-      return saved === 'true';
-    }
-    // 默认根据时间判断：晚上6点到早上6点为暗色模式
-    const hour = new Date().getHours();
-    return hour >= 18 || hour < 6;
-  });
+  // 瑙︽懜鏃堕鍔犺浇椤甸潰锛堢Щ鍔ㄧ鏀寔锛?
+  const handleTouchStart = () => {
+    preloadPage(to);
+  };
 
-  useEffect(() => {
-    // 保存用户偏好到 localStorage
-    safeSetStorageItem('dark-mode', isDarkMode.toString());
-    
-    // 添加过渡动画类
-    document.documentElement.classList.add('theme-transitioning');
-    
-    // 应用或移除 dark-mode 类
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark-mode');
-    } else {
-      document.documentElement.classList.remove('dark-mode');
-    }
-    
-    // 移除过渡动画类
-    const timer = setTimeout(() => {
-      document.documentElement.classList.remove('theme-transitioning');
-    }, 300);
-    
-    return () => clearTimeout(timer);
-  }, [isDarkMode]);
-
-  const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
-
-  return { isDarkMode, toggleDarkMode };
-}
-
-// 优化：添加ARIA标签和无障碍支持的SidebarItem
-const SidebarItem = ({ 
-  icon: Icon, 
-  label, 
-  to, 
-  active = false, 
-  onClick,
-  onPrefetch,
-}: { 
-  icon: any, 
-  label: string, 
-  to: string, 
-  active?: boolean, 
-  onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void,
-  onPrefetch?: () => void,
-}) => (
-  <Link 
-    to={to}
-    onClick={onClick}
-    onMouseEnter={onPrefetch}
-    onFocus={onPrefetch}
-    aria-current={active ? "page" : undefined}
-    aria-label={label}
-    className={cn(
-      "flex items-center gap-3 px-4 py-3 cursor-pointer transition-all group relative rounded-md mx-2",
-      "focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
-      active 
-        ? "bg-accent-muted text-accent-fg font-medium" 
-        : "text-fg-muted hover:bg-surface-container hover:text-fg-default"
-    )}
-  >
-    <Icon size={18} className={cn(active ? "text-accent-fg" : "group-hover:text-fg-default")} aria-hidden="true" />
-    <span className="text-sm">{label}</span>
-    {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent-fg rounded-r-full" aria-hidden="true" />}
-  </Link>
-);
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      onMouseEnter={handleMouseEnter}
+      onTouchStart={handleTouchStart}
+      aria-current={active ? "page" : undefined}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "flex items-center gap-3 px-4 py-3 cursor-pointer transition-all group relative rounded-md mx-2",
+        "focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+        active
+          ? "bg-accent-muted text-accent-fg font-medium"
+          : "text-fg-muted hover:bg-surface-container hover:text-fg-default"
+      )}
+    >
+      <Icon size={18} className={cn(active ? "text-accent-fg" : "group-hover:text-fg-default")} aria-hidden="true" />
+      <span className="text-sm">{label}</span>
+      {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent-fg rounded-r-full" aria-hidden="true" />}
+    </Link>
+  );
+};
 
 export const Layout = () => {
-  // 桌面端默认展开侧边栏，移动端不显示侧边栏（只用底部导航）
-  const [isSidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth >= 1280; // xl breakpoint
-    }
-    return true;
-  });
   const location = useLocation();
-  const navigate = useNavigate();
-  const { isDarkMode, toggleDarkMode } = useDarkMode();
+  const { isDark, mode, cycleMode } = useTheme();
+  const [isMoreOpen, setMoreOpen] = useState(false);
+  const [isSearchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
 
-  const canHoverPrefetch =
-    typeof window !== 'undefined' &&
-    window.innerWidth >= 1024 &&
-    window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-
-  const prefetchRouteBootstrap = async (to: string) => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const nextUrl = new URL(to, window.location.origin);
-    await loadBootstrapForLocation({ url: nextUrl }).catch(() => null);
-  };
-
-  const handleNavigation =
-    (to: string) =>
-    async (event: React.MouseEvent<HTMLAnchorElement>) => {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      await prefetchRouteBootstrap(to);
-      if (typeof window !== 'undefined' && window.innerWidth < 1280) {
-        setSidebarOpen(false);
-      }
-      navigate(to);
-    };
-
-  const handlePrefetch = (to: string) => {
-    if (!canHoverPrefetch) {
-      return;
-    }
-    void prefetchRouteBootstrap(to);
-  };
-
-  // 监听窗口大小变化，自动调整侧边栏状态（仅桌面端）
   useEffect(() => {
-    const handleResize = () => {
-      const shouldBeOpen = window.innerWidth >= 1280;
-      setSidebarOpen(shouldBeOpen);
-    };
+    setMoreOpen(false);
+    setSearchOpen(false);
+    setQuery('');
+  }, [location.pathname]);
 
-    window.addEventListener('resize', handleResize);
-    
-    return () => window.removeEventListener('resize', handleResize);
+  // 绌洪棽鏃堕棿棰勫姞杞介珮棰戣闂〉闈?
+  useEffect(() => {
+    // 寤惰繜鎵ц锛岀‘淇濋椤靛畬鍏ㄥ姞杞?
+    const timer = setTimeout(() => {
+      preloadOnIdle();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+      if (event.key === 'Escape') {
+        setSearchOpen(false);
+        setMoreOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   const navSections = [
@@ -222,34 +144,31 @@ export const Layout = () => {
       items: [
         { icon: Globe, label: "Traffic Sources", to: "/traffic-sources" },
         { icon: Network, label: "Affiliate Networks", to: "/affiliate-networks" },
-        { icon: Home, label: "Domains", to: "/domains" },
       ]
     },
     {
       title: "Report",
       items: [
         { icon: LineChart, label: "Trends", to: "/trends" },
-        { icon: BarChart3, label: "Reports", to: "/reports" },
-        { icon: FileDown, label: "Exported Reports", to: "/exported-reports" },
         { icon: MousePointerClick, label: "Click Log", to: "/audit" },
         { icon: CheckCircle, label: "Conversions", to: "/conversions" },
+        { icon: BarChart3, label: "Reports", to: "/reports" },
       ]
     },
     {
       title: "Tools",
       items: [
         { icon: Zap, label: "Autorules", to: "/rules" },
-        { icon: Filter, label: "Traffic Filter", to: "/traffic-filter" },
         { icon: Shield, label: "Blacklist", to: "/blacklist" },
         { icon: ThumbsUp, label: "Whitelist", to: "/whitelist" },
         { icon: Target, label: "Target", to: "/target" },
-        { icon: Calculator, label: "Custom Metrics", to: "/custom-metrics" },
       ]
     },
     {
       title: "Account",
       items: [
         { icon: Settings, label: "Settings", to: "/settings" },
+        { icon: Layers, label: "Platforms", to: "/platforms" },
         { icon: HelpCircle, label: "Help Center", to: "/help" },
       ]
     }
@@ -257,74 +176,60 @@ export const Layout = () => {
 
   return (
     <div className="flex min-h-screen bg-canvas-inset selection:bg-accent-muted">
-      {isSidebarOpen && (
-        <button
-          type="button"
-          aria-label="Close navigation"
-          className="fixed inset-0 z-40 bg-black/30 xl:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      {/* Skip to Content Link - 鏃犻殰纰嶆敮鎸?*/}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-accent-fg focus:text-on-primary focus:rounded-md focus:font-medium focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
 
       {/* Desktop Sidebar only */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 bg-surface-container-lowest dark:bg-surface-container flex flex-col",
-          "lg:relative lg:translate-x-0",
-          "transition-transform duration-300 ease-out",
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          "app-sidebar fixed inset-y-0 left-0 z-50 bg-surface-container-lowest dark:bg-surface-container flex flex-col shrink-0",
+          "lg:relative"
         )}
         style={{ width: 256 }}
         aria-label="Main navigation"
+        role="navigation"
       >
         <div className="p-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
-            <div 
-              className="w-8 h-8 bg-accent-fg flex items-center justify-center rounded-md" 
+            <div
+              className="w-8 h-8 bg-accent-fg flex items-center justify-center rounded-md"
               aria-hidden="true"
             >
               <TrendingUp size={18} className="text-on-primary" />
             </div>
-            <div className="text-xl font-display font-bold tracking-tight text-fg-default" aria-label="CFTracking shell">
-              CFTracking
-            </div>
+            <h1 className="text-xl font-display font-bold tracking-tight text-fg-default">CFTracking</h1>
           </div>
-          <button
-            type="button"
-            className="rounded-md p-2 text-fg-muted transition-colors hover:bg-surface-container hover:text-fg-default xl:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close navigation"
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
         </div>
 
-        {/* 优化：导航区域添加ARIA标签 */}
+        {/* 浼樺寲锛氬鑸尯鍩熸坊鍔燗RIA鏍囩 */}
         <nav className="flex-1 overflow-y-auto no-scrollbar py-4" aria-label="Sidebar navigation">
           {navSections.map((section) => (
             <div key={section.title} className="mb-6">
-              <p 
-              className="px-4 text-[10px] font-semibold uppercase tracking-wider text-fg-muted mb-2"
+              <p
+                className="px-4 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle mb-2"
                 aria-label={`${section.title} section`}
               >
                 {section.title}
               </p>
               <div className="space-y-1" role="list">
                 {section.items.map((item) => {
-                  // 修复首页 active 判断，支持 HashRouter 的路径格式
-                  const isActive = item.to === "/" 
+                  // 淇棣栭〉 active 鍒ゆ柇锛屾敮鎸?HashRouter 鐨勮矾寰勬牸寮?
+                  const isActive = item.to === "/"
                     ? location.pathname === "/" || location.pathname === ""
-                    : location.pathname === item.to;
-                  
+                    : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+
                   return (
                     <div key={item.to} role="listitem">
-                      <SidebarItem 
-                        icon={item.icon} 
-                        label={item.label} 
+                      <SidebarItem
+                        icon={item.icon}
+                        label={item.label}
                         to={item.to}
                         active={isActive}
-                        onClick={handleNavigation(item.to)}
-                        onPrefetch={() => handlePrefetch(item.to)}
                       />
                     </div>
                   );
@@ -336,128 +241,182 @@ export const Layout = () => {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header - Stitch Design: No-Line 规则 */}
-        <header 
-          className="h-16 bg-surface-container-lowest dark:bg-surface-container flex items-center justify-between px-4 sm:px-6"
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Header - Stitch Design: No-Line 瑙勫垯 */}
+        <header
+          className="h-16 bg-surface-container-lowest dark:bg-surface-container flex items-center justify-between gap-4 px-4 md:px-6"
           role="banner"
         >
-          <div className="flex items-center gap-4 flex-1">
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-border-default bg-surface-container-low px-3 py-2 text-left text-sm text-fg-muted transition-colors hover:border-accent-fg/40 hover:text-fg-default focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2"
+            aria-label="Search pages"
+          >
+            <Search size={17} aria-hidden="true" />
+            <span className="truncate">Search pages鈥?/span>
+            <kbd className="ms-auto hidden rounded border border-border-default px-1.5 py-0.5 text-[10px] text-fg-subtle sm:inline">鈱楰</kbd>
+          </button>
+
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              className="rounded-md p-2 text-fg-muted transition-colors hover:bg-surface-container hover:text-fg-default xl:hidden"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open navigation"
+              onClick={cycleMode}
+              className="rounded-lg bg-surface-container-low p-2 text-fg-muted transition-colors hover:bg-surface-container-high hover:text-fg-default focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2"
+              aria-label={mode === 'system' ? 'Switch to light mode' : mode === 'dark' ? 'Switch to system theme' : 'Switch to dark mode'}
+              title={mode === 'system' ? 'Theme: system' : mode === 'dark' ? 'Theme: dark' : 'Theme: light'}
             >
-              <Menu size={18} aria-hidden="true" />
+              {mode === 'system' ? <Monitor size={18} aria-hidden="true" /> : isDark ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
             </button>
-          </div>
-          
-          <div className="flex items-center gap-2 sm:gap-4">
-            {/* 优化：昼夜模式切换按钮 - 添加ARIA标签 */}
-            <button
-              onClick={toggleDarkMode}
-              className={cn(
-                "hidden sm:block",
-                "p-2 rounded-md transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2",
-                isDarkMode 
-                  ? "bg-surface-container-low text-fg-muted hover:text-fg-default hover:bg-surface-container-high" 
-                  : "bg-surface-container-low text-fg-muted hover:text-fg-default hover:bg-surface-container-high"
-              )}
-              aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
-              aria-pressed={isDarkMode}
-              title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+
+            <Link
+              to="/settings"
+              className="flex items-center gap-2 rounded-lg p-1.5 transition-colors hover:bg-surface-container-low focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2"
+              aria-label="Open settings"
             >
-              <div className="transition-transform duration-300" style={{ transform: isDarkMode ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                {isDarkMode ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
-              </div>
-            </button>
-            
-            {/* 优化：通知按钮 - 添加ARIA标签 */}
-            <button 
-              className="relative cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 rounded-md p-1"
-              aria-label="Notifications"
-            >
-              <Bell size={20} className="text-fg-muted hover:text-fg-default transition-colors" aria-hidden="true" />
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-danger rounded-full" aria-hidden="true" />
-            </button>
-            <div className="h-6 w-px bg-border-default" aria-hidden="true" />
-            
-            {/* 优化：用户信息 - 添加ARIA标签 */}
-            <button 
-              className="flex items-center gap-3 cursor-pointer group focus-visible:ring-2 focus-visible:ring-accent-fg focus-visible:ring-offset-2 rounded-md p-1"
-              aria-label="User Name Elite Partner user menu"
-            >
-              <div className="text-right">
-                <p className="hidden md:block text-sm font-semibold text-fg-default group-hover:text-accent-fg transition-colors">User Name</p>
-                <p className="hidden lg:block text-xs text-fg-muted">Elite Partner</p>
-              </div>
-              <div
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-border-default bg-surface-container text-xs font-semibold text-fg-default"
-                aria-hidden="true"
-              >
-                UN
-              </div>
-            </button>
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-muted text-xs font-semibold text-accent-fg">AD</span>
+              <span className="hidden text-left sm:block">
+                <span className="block text-sm font-semibold text-fg-default">Admin</span>
+                <span className="block text-[11px] text-fg-subtle">Operator</span>
+              </span>
+            </Link>
           </div>
         </header>
 
-        {/* Breadcrumb Navigation */}
-        <Breadcrumb />
-
-        {/* Page Content - 优化：添加ARIA标签 */}
-        <div 
-          className="flex-1 overflow-y-auto p-6 pb-[calc(64px+env(safe-area-inset-bottom)+1.5rem)] md:pb-6 space-y-6 no-scrollbar"
+        {/* Page Content - 浼樺寲锛氭坊鍔燗RIA鏍囩鍜?Skip Link 鐩爣 */}
+        <div
+          id="main-content"
+          className="flex-1 overflow-y-auto p-4 space-y-5 no-scrollbar md:p-6 md:space-y-6"
           role="main"
           aria-label="Page content"
+          tabIndex={-1}
         >
           <Outlet />
         </div>
-      </div>
+      </main>
 
-      {/* Mobile Bottom Navigation - Scrollable */}
+      {isSearchOpen && (
+        <div className="fixed inset-0 z-[130] flex items-start justify-center bg-black/40 p-4 pt-20" onClick={() => setSearchOpen(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Page search"
+            className="w-full max-w-lg overflow-hidden rounded-xl border border-border-default bg-surface-container-lowest shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 border-b border-border-default px-4 py-3">
+              <Search size={18} className="text-fg-subtle" aria-hidden="true" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => event.key === 'Escape' && setSearchOpen(false)}
+                placeholder="Search pages鈥?
+                className="w-full bg-transparent text-sm text-fg-default outline-none placeholder:text-fg-subtle"
+                aria-label="Search pages"
+              />
+              <button type="button" onClick={() => setSearchOpen(false)} aria-label="Close search" className="rounded p-1 text-fg-subtle hover:text-fg-default">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto p-2">
+              {navSections.flatMap((section) => section.items)
+                .filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()))
+                .map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setSearchOpen(false)}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-fg-default hover:bg-surface-container-low"
+                    >
+                      <Icon size={16} className="text-fg-muted" aria-hidden="true" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Bottom Navigation: 4 primary destinations + More */}
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <Link to="/" onClick={handleNavigation('/')} className={cn("mobile-nav-item", (location.pathname === "/" || location.pathname === "") && "active")} title="Dashboard">
-          <LayoutDashboard size={20} aria-hidden="true" />
-          <span>Dashboard</span>
-        </Link>
-        <Link to="/campaigns" onClick={handleNavigation('/campaigns')} className={cn("mobile-nav-item", location.pathname === "/campaigns" && "active")} title="Campaigns">
-          <Zap size={20} aria-hidden="true" />
-          <span>Campaigns</span>
-        </Link>
-        <Link to="/landings" onClick={handleNavigation('/landings')} className={cn("mobile-nav-item", location.pathname === "/landings" && "active")} title="Landings">
-          <Image size={20} aria-hidden="true" />
-          <span>Landings</span>
-        </Link>
-        <Link to="/offers" onClick={handleNavigation('/offers')} className={cn("mobile-nav-item", location.pathname === "/offers" && "active")} title="Offers">
-          <Gift size={20} aria-hidden="true" />
-          <span>Offers</span>
-        </Link>
-        <Link to="/traffic-sources" onClick={handleNavigation('/traffic-sources')} className={cn("mobile-nav-item", location.pathname === "/traffic-sources" && "active")} title="Traffic Sources">
-          <Globe size={20} aria-hidden="true" />
-          <span>Sources</span>
-        </Link>
-        <Link to="/trends" onClick={handleNavigation('/trends')} className={cn("mobile-nav-item", location.pathname === "/trends" && "active")} title="Trends">
-          <LineChart size={20} aria-hidden="true" />
-          <span>Trends</span>
-        </Link>
-        <Link to="/audit" onClick={handleNavigation('/audit')} className={cn("mobile-nav-item", location.pathname === "/audit" && "active")} title="Click Log">
-          <MousePointerClick size={20} aria-hidden="true" />
-          <span>Clicks</span>
-        </Link>
-        <Link to="/rules" onClick={handleNavigation('/rules')} className={cn("mobile-nav-item", location.pathname === "/rules" && "active")} title="Autorules">
-          <Shield size={20} aria-hidden="true" />
-          <span>Autorules</span>
-        </Link>
-        <Link to="/auto-optimization" onClick={handleNavigation('/auto-optimization')} className={cn("mobile-nav-item", location.pathname.startsWith("/auto-optimization") && "active")} title="Auto Optimization">
-          <Brain size={20} aria-hidden="true" />
-          <span>自动化</span>
-        </Link>
-        <Link to="/settings" onClick={handleNavigation('/settings')} className={cn("mobile-nav-item", location.pathname === "/settings" && "active")} title="Settings">
-          <Settings size={20} aria-hidden="true" />
-          <span>Settings</span>
-        </Link>
+        {[
+          { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+          { to: '/campaigns', label: 'Campaigns', icon: Zap },
+          { to: '/offers', label: 'Offers', icon: Gift },
+          { to: '/audit', label: 'Clicks', icon: MousePointerClick },
+        ].map((item) => {
+          const Icon = item.icon;
+          const active = item.to === '/' ? location.pathname === '/' : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={cn('mobile-nav-item', active && 'active')}
+              title={item.label}
+              onMouseEnter={() => preloadPage(item.to)}
+              onTouchStart={() => preloadPage(item.to)}
+            >
+              <Icon size={20} aria-hidden="true" />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+        <button
+          type="button"
+          className={cn('mobile-nav-item', isMoreOpen && 'active')}
+          onClick={() => setMoreOpen(true)}
+          title="More"
+          aria-label="More navigation"
+          aria-expanded={isMoreOpen}
+        >
+          <MoreHorizontal size={20} aria-hidden="true" />
+          <span>More</span>
+        </button>
       </nav>
+
+      {isMoreOpen && (
+        <div className="fixed inset-0 z-[120] bg-black/40" onClick={() => setMoreOpen(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="More navigation"
+            className="absolute inset-x-0 bottom-0 max-h-[82vh] overflow-y-auto rounded-t-2xl border-t border-border-default bg-surface-container-lowest p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-fg-default">All pages</p>
+              <button type="button" onClick={() => setMoreOpen(false)} aria-label="Close navigation" className="rounded p-1 text-fg-subtle hover:text-fg-default">
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+            {navSections.map((section) => (
+              <div key={section.title} className="mb-4">
+                <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">{section.title}</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        onClick={() => setMoreOpen(false)}
+                        className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-fg-default hover:bg-surface-container-low"
+                      >
+                        <Icon size={16} className="text-fg-muted" aria-hidden="true" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

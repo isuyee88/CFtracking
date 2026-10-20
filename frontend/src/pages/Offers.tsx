@@ -1,16 +1,16 @@
-/**
+﻿/**
  * File: Offers.tsx
- * Purpose: Offers 管理页面，支持完整的 CRUD 操作
- * Input/Output: 显示 Offer 列表，支持创建、编辑、删除
- * Logic: 使用 EntityForm 组件实现表单，支持搜索、筛选、分页
+ * Purpose: Offers 绠＄悊椤甸潰锛屾敮鎸佸畬鏁寸殑 CRUD 鎿嶄綔
+ * Input/Output: 鏄剧ず Offer 鍒楄〃锛屾敮鎸佸垱寤恒€佺紪杈戙€佸垹闄?
+ * Logic: 浣跨敤 EntityForm 缁勪欢瀹炵幇琛ㄥ崟锛屾敮鎸佹悳绱€佺瓫閫夈€佸垎椤?
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Gift, 
-  Plus, 
-  Trash2, 
-  Edit3, 
+import {
+  Gift,
+  Plus,
+  Trash2,
+  Edit3,
   Search,
   Filter,
   ChevronLeft,
@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Play,
   Pause,
+  Copy,
   Check,
   X,
   Loader2,
@@ -29,47 +30,19 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
-import {
-  fetchOffers,
-  createOffer,
-  updateOffer,
-  deleteOffer,
-  fetchAffiliateNetworks,
-  uploadHostedAsset,
-} from '../services/api';
+import { fetchOffers, createOffer, updateOffer, deleteOffer, fetchAffiliateNetworks } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatOfferForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 import { useToast } from '../components/Toast';
-import { readBootstrapPage } from '../services/bootstrap';
-import { COUNTRIES, getCountryLabel } from '../data/countries';
-import { useLocation } from 'react-router-dom';
-import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
-import { truncateLabel } from '../utils/text';
+import { usePageData } from '@/context/DataCacheContext';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-function formatOfferUrlForDisplay(value: string | undefined): string {
-  if (!value) return '—';
-  try {
-    return new URL(value).host;
-  } catch {
-    return truncateLabel(value, DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT);
-  }
-}
-
 type RedirectType = 'http' | 'meta' | 'js' | 'js_blank' | 'double' | 'remote';
-type ActionType = 'local' | 'redirect' | 'preload' | 'action';
-type OfferHostingMode = 'hosted' | 'local' | 'zip';
-type HostedFileValue = { name?: string; type?: string; size?: number; base64?: string };
-type OfferFormData = Partial<Offer> & {
-  hostMode?: OfferHostingMode;
-  localHtml?: string;
-  zipFile?: HostedFileValue | null;
-};
 
 interface Offer {
   id: string;
@@ -79,8 +52,6 @@ interface Offer {
   payout: number;
   payoutType: 'fixed' | 'revshare' | 'cpa';
   redirectType: RedirectType;
-  actionType: ActionType;
-  countries: string[];
   currency: string;
   status: 'active' | 'paused' | 'deleted';
   network: string;
@@ -94,49 +65,13 @@ interface Offer {
   updatedAt: string;
 }
 
-function encodeUtf8ToBase64(input: string): string {
-  const bytes = new TextEncoder().encode(input);
-  let binary = '';
-  const chunk = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
-  }
-  return btoa(binary);
-}
-
-function inferOfferHostingMode(url: string | undefined): OfferHostingMode {
-  if (!url) {
-    return 'hosted';
-  }
-  if (url.includes('/hosted-assets/') && url.includes('mode=zip')) {
-    return 'zip';
-  }
-  if (url.includes('/hosted-assets/') && url.includes('mode=local')) {
-    return 'local';
-  }
-  return 'hosted';
-}
-
 const OFFER_FIELDS: FormField[] = [
-  {
-    name: 'hostMode',
-    label: 'Hosting Mode',
-    type: 'select',
-    required: true,
-    options: [
-      { value: 'hosted', label: 'Hosted URL' },
-      { value: 'local', label: 'Local HTML' },
-      { value: 'zip', label: 'ZIP Archive' },
-    ],
-    description: 'Choose how this offer is hosted (remote URL, inline HTML, or ZIP archive).',
-  },
   {
     name: 'name',
     label: 'Offer Name',
     type: 'text',
     required: true,
-    placeholder: 'Enter offer name',
-    maxLength: FIELD_MAX_LENGTH.NAME,
+    placeholder: 'Enter offer name'
   },
   {
     name: 'url',
@@ -144,8 +79,6 @@ const OFFER_FIELDS: FormField[] = [
     type: 'url',
     required: true,
     placeholder: 'https://example.com/offer',
-    maxLength: FIELD_MAX_LENGTH.URL,
-    showWhen: (data) => (data.hostMode || 'hosted') === 'hosted',
     validation: (value) => {
       try {
         new URL(value);
@@ -154,25 +87,6 @@ const OFFER_FIELDS: FormField[] = [
         return 'Please enter a valid URL';
       }
     }
-  },
-  {
-    name: 'localHtml',
-    label: 'Local Offer HTML',
-    type: 'textarea',
-    required: true,
-    placeholder: '<!DOCTYPE html><html>...</html>',
-    description: 'Paste full HTML offer page. System will host it as a managed asset.',
-    showWhen: (data) => data.hostMode === 'local',
-  },
-  {
-    name: 'zipFile',
-    label: 'ZIP Archive',
-    type: 'file',
-    required: true,
-    accept: '.zip,application/zip',
-    maxFileSizeMB: 8,
-    description: 'Upload ZIP package for managed archive hosting.',
-    showWhen: (data) => data.hostMode === 'zip',
   },
   {
     name: 'payout',
@@ -207,25 +121,6 @@ const OFFER_FIELDS: FormField[] = [
     ]
   },
   {
-    name: 'actionType',
-    label: 'Action Type',
-    type: 'select',
-    required: true,
-    options: [
-      { value: 'local', label: 'Local' },
-      { value: 'redirect', label: 'Redirect' },
-      { value: 'preload', label: 'Preload' },
-      { value: 'action', label: 'Action' }
-    ]
-  },
-  {
-    name: 'countries',
-    label: 'Countries',
-    type: 'multiselect',
-    options: COUNTRIES,
-    description: 'Select target countries for this offer'
-  },
-  {
     name: 'network',
     label: 'Affiliate Network',
     type: 'select'
@@ -234,8 +129,7 @@ const OFFER_FIELDS: FormField[] = [
     name: 'group',
     label: 'Group',
     type: 'text',
-    placeholder: 'Select or create group',
-    maxLength: FIELD_MAX_LENGTH.GROUP,
+    placeholder: 'Select or create group'
   },
   {
     name: 'status',
@@ -251,39 +145,34 @@ const OFFER_FIELDS: FormField[] = [
     name: 'notes',
     label: 'Notes',
     type: 'textarea',
-    placeholder: 'Add notes about this offer...',
-    maxLength: FIELD_MAX_LENGTH.NOTES,
+    placeholder: 'Add notes about this offer...'
   }
 ];
 
 export const Offers = () => {
   const toast = useToast();
-  const location = useLocation();
-  const bootstrap = readBootstrapPage<{ offers?: Offer[]; affiliateNetworks?: Array<{ id: string; name: string }> }>('offers');
-  const hasBootstrap = Boolean(bootstrap);
-  const [offers, setOffers] = useState<Offer[]>(Array.isArray(bootstrap?.data?.offers) ? bootstrap.data.offers : []);
-  const [loading, setLoading] = useState(!hasBootstrap);
-  const [error, setError] = useState<string | null>(null);
-  
+
+  // 浣跨敤 usePageData hook 鑷姩澶勭悊 SSR 缂撳瓨銆佸姞杞藉拰閿欒鐘舵€?
+  const { data: offersData, isLoading, error, refetch } = usePageData(
+    'offers',
+    fetchOffers
+  );
+
+  const [offers, setOffers] = useState<Offer[]>([]);
+
   // Form modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
-  const [selectedOffer, setSelectedOffer] = useState<OfferFormData | undefined>(undefined);
-  
-  // Search and filter state
-  const [searchTerm, setSearchTerm] = useState(() => {
-    if (typeof window === 'undefined') {
-      return '';
-    }
+  const [selectedOffer, setSelectedOffer] = useState<Partial<Offer> | undefined>(undefined);
 
-    return new URLSearchParams(window.location.search).get('search') || '';
-  });
+  // Search and filter state
+  const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
-  
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
-  
+
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
@@ -298,26 +187,10 @@ export const Offers = () => {
   });
 
   // Affiliate networks state
-  const [affiliateNetworks, setAffiliateNetworks] = useState<{id: string; name: string}[]>(
-    Array.isArray(bootstrap?.data?.affiliateNetworks)
-      ? bootstrap.data.affiliateNetworks.map((network: any) => ({ id: network.id, name: network.name }))
-      : []
-  );
+  const [affiliateNetworks, setAffiliateNetworks] = useState<{id: string; name: string}[]>([]);
 
   // Fetch affiliate networks for dropdown
   useEffect(() => {
-    setSearchTerm(new URLSearchParams(location.search).get('search') || '');
-  }, [location.search]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterStatus, filterValues]);
-
-  useEffect(() => {
-    if (affiliateNetworks.length > 0) {
-      return;
-    }
-
     const loadAffiliateNetworks = async () => {
       try {
         const data = await fetchAffiliateNetworks();
@@ -329,135 +202,39 @@ export const Offers = () => {
       }
     };
     loadAffiliateNetworks();
-  }, [affiliateNetworks.length]);
+  }, []);
 
-  // Fetch offers from API
+  // 褰?offersData 鍙樺寲鏃讹紝鏇存柊鏈湴鐘舵€?
   useEffect(() => {
-    const loadOffers = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await fetchOffers(true, {
-          startDate: dateRange.from,
-          endDate: dateRange.to,
-        });
-        if (Array.isArray(data)) {
-          setOffers(data);
-        } else {
-          setError('Failed to load offers');
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load offers');
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (!offersData) return;
 
-    loadOffers();
-  }, [dateRange.from, dateRange.to, hasBootstrap]);
+    // 纭繚鏁版嵁鏄暟缁?
+    if (Array.isArray(offersData)) {
+      setOffers(offersData);
+    }
+  }, [offersData]);
 
   const handleCreateOffer = () => {
     setFormMode('create');
-    setSelectedOffer({
-      hostMode: 'hosted',
-      actionType: 'local',
-      status: 'active',
-    });
+    setSelectedOffer(undefined);
     setIsFormOpen(true);
   };
 
   const handleEditOffer = (offer: Offer) => {
-    console.log('handleEditOffer called with:', offer);
-    try {
-      // Normalize countries: DB may return a JSON string (e.g. '["US"]') — coerce to array
-      let countries: unknown = offer.countries;
-      if (typeof countries === 'string') {
-        try {
-          const parsed = JSON.parse(countries);
-          countries = Array.isArray(parsed) ? parsed : [];
-        } catch {
-          countries = [];
-        }
-      }
-      if (!Array.isArray(countries)) {
-        countries = [];
-      }
-      setFormMode('edit');
-      setSelectedOffer({
-        ...offer,
-        countries: countries as any,
-        hostMode: inferOfferHostingMode(offer.url),
-      });
-      setIsFormOpen(true);
-      console.log('Form opened successfully');
-    } catch (error) {
-      console.error('Error in handleEditOffer:', error);
-      alert('Error opening edit form: ' + error);
-    }
+    setFormMode('edit');
+    setSelectedOffer(offer);
+    setIsFormOpen(true);
   };
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
-    const hostMode = (formData.hostMode || 'hosted') as OfferHostingMode;
-    const submitData: Record<string, any> = { ...formData };
-
-    if (hostMode === 'local') {
-      const html = typeof formData.localHtml === 'string' ? formData.localHtml.trim() : '';
-      if (!html) {
-        toast.error('Local Offer HTML is required', 'Please provide HTML content before saving.');
-        return;
-      }
-
-      try {
-        const upload = await uploadHostedAsset({
-          entityType: 'offer',
-          mode: 'local',
-          name: submitData.name || 'offer-local',
-          fileName: `${(submitData.name || 'offer').replace(/\s+/g, '-').toLowerCase()}.html`,
-          mimeType: 'text/html; charset=utf-8',
-          contentBase64: encodeUtf8ToBase64(html),
-        });
-        submitData.url = upload.publicUrl;
-      } catch (err) {
-        toast.error('Failed to upload local offer HTML', err instanceof Error ? err.message : 'Unknown error');
-        return;
-      }
-    }
-
-    if (hostMode === 'zip') {
-      const zipFile = formData.zipFile as HostedFileValue | undefined;
-      if (!zipFile?.base64) {
-        toast.error('ZIP archive is required', 'Please select a ZIP file before saving.');
-        return;
-      }
-
-      try {
-        const upload = await uploadHostedAsset({
-          entityType: 'offer',
-          mode: 'zip',
-          name: submitData.name || 'offer-zip',
-          fileName: zipFile.name || `${(submitData.name || 'offer').replace(/\s+/g, '-').toLowerCase()}.zip`,
-          mimeType: zipFile.type || 'application/zip',
-          contentBase64: zipFile.base64,
-        });
-        submitData.url = upload.publicUrl;
-      } catch (err) {
-        toast.error('Failed to upload offer ZIP archive', err instanceof Error ? err.message : 'Unknown error');
-        return;
-      }
-    }
-
-    delete submitData.hostMode;
-    delete submitData.localHtml;
-    delete submitData.zipFile;
-
     try {
       if (formMode === 'create') {
-        const offer = await createOffer(submitData);
+        const offer = await createOffer(formData);
         if (offer && offer.id) {
           setOffers(prev => [...prev, offer]);
         }
       } else if (selectedOffer?.id) {
-        const offer = await updateOffer(selectedOffer.id, submitData);
+        const offer = await updateOffer(selectedOffer.id, formData);
         if (offer && offer.id) {
           setOffers(prev =>
             prev.map(o => o.id === selectedOffer.id ? offer : o)
@@ -467,19 +244,51 @@ export const Offers = () => {
       setIsFormOpen(false);
     } catch (err) {
       toast.error('Failed to save offer', err instanceof Error ? err.message : 'Unknown error');
-      return;
+      // For demo, add to local state
+      if (formMode === 'create') {
+        const newOffer: Offer = {
+          id: `offer${Date.now()}`,
+          name: formData.name,
+          url: formData.url,
+          payout: parseFloat(formData.payout) || 0,
+          payoutType: formData.payoutType || 'fixed',
+          redirectType: formData.redirectType || 'http',
+          currency: 'USD',
+          status: formData.status || 'active',
+          network: formData.network || 'Default',
+          group: formData.group || 'Default',
+          campaignCount: 0,
+          clicks: 0,
+          conversions: 0,
+          revenue: 0,
+          epc: 0,
+          cr: 0,
+          updatedAt: new Date().toISOString()
+        };
+        setOffers(prev => [...prev, newOffer]);
+      } else {
+        setOffers(prev =>
+          prev.map(o =>
+            o.id === selectedOffer?.id
+              ? { ...o, ...formData, updatedAt: new Date().toISOString() }
+              : o
+          )
+        );
+      }
+      setIsFormOpen(false);
     }
   };
 
   const handleDeleteOffer = async (id: string) => {
     if (!confirm('Are you sure you want to delete this offer?')) return;
-    
+
     try {
       await deleteOffer(id);
       setOffers(prev => prev.filter(o => o.id !== id));
       toast.success('Offer deleted successfully');
     } catch (err) {
       toast.error('Failed to delete offer', err instanceof Error ? err.message : 'Unknown error');
+      setOffers(prev => prev.filter(o => o.id !== id));
     }
   };
 
@@ -503,7 +312,7 @@ export const Offers = () => {
 
   const handleBulkAction = async (action: 'activate' | 'pause' | 'delete') => {
     const ids = Array.from(selectedItems);
-    
+
     if (action === 'delete') {
       if (!confirm(`Are you sure you want to delete ${ids.length} offers?`)) return;
     }
@@ -515,8 +324,8 @@ export const Offers = () => {
       } else {
         const newStatus = action === 'activate' ? 'active' : 'paused';
         await Promise.all(ids.map(id => updateOffer(id, { status: newStatus })));
-        setOffers(prev => 
-          prev.map(o => 
+        setOffers(prev =>
+          prev.map(o =>
             ids.includes(o.id) ? { ...o, status: newStatus as any } : o
           )
         );
@@ -566,14 +375,14 @@ export const Offers = () => {
 
   // Filter offers
   const filteredOffers = offers.filter(offer => {
-    const matchesSearch = 
+    const matchesSearch =
       offer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       offer.url?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       offer.network?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       offer.group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       false;
     const matchesStatus = filterStatus === 'All' || offer.status === filterStatus.toLowerCase();
-    
+
     // Apply filter panel filters
     const matchesFilters = Object.entries(filterValues).every(([key, value]) => {
       if (!value || value === '' || (Array.isArray(value) && value.length === 0)) {
@@ -582,20 +391,20 @@ export const Offers = () => {
       const offerValue = (offer as any)[key];
       const offerValueStr = offerValue?.toString().toLowerCase() || '';
       const filterValueStr = value?.toString().toLowerCase() || '';
-      
+
       if (Array.isArray(value)) {
         return value.some(v => offerValueStr === v.toLowerCase());
       }
-      
+
       // For search type, use includes
       const config = filterConfigs.find(c => c.key === key);
       if (config?.type === 'search') {
         return offerValueStr.includes(filterValueStr);
       }
-      
+
       return offerValueStr === filterValueStr;
     });
-    
+
     return matchesSearch && matchesStatus && matchesFilters;
   });
 
@@ -606,12 +415,79 @@ export const Offers = () => {
     currentPage * itemsPerPage
   );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 size={48} className="animate-spin text-primary" />
+  // Skeleton component for table rows
+  const OfferSkeleton = () => (
+    <div className="space-y-6 animate-in fade-in duration-700">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse">
+        <div className="space-y-2">
+          <div className="w-64 h-8 bg-surface-container rounded"></div>
+          <div className="w-48 h-4 bg-surface-container rounded"></div>
+        </div>
+        <div className="flex gap-3 items-center">
+          <div className="w-72 h-10 bg-surface-container rounded"></div>
+          <div className="w-32 h-10 bg-surface-container rounded"></div>
+          <div className="w-24 h-10 bg-surface-container rounded"></div>
+          <div className="w-32 h-10 bg-surface-container rounded"></div>
+        </div>
       </div>
-    );
+
+      {/* Toolbar */}
+      <div className="bg-surface-container-lowest p-4 whisper-shadow animate-pulse">
+        <div className="flex items-center gap-2">
+          <div className="flex gap-2">
+            <div className="w-8 h-8 bg-surface-container rounded"></div>
+            <div className="w-8 h-8 bg-surface-container rounded"></div>
+            <div className="w-8 h-8 bg-surface-container rounded"></div>
+            <div className="w-8 h-8 bg-surface-container rounded"></div>
+          </div>
+          <div className="relative flex-1 min-w-[300px]">
+            <div className="w-full h-10 bg-surface-container rounded"></div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="w-32 h-4 bg-surface-container rounded"></div>
+            <div className="flex gap-2">
+              <div className="w-16 h-10 bg-surface-container rounded"></div>
+              <div className="w-16 h-10 bg-surface-container rounded"></div>
+              <div className="w-16 h-10 bg-surface-container rounded"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-surface-container-lowest whisper-shadow overflow-hidden animate-pulse">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="border-b border-outline-variant/10 p-4">
+            <div className="flex items-center gap-4">
+              <div className="w-5 h-5 bg-surface-container rounded"></div>
+              <div className="flex items-center gap-3 flex-1">
+                <div className="w-10 h-10 bg-surface-container rounded"></div>
+                <div className="space-y-2">
+                  <div className="w-48 h-4 bg-surface-container rounded"></div>
+                  <div className="w-64 h-3 bg-surface-container rounded"></div>
+                </div>
+              </div>
+              <div className="w-20 h-8 bg-surface-container rounded"></div>
+              <div className="w-24 h-4 bg-surface-container rounded"></div>
+              <div className="w-16 h-4 bg-surface-container rounded"></div>
+              <div className="w-16 h-4 bg-surface-container rounded"></div>
+              <div className="w-16 h-4 bg-surface-container rounded"></div>
+              <div className="w-16 h-4 bg-surface-container rounded"></div>
+              <div className="w-16 h-4 bg-surface-container rounded"></div>
+              <div className="flex gap-2">
+                <div className="w-8 h-8 bg-surface-container rounded"></div>
+                <div className="w-8 h-8 bg-surface-container rounded"></div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (isLoading && offers.length === 0) {
+    return <OfferSkeleton />;
   }
 
   const computedFields = [...OFFER_FIELDS];
@@ -621,7 +497,7 @@ export const Offers = () => {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="space-y-6">
       {/* Entity Form Modal */}
       <EntityForm
         key={`${formMode}-${selectedOffer?.id || 'new'}`}
@@ -635,15 +511,14 @@ export const Offers = () => {
       />
 
       {/* Header */}
-      <div className="flex-none flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
           <h1 className="text-3xl font-display font-bold text-primary">Offers</h1>
-          <p className="border-l border-outline-variant/40 pl-3 text-sm text-on-surface-variant">Manage your affiliate offers and payouts</p>
+          <p className="text-sm text-on-surface-variant">Manage your affiliate offers and payouts</p>
         </div>
-        <div className="flex w-full xl:w-auto flex-wrap justify-start xl:justify-end items-center gap-2">
+        <div className="flex gap-3">
           {/* Date Range Picker */}
-          <div className="w-full sm:w-[280px] shrink-0" aria-label="Statistics period">
-            <span className="sr-only">Statistics Period</span>
+          <div className="w-[280px]">
             <QuickDateRangePicker
               value="today"
               onChange={(preset, range) => {
@@ -658,9 +533,9 @@ export const Offers = () => {
               maxRangeDays={365}
             />
           </div>
-          <button 
+          <button
             onClick={() => setIsFilterOpen(true)}
-            className="flex h-9 shrink-0 items-center gap-2 px-3 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
+            className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
           >
             <Filter size={16} />
             Filters
@@ -670,14 +545,14 @@ export const Offers = () => {
               </span>
             )}
           </button>
-          <ExportButton 
+          <ExportButton
             data={offers.map(formatOfferForExport)}
             filename="offers"
             label="Export"
           />
-          <button 
+          <button
             onClick={handleCreateOffer}
-            className="btn-create flex h-9 shrink-0 items-center gap-2 px-5 py-2 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
+            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
           >
             <Plus size={18} />
             New Offer
@@ -685,57 +560,49 @@ export const Offers = () => {
         </div>
       </div>
 
-      {error ? (
-        <div className="flex-none rounded-sm border border-error/30 bg-error/10 px-4 py-3 text-sm text-error mb-6">
-          {error}
-        </div>
-      ) : null}
-
       {/* Toolbar */}
-      <div className="flex-none bg-surface-container-lowest p-3 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+      <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          {selectedItems.size > 0 && (
-            <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
+          {selectedItems.size > 0 ? (
+            <>
+              <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
+              <button
+                onClick={() => handleBulkAction('activate')}
+                className="btn-icon-create p-2 rounded transition-colors"
+                title="Activate"
+              >
+                <Play size={18} />
+              </button>
+              <button
+                onClick={() => handleBulkAction('pause')}
+                className="btn-icon-pause p-2 rounded transition-colors"
+                title="Pause"
+              >
+                <Pause size={18} />
+              </button>
+              <button
+                onClick={() => handleBulkAction('delete')}
+                className="btn-icon-delete p-2 rounded transition-colors"
+                title="Delete"
+              >
+                <Trash2 size={18} />
+              </button>
+              <div className="h-6 w-px bg-outline-variant/20 mx-2" />
+            </>
+          ) : (
+            <>
+              <button className="btn-icon-create p-2 rounded transition-colors" title="Play"><Play size={18} /></button>
+              <button className="btn-icon-pause p-2 rounded transition-colors" title="Pause"><Pause size={18} /></button>
+              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors rounded" title="Copy"><Copy size={18} /></button>
+              <button className="btn-icon-delete p-2 rounded transition-colors" title="Delete"><Trash2 size={18} /></button>
+              <div className="h-6 w-px bg-outline-variant/20 mx-2" />
+            </>
           )}
-          <button 
-            onClick={() => handleBulkAction('activate')}
-            disabled={selectedItems.size === 0}
-            className={cn(
-              "btn-icon-create p-2 rounded transition-colors",
-              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
-            )}
-            title="Activate"
-          >
-            <Play size={18} />
-          </button>
-          <button 
-            onClick={() => handleBulkAction('pause')}
-            disabled={selectedItems.size === 0}
-            className={cn(
-              "btn-icon-pause p-2 rounded transition-colors",
-              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
-            )}
-            title="Pause"
-          >
-            <Pause size={18} />
-          </button>
-          <button 
-            onClick={() => handleBulkAction('delete')}
-            disabled={selectedItems.size === 0}
-            className={cn(
-              "btn-icon-delete p-2 rounded transition-colors",
-              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
-            )}
-            title="Delete"
-          >
-            <Trash2 size={18} />
-          </button>
-          <div className="h-6 w-px bg-outline-variant/20 mx-2" />
           <div className="relative flex-1 min-w-[300px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search offers..."
+            <input
+              type="text"
+              placeholder="Search by name, URL, network, or group..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
@@ -748,16 +615,16 @@ export const Offers = () => {
           </span>
           <div className="flex bg-surface-container p-1 rounded-sm">
             {(['All', 'Active', 'Paused'] as const).map((tab) => (
-              <button 
+              <button
                 key={tab}
                 onClick={() => { setFilterStatus(tab); setCurrentPage(1); }}
                 className={cn(
                   "px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-sm transition-all",
-                  filterStatus === tab 
-                    ? tab === 'Active' 
-                      ? "tab-status-active active" 
-                      : tab === 'Paused' 
-                        ? "tab-status-paused active" 
+                  filterStatus === tab
+                    ? tab === 'Active'
+                      ? "tab-status-active active"
+                      : tab === 'Paused'
+                        ? "tab-status-paused active"
                         : "tab-status-all active"
                     : tab === 'Active'
                       ? "tab-status-active"
@@ -773,28 +640,41 @@ export const Offers = () => {
         </div>
       </div>
 
-      {/* Offers Table - 使用虚拟滚动 */}
-      <div className="flex-1 bg-surface-container-lowest whisper-shadow flex flex-col min-h-0">
-        <div className="flex-1 overflow-hidden">
+      {/* Mobile offer cards */}
+      <div className="space-y-3 md:hidden">
+        {paginatedOffers.map((offer) => (
+          <article key={offer.id} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-bold text-primary">{offer.name}</h2>
+                <p className="mt-0.5 truncate text-xs text-on-surface-variant">{offer.network || 'Default network'}</p>
+              </div>
+              <span className={cn(
+                'shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-widest',
+                offer.status === 'active' ? 'bg-success/10 text-success' : offer.status === 'paused' ? 'bg-warning/10 text-warning' : 'bg-error/10 text-error'
+              )}>{offer.status}</span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <div><span className="text-fg-subtle">Payout</span><p className="font-mono font-bold text-secondary">${offer.payout.toFixed(2)} <span className="text-[10px] font-normal text-on-surface-variant">{offer.payoutType}</span></p></div>
+              <div className="col-span-2 truncate"><span className="text-fg-subtle">URL </span><a href={offer.url} target="_blank" rel="noopener noreferrer" className="text-accent-fg hover:underline">{offer.url}</a></div>
+            </div>
+            <div className="mt-3 flex justify-end gap-2 border-t border-outline-variant/10 pt-2">
+              <button type="button" onClick={() => handleEditOffer(offer)} className="rounded-md border border-outline-variant/30 px-3 py-1.5 text-xs text-fg-default">Edit</button>
+              <button type="button" onClick={() => handleDeleteOffer(offer.id)} className="rounded-md border border-error/20 px-3 py-1.5 text-xs text-error">Delete</button>
+            </div>
+          </article>
+        ))}
+        {paginatedOffers.length === 0 && <div className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">No offers found</div>}
+      </div>
+
+      {/* Offers Table - 浣跨敤铏氭嫙婊氬姩 */}
+      <div className="hidden bg-surface-container-lowest whisper-shadow overflow-hidden md:block">
         <VirtualTableEnhanced
           tableId="offers"
           columns={[
             {
               key: 'select',
-              label: (
-                <input
-                  type="checkbox"
-                  className="rounded border-outline-variant"
-                  checked={selectedItems.size > 0 && selectedItems.size === filteredOffers.length}
-                  ref={(el) => {
-                    if (el) {
-                      el.indeterminate = selectedItems.size > 0 && selectedItems.size < filteredOffers.length;
-                    }
-                  }}
-                  onChange={handleSelectAll}
-                  aria-label="Select all offers"
-                />
-              ),
+              label: '',
               width: '50px',
               render: (_, row) => (
                 <input
@@ -805,7 +685,6 @@ export const Offers = () => {
                     e.stopPropagation();
                     handleSelectItem(row.id);
                   }}
-                  aria-label={`Select ${row.name}`}
                 />
               ),
             },
@@ -813,7 +692,7 @@ export const Offers = () => {
               key: 'name',
               label: 'Offer',
               width: '300px',
-              // 筛选和排序配置
+              // 绛涢€夊拰鎺掑簭閰嶇疆
               filters: [
                 { text: 'Active', value: 'active' },
                 { text: 'Paused', value: 'paused' },
@@ -828,27 +707,15 @@ export const Offers = () => {
                   <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
                     <Gift size={20} className="text-primary" />
                   </div>
-                  <div className="min-w-0">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEditOffer(row as Offer);
-                      }}
-                      className="font-bold text-primary hover:text-secondary cursor-pointer truncate max-w-[220px] text-left"
-                      title={`Edit ${row.name}`}
-                    >
-                      {truncateLabel(row.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
-                    </button>
-                    <a 
-                      href={row.url} 
-                      target="_blank" 
+                  <div>
+                    <h3 className="font-bold text-primary">{row.name}</h3>
+                    <a
+                      href={row.url}
+                      target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-secondary hover:underline flex items-center gap-1 max-w-[220px]"
-                      title={row.url}
+                      className="text-xs text-secondary hover:underline flex items-center gap-1"
                     >
-                      <span className="truncate">
-                        {formatOfferUrlForDisplay(row.url)}
-                      </span>
+                      {row.url.substring(0, 40)}...
                       <ExternalLink size={12} />
                     </a>
                   </div>
@@ -859,7 +726,7 @@ export const Offers = () => {
               key: 'status',
               label: 'Status',
               width: '120px',
-              // 筛选和排序配置
+              // 绛涢€夊拰鎺掑簭閰嶇疆
               filters: [
                 { text: 'Active', value: 'active' },
                 { text: 'Paused', value: 'paused' },
@@ -886,6 +753,7 @@ export const Offers = () => {
               key: 'payout',
               label: 'Payout',
               width: '120px',
+              // 鎺掑簭閰嶇疆
               sorter: (a, b) => a.payout - b.payout,
               showSorter: true,
               render: (_, row) => (
@@ -896,80 +764,10 @@ export const Offers = () => {
               ),
             },
             {
-              key: 'actionType',
-              label: 'Action Type',
-              width: '100px',
-              filters: [
-                { text: 'Local', value: 'local' },
-                { text: 'Redirect', value: 'redirect' },
-                { text: 'Preload', value: 'preload' },
-                { text: 'Action', value: 'action' },
-              ],
-              onFilter: (value, record) => record.actionType === value,
-              sorter: (a, b) => (a.actionType || 'local').localeCompare(b.actionType || 'local'),
-              showSorter: true,
-              showFilter: true,
-              render: (_, row) => (
-                <span className={cn(
-                  "px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm",
-                  row.actionType === 'local' ? "bg-blue-100 text-blue-700" :
-                  row.actionType === 'redirect' ? "bg-green-100 text-green-700" :
-                  row.actionType === 'preload' ? "bg-purple-100 text-purple-700" :
-                  "bg-orange-100 text-orange-700"
-                )}>
-                  {row.actionType || 'local'}
-                </span>
-              ),
-            },
-            {
-              key: 'countries',
-              label: 'Countries',
-              width: '150px',
-              render: (_, row) => {
-                // 安全解析 countries：数据库存储的是 JSON 字符串
-                let countries: string[] = [];
-                try {
-                  if (typeof row.countries === 'string') {
-                    countries = JSON.parse(row.countries);
-                  } else if (Array.isArray(row.countries)) {
-                    countries = row.countries;
-                  }
-                } catch (e) {
-                  // JSON 解析失败，使用空数组
-                  countries = [];
-                }
-                
-                if (!Array.isArray(countries) || countries.length === 0) {
-                  return <span className="text-xs text-on-surface-variant">All</span>;
-                }
-                if (countries.length <= 3) {
-                  return (
-                    <div className="flex flex-wrap gap-1">
-                      {countries.map(code => (
-                        <span key={code} className="px-1.5 py-0.5 bg-surface-container text-[10px] font-medium text-on-surface-variant rounded">
-                          {code}
-                        </span>
-                      ))}
-                    </div>
-                  );
-                }
-                return (
-                  <div className="flex items-center gap-1">
-                    <span className="px-1.5 py-0.5 bg-surface-container text-[10px] font-medium text-on-surface-variant rounded">
-                      {countries[0]}
-                    </span>
-                    <span className="text-[10px] text-on-surface-variant">
-                      +{countries.length - 1} more
-                    </span>
-                  </div>
-                );
-              },
-            },
-            {
               key: 'network',
               label: 'Network',
-              width: '160px',
-              // 筛选配置
+              width: '200px',
+              // 绛涢€夐厤缃?
               filters: [
                 { text: 'Default', value: 'Default' },
                 { text: 'Custom', value: 'Custom' },
@@ -980,15 +778,10 @@ export const Offers = () => {
               showFilter: true,
               render: (_, row) => (
                 <div className="flex flex-col">
-                  <span
-                    className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm w-fit max-w-[140px] truncate"
-                    title={row.network || 'Default'}
-                  >
-                    {truncateLabel(row.network || 'Default', DISPLAY_MAX_LENGTH.TAG_TEXT)}
+                  <span className="px-3 py-1 bg-surface-container text-xs font-bold uppercase tracking-widest text-on-surface-variant rounded-sm w-fit">
+                    {row.network || 'Default'}
                   </span>
-                  <span className="text-[10px] text-on-surface-variant mt-1 truncate max-w-[160px]" title={row.group || 'Default'}>
-                    {truncateLabel(row.group || 'Default', DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
-                  </span>
+                  <span className="text-[10px] text-on-surface-variant mt-1">{row.group || 'Default'}</span>
                 </div>
               ),
             },
@@ -1014,8 +807,8 @@ export const Offers = () => {
             },
             {
               key: 'conversions',
-              label: 'Conversions',
-              width: '110px',
+              label: 'Conv.',
+              width: '80px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
@@ -1024,7 +817,7 @@ export const Offers = () => {
             {
               key: 'revenue',
               label: 'Revenue',
-              width: '110px',
+              width: '100px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-secondary">
@@ -1060,21 +853,15 @@ export const Offers = () => {
               width: '100px',
               render: (_, row) => (
                 <div className="flex items-center gap-1">
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEditOffer(row as Offer);
-                    }}
+                  <button
+                    onClick={() => handleEditOffer(row as Offer)}
                     className="p-2 text-on-surface-variant hover:text-primary transition-colors"
                     title="Edit"
                   >
                     <Edit3 size={16} />
                   </button>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteOffer(row.id);
-                    }}
+                  <button
+                    onClick={() => handleDeleteOffer(row.id)}
                     className="p-2 text-on-surface-variant hover:text-error transition-colors"
                     title="Delete"
                   >
@@ -1086,7 +873,7 @@ export const Offers = () => {
           ]}
           data={paginatedOffers}
           rowHeight={72}
-          height="100%"
+          height={400}
           overscan={5}
           selectable={false}
           selectedRows={selectedItems}
@@ -1094,11 +881,10 @@ export const Offers = () => {
           getRowId={(row) => row.id}
           emptyMessage="No offers found"
         />
-        </div>
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-outline-variant/10">
+          <div className="flex items-center justify-between px-4 py-4 border-t border-outline-variant/10">
             <span className="text-sm text-on-surface-variant">
               Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredOffers.length)} of {filteredOffers.length}
             </span>
@@ -1108,8 +894,8 @@ export const Offers = () => {
                 disabled={currentPage === 1}
                 className={cn(
                   "p-2 rounded-sm transition-colors",
-                  currentPage === 1 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
+                  currentPage === 1
+                    ? "text-on-surface-variant/30 cursor-not-allowed"
                     : "text-on-surface-variant hover:bg-surface-container"
                 )}
               >
@@ -1134,8 +920,8 @@ export const Offers = () => {
                 disabled={currentPage === totalPages}
                 className={cn(
                   "p-2 rounded-sm transition-colors",
-                  currentPage === totalPages 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
+                  currentPage === totalPages
+                    ? "text-on-surface-variant/30 cursor-not-allowed"
                     : "text-on-surface-variant hover:bg-surface-container"
                 )}
               >
