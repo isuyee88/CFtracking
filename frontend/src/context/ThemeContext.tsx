@@ -1,7 +1,9 @@
-﻿/**
- * @file 鍏ㄥ眬涓婚鐘舵€侊細light / dark / system銆? * @platform cftracking
+/**
+ * @file 全局主题状态：light / dark / system。
+ * @platform cftracking
  * @owner frontend
- * @invariant 鐢ㄦ埛閫夋嫨浼樺厛浜庣郴缁燂紱涓婚鍙€氳繃鏍硅妭鐐?class 琛ㄨ揪锛屼笉鍦ㄩ〉闈㈠唴閲嶅鍒囨崲銆? */
+ * @invariant 用户选择优先于系统；主题只通过根节点 class 表达，不在页面内重复切换。
+ */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -30,7 +32,8 @@ function readMode(): ThemeMode {
   if (typeof window === 'undefined') return 'system';
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
-  // 鍏煎鏃х増 dark-mode=true/false锛涜縼绉诲悗鍗冲垹闄ゃ€?  const legacy = window.localStorage.getItem(LEGACY_KEY);
+  // 兼容旧版 dark-mode=true/false；迁移后即删除。
+  const legacy = window.localStorage.getItem(LEGACY_KEY);
   if (legacy !== null) {
     const migrated: ThemeMode = legacy === 'true' ? 'dark' : 'light';
     window.localStorage.setItem(STORAGE_KEY, migrated);
