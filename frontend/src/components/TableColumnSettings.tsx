@@ -4,13 +4,15 @@
  * @owner frontend
  * @invariant 每个 tableId 独立持久化；至少保留一列；锁定列不可隐藏/移动。
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Columns3, RotateCcw, X } from 'lucide-react';
 
 export interface TableColumnItem {
   key: string;
   label: string;
   locked?: boolean;
+  defaultHidden?: boolean;
 }
 
 interface ColumnLayout {
@@ -21,7 +23,10 @@ interface ColumnLayout {
 const STORAGE_PREFIX = 'cftracking-table-columns:';
 
 function loadLayout(tableId: string, items: TableColumnItem[]): ColumnLayout {
-  const defaults = { order: items.map((item) => item.key), hidden: [] as string[] };
+  const defaults = {
+    order: items.map((item) => item.key),
+    hidden: items.filter((item) => item.defaultHidden && !item.locked).map((item) => item.key),
+  };
   try {
     const raw = window.localStorage.getItem(STORAGE_PREFIX + tableId);
     if (!raw) return defaults;
@@ -107,27 +112,21 @@ export function TableColumnSettings({
   onReset: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-  const buttonRef = useRef<HTMLButtonElement>(null);
 
-  const openPanel = () => {
-    const rect = buttonRef.current?.getBoundingClientRect();
-    if (rect) {
-      const width = Math.min(320, window.innerWidth - 24);
-      setPosition({
-        top: rect.bottom + 6,
-        left: Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12)),
-      });
-    }
-    setOpen((value) => !value);
-  };
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open]);
 
   return (
     <>
       <button
-        ref={buttonRef}
         type="button"
-        onClick={openPanel}
+        onClick={() => setOpen(true)}
         className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-default bg-surface px-2.5 text-xs font-medium text-fg-default hover:bg-surface-container-high focus-visible:ring-2 focus-visible:ring-accent-fg"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -137,16 +136,20 @@ export function TableColumnSettings({
         <span className="rounded bg-surface-container-high px-1 text-[10px] text-fg-subtle">{visible.length}</span>
       </button>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+      {open && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          onMouseDown={() => setOpen(false)}
+          role="presentation"
+        >
           <div
             role="dialog"
+            aria-modal="true"
             aria-label="Table columns"
-            className="fixed z-50 w-[min(320px,calc(100vw-24px))] rounded-lg border border-border-default bg-surface-container-lowest p-3 shadow-xl"
-            style={{ top: position.top, left: position.left }}
+            className="flex max-h-[82vh] w-full max-w-sm flex-col rounded-t-2xl border border-border-default bg-surface-container-lowest shadow-2xl sm:max-h-[76vh] sm:rounded-xl"
+            onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="mb-2 flex items-center justify-between">
+            <div className="flex shrink-0 items-center justify-between px-3 pb-2 pt-3">
               <div>
                 <p className="text-sm font-semibold text-fg-default">Columns</p>
                 <p className="text-[11px] text-fg-subtle">Show, hide or reorder</p>
@@ -156,11 +159,9 @@ export function TableColumnSettings({
               </button>
             </div>
 
-            <div className="max-h-72 space-y-1 overflow-y-auto">
-              {items.map((item, index) => {
+            <div className="flex-1 space-y-1 overflow-y-auto px-3 pb-2">
+              {items.map((item) => {
                 const isVisible = visible.includes(item.key);
-                const previous = items.slice(0, index).reverse().find((candidate) => !candidate.locked);
-                const next = items.slice(index + 1).find((candidate) => !candidate.locked);
                 return (
                   <div key={item.key} className="flex items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-surface-container">
                     <input
@@ -178,7 +179,6 @@ export function TableColumnSettings({
                       <>
                         <button
                           type="button"
-                          disabled={!previous}
                           onClick={() => onMove(item.key, -1)}
                           className="rounded p-1 text-fg-subtle hover:bg-surface-container-high disabled:opacity-30"
                           aria-label={`Move ${item.label || item.key} up`}
@@ -187,7 +187,6 @@ export function TableColumnSettings({
                         </button>
                         <button
                           type="button"
-                          disabled={!next}
                           onClick={() => onMove(item.key, 1)}
                           className="rounded p-1 text-fg-subtle hover:bg-surface-container-high disabled:opacity-30"
                           aria-label={`Move ${item.label || item.key} down`}
@@ -201,11 +200,12 @@ export function TableColumnSettings({
               })}
             </div>
 
-            <button type="button" onClick={onReset} className="mt-2 inline-flex items-center gap-1 text-xs text-accent-fg hover:underline">
+            <button type="button" onClick={onReset} className="mx-3 mb-3 mt-0 inline-flex shrink-0 items-center gap-1 border-t border-border-default pt-2 text-xs text-accent-fg hover:underline">
               <RotateCcw size={12} /> Reset columns
             </button>
           </div>
-        </>
+        </div>,
+        document.body,
       )}
     </>
   );

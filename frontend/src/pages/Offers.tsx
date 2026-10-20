@@ -36,6 +36,7 @@ import { formatOfferForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 import { ActiveFilterBar } from '../components/ActiveFilterBar';
+import { TablePagination } from '../components/TablePagination';
 import { useToast } from '../components/Toast';
 import { usePageData } from '@/context/DataCacheContext';
 
@@ -151,6 +152,7 @@ const OFFER_FIELDS: FormField[] = [
 ];
 
 export const Offers = () => {
+  const compactTable = typeof window !== 'undefined' && !window.matchMedia('(min-width: 1280px)').matches;
   const toast = useToast();
 
   // 浣跨敤 usePageData hook 鑷姩澶勭悊 SSR 缂撳瓨銆佸姞杞藉拰閿欒鐘舵€?
@@ -684,6 +686,17 @@ export const Offers = () => {
         {paginatedOffers.length === 0 && <div className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">No offers found</div>}
       </div>
 
+      <div className="hidden md:block">
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredOffers.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          label="offers"
+        />
+      </div>
+
       {/* Offers Table - 浣跨敤铏氭嫙婊氬姩 */}
       <div className="hidden bg-surface-container-lowest whisper-shadow overflow-hidden md:block">
         <VirtualTableEnhanced
@@ -693,7 +706,7 @@ export const Offers = () => {
               key: 'select',
               label: '',
               width: '40px',
-              className: 'hidden 2xl:flex',
+              defaultHidden: true,
               render: (_, row) => (
                 <input
                   type="checkbox"
@@ -709,7 +722,7 @@ export const Offers = () => {
             {
               key: 'name',
               label: 'Offer',
-              width: '220px',
+              width: '200px',
               className: 'flex-1 min-w-0',
               // 绛涢€夊拰鎺掑簭閰嶇疆
               filters: [
@@ -744,7 +757,7 @@ export const Offers = () => {
             {
               key: 'status',
               label: 'Status',
-              width: '110px',
+              width: '130px',
               // 绛涢€夊拰鎺掑簭閰嶇疆
               filters: [
                 { text: 'Active', value: 'active' },
@@ -786,7 +799,7 @@ export const Offers = () => {
               key: 'network',
               label: 'Network',
               width: '160px',
-              className: 'hidden 2xl:flex',
+              defaultHidden: true,
               // 绛涢€夐厤缃?
               filters: [
                 { text: 'Default', value: 'Default' },
@@ -810,7 +823,7 @@ export const Offers = () => {
               label: 'Campaigns',
               width: '90px',
               align: 'center',
-              className: 'hidden xl:flex',
+              defaultHidden: compactTable,
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">
                   {value !== undefined ? value : '-'}
@@ -829,7 +842,7 @@ export const Offers = () => {
             {
               key: 'conversions',
               label: 'Conv.',
-              width: '80px',
+              width: '92px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
@@ -851,7 +864,7 @@ export const Offers = () => {
               label: 'EPC',
               width: '80px',
               align: 'right',
-              className: 'hidden 2xl:flex',
+              defaultHidden: true,
               render: (value) => (
                 <span className="text-sm font-medium text-primary">
                   ${typeof value === 'number' ? value.toFixed(2) : value}
@@ -863,7 +876,7 @@ export const Offers = () => {
               label: 'CR',
               width: '72px',
               align: 'right',
-              className: 'hidden 2xl:flex',
+              defaultHidden: true,
               render: (value) => (
                 <span className="text-sm font-medium text-primary">
                   {typeof value === 'number' ? `${value}%` : value}
@@ -873,8 +886,8 @@ export const Offers = () => {
             {
               key: 'actions',
               label: '',
-              width: '80px',
-              className: 'hidden xl:flex',
+              width: '88px',
+              defaultHidden: compactTable,
               render: (_, row) => (
                 <div className="flex items-center gap-1">
                   <button
@@ -905,55 +918,6 @@ export const Offers = () => {
           getRowId={(row) => row.id}
           emptyMessage="No offers found"
         />
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t border-outline-variant/10">
-            <span className="text-sm text-on-surface-variant">
-              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredOffers.length)} of {filteredOffers.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === 1
-                    ? "text-on-surface-variant/30 cursor-not-allowed"
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronLeft size={20} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={cn(
-                    "w-8 h-8 text-sm font-medium rounded-sm transition-colors",
-                    currentPage === page
-                      ? "bg-primary text-on-primary"
-                      : "text-on-surface-variant hover:bg-surface-container"
-                  )}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === totalPages
-                    ? "text-on-surface-variant/30 cursor-not-allowed"
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronRight size={20} />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Filter Panel */}

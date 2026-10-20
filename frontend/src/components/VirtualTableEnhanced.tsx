@@ -122,7 +122,8 @@ export function VirtualTableEnhanced<T = any>({
     () => columns.map((column) => ({
       key: column.key,
       label: column.label || column.key,
-      locked: column.key === 'select' || column.key === 'actions',
+      locked: column.key === 'actions',
+      defaultHidden: Boolean((column as { defaultHidden?: boolean }).defaultHidden),
     })),
     [columns],
   );
@@ -270,7 +271,7 @@ export function VirtualTableEnhanced<T = any>({
         <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
           {selectable && (
             <div
-              className="px-3 flex items-center"
+              className="px-2 flex items-center"
               style={{ width: '50px', minWidth: '50px', flex: 'none' }}
             >
               <input
@@ -292,7 +293,7 @@ export function VirtualTableEnhanced<T = any>({
               <div
                 key={column.key}
                 className={cn(
-                  'px-3 flex items-center text-sm font-medium text-fg-default cursor-pointer hover:bg-surface-container-high/50 transition-colors',
+                  'px-2 flex items-center text-sm font-medium text-fg-default cursor-pointer hover:bg-surface-container-high/50 transition-colors',
                   column.align === 'center' && 'justify-center',
                   column.align === 'right' && 'justify-end',
                   column.align === 'left' && 'justify-start',
@@ -410,7 +411,7 @@ export function VirtualTableEnhanced<T = any>({
                 <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
                   {selectable && (
                     <div
-                      className="px-3 flex items-center"
+                      className="px-2 flex items-center"
                       style={{ width: '50px', minWidth: '50px', flex: 'none' }}
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -432,7 +433,7 @@ export function VirtualTableEnhanced<T = any>({
                       <div
                         key={column.key}
                         className={cn(
-                          'px-3 flex items-center text-sm text-gray-700',
+                          'px-2 flex items-center text-sm text-gray-700',
                           column.align === 'center' && 'justify-center',
                           column.align === 'right' && 'justify-end',
                           column.align === 'left' && 'justify-start',
