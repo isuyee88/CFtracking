@@ -22,6 +22,7 @@ export interface VirtualTableColumn<T = any> {
   align?: 'left' | 'center' | 'right';
   render?: (value: any, row: T, index: number) => React.ReactNode;
   className?: string;
+  defaultHidden?: boolean;
   
   // === Ant Design 筛选配置 ===
   filters?: { text: string; value: any }[];
@@ -54,7 +55,7 @@ export interface VirtualTableProps<T = any> {
 
 export function VirtualTable<T = any>({
   columns,
-  data,
+  data: rawData,
   rowHeight = 48,
   height = 400,
   overscan = 5,
@@ -63,6 +64,9 @@ export function VirtualTable<T = any>({
   emptyMessage = 'No data found',
   loading = false,
 }: VirtualTableProps<T>) {
+  // 确保 data 是数组
+  const data = Array.isArray(rawData) ? rawData : [];
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(

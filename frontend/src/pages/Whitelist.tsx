@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
+import { TablePagination } from '../components/TablePagination';
 import { readBootstrapPage } from '../services/bootstrap';
 import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
 import { clampInput, truncateLabel } from '../utils/text';
@@ -613,173 +615,49 @@ export const Whitelist = () => {
 
       {/* Whitelist Table */}
       <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-container-low">
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Value</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Type</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Traffic Source</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Reason</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Status</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Sync Status</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Created</th>
-                <th className="px-4 py-4 w-20"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedEntries.map((entry) => (
-                <tr 
-                  key={entry.id} 
-                  className="border-t border-outline-variant/10 hover:bg-surface-container/50 transition-colors"
-                >
-                  <td className="px-4 py-4">
-                    <div className="min-w-0">
-                      <p className="font-bold text-primary truncate max-w-[220px]" title={entry.value}>
-                        {truncateLabel(entry.value, DISPLAY_MAX_LENGTH.TABLE_VALUE_TEXT)}
-                      </p>
-                      {entry.name && (
-                        <p className="text-xs text-on-surface-variant truncate max-w-[220px]" title={entry.name}>
-                          {truncateLabel(entry.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
-                        </p>
-                      )}
-                      {entry.type === 'ip' && entry.ipMatchMode && (
-                        <p className="text-xs text-on-surface-variant/60">Mode: {entry.ipMatchMode}</p>
-                      )}
-                      {entry.type === 'user_agent' && entry.uaMatchMode && (
-                        <p className="text-xs text-on-surface-variant/60">Mode: {entry.uaMatchMode}</p>
-                      )}
-                      {Array.isArray(entry.conditions) && entry.conditions.length > 0 && (
-                        <p className="text-xs text-on-surface-variant/60">
-                          Rule: {(entry.matchMode || 'all').toUpperCase()} / {entry.conditions.length} conditions
-                        </p>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="inline-flex items-center gap-1 px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm bg-surface-container text-on-surface-variant">
-                      {getTypeIcon(entry.type)}
-                      {getTypeLabel(entry.type)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="text-sm text-on-surface inline-block max-w-[180px] truncate" title={getTrafficSourceName(entry.trafficSourceId)}>
-                      {truncateLabel(getTrafficSourceName(entry.trafficSourceId), DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="text-sm text-on-surface-variant inline-block max-w-[220px] truncate" title={entry.reason || '-'}>
-                      {truncateLabel(entry.reason || '-', DISPLAY_MAX_LENGTH.TABLE_REASON_TEXT)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={cn(
-                      "px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm",
-                      entry.status === 'active' ? "status-active" : "status-paused"
-                    )}>
-                      {entry.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-2">
-                      {entry.synced ? (
-                        <>
-                          <CheckCircle size={16} className="text-secondary" />
-                          <span className="text-xs text-secondary">Synced</span>
-                        </>
-                      ) : (
-                        <>
-                          <XCircle size={16} className="text-warning" />
-                          <span className="text-xs text-warning">Not Synced</span>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="text-xs text-on-surface-variant">
-                      {new Date(entry.createdAt).toLocaleDateString()}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={() => openEditModal(entry)}
-                        className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                        title="Edit whitelist entry"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleRemove(entry.id)}
-                        className="p-2 text-on-surface-variant hover:text-error transition-colors"
-                        title="Remove from whitelist"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredEntries.length === 0 && (
-          <div className="p-8 text-center text-on-surface-variant">
-            <CheckCircle size={48} className="mx-auto mb-4 opacity-30" />
-            <p>No whitelist entries found</p>
-            <p className="text-sm mt-2">Add entries using the Add Entry button</p>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t border-outline-variant/10">
-            <span className="text-sm text-on-surface-variant">
-              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredEntries.length)} of {filteredEntries.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === 1 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronLeft size={20} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={cn(
-                    "w-8 h-8 text-sm font-medium rounded-sm transition-colors",
-                    currentPage === page
-                      ? "bg-secondary text-on-secondary"
-                      : "text-on-surface-variant hover:bg-surface-container"
-                  )}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === totalPages 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronRight size={20} />
-              </button>
+                <div className="hidden md:block">
+        <TablePagination currentPage={currentPage} totalPages={totalPages} totalItems={filteredEntries.length} itemsPerPage={itemsPerPage} onPageChange={setCurrentPage} label="whitelist" />
+      </div>
+      <div className="space-y-3 md:hidden">
+        {paginatedEntries.map((entry) => (
+          <article key={entry.id} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><h2 className="truncate text-sm font-bold text-primary">{entry.value}</h2>{entry.name && <p className="truncate text-xs text-fg-muted">{entry.name}</p>}</div>
+              <span className={entry.status === 'active' ? 'shrink-0 rounded-full bg-success/10 px-2 py-1 text-[10px] font-bold uppercase text-success' : 'shrink-0 rounded-full bg-warning/10 px-2 py-1 text-[10px] font-bold uppercase text-warning'}>{entry.status}</span>
             </div>
-          </div>
-        )}
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <div><dt className="text-fg-subtle">Type</dt><dd className="mt-0.5 text-fg-default">{getTypeLabel(entry.type)}</dd></div>
+              <div><dt className="text-fg-subtle">Source</dt><dd className="mt-0.5 truncate text-fg-default">{getTrafficSourceName(entry.trafficSourceId)}</dd></div>
+              <div><dt className="text-fg-subtle">Sync</dt><dd className="mt-0.5 text-fg-default">{entry.synced ? 'Synced' : 'Not synced'}</dd></div>
+              <div><dt className="text-fg-subtle">Created</dt><dd className="mt-0.5 text-fg-default">{new Date(entry.createdAt).toLocaleDateString()}</dd></div>
+            </dl>
+            <div className="mt-3 flex justify-end gap-2 border-t border-outline-variant/10 pt-2">
+              <button type="button" onClick={() => openEditModal(entry)} className="rounded-md border border-outline-variant/30 px-3 py-1.5 text-xs text-fg-default">Edit</button>
+              <button type="button" onClick={() => handleRemove(entry.id)} className="rounded-md border border-error/20 px-3 py-1.5 text-xs text-error">Remove</button>
+            </div>
+          </article>
+        ))}
+        {paginatedEntries.length === 0 && <div className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">No whitelist entries found</div>}
+      </div>
+      <div className="hidden md:block">
+        <VirtualTableEnhanced
+          tableId="whitelist"
+          columns={[
+            { key: 'value', label: 'Value', width: '220px', className: 'flex-1 min-w-0', render: (_: unknown, entry: any) => <div className="min-w-0"><p className="truncate font-bold text-primary">{entry.value}</p>{entry.name && <p className="truncate text-xs text-fg-muted">{entry.name}</p>}</div> },
+            { key: 'type', label: 'Type', width: '110px', render: (_: unknown, entry: any) => <span className="inline-flex items-center gap-1 rounded-sm bg-surface-container px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-fg-muted">{getTypeIcon(entry.type)}{getTypeLabel(entry.type)}</span> },
+            { key: 'source', label: 'Traffic Source', width: '160px', render: (_: unknown, entry: any) => <span className="truncate text-fg-default">{getTrafficSourceName(entry.trafficSourceId)}</span> },
+            { key: 'reason', label: 'Reason', width: '220px', defaultHidden: true, render: (_: unknown, entry: any) => <span className="truncate text-fg-muted">{entry.reason || '-'}</span> },
+            { key: 'status', label: 'Status', width: '100px', render: (_: unknown, entry: any) => <span className={entry.status === 'active' ? 'status-deleted rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-widest' : 'status-paused rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-widest'}>{entry.status}</span> },
+            { key: 'sync', label: 'Sync Status', width: '120px', render: (_: unknown, entry: any) => entry.synced ? <span className="flex items-center gap-1 text-xs text-secondary"><CheckCircle size={14} />Synced</span> : <span className="flex items-center gap-1 text-xs text-warning"><XCircle size={14} />Not Synced</span> },
+            { key: 'created', label: 'Created', width: '100px', render: (_: unknown, entry: any) => <span className="text-xs text-fg-muted">{new Date(entry.createdAt).toLocaleDateString()}</span> },
+            { key: 'actions', label: '', width: '88px', align: 'center', render: (_: unknown, entry: any) => <div className="flex justify-center gap-1"><button type="button" onClick={() => openEditModal(entry)} className="rounded p-2 text-fg-muted hover:text-primary" title="Edit"><Edit2 size={16} /></button><button type="button" onClick={() => handleRemove(entry.id)} className="rounded p-2 text-fg-muted hover:text-error" title="Remove"><Trash2 size={16} /></button></div> },
+          ]}
+          data={paginatedEntries}
+          rowHeight={64}
+          height="auto"
+          emptyMessage="No whitelist entries found"
+        />
+      </div>
       </div>
 
       {/* Add/Edit Modal */}
