@@ -1,0 +1,7 @@
+{
+  "source": "patched live bundle",
+  "sourceConfig": "D:\\suyee\\cloudflare\\tmp\\cftracking-frontend-stage\\wrangler.toml",
+  "bundleSha256": "7be62eb8011d837ae2bbbb03573d2868f94485fb85e2b6bee41167105c0b06bf",
+  "generatedAt": "2026-10-20T06:33:39.721Z",
+  "assetsFiles": 9
+}

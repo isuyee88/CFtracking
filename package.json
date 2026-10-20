@@ -1,0 +1,12 @@
+{
+  "name": "cf-tracking-release",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "check": "node scripts/check-bundle.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.151.0"
+  }
+}

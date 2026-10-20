@@ -1,0 +1,105 @@
+# 手写：与 deploy-prod/wrangler.toml 完全一致，只把 main 指向「线上最新 bundle + offer-analysis 补丁」。
+# 生成原因是 deploy-prod 由 scripts/build-cftracking-deploy.mjs 从线上 settings 生成、main 固定指向
+# parts/00-index.patched.js（那份对应更早的版本），而 offer-analysis 插件必须打在最新的 v879 bundle 上。
+#
+# 部署前必读：
+#   1) [assets] 指回同一份 recovered assets —— 部署会重传资源。若本地 assets 与线上不一致，
+#      会把线上前端替换掉（仓库 wrangler.toml 里标为 P1 红线）。
+#      先跑 `node scripts/verify-cftracking-assets.mjs` 对账（需本机能访问 t.isuyee.com）。
+#   2) 先 `--dry-run --outdir` 验证能 bundle，并跑 scripts/extract-cf-routes.mjs 做路由对账。
+name = "cf-tracking"
+workers_dev = false
+main = "./worker.js"
+compatibility_date = "2024-12-30"
+
+[assets]
+directory = "./assets"
+binding = "ASSETS"
+html_handling = "none"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/events/*", "/hosted-assets/*", "/health", "/sw.js", "/__bootstrap/*", "/__bootstrap-object/*", "/c/*"]
+
+[ai]
+binding = "AI"
+
+[[queues.producers]]
+binding = "CACHE_REFRESH_QUEUE"
+queue = "cache-refresh-queue"
+
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cf-tracking-db"
+database_id = "c20392f5-c14c-42fa-a3e7-fa9bdb5b4b76"
+
+[[r2_buckets]]
+binding = "HOSTED_ASSETS_BUCKET"
+bucket_name = "cf-tracking-hosted-assets"
+
+[[kv_namespaces]]
+binding = "UNIQUENESS_KV"
+id = "7cdc9c88e1964bff954835d91f98bd74"
+
+[[kv_namespaces]]
+binding = "STATS_KV"
+id = "8003555fcfa945728a20991578a7cf55"
+
+[[durable_objects.bindings]]
+name = "CACHE_DO"
+class_name = "CacheDurableObject"
+
+[[durable_objects.bindings]]
+name = "CACHE_EVENT_DO"
+class_name = "CacheEventBrokerDurableObject"
+
+[[durable_objects.bindings]]
+name = "COUNTER_DO"
+class_name = "CounterDurableObject"
+
+[[durable_objects.bindings]]
+name = "EVENT_DO"
+class_name = "EventActor"
+
+[[durable_objects.bindings]]
+name = "QUEUE_DO"
+class_name = "QueueDurableObject"
+
+[[durable_objects.bindings]]
+name = "SESSION_DO"
+class_name = "SessionDurableObject"
+
+[[durable_objects.bindings]]
+name = "STATS_DO"
+class_name = "StatsActor"
+
+[[durable_objects.bindings]]
+name = "TRACKING_STATS_DO"
+class_name = "TrackingStatsDO"
+
+[[durable_objects.bindings]]
+name = "UNIQUE_DO"
+class_name = "UniquenessDurableObject"
+
+[[durable_objects.bindings]]
+name = "USER_PREFERENCE_DO"
+class_name = "UserPreferenceDurableObject"
+
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "cftracking_events"
+
+[vars]
+ADMIN_USERNAME = "admin"
+AI_OPTIMIZATION_GATEWAY_ID = ""
+AI_OPTIMIZATION_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+AUTH_MODE = "on"
+CACHE_TTL = "21600"
+CDN_CACHE_TTL = "300"
+ENABLED_REGIONS = "HK,CN"
+ENVIRONMENT = "production"
+CLICK_AE_ONLY = "true"
+JWT_EXPIRES_IN = "24h"
+REALTIME_ENABLED = false
+SSE_ENABLED = false
