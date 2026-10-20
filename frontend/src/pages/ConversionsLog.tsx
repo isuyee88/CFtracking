@@ -1,4 +1,4 @@
-﻿/**
+/**
  * File: ConversionsLog.tsx
  * Purpose: 杞寲鏃ュ織椤甸潰锛屽睍绀烘墍鏈夎浆鍖栬褰曞拰瀹屾暣鐨勮浆鍖栦俊鎭?
  * Input/Output: 鏄剧ず杞寲鏁版嵁鍒楄〃锛屾敮鎸佹悳绱€佺瓫閫夊拰璇︽儏灞曞紑
@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
 import { GroupByFilter, filterByGroupBy } from '@/components/GroupByFilter';
+import { ActiveFilterBar } from '@/components/ActiveFilterBar';
 import type { GroupByState, GroupByOption } from '@/types/filter';
 import { useDataCache } from '@/context/DataCacheContext';
 import { fetchConversions, fetchConversionStats, type Conversion } from '../services/api';
@@ -438,6 +439,15 @@ export const ConversionsLog = () => {
           </span>
         </div>
       </div>
+
+      <ActiveFilterBar
+        className="px-1"
+        items={[
+          ...(searchQuery ? [{ key: 'search', label: `Search: ${searchQuery}`, onClear: () => setSearchQuery('') }] : []),
+          ...(statusFilter !== 'all' ? [{ key: 'status', label: `Status: ${statusFilter}`, onClear: () => setStatusFilter('all') }] : []),
+        ]}
+        onClearAll={() => { setSearchQuery(''); setStatusFilter('all'); }}
+      />
 
       {/* Mobile summary cards */}
       <div className="space-y-3 md:hidden">

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Zap,
@@ -22,6 +22,7 @@ import { twMerge } from 'tailwind-merge';
 import { fetchCampaigns, createCampaign, updateCampaign, deleteCampaign, fetchEntityStats } from '../services/api';
 import { CampaignForm } from '../components/CampaignForm';
 import { ExportButton } from '../components/ExportButton';
+import { ActiveFilterBar } from '../components/ActiveFilterBar';
 import { formatCampaignForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { GroupByFilter, filterByGroupBy } from '../components/GroupByFilter';
@@ -567,6 +568,15 @@ export const CampaignManagement = () => {
           </div>
         </div>
       </div>
+
+      <ActiveFilterBar
+        className="px-1"
+        items={[
+          ...(searchTerm ? [{ key: 'search', label: `Search: ${searchTerm}`, onClear: () => setSearchTerm('') }] : []),
+          ...(filterStatus !== 'All' ? [{ key: 'status', label: `Status: ${filterStatus}`, onClear: () => setFilterStatus('All') }] : []),
+        ]}
+        onClearAll={() => { setSearchTerm(''); setFilterStatus('All'); }}
+      />
 
       {/* Mobile campaign cards */}
       <div className="space-y-3 md:hidden">
