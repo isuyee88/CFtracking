@@ -76,15 +76,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="fixed inset-0 z-50 flex items-end justify-end md:items-stretch">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/30"
         onClick={onClose}
       />
 
-      {/* Panel */}
-      <div className="relative w-96 max-w-full bg-surface-container-lowest h-full shadow-xl flex flex-col">
+      {/* Panel: mobile bottom sheet, desktop side drawer */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Filters"
+        className="relative flex h-[85vh] w-full flex-col rounded-t-2xl bg-surface-container-lowest shadow-xl md:h-full md:w-96 md:max-w-full md:rounded-none"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-outline-variant/10">
           <div className="flex items-center gap-2">

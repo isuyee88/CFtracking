@@ -1,4 +1,4 @@
-﻿/**
+/**
  * File: Dashboard.tsx
  * Purpose: Dashboard涓婚〉闈紝鍙傝€僈eitaro瀹炵幇瀹屾暣鐨勫竷灞€鑷畾涔夊姛鑳?
  * Input/Output: 鏄剧ず瀹炴椂缁熻鏁版嵁銆佸浘琛ㄣ€佹渶杩戠偣鍑绘祦锛屾敮鎸佸畬鏁磋嚜瀹氫箟
@@ -1136,7 +1136,7 @@ export const Dashboard = () => {
                       "metric-trend",
                       stat?.isPositive ? "metric-trend-up" : "metric-trend-down"
                     )}>
-                      {stat?.isPositive ? '鈫? : '鈫?} {stat?.trend || ''}
+                      {stat?.isPositive ? '↑' : '↓'} {stat?.trend || ''}
                     </p>
                   </div>
                 );

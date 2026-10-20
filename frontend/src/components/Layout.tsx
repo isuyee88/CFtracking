@@ -1,4 +1,4 @@
-﻿/**
+/**
  * File: Layout.tsx
  * Purpose: 涓诲竷灞€缁勪欢锛屽寘鍚晶杈规爮銆佸ご閮ㄥ鑸拰鏄煎妯″紡鍒囨崲
  * Input/Output: 鎺ユ敹瀛愮粍浠讹紝娓叉煋瀹屾暣椤甸潰甯冨眬
@@ -254,7 +254,7 @@ export const Layout = () => {
             aria-label="Search pages"
           >
             <Search size={17} aria-hidden="true" />
-            <span className="truncate">Search pages鈥?/span>
+            <span className="truncate">Search pages…</span>
             <kbd className="ms-auto hidden rounded border border-border-default px-1.5 py-0.5 text-[10px] text-fg-subtle sm:inline">鈱楰</kbd>
           </button>
 
@@ -311,7 +311,7 @@ export const Layout = () => {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => event.key === 'Escape' && setSearchOpen(false)}
-                placeholder="Search pages鈥?
+                placeholder="Search pages…"
                 className="w-full bg-transparent text-sm text-fg-default outline-none placeholder:text-fg-subtle"
                 aria-label="Search pages"
               />

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * File: ClicksLog.tsx
  * Purpose: 鐐瑰嚮鏃ュ織椤甸潰锛屽睍绀烘墍鏈夌偣鍑昏褰?
  * Input/Output: 鏄剧ず鐐瑰嚮鏁版嵁鍒楄〃锛屾敮鎸佹悳绱€佺瓫閫夈€佸垎椤?
@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
 import { GroupByFilter, DEFAULT_GROUP_BY_OPTIONS, filterByGroupBy } from '@/components/GroupByFilter';
+import { ActiveFilterBar } from '@/components/ActiveFilterBar';
 import type { GroupByState, GroupByOption } from '@/types/filter';
 import { fetchClicks, fetchClickStats, type ClickLogParams, type ClickStats } from '../services/api';
 import { useDataCache } from '@/context/DataCacheContext';
@@ -470,6 +471,15 @@ export const ClicksLog = () => {
         </div>
       )}
 
+      <ActiveFilterBar
+        className="px-1"
+        items={[
+          ...(searchQuery ? [{ key: 'search', label: `Search: ${searchQuery}`, onClear: () => setSearchQuery('') }] : []),
+          ...(statusFilter !== 'all' ? [{ key: 'status', label: `Status: ${statusFilter}`, onClear: () => setStatusFilter('all') }] : []),
+        ]}
+        onClearAll={() => { setSearchQuery(''); setStatusFilter('all'); }}
+      />
+
       {/* Mobile summary cards */}
       <div className="space-y-3 md:hidden">
         {clicksList.map((click) => (
@@ -494,7 +504,7 @@ export const ClicksLog = () => {
             </dl>
             <div className="mt-3 flex items-center justify-between border-t border-border-default pt-2 text-xs">
               <span className="font-mono text-fg-muted">{click.ip || '-'}</span>
-              <span className="font-mono text-fg-subtle">{click.clickId?.slice(0, 10)}鈥?/span>
+              <span className="font-mono text-fg-subtle">{click.clickId?.slice(0, 10)}…</span>
             </div>
           </article>
         ))}

@@ -6,8 +6,7 @@
  * Logic: 使用虚拟滚动 + 固定表头，集成 Ant Design 风格筛选和排序
  */
 
-import React, { useRef, useMemo, useState, useCallback } from 'react';
-import { List } from 'lucide-react';
+import React, { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { VirtualTableColumn } from './VirtualTable';
@@ -19,36 +18,6 @@ import { useTablePersistence, type TableFilterState, type TableSorterState } fro
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
-}
-
-// === 表格密度切换：全局持久化，S/M/L 三档缩放外部传入的 rowHeight 基准 ===
-type TableDensity = 'compact' | 'default' | 'relaxed';
-const TABLE_DENSITY_STORAGE_KEY = 'cftracking.table-density.v1';
-const TABLE_DENSITY_FACTORS: Record<TableDensity, number> = {
-  compact: 0.72,
-  default: 1,
-  relaxed: 1.3,
-};
-const TABLE_DENSITY_LABELS: Record<TableDensity, string> = {
-  compact: 'S',
-  default: 'M',
-  relaxed: 'L',
-};
-const TABLE_DENSITY_ORDER: TableDensity[] = ['compact', 'default', 'relaxed'];
-
-function readInitialDensity(): TableDensity {
-  if (typeof window === 'undefined') {
-    return 'default';
-  }
-  try {
-    const saved = window.localStorage.getItem(TABLE_DENSITY_STORAGE_KEY);
-    if (saved && saved in TABLE_DENSITY_FACTORS) {
-      return saved as TableDensity;
-    }
-  } catch {
-    // Ignore storage failures in restricted contexts.
-  }
-  return 'default';
 }
 
 export interface VirtualTableEnhancedProps<T = any> {
@@ -68,7 +37,7 @@ export interface VirtualTableEnhancedProps<T = any> {
   onRowClick?: (row: T, index: number) => void;
   headerClassName?: string;
   rowClassName?: (row: T, index: number) => string;
-  
+
   // === 新增：筛选和排序配置 ===
   tableId?: string; // 表格唯一标识，用于 localStorage 持久化
   onChange?: (pagination: any, filters: TableFilterState, sorter: TableSorterState | null) => void;
@@ -94,36 +63,20 @@ export function VirtualTableEnhanced<T = any>({
   tableId = 'default-table',
   onChange,
 }: VirtualTableEnhancedProps<T>) {
+  // 确保 data 是数组
+  const dataArray = Array.isArray(data) ? data : [];
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(
     typeof height === 'number' ? height : 400
   );
-  const [density, setDensity] = useState<TableDensity>(readInitialDensity);
-  const effectiveRowHeight = Math.max(
-    28,
-    Math.round(rowHeight * TABLE_DENSITY_FACTORS[density])
-  );
 
-  const cycleDensity = useCallback(() => {
-    setDensity((current) => {
-      const nextIndex = (TABLE_DENSITY_ORDER.indexOf(current) + 1) % TABLE_DENSITY_ORDER.length;
-      const next = TABLE_DENSITY_ORDER[nextIndex] || 'default';
-      try {
-        window.localStorage.setItem(TABLE_DENSITY_STORAGE_KEY, next);
-      } catch {
-        // Ignore storage failures in restricted contexts.
-      }
-      return next;
-    });
-  }, []);
-  
   // === 新增：筛选和排序状态（带持久化）===
   const { filters, setFilters, sorter, setSorter } = useTablePersistence(tableId);
-  
+
   // 筛选下拉框可见状态
   const [openFilterDropdown, setOpenFilterDropdown] = useState<string | null>(null);
-  const [draftFilterValues, setDraftFilterValues] = useState<Record<string, any[]>>({});
 
   // 更新容器高度
   React.useEffect(() => {
@@ -148,19 +101,19 @@ export function VirtualTableEnhanced<T = any>({
     },
     [onScroll, openFilterDropdown]
   );
-  
+
   // === 新增：处理筛选和排序后的数据 ===
   const processedData = useMemo(() => {
-    return processTableData(data, columns, filters, sorter);
-  }, [data, columns, filters, sorter]);
+    return processTableData(dataArray, columns, filters, sorter);
+  }, [dataArray, columns, filters, sorter]);
 
   // 计算可见行范围
   const { visibleStart, visibleEnd, totalHeight } = useMemo(() => {
     const total = processedData.length;
-    const totalH = total * effectiveRowHeight;
+    const totalH = total * rowHeight;
 
-    const start = Math.floor(scrollTop / effectiveRowHeight);
-    const visibleCount = Math.ceil(containerHeight / effectiveRowHeight);
+    const start = Math.floor(scrollTop / rowHeight);
+    const visibleCount = Math.ceil(containerHeight / rowHeight);
 
     const bufferedStart = Math.max(0, start - overscan);
     const bufferedEnd = Math.min(total, start + visibleCount + overscan);
@@ -170,7 +123,7 @@ export function VirtualTableEnhanced<T = any>({
       visibleEnd: bufferedEnd,
       totalHeight: totalH,
     };
-  }, [processedData.length, effectiveRowHeight, scrollTop, containerHeight, overscan]);
+  }, [processedData.length, rowHeight, scrollTop, containerHeight, overscan]);
 
   // 可见数据
   const visibleData = useMemo(() => {
@@ -199,11 +152,6 @@ export function VirtualTableEnhanced<T = any>({
     const newFilters = { ...filters };
     delete newFilters[columnKey];
     setFilters(newFilters);
-    setDraftFilterValues((current) => {
-      const next = { ...current };
-      delete next[columnKey];
-      return next;
-    });
     setOpenFilterDropdown(null);
     onChange?.({}, newFilters, sorter);
   }, [filters, setFilters, sorter, onChange]);
@@ -211,11 +159,11 @@ export function VirtualTableEnhanced<T = any>({
   // 处理全选
   const handleSelectAll = useCallback(() => {
     if (!onSelectionChange) return;
-    
+
     if (selectedRows && selectedRows.size === processedData.length) {
       onSelectionChange(new Set());
     } else {
-      const allIds = new Set(processedData.map((row, index) => 
+      const allIds = new Set(processedData.map((row, index) =>
         getRowId?.(row, index) || (row as any).id || `${index}`
       ));
       onSelectionChange(allIds);
@@ -225,16 +173,16 @@ export function VirtualTableEnhanced<T = any>({
   // 处理单选
   const handleSelectRow = useCallback((row: T, index: number) => {
     if (!onSelectionChange) return;
-    
+
     const rowId = getRowId?.(row, index) || (row as any).id || `${visibleStart + index}`;
     const newSelected = new Set(selectedRows);
-    
+
     if (newSelected.has(rowId)) {
       newSelected.delete(rowId);
     } else {
       newSelected.add(rowId);
     }
-    
+
     onSelectionChange(newSelected);
   }, [selectedRows, onSelectionChange, getRowId, visibleStart]);
 
@@ -273,7 +221,7 @@ export function VirtualTableEnhanced<T = any>({
       ref={containerRef}
       onScroll={handleScroll}
       className={cn('overflow-auto relative border border-gray-200 rounded-md', className)}
-      style={{ 
+      style={{
         height: typeof height === 'number' ? height : undefined,
         minHeight: typeof height === 'string' ? height : undefined,
       }}
@@ -281,7 +229,7 @@ export function VirtualTableEnhanced<T = any>({
       {/* 固定表头 */}
       <div
         className="sticky top-0 z-10 bg-surface-container dark:bg-surface-container-high border-b border-outline-variant/20"
-        style={{ height: effectiveRowHeight, minWidth: 'max-content' }}
+        style={{ height: rowHeight, minWidth: 'max-content' }}
       >
         <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
           {selectable && (
@@ -300,7 +248,6 @@ export function VirtualTableEnhanced<T = any>({
           {columns.map((column) => {
             const columnSortOrder = sorter?.columnKey === column.key ? sorter.order : column.sortOrder;
             const columnFilters = column.filteredValue || (filters[column.key] ? filters[column.key] : null);
-            const draftSelectedKeys = draftFilterValues[column.key] ?? (columnFilters || []);
             const hasFilter = columnFilters && (Array.isArray(columnFilters) ? columnFilters.length > 0 : true);
             const showSorter = column.showSorter !== false && (column.sorter || column.defaultSortOrder);
             const showFilter = column.showFilter !== false && (column.filters || column.onFilter);
@@ -321,10 +268,18 @@ export function VirtualTableEnhanced<T = any>({
                   flex: column.width ? undefined : 1,
                 }}
                 onClick={() => showSorter && handleSort(column.key, columnSortOrder === 'ascend' ? 'descend' : columnSortOrder === 'descend' ? null : 'ascend')}
+                onKeyDown={(event) => {
+                  if (!showSorter || (event.key !== 'Enter' && event.key !== ' ')) return;
+                  event.preventDefault();
+                  handleSort(column.key, columnSortOrder === 'ascend' ? 'descend' : columnSortOrder === 'descend' ? null : 'ascend');
+                }}
+                role={showSorter ? 'columnheader' : undefined}
+                tabIndex={showSorter ? 0 : undefined}
+                aria-sort={showSorter ? (columnSortOrder === 'ascend' ? 'ascending' : columnSortOrder === 'descend' ? 'descending' : 'none') : undefined}
                 title={column.label}
               >
                 <span className="flex-1 truncate">{column.label}</span>
-                
+
                 {/* 排序图标 */}
                 {showSorter && (
                   <TableSortIcon
@@ -333,7 +288,7 @@ export function VirtualTableEnhanced<T = any>({
                     sortDirections={column.sortDirections}
                   />
                 )}
-                
+
                 {/* 筛选图标 */}
                 {showFilter && (
                   <div className="relative">
@@ -341,40 +296,33 @@ export function VirtualTableEnhanced<T = any>({
                       filtered={!!hasFilter}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setDraftFilterValues((current) => ({
-                          ...current,
-                          [column.key]: Array.isArray(columnFilters) ? [...columnFilters] : [],
-                        }));
                         setOpenFilterDropdown(openFilterDropdown === column.key ? null : column.key);
                       }}
                     />
-                    
+
                     {/* 筛选下拉菜单 */}
                     {openFilterDropdown === column.key && (
                       <>
-                        <div 
-                          className="fixed inset-0 z-10" 
+                        <div
+                          className="fixed inset-0 z-10"
                           onClick={(e) => {
                             e.stopPropagation();
                             setOpenFilterDropdown(null);
                           }}
                         />
-                        <div 
+                        <div
                           className="absolute right-0 top-full mt-1 z-20"
                           style={{ minWidth: '220px' }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           <TableFilterDropdown
                             column={column}
-                            selectedKeys={draftSelectedKeys}
+                            selectedKeys={columnFilters || []}
                             setSelectedKeys={(keys) => {
-                              setDraftFilterValues((current) => ({
-                                ...current,
-                                [column.key]: keys,
-                              }));
+                              // 临时更新，等待 confirm 才真正应用
                             }}
                             confirm={() => {
-                              const keys = draftFilterValues[column.key] ?? [];
+                              const keys = columnFilters || [];
                               handleFilterConfirm(column.key, keys);
                             }}
                             clearFilters={() => handleFilterClear(column.key)}
@@ -388,16 +336,6 @@ export function VirtualTableEnhanced<T = any>({
               </div>
             );
           })}
-          <button
-            type="button"
-            onClick={cycleDensity}
-            className="flex-none mx-3 rounded border border-outline-variant/40 px-1.5 py-0.5 text-[11px] font-medium text-fg-muted hover:text-fg-default hover:bg-surface-container transition-colors"
-            title={`Row density: ${density} — click to switch (S/M/L)`}
-            aria-label="Toggle table row density"
-          >
-            <List size={12} aria-hidden="true" />
-            {TABLE_DENSITY_LABELS[density]}
-          </button>
         </div>
       </div>
 
@@ -407,8 +345,8 @@ export function VirtualTableEnhanced<T = any>({
         <div
           className="absolute left-0 right-0"
           style={{
-            top: visibleStart * effectiveRowHeight,
-            height: (visibleEnd - visibleStart) * effectiveRowHeight,
+            top: visibleStart * rowHeight,
+            height: (visibleEnd - visibleStart) * rowHeight,
           }}
         >
           {visibleData.map((row, index) => {
@@ -416,7 +354,7 @@ export function VirtualTableEnhanced<T = any>({
             const rowId = getRowId?.(row, actualIndex) || (row as any).id || `${actualIndex}`;
             const isSelected = selectedRows?.has(rowId);
             const customRowClass = rowClassName?.(row, actualIndex);
-            
+
             return (
               <div
                 key={rowId}
@@ -427,14 +365,14 @@ export function VirtualTableEnhanced<T = any>({
                   customRowClass
                 )}
                 style={{
-                  height: effectiveRowHeight,
-                  top: index * effectiveRowHeight,
+                  height: rowHeight,
+                  top: index * rowHeight,
                 }}
                 onClick={() => onRowClick?.(row, actualIndex)}
               >
                 <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
                   {selectable && (
-                    <div 
+                    <div
                       className="px-4 flex items-center"
                       style={{ width: '50px', minWidth: '50px', flex: 'none' }}
                       onClick={(e) => e.stopPropagation()}
@@ -449,7 +387,7 @@ export function VirtualTableEnhanced<T = any>({
                   )}
                   {columns.map((column) => {
                     const value = (row as any)[column.dataIndex || column.key];
-                    const content = column.render 
+                    const content = column.render
                       ? column.render(value, row, actualIndex)
                       : value;
 

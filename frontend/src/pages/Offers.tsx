@@ -1,4 +1,4 @@
-﻿/**
+/**
  * File: Offers.tsx
  * Purpose: Offers 绠＄悊椤甸潰锛屾敮鎸佸畬鏁寸殑 CRUD 鎿嶄綔
  * Input/Output: 鏄剧ず Offer 鍒楄〃锛屾敮鎸佸垱寤恒€佺紪杈戙€佸垹闄?
@@ -35,6 +35,7 @@ import { ExportButton } from '../components/ExportButton';
 import { formatOfferForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
+import { ActiveFilterBar } from '../components/ActiveFilterBar';
 import { useToast } from '../components/Toast';
 import { usePageData } from '@/context/DataCacheContext';
 
@@ -639,6 +640,22 @@ export const Offers = () => {
           </div>
         </div>
       </div>
+
+      <ActiveFilterBar
+        className="px-4 pb-3"
+        items={Object.entries(filterValues).map(([key, value]) => ({
+          key,
+          label: `${filterConfigs.find((config) => config.key === key)?.label || key}: ${
+            Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value)
+          }`,
+          onClear: () => {
+            const next = { ...filterValues };
+            delete next[key];
+            setFilterValues(next);
+          },
+        }))}
+        onClearAll={() => setFilterValues({})}
+      />
 
       {/* Mobile offer cards */}
       <div className="space-y-3 md:hidden">
