@@ -255,7 +255,7 @@ export const Layout = () => {
           >
             <Search size={17} aria-hidden="true" />
             <span className="truncate">Search pages…</span>
-            <kbd className="ms-auto hidden rounded border border-border-default px-1.5 py-0.5 text-[10px] text-fg-subtle sm:inline">鈱楰</kbd>
+            <kbd className="ms-auto hidden rounded border border-border-default px-1.5 py-0.5 text-[10px] text-fg-subtle sm:inline">⌘K</kbd>
           </button>
 
           <div className="flex shrink-0 items-center gap-2">

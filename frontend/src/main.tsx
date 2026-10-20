@@ -1,4 +1,4 @@
-﻿/**
+/**
  * File: main.tsx
  * Purpose: React 搴旂敤鍏ュ彛
  * Input/Output: 娓叉煋 React 搴旂敤鍒?root 鍏冪礌锛岀鐞嗘暟鎹敞鍏?
@@ -16,6 +16,9 @@ import { ToastProvider } from './components/Toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { DataCacheProvider } from './context/DataCacheContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { installAuthFetch } from './services/auth-fetch'
+
+installAuthFetch()
 
 const rootElement = document.getElementById('root')
 if (!rootElement) {

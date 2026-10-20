@@ -692,7 +692,8 @@ export const Offers = () => {
             {
               key: 'select',
               label: '',
-              width: '50px',
+              width: '40px',
+              className: 'hidden 2xl:flex',
               render: (_, row) => (
                 <input
                   type="checkbox"
@@ -708,7 +709,7 @@ export const Offers = () => {
             {
               key: 'name',
               label: 'Offer',
-              width: '300px',
+              width: '220px',
               // 绛涢€夊拰鎺掑簭閰嶇疆
               filters: [
                 { text: 'Active', value: 'active' },
@@ -742,7 +743,7 @@ export const Offers = () => {
             {
               key: 'status',
               label: 'Status',
-              width: '120px',
+              width: '100px',
               // 绛涢€夊拰鎺掑簭閰嶇疆
               filters: [
                 { text: 'Active', value: 'active' },
@@ -769,7 +770,7 @@ export const Offers = () => {
             {
               key: 'payout',
               label: 'Payout',
-              width: '120px',
+              width: '100px',
               // 鎺掑簭閰嶇疆
               sorter: (a, b) => a.payout - b.payout,
               showSorter: true,
@@ -783,7 +784,8 @@ export const Offers = () => {
             {
               key: 'network',
               label: 'Network',
-              width: '200px',
+              width: '160px',
+              className: 'hidden 2xl:flex',
               // 绛涢€夐厤缃?
               filters: [
                 { text: 'Default', value: 'Default' },
@@ -805,8 +807,9 @@ export const Offers = () => {
             {
               key: 'campaignCount',
               label: 'Campaigns',
-              width: '100px',
+              width: '90px',
               align: 'center',
+              className: 'hidden xl:flex',
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">
                   {value !== undefined ? value : '-'}
@@ -816,7 +819,7 @@ export const Offers = () => {
             {
               key: 'clicks',
               label: 'Clicks',
-              width: '100px',
+              width: '80px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
@@ -825,7 +828,7 @@ export const Offers = () => {
             {
               key: 'conversions',
               label: 'Conv.',
-              width: '80px',
+              width: '70px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
@@ -834,7 +837,7 @@ export const Offers = () => {
             {
               key: 'revenue',
               label: 'Revenue',
-              width: '100px',
+              width: '90px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-secondary">
@@ -847,6 +850,7 @@ export const Offers = () => {
               label: 'EPC',
               width: '80px',
               align: 'right',
+              className: 'hidden 2xl:flex',
               render: (value) => (
                 <span className="text-sm font-medium text-primary">
                   ${typeof value === 'number' ? value.toFixed(2) : value}
@@ -856,8 +860,9 @@ export const Offers = () => {
             {
               key: 'cr',
               label: 'CR',
-              width: '80px',
+              width: '72px',
               align: 'right',
+              className: 'hidden 2xl:flex',
               render: (value) => (
                 <span className="text-sm font-medium text-primary">
                   {typeof value === 'number' ? `${value}%` : value}
@@ -867,7 +872,8 @@ export const Offers = () => {
             {
               key: 'actions',
               label: '',
-              width: '100px',
+              width: '80px',
+              className: 'hidden xl:flex',
               render: (_, row) => (
                 <div className="flex items-center gap-1">
                   <button
@@ -890,7 +896,7 @@ export const Offers = () => {
           ]}
           data={paginatedOffers}
           rowHeight={72}
-          height={400}
+          height="auto"
           overscan={5}
           selectable={false}
           selectedRows={selectedItems}

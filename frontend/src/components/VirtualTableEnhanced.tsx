@@ -78,14 +78,23 @@ export function VirtualTableEnhanced<T = any>({
   // 筛选下拉框可见状态
   const [openFilterDropdown, setOpenFilterDropdown] = useState<string | null>(null);
 
-  // 更新容器高度
+  // 更新容器高度：数字固定高度；'auto' / CSS 高度由内容或样式决定。
   React.useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const measure = () => {
+      const next = element.clientHeight || (typeof height === 'number' ? height : 400);
+      setContainerHeight((current) => (Math.abs(current - next) > 1 ? next : current));
+    };
     if (typeof height === 'number') {
       setContainerHeight(height);
-    } else if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setContainerHeight(rect.height || 400);
+      return;
     }
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
   }, [height]);
 
   // 处理滚动
@@ -192,7 +201,7 @@ export function VirtualTableEnhanced<T = any>({
       <div
         ref={containerRef}
         className={cn('overflow-auto border border-gray-200 rounded-md', className)}
-        style={{ height: typeof height === 'number' ? height : undefined }}
+        style={{ height: typeof height === 'number' ? height : height === 'auto' ? undefined : height }}
       >
         <div className="flex items-center justify-center py-8">
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
@@ -207,7 +216,7 @@ export function VirtualTableEnhanced<T = any>({
       <div
         ref={containerRef}
         className={cn('overflow-auto border border-gray-200 rounded-md', className)}
-        style={{ height: typeof height === 'number' ? height : undefined }}
+        style={{ height: typeof height === 'number' ? height : height === 'auto' ? undefined : height }}
       >
         <div className="flex items-center justify-center py-8 text-gray-500">
           {emptyMessage}
@@ -222,8 +231,8 @@ export function VirtualTableEnhanced<T = any>({
       onScroll={handleScroll}
       className={cn('overflow-auto relative border border-gray-200 rounded-md', className)}
       style={{
-        height: typeof height === 'number' ? height : undefined,
-        minHeight: typeof height === 'string' ? height : undefined,
+        height: typeof height === 'number' ? height : height === 'auto' ? undefined : height,
+        minHeight: typeof height === 'string' && height !== 'auto' ? height : undefined,
       }}
     >
       {/* 固定表头 */}
@@ -234,7 +243,7 @@ export function VirtualTableEnhanced<T = any>({
         <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
           {selectable && (
             <div
-              className="px-4 flex items-center"
+              className="px-3 flex items-center"
               style={{ width: '50px', minWidth: '50px', flex: 'none' }}
             >
               <input
@@ -256,10 +265,11 @@ export function VirtualTableEnhanced<T = any>({
               <div
                 key={column.key}
                 className={cn(
-                  'px-4 flex items-center text-sm font-medium text-fg-default cursor-pointer hover:bg-surface-container-high/50 transition-colors',
+                  'px-3 flex items-center text-sm font-medium text-fg-default cursor-pointer hover:bg-surface-container-high/50 transition-colors',
                   column.align === 'center' && 'justify-center',
                   column.align === 'right' && 'justify-end',
                   column.align === 'left' && 'justify-start',
+                  column.className,
                   headerClassName
                 )}
                 style={{
@@ -373,7 +383,7 @@ export function VirtualTableEnhanced<T = any>({
                 <div className="flex h-full items-center" style={{ minWidth: 'max-content' }}>
                   {selectable && (
                     <div
-                      className="px-4 flex items-center"
+                      className="px-3 flex items-center"
                       style={{ width: '50px', minWidth: '50px', flex: 'none' }}
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -395,7 +405,7 @@ export function VirtualTableEnhanced<T = any>({
                       <div
                         key={column.key}
                         className={cn(
-                          'px-4 flex items-center text-sm text-gray-700',
+                          'px-3 flex items-center text-sm text-gray-700',
                           column.align === 'center' && 'justify-center',
                           column.align === 'right' && 'justify-end',
                           column.align === 'left' && 'justify-start',

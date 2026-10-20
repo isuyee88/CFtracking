@@ -613,6 +613,7 @@ export const CampaignManagement = () => {
               label: '',
               width: '40px',
               align: 'center',
+              className: 'hidden 2xl:flex',
               render: (_: any, row: any) => (
                 <input
                   type="checkbox"
@@ -625,7 +626,7 @@ export const CampaignManagement = () => {
             {
               key: 'name',
               label: 'Campaign',
-              width: '300px',
+              width: '240px',
               sorter: (a: any, b: any) => a.name.localeCompare(b.name),
               showSorter: true,
               render: (_: any, row: any) => (
@@ -648,7 +649,7 @@ export const CampaignManagement = () => {
             {
               key: 'status',
               label: 'Status',
-              width: '120px',
+              width: '100px',
               filters: [
                 { text: 'Active', value: 'Active' },
                 { text: 'Paused', value: 'Paused' },
@@ -674,7 +675,8 @@ export const CampaignManagement = () => {
             {
               key: 'type',
               label: 'Type',
-              width: '100px',
+              width: '90px',
+              className: 'hidden 2xl:flex',
               sorter: (a: any, b: any) => a.type.localeCompare(b.type),
               showSorter: true,
               render: (_: any, row: any) => (
@@ -684,7 +686,8 @@ export const CampaignManagement = () => {
             {
               key: 'group',
               label: 'Group',
-              width: '120px',
+              width: '100px',
+              className: 'hidden 2xl:flex',
               sorter: (a: any, b: any) => a.group.localeCompare(b.group),
               showSorter: true,
               render: (_: any, row: any) => (
@@ -696,7 +699,7 @@ export const CampaignManagement = () => {
             {
               key: 'clicks',
               label: 'Clicks',
-              width: '100px',
+              width: '80px',
               align: 'right',
               sorter: (a: any, b: any) => a.clicks - b.clicks,
               showSorter: true,
@@ -707,7 +710,7 @@ export const CampaignManagement = () => {
             {
               key: 'conversions',
               label: 'Conv.',
-              width: '80px',
+              width: '70px',
               align: 'right',
               sorter: (a: any, b: any) => a.conversions - b.conversions,
               showSorter: true,
@@ -718,7 +721,7 @@ export const CampaignManagement = () => {
             {
               key: 'revenue',
               label: 'Revenue',
-              width: '100px',
+              width: '86px',
               align: 'right',
               sorter: (a: any, b: any) => parseFloat(a.revenue.replace('$', '')) - parseFloat(b.revenue.replace('$', '')),
               showSorter: true,
@@ -729,7 +732,8 @@ export const CampaignManagement = () => {
             {
               key: 'profit',
               label: 'Profit',
-              width: '100px',
+              width: '86px',
+              className: 'hidden 2xl:flex',
               align: 'right',
               sorter: (a: any, b: any) => parseFloat(a.profit.replace('$', '')) - parseFloat(b.profit.replace('$', '')),
               showSorter: true,
@@ -743,7 +747,8 @@ export const CampaignManagement = () => {
             {
               key: 'roi',
               label: 'ROI',
-              width: '100px',
+              width: '80px',
+              className: 'hidden xl:flex',
               align: 'right',
               sorter: (a: any, b: any) => parseFloat(a.roi.replace('%', '')) - parseFloat(b.roi.replace('%', '')),
               showSorter: true,
@@ -757,7 +762,8 @@ export const CampaignManagement = () => {
             {
               key: 'epc',
               label: 'EPC',
-              width: '100px',
+              width: '80px',
+              className: 'hidden 2xl:flex',
               align: 'right',
               sorter: (a: any, b: any) => parseFloat(a.epc.replace('$', '')) - parseFloat(b.epc.replace('$', '')),
               showSorter: true,
@@ -768,7 +774,8 @@ export const CampaignManagement = () => {
             {
               key: 'cr',
               label: 'CR',
-              width: '80px',
+              width: '72px',
+              className: 'hidden 2xl:flex',
               align: 'right',
               sorter: (a: any, b: any) => parseFloat(a.cr.replace('%', '')) - parseFloat(b.cr.replace('%', '')),
               showSorter: true,
@@ -779,8 +786,9 @@ export const CampaignManagement = () => {
             {
               key: 'actions',
               label: '',
-              width: '80px',
+              width: '72px',
               align: 'center',
+              className: 'hidden xl:flex',
               render: (_: any, row: any) => (
                 <div className="flex items-center gap-1">
                   <button
@@ -799,7 +807,7 @@ export const CampaignManagement = () => {
           ]}
           data={paginatedCampaigns}
           rowHeight={72}
-          height={400}
+          height="auto"
           overscan={5}
           selectable={false}
           emptyMessage="No campaigns found"

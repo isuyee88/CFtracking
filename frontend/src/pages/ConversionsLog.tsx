@@ -209,14 +209,14 @@ export const ConversionsLog = () => {
     }
   }, [searchQuery, dateRangeValue.startDate, dateRangeValue.endDate, statusFilter, fetchData]);
 
-  // 瀹㈡埛绔瓫閫夛紙鎼滅储鍜岀姸鎬佺瓫閫夛級
+  // 客户端筛选（搜索和状态筛选）
   const filteredConversions = useMemo(() => {
     return (conversions || []).filter(conv => {
-      const matchesSearch = conv.campaign.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           conv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           conv.ip.includes(searchQuery) ||
-                           conv.offer.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || conv.status.toLowerCase() === statusFilter.toLowerCase();
+      const matchesSearch = String(conv.campaign || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(conv.id || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(conv.ip || '').includes(searchQuery) ||
+        String(conv.offer || '').toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus = statusFilter === 'all' || String(conv.status || '').toLowerCase() === statusFilter.toLowerCase();
       return matchesSearch && matchesStatus;
     });
   }, [conversions, searchQuery, statusFilter]);
