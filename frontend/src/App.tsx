@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @fileoverview React 搴旂敤涓诲叆鍙ｏ紝閰嶇疆璺敱
  * @description 娓叉煋鏁翠釜搴旂敤锛屽寘鍚墍鏈夐〉闈㈣矾鐢?
  * @module App
@@ -33,6 +33,7 @@ const Blacklist = lazy(() => import('./pages/Blacklist'));
 const Whitelist = lazy(() => import('./pages/Whitelist'));
 const TargetPage = lazy(() => import('./pages/Target'));
 const HelpCenter = lazy(() => import('./pages/HelpCenter'));
+const Login = lazy(() => import('./pages/Login'));
 
 
 
@@ -52,6 +53,7 @@ export default function App() {
             </div>
           }>
             <Routes>
+              <Route path="login" element={<Login />} />
               <Route path="/" element={<Layout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="dashboard" element={<Dashboard />} />

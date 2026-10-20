@@ -1,119 +1,47 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Checkbox, Form, Input, message, Card, Divider, Typography, Alert } from 'antd';
+import { Alert, Button, Card, Checkbox, Divider, Form, Input, message, Typography } from 'antd';
 import { GoogleOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
 import './Login.css';
 
 const { Title, Text, Link } = Typography;
 
-// API 基础 URL
-const API_BASE_URL = import.meta.env.VITE_API_URL || '';
-
-/**
- * 检测当前是否为开发环境
- * @returns boolean
- */
-function isDevelopmentEnvironment(): boolean {
-  return (
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    window.location.port === '5173' ||
-    window.location.port === '3000'
-  );
-}
-
-function resolveRedirectPath(): string {
-  const searchParams = new URLSearchParams(window.location.search);
-  const redirect = searchParams.get('redirect') || '/dashboard';
-
-  if (!redirect.startsWith('/')) {
+function redirectTarget(): string {
+  if (typeof window === 'undefined') return '/dashboard';
+  const requested = new URLSearchParams(window.location.search).get('redirect') || '/dashboard';
+  if (!requested.startsWith('/') || requested.startsWith('//') || requested.startsWith('/login')) {
     return '/dashboard';
   }
-
-  if (redirect.startsWith('/login')) {
-    return '/dashboard';
-  }
-
-  return redirect;
-}
-
-function safeGetStorageItem(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function safeSetStorageItem(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // Ignore storage write failures in restricted contexts.
-  }
+  return requested;
 }
 
 const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
-  const redirectPath = useMemo(() => resolveRedirectPath(), []);
+  const target = useMemo(redirectTarget, []);
 
   useEffect(() => {
-    const token = safeGetStorageItem('token');
-    if (token) {
-      window.location.replace(redirectPath);
-    }
-  }, [redirectPath]);
+    if (window.localStorage.getItem('token')) window.location.replace(target);
+  }, [target]);
 
-  /**
-   * 处理登录表单提交
-   * @param values - 表单值（username, password）
-   */
   const onFinish = async (values: { username: string; password: string }) => {
     setLoading(true);
-
     try {
-      // 调用真实的登录 API
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: values.username,
-          password: values.password,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: values.username, password: values.password }),
       });
-
-      const data = await response.json();
-
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        // 登录失败
-        throw new Error(data.error || data.message || '登录失败');
+        throw new Error(payload?.error?.message || payload?.message || '登录失败');
       }
-
-      // ✅ 登录成功 - 存储真实的 JWT Token
-      const { token, user } = data.data;
-
-      if (!token) {
-        throw new Error('服务器未返回有效的认证令牌');
-      }
-
-      // 存储 Token 到 localStorage
-      safeSetStorageItem('token', token);
-      safeSetStorageItem('user', JSON.stringify(user));
-
+      const token = payload?.data?.token;
+      if (!token) throw new Error('服务器未返回有效的认证令牌');
+      window.localStorage.setItem('token', token);
+      window.localStorage.setItem('user', JSON.stringify(payload.data.user || {}));
       message.success('登录成功');
-
-      // 延迟跳转，让用户看到成功提示
-      setTimeout(() => {
-        window.location.assign(redirectPath);
-      }, 500);
-
-    } catch (error: any) {
-      console.error('[Login] 登录失败:', error);
-
-      // 显示错误信息
-      const errorMessage = error.message || '登录失败，请检查用户名和密码';
-      message.error(errorMessage);
+      window.location.assign(target);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '登录失败，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -127,29 +55,10 @@ const Login: React.FC = () => {
           <Text type="secondary">管理您的广告活动和跟踪数据</Text>
         </div>
 
-        {/* 开发环境警告 */}
-        {isDevelopmentEnvironment() && (
-          <Alert
-            message="开发模式"
-            description="您当前处于开发环境。生产环境将强制要求有效凭据。"
-            type="warning"
-            showIcon
-            className="login-alert"
-            style={{ marginBottom: 16 }}
-          />
-        )}
-
         <Divider />
 
-        <Form
-          name="login"
-          initialValues={{ remember: true }}
-          onFinish={onFinish}
-        >
-          <Form.Item
-            name="username"
-            rules={[{ required: true, message: '请输入用户名或邮箱' }]}
-          >
+        <Form name="login" initialValues={{ remember: true }} onFinish={onFinish}>
+          <Form.Item name="username" rules={[{ required: true, message: '请输入用户名或邮箱' }]}>
             <Input
               prefix={<UserOutlined className="site-form-item-icon" />}
               placeholder="用户名或邮箱"
@@ -158,10 +67,7 @@ const Login: React.FC = () => {
             />
           </Form.Item>
 
-          <Form.Item
-            name="password"
-            rules={[{ required: true, message: '请输入密码' }]}
-          >
+          <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
             <Input
               prefix={<LockOutlined className="site-form-item-icon" />}
               type="password"
@@ -181,15 +87,8 @@ const Login: React.FC = () => {
           </Form.Item>
 
           <Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              className="login-form-button"
-              size="large"
-              loading={loading}
-              block
-            >
-              {loading ? '登录中...' : '登录'}
+            <Button type="primary" htmlType="submit" className="login-form-button" size="large" loading={loading} block>
+              {loading ? '登录中…' : '登录'}
             </Button>
           </Form.Item>
         </Form>
@@ -197,14 +96,7 @@ const Login: React.FC = () => {
         <Divider>或</Divider>
 
         <div className="login-social">
-          <Button
-            type="default"
-            icon={<GoogleOutlined />}
-            className="social-button"
-            size="large"
-            block
-            disabled
-          >
+          <Button type="default" icon={<GoogleOutlined />} className="social-button" size="large" block disabled>
             使用 Google 账号登录（即将推出）
           </Button>
         </div>
