@@ -31,6 +31,7 @@ import { fetchLandings, createLanding, updateLanding, deleteLanding } from '../s
 import { ExportButton } from '../components/ExportButton';
 import { formatLandingPageForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
+import { TablePagination } from '../components/TablePagination';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 import { usePageData } from '@/context/DataCacheContext';
 import { useToast } from '../components/Toast';
@@ -542,6 +543,17 @@ export const Landings = () => {
         </div>
       </div>
 
+      <div className="hidden md:block">
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredLandings.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          label="landings"
+        />
+      </div>
+
       {/* Landing Pages Table - 使用虚拟滚动 */}
       <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
         <VirtualTableEnhanced
@@ -716,54 +728,6 @@ export const Landings = () => {
           emptyMessage="No landing pages found"
         />
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t border-outline-variant/10">
-            <span className="text-sm text-on-surface-variant">
-              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredLandings.length)} of {filteredLandings.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === 1 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronLeft size={20} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={cn(
-                    "w-8 h-8 text-sm font-medium rounded-sm transition-colors",
-                    currentPage === page
-                      ? "bg-primary text-on-primary"
-                      : "text-on-surface-variant hover:bg-surface-container"
-                  )}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === totalPages 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronRight size={20} />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Filter Panel */}

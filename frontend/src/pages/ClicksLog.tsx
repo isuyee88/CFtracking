@@ -35,6 +35,7 @@ import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/compo
 import { GroupByFilter, DEFAULT_GROUP_BY_OPTIONS, filterByGroupBy } from '@/components/GroupByFilter';
 import { ActiveFilterBar } from '@/components/ActiveFilterBar';
 import { TableColumnSettings, useTableColumnLayout, type TableColumnItem } from '@/components/TableColumnSettings';
+import { TablePagination } from '@/components/TablePagination';
 import type { GroupByState, GroupByOption } from '@/types/filter';
 import { fetchClicks, fetchClickStats, type ClickLogParams, type ClickStats } from '../services/api';
 import { useDataCache } from '@/context/DataCacheContext';
@@ -542,6 +543,16 @@ export const ClicksLog = () => {
       </div>
 
       {/* Table (desktop/tablet) */}
+      <div className="hidden md:block">
+        <TablePagination
+          currentPage={pagination.page}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.total}
+          itemsPerPage={pagination.pageSize}
+          onPageChange={handlePageChange}
+          label="clicks"
+        />
+      </div>
       <div className="hidden overflow-hidden rounded-lg border border-border-default bg-surface md:block">
         <div className="flex h-9 items-center justify-between border-b border-border-default px-3">
           <span className="text-[11px] font-medium text-fg-subtle">{clicksList.length} rows</span>
@@ -704,34 +715,6 @@ export const ClicksLog = () => {
             </table>
           )}
         </div>
-
-        {/* Pagination */}
-        {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border-default">
-            <div className="text-sm text-fg-muted">
-              Showing {((pagination.page - 1) * pagination.pageSize) + 1} to {Math.min(pagination.page * pagination.pageSize, pagination.total)} of {pagination.total} results
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handlePageChange(pagination.page - 1)}
-                disabled={pagination.page === 1}
-                className="p-2 text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span className="text-sm text-fg-default">
-                Page {pagination.page} of {pagination.totalPages}
-              </span>
-              <button
-                onClick={() => handlePageChange(pagination.page + 1)}
-                disabled={pagination.page === pagination.totalPages}
-                className="p-2 text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronRightIcon size={16} />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

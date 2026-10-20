@@ -41,6 +41,7 @@ import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/compo
 import { GroupByFilter, filterByGroupBy } from '@/components/GroupByFilter';
 import { ActiveFilterBar } from '@/components/ActiveFilterBar';
 import { TableColumnSettings, useTableColumnLayout, type TableColumnItem } from '@/components/TableColumnSettings';
+import { TablePagination } from '@/components/TablePagination';
 import type { GroupByState, GroupByOption } from '@/types/filter';
 import { useDataCache } from '@/context/DataCacheContext';
 import { fetchConversions, fetchConversionStats, type Conversion } from '../services/api';
@@ -69,6 +70,8 @@ const CONVERSIONS_LOG_GROUP_BY_OPTIONS: GroupByOption[] = [
 export const ConversionsLog = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [conversionPage, setConversionPage] = useState(1);
+  const conversionPageSize = 20;
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
 
   // 鏃ユ湡绛涢€?- 浣跨敤鏂扮殑鏃ユ湡閫夋嫨鍣?
@@ -226,6 +229,15 @@ export const ConversionsLog = () => {
   const totalRevenue = stats.totalRevenue || 0;
   const totalPayout = stats.totalPayout || 0;
   const totalConversions = stats.totalConversions || filteredConversions.length;
+  const conversionTotalPages = Math.max(1, Math.ceil(filteredConversions.length / conversionPageSize));
+  const paginatedConversions = filteredConversions.slice(
+    (conversionPage - 1) * conversionPageSize,
+    conversionPage * conversionPageSize,
+  );
+
+  useEffect(() => {
+    setConversionPage(1);
+  }, [searchQuery, statusFilter]);
   const approvedConversions = stats.approvedConversions || filteredConversions.filter(c => c.status === 'Approved').length;
   const pendingConversions = stats.pendingConversions || filteredConversions.filter(c => c.status === 'Pending').length;
   const rejectedConversions = stats.rejectedConversions || filteredConversions.filter(c => c.status === 'Rejected').length;
@@ -486,9 +498,20 @@ export const ConversionsLog = () => {
         onClearAll={() => { setSearchQuery(''); setStatusFilter('all'); }}
       />
 
+      <div className="hidden md:block">
+        <TablePagination
+          currentPage={conversionPage}
+          totalPages={conversionTotalPages}
+          totalItems={filteredConversions.length}
+          itemsPerPage={conversionPageSize}
+          onPageChange={setConversionPage}
+          label="conversions"
+        />
+      </div>
+
       {/* Mobile summary cards */}
       <div className="space-y-3 md:hidden">
-        {filteredConversions.map((conv) => (
+        {paginatedConversions.map((conv) => (
           <article key={conv.id} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -545,7 +568,7 @@ export const ConversionsLog = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/5">
-              {filteredConversions.map((conv) => (
+              {paginatedConversions.map((conv) => (
                 <React.Fragment key={conv.id}>
                   <tr className="hover:bg-surface-container-low transition-colors group">
                     <td className="px-4 py-3">

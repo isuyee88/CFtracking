@@ -30,13 +30,13 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { EntityForm, type FormField } from '../components/EntityForm';
 import { fetchAffiliateNetworks, createAffiliateNetwork, updateAffiliateNetwork, deleteAffiliateNetwork } from '../services/api';
+import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
+import { TablePagination } from '../components/TablePagination';
 import { ExportButton } from '../components/ExportButton';
 import { formatAffiliateNetworkForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { AFFILIATE_NETWORK_TEMPLATES, getAffiliateTemplateById, type AffiliateNetworkOfferParameter } from '../data/affiliateNetworkTemplates';
-import { readBootstrapPage } from '../services/bootstrap';
-import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
-import { truncateLabel } from '../utils/text';
+import { usePageData } from '@/context/DataCacheContext';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -76,8 +76,7 @@ const NETWORK_FIELDS: FormField[] = [
     label: 'Network Name',
     type: 'text',
     required: true,
-    placeholder: 'Enter network name',
-    maxLength: FIELD_MAX_LENGTH.NAME,
+    placeholder: 'Enter network name'
   },
   {
     name: 'templateId',
@@ -113,7 +112,6 @@ const NETWORK_FIELDS: FormField[] = [
     label: 'API URL',
     type: 'url',
     placeholder: 'https://api.network.com/endpoint',
-    maxLength: FIELD_MAX_LENGTH.URL,
     validation: (value) => {
       if (!value) return null;
       try {
@@ -128,23 +126,20 @@ const NETWORK_FIELDS: FormField[] = [
     name: 'apiKey',
     label: 'API Key',
     type: 'text',
-    placeholder: 'Enter your API key',
-    maxLength: FIELD_MAX_LENGTH.API_KEY,
+    placeholder: 'Enter your API key'
   },
   {
     name: 'apiSecret',
     label: 'API Secret',
     type: 'text',
-    placeholder: 'Enter your API secret (if required)',
-    maxLength: FIELD_MAX_LENGTH.API_SECRET,
+    placeholder: 'Enter your API secret (if required)'
   },
   {
     name: 'postbackUrl',
     label: 'Postback URL',
     type: 'url',
     description: 'The URL where the affiliate network sends conversion notifications. Copy this to your affiliate network settings.',
-    placeholder: 'https://your-tracking-domain.com/postback?subid={{subid}}&status={status}',
-    maxLength: FIELD_MAX_LENGTH.URL,
+    placeholder: 'https://your-tracking-domain.com/postback?subid={{subid}}&status={status}'
   },
   {
     name: 'offerParameters',
@@ -167,19 +162,18 @@ const NETWORK_FIELDS: FormField[] = [
     name: 'notes',
     label: 'Notes',
     type: 'textarea',
-    placeholder: 'Add notes about this network...',
-    maxLength: FIELD_MAX_LENGTH.NOTES,
+    placeholder: 'Add notes about this network...'
   }
 ];
 
 export const AffiliateNetworks = () => {
-  const bootstrap = readBootstrapPage<{ affiliateNetworks?: AffiliateNetwork[] }>('affiliate-networks');
-  const hasBootstrap = Boolean(bootstrap);
-  const [networks, setNetworks] = useState<AffiliateNetwork[]>(
-    Array.isArray(bootstrap?.data?.affiliateNetworks) ? bootstrap.data.affiliateNetworks : []
+  // 使用 usePageData hook 自动处理 SSR 缓存、加载和错误状态
+  const { data: networksData, isLoading, error, refetch } = usePageData(
+    'affiliateNetworks',
+    fetchAffiliateNetworks
   );
-  const [loading, setLoading] = useState(!hasBootstrap);
-  const [error, setError] = useState<string | null>(null);
+  
+  const [networks, setNetworks] = useState<AffiliateNetwork[]>([]);
   
   // Form modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -223,75 +217,15 @@ export const AffiliateNetworks = () => {
     return getNetworkFieldsWithTemplate(selectedNetwork?.templateId);
   }, [selectedNetwork?.templateId]);
 
-  // Fetch affiliate networks from API
+  // 当 networksData 变化时，更新本地状态
   useEffect(() => {
-    const loadNetworks = async () => {
-      try {
-        if (!hasBootstrap && networks.length === 0) {
-          setLoading(true);
-        }
-        const data = await fetchAffiliateNetworks();
-        if (Array.isArray(data)) {
-          setNetworks(data);
-        } else {
-          // Use mock data if API fails
-          setNetworks([
-            {
-              id: 'an1',
-              name: 'OddBytes Network',
-              type: 'soap',
-              status: 'active',
-              apiUrl: 'https://api.oddbytes.com/v1',
-              apiKey: '••••••••••••',
-              offerCount: 124,
-              clicks: 15000,
-              conversions: 345,
-              epc: 0.85,
-              cr: 2.3,
-              revenue: 12450.00,
-              updatedAt: '2024-01-15T10:30:00Z'
-            },
-            {
-              id: 'an2',
-              name: 'PropellerAds Network',
-              type: 'rest',
-              status: 'active',
-              apiUrl: 'https://api.propellerads.com/v2',
-              apiKey: '••••••••••••',
-              offerCount: 89,
-              clicks: 12000,
-              conversions: 216,
-              epc: 1.20,
-              cr: 1.8,
-              revenue: 8920.00,
-              updatedAt: '2024-01-14T15:45:00Z'
-            },
-            {
-              id: 'an3',
-              name: 'AdCash Network',
-              type: 'rest',
-              status: 'paused',
-              apiUrl: 'https://api.adcash.com/v1',
-              apiKey: '••••••••••••',
-              offerCount: 45,
-              clicks: 8000,
-              conversions: 96,
-              epc: 0.45,
-              cr: 1.2,
-              revenue: 5430.00,
-              updatedAt: '2024-01-13T09:15:00Z'
-            }
-          ]);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load affiliate networks');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadNetworks();
-  }, [hasBootstrap, networks.length]);
+    if (!networksData) return;
+    
+    // 确保数据是数组
+    if (Array.isArray(networksData)) {
+      setNetworks(networksData);
+    }
+  }, [networksData]);
 
   const handleCreateNetwork = () => {
     setFormMode('create');
@@ -455,12 +389,8 @@ export const AffiliateNetworks = () => {
     return colors[type] || 'bg-gray-100 text-gray-700';
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 size={48} className="animate-spin text-primary" />
-      </div>
-    );
+  if (isLoading && networks.length === 0) {
+    return <AffiliateNetworkSkeleton />;
   }
 
   return (
@@ -478,14 +408,14 @@ export const AffiliateNetworks = () => {
       />
 
       {/* Header */}
-      <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-primary">Affiliate Networks</h1>
           <p className="text-sm text-on-surface-variant">Manage your affiliate network connections</p>
         </div>
-        <div className="flex w-full xl:w-auto flex-wrap justify-start xl:justify-end items-end gap-3">
+        <div className="flex gap-3">
           {/* Date Range Picker */}
-          <div className="w-full sm:w-[280px] shrink-0">
+          <div className="w-[280px]">
             <QuickDateRangePicker
               value="today"
               onChange={(preset, range) => {
@@ -500,20 +430,18 @@ export const AffiliateNetworks = () => {
               maxRangeDays={365}
             />
           </div>
-          <button className="flex h-10 shrink-0 items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors" aria-label="Open affiliate network filters">
+          <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
             <Filter size={16} />
             Filters
           </button>
-          <div className="shrink-0">
           <ExportButton 
             data={networks.map(formatAffiliateNetworkForExport)}
             filename="affiliate-networks"
             label="Export"
           />
-          </div>
           <button 
             onClick={handleCreateNetwork}
-            className="btn-create flex h-10 shrink-0 items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
+            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
           >
             <Plus size={18} />
             New Network
@@ -523,7 +451,7 @@ export const AffiliateNetworks = () => {
 
       {/* Toolbar */}
       <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           {selectedItems.size > 0 ? (
             <>
               <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
@@ -559,14 +487,13 @@ export const AffiliateNetworks = () => {
               <div className="h-6 w-px bg-outline-variant/20 mx-2" />
             </>
           )}
-          <div className="relative w-full min-w-0 flex-1 md:min-w-[220px]">
+          <div className="relative flex-1 min-w-[300px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
             <input 
               type="text" 
               placeholder="Search by name or API URL..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              aria-label="Search affiliate networks by name or API URL"
               className="w-full pl-10 pr-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all"
             />
           </div>
@@ -602,186 +529,210 @@ export const AffiliateNetworks = () => {
         </div>
       </div>
 
-      {/* Networks Table */}
-      <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-container-low">
-                <th className="px-4 py-4 w-10">
-                  <input 
-                    type="checkbox" 
-                    className="rounded border-outline-variant"
-                    checked={selectedItems.size === filteredNetworks.length && filteredNetworks.length > 0}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Network</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Type</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Status</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Offers</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">EPC</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">CR</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Revenue</th>
-                <th className="px-4 py-4 w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedNetworks.map((network) => (
-                <tr 
-                  key={network.id} 
-                  className={cn(
-                    "border-t border-outline-variant/10 hover:bg-surface-container/50 transition-colors",
-                    selectedItems.has(network.id) && "bg-surface-container/30"
-                  )}
-                >
-                  <td className="px-4 py-4">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-outline-variant"
-                      checked={selectedItems.has(network.id)}
-                      onChange={() => handleSelectItem(network.id)}
-                    />
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
-                        <Network size={20} className="text-primary" />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-bold text-primary truncate max-w-[180px]" title={network.name}>
-                          {truncateLabel(network.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
-                        </h3>
-                        <div className="flex items-center gap-2 text-xs text-on-surface-variant">
-                          <Link size={12} />
-                          <span className="truncate max-w-[150px]" title={network.apiUrl || 'No API URL'}>
-                            {truncateLabel(network.apiUrl || 'No API URL', DISPLAY_MAX_LENGTH.TABLE_SECONDARY_TEXT)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={cn(
-                      "px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm",
-                      getTypeColor(network.type)
-                    )}>
-                      {getTypeLabel(network.type)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
-                      network.status === 'active' ? "status-active" : "status-paused"
-                    )}>
-                      <div className={cn(
-                        "w-2 h-2 rounded-full",
-                        network.status === 'active' ? "bg-green-500" : "bg-yellow-500"
-                      )} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">{network.status}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="text-sm font-medium text-on-surface">
-                      {network.offerCount !== undefined ? network.offerCount : network.offers || 0}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-primary">
-                      ${typeof network.epc === 'number' ? network.epc.toFixed(2) : network.epc}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-primary">
-                      {typeof network.cr === 'number' ? `${network.cr}%` : network.cr}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-secondary">
-                      ${typeof network.revenue === 'number' ? network.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : network.revenue}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={() => handleEditNetwork(network)}
-                        className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                        title="Edit"
-                      >
-                        <Edit3 size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteNetwork(network.id)}
-                        className="p-2 text-on-surface-variant hover:text-error transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="hidden md:block">
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredNetworks.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          label="networks"
+        />
+      </div>
 
-        {filteredNetworks.length === 0 && (
-          <div className="p-8 text-center text-on-surface-variant">
-            <p>No affiliate networks found</p>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t border-outline-variant/10">
-            <span className="text-sm text-on-surface-variant">
-              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredNetworks.length)} of {filteredNetworks.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === 1 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronLeft size={20} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={cn(
-                    "w-8 h-8 text-sm font-medium rounded-sm transition-colors",
-                    currentPage === page
-                      ? "bg-primary text-on-primary"
-                      : "text-on-surface-variant hover:bg-surface-container"
-                  )}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === totalPages 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronRight size={20} />
-              </button>
+      <div className="space-y-3 md:hidden">
+        {paginatedNetworks.map((network) => (
+          <article key={network.id} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-bold text-primary">{network.name}</h2>
+                <p className="mt-0.5 truncate text-xs text-on-surface-variant">{network.apiUrl || 'No API URL'}</p>
+              </div>
+              <span className={cn('shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-widest', network.status === 'active' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>{network.status}</span>
             </div>
-          </div>
-        )}
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <div><dt className="text-fg-subtle">Type</dt><dd className="mt-0.5 text-fg-default">{getTypeLabel(network.type)}</dd></div>
+              <div><dt className="text-fg-subtle">Offers</dt><dd className="mt-0.5 text-fg-default">{network.offerCount ?? network.offers ?? 0}</dd></div>
+              <div><dt className="text-fg-subtle">EPC</dt><dd className="mt-0.5 font-mono text-fg-default">${typeof network.epc === 'number' ? network.epc.toFixed(2) : network.epc}</dd></div>
+              <div><dt className="text-fg-subtle">Revenue</dt><dd className="mt-0.5 font-mono text-secondary">${typeof network.revenue === 'number' ? network.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : network.revenue}</dd></div>
+            </dl>
+            <div className="mt-3 flex justify-end gap-2 border-t border-outline-variant/10 pt-2">
+              <button type="button" onClick={() => handleEditNetwork(network)} className="rounded-md border border-outline-variant/30 px-3 py-1.5 text-xs text-fg-default">Edit</button>
+              <button type="button" onClick={() => handleDeleteNetwork(network.id)} className="rounded-md border border-error/20 px-3 py-1.5 text-xs text-error">Delete</button>
+            </div>
+          </article>
+        ))}
+        {paginatedNetworks.length === 0 && <div className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">No affiliate networks found</div>}
+      </div>
+
+      <div className="hidden md:block">
+        <VirtualTableEnhanced
+          tableId="affiliate-networks"
+          columns={[
+            {
+              key: 'name',
+              label: 'Network',
+              width: '220px',
+              className: 'flex-1 min-w-0',
+              sorter: (a: AffiliateNetwork, b: AffiliateNetwork) => a.name.localeCompare(b.name),
+              showSorter: true,
+              render: (_: unknown, network: AffiliateNetwork) => (
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-primary/10">
+                    <Network size={18} className="text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-primary">{network.name}</p>
+                    <p className="truncate text-xs text-fg-muted">{network.apiUrl || 'No API URL'}</p>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'type',
+              label: 'Type',
+              width: '100px',
+              sorter: (a: AffiliateNetwork, b: AffiliateNetwork) => getTypeLabel(a.type).localeCompare(getTypeLabel(b.type)),
+              showSorter: true,
+              render: (_: unknown, network: AffiliateNetwork) => <span className={cn('px-2 py-1 text-[10px] font-bold uppercase tracking-widest', getTypeColor(network.type))}>{getTypeLabel(network.type)}</span>,
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              width: '110px',
+              sorter: (a: AffiliateNetwork, b: AffiliateNetwork) => a.status.localeCompare(b.status),
+              showSorter: true,
+              render: (_: unknown, network: AffiliateNetwork) => <span className={cn('px-2 py-1 text-[10px] font-bold uppercase tracking-widest', network.status === 'active' ? 'status-active' : 'status-paused')}>{network.status}</span>,
+            },
+            {
+              key: 'offers',
+              label: 'Offers',
+              width: '86px',
+              align: 'right',
+              defaultHidden: true,
+              render: (_: unknown, network: AffiliateNetwork) => <span className="text-fg-default">{network.offerCount ?? network.offers ?? 0}</span>,
+            },
+            {
+              key: 'epc',
+              label: 'EPC',
+              width: '86px',
+              align: 'right',
+              defaultHidden: true,
+              render: (_: unknown, network: AffiliateNetwork) => <span className="font-mono text-primary">${typeof network.epc === 'number' ? network.epc.toFixed(2) : network.epc}</span>,
+            },
+            {
+              key: 'cr',
+              label: 'CR',
+              width: '76px',
+              align: 'right',
+              defaultHidden: true,
+              render: (_: unknown, network: AffiliateNetwork) => <span className="font-mono text-primary">{typeof network.cr === 'number' ? String(network.cr) + '%' : network.cr}</span>,
+            },
+            {
+              key: 'revenue',
+              label: 'Revenue',
+              width: '110px',
+              align: 'right',
+              sorter: (a: AffiliateNetwork, b: AffiliateNetwork) => Number(a.revenue || 0) - Number(b.revenue || 0),
+              showSorter: true,
+              render: (_: unknown, network: AffiliateNetwork) => <span className="font-mono text-secondary">${typeof network.revenue === 'number' ? network.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : network.revenue}</span>,
+            },
+            {
+              key: 'actions',
+              label: '',
+              width: '88px',
+              align: 'center',
+              render: (_: unknown, network: AffiliateNetwork) => (
+                <div className="flex items-center justify-center gap-1">
+                  <button type="button" onClick={() => handleEditNetwork(network)} className="p-2 text-fg-muted hover:text-primary" title="Edit"><Edit3 size={16} /></button>
+                  <button type="button" onClick={() => handleDeleteNetwork(network.id)} className="p-2 text-fg-muted hover:text-error" title="Delete"><Trash2 size={16} /></button>
+                </div>
+              ),
+            },
+          ]}
+          data={paginatedNetworks}
+          rowHeight={72}
+          height="auto"
+          selectable
+          selectedRows={selectedItems}
+          onSelectionChange={setSelectedItems}
+          getRowId={(row) => row.id}
+          emptyMessage="No affiliate networks found"
+        />
       </div>
     </div>
   );
 };
+
+// Skeleton component for table rows
+const AffiliateNetworkSkeleton = () => (
+  <div className="space-y-6 animate-in fade-in duration-700">
+    {/* Header */}
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse">
+      <div className="space-y-2">
+        <div className="w-64 h-8 bg-surface-container rounded"></div>
+        <div className="w-48 h-4 bg-surface-container rounded"></div>
+      </div>
+      <div className="flex gap-3 items-center">
+        <div className="w-72 h-10 bg-surface-container rounded"></div>
+        <div className="w-32 h-10 bg-surface-container rounded"></div>
+        <div className="w-24 h-10 bg-surface-container rounded"></div>
+        <div className="w-32 h-10 bg-surface-container rounded"></div>
+      </div>
+    </div>
+    
+    {/* Toolbar */}
+    <div className="bg-surface-container-lowest p-4 whisper-shadow animate-pulse">
+      <div className="flex items-center gap-2">
+        <div className="flex gap-2">
+          <div className="w-8 h-8 bg-surface-container rounded"></div>
+          <div className="w-8 h-8 bg-surface-container rounded"></div>
+          <div className="w-8 h-8 bg-surface-container rounded"></div>
+          <div className="w-8 h-8 bg-surface-container rounded"></div>
+        </div>
+        <div className="relative flex-1 min-w-[300px]">
+          <div className="w-full h-10 bg-surface-container rounded"></div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="w-32 h-4 bg-surface-container rounded"></div>
+          <div className="flex gap-2">
+            <div className="w-16 h-10 bg-surface-container rounded"></div>
+            <div className="w-16 h-10 bg-surface-container rounded"></div>
+            <div className="w-16 h-10 bg-surface-container rounded"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    {/* Table */}
+    <div className="bg-surface-container-lowest whisper-shadow overflow-hidden animate-pulse">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <div key={index} className="border-b border-outline-variant/10 p-4">
+          <div className="flex items-center gap-4">
+            <div className="w-5 h-5 bg-surface-container rounded"></div>
+            <div className="flex items-center gap-3 flex-1">
+              <div className="w-10 h-10 bg-surface-container rounded"></div>
+              <div className="space-y-2">
+                <div className="w-48 h-4 bg-surface-container rounded"></div>
+                <div className="w-64 h-3 bg-surface-container rounded"></div>
+              </div>
+            </div>
+            <div className="w-20 h-8 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="flex gap-2">
+              <div className="w-8 h-8 bg-surface-container rounded"></div>
+              <div className="w-8 h-8 bg-surface-container rounded"></div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 export default AffiliateNetworks;

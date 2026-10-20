@@ -2,8 +2,8 @@
  * File: PlatformManagement.tsx
  * Purpose: 平台管理页面，管理外部平台集成
  * Input/Output: 显示平台列表，支持配置和测试连接
- * Logic: 从边缘 bootstrap 读取平台数据，提供配置、测试连接功能
- * 前后端交互: 首屏读取 bootstrap，对平台配置与测试仍保留写接口
+ * Logic: 从API获取平台数据，提供配置、测试连接功能
+ * 前后端交互: 调用 /api/platforms 接口
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -19,6 +19,7 @@ import {
   Zap,
   CheckCircle,
   XCircle,
+  Play,
   Link
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -27,18 +28,22 @@ import {
   fetchPlatforms, configurePlatform, testPlatformConnection,
   type Platform 
 } from '../services/api';
-import { readBootstrapPage } from '../services/bootstrap';
+import { usePageData } from '@/context/DataCacheContext';
+import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 export const PlatformManagement = () => {
-  const bootstrap = readBootstrapPage<{ platforms?: Platform[] }>('platforms');
-  const hasBootstrap = Boolean(bootstrap);
-  const [platforms, setPlatforms] = useState<Platform[]>(Array.isArray(bootstrap?.data?.platforms) ? bootstrap.data.platforms : []);
-  const [loading, setLoading] = useState(!hasBootstrap);
-  const [error, setError] = useState<string | null>(null);
+  // 使用 usePageData hook 自动处理 SSR 缓存、加载和错误状态
+  const { data: platformsData, isLoading, error, refetch } = usePageData(
+    'platforms',
+    fetchPlatforms
+  );
+  
+  const [platforms, setPlatforms] = useState<Platform[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,28 +58,13 @@ export const PlatformManagement = () => {
     apiUrl: '',
   });
 
-  const loadPlatforms = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      if (!hasBootstrap && platforms.length === 0) {
-        setLoading(true);
-      }
-
-      const data = await fetchPlatforms();
-      setPlatforms(data);
-    } catch (err) {
-      console.error('Failed to load platforms:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load platforms');
-    } finally {
-      setLoading(false);
-    }
-  }, [hasBootstrap, platforms.length]);
-
+  // 当 platformsData 变化时，更新本地状态
   useEffect(() => {
-    loadPlatforms();
-  }, [loadPlatforms]);
+    if (!platformsData) return;
+    if (Array.isArray(platformsData)) {
+      setPlatforms(platformsData);
+    }
+  }, [platformsData]);
 
   const filteredPlatforms = platforms.filter(platform => {
     const matchesSearch = platform.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -134,21 +124,17 @@ export const PlatformManagement = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <RefreshCw className="animate-spin text-accent-fg" size={32} />
-      </div>
-    );
+  if (isLoading && platforms.length === 0) {
+    return <PlatformSkeleton />;
   }
 
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-danger">
         <AlertCircle size={48} className="mb-4" />
-        <p className="text-lg font-medium">{error}</p>
+        <p className="text-lg font-medium">{error?.message || error}</p>
         <button 
-          onClick={loadPlatforms}
+          onClick={() => refetch()}
           className="mt-4 px-4 py-2 bg-surface border border-border-default rounded-md text-fg-default hover:bg-surface-container transition-colors"
         >
           Retry
@@ -167,7 +153,7 @@ export const PlatformManagement = () => {
         </div>
         <div className="flex items-center gap-2">
           <button 
-            onClick={loadPlatforms}
+            onClick={refetch}
             className="p-2 text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-all"
             title="Refresh"
           >
@@ -217,93 +203,21 @@ export const PlatformManagement = () => {
       <div className="bg-surface rounded-lg border border-border-default overflow-hidden">
         <div className="overflow-x-auto">
           {filteredPlatforms.length > 0 ? (
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-surface-container border-b border-border-default">
-                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Name</th>
-                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Type</th>
-                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Configured</th>
-                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider">Actions</th>
-                  <th className="px-4 py-3 text-xs font-medium text-fg-muted uppercase tracking-wider text-right">Operations</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-default">
-                {filteredPlatforms.map((platform) => (
-                  <tr key={platform.id} className="group hover:bg-surface-container transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-fg-default">{platform.name}</span>
-                        <span className="text-xs text-fg-muted">{platform.version}</span>
-                        {platform.description && (
-                          <span className="text-xs text-fg-muted truncate max-w-xs">{platform.description}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={cn(
-                        "px-2 py-1 text-xs font-medium rounded",
-                        platform.type === 'soap' ? "bg-accent-fg/10 text-accent-fg" : "bg-success/10 text-success"
-                      )}>
-                        {platform.type.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={cn(
-                        "px-2 py-1 text-xs font-medium rounded",
-                        platform.status === 'active' ? "bg-success/10 text-success" : "bg-fg-muted/10 text-fg-muted"
-                      )}>
-                        {platform.status === 'active' ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {platform.configured ? (
-                        <CheckCircle size={18} className="text-success" />
-                      ) : (
-                        <XCircle size={18} className="text-fg-muted" />
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {platform.actions.slice(0, 3).map((action, idx) => (
-                          <span key={idx} className="px-2 py-0.5 text-xs bg-surface-container text-fg-muted rounded">
-                            {action}
-                          </span>
-                        ))}
-                        {platform.actions.length > 3 && (
-                          <span className="px-2 py-0.5 text-xs bg-surface-container text-fg-muted rounded">
-                            +{platform.actions.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button 
-                          onClick={() => handleConfigure(platform)} 
-                          className="p-1.5 text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-colors"
-                          title="Configure"
-                        >
-                          <Edit3 size={14} />
-                        </button>
-                        <button 
-                          onClick={() => handleTestConnection(platform)} 
-                          disabled={testingId === platform.id || !platform.configured}
-                          className="p-1.5 text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-colors disabled:opacity-50"
-                          title="Test Connection"
-                        >
-                          {testingId === platform.id ? (
-                            <RefreshCw size={14} className="animate-spin" />
-                          ) : (
-                            <Zap size={14} />
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    <VirtualTableEnhanced
+          tableId="platforms"
+          columns={[
+            { key: 'name', label: 'Name', width: '240px', className: 'flex-1 min-w-0', render: (_: unknown, platform: any) => <div className="min-w-0"><p className="truncate font-medium text-fg-default">{platform.name}</p><p className="text-xs text-fg-muted">{platform.version}</p></div> },
+            { key: 'type', label: 'Type', width: '100px', render: (_: unknown, platform: any) => <span className="rounded bg-accent-fg/10 px-2 py-1 text-xs text-accent-fg">{String(platform.type).toUpperCase()}</span> },
+            { key: 'status', label: 'Status', width: '100px', render: (_: unknown, platform: any) => <span className={platform.status === 'active' ? 'rounded bg-success/10 px-2 py-1 text-xs text-success' : 'rounded bg-fg-muted/10 px-2 py-1 text-xs text-fg-muted'}>{platform.status === 'active' ? 'Active' : 'Inactive'}</span> },
+            { key: 'configured', label: 'Configured', width: '100px', align: 'center', render: (_: unknown, platform: any) => platform.configured ? <CheckCircle size={18} className="text-success" /> : <XCircle size={18} className="text-fg-muted" /> },
+            { key: 'actions', label: 'Actions', width: '220px', render: (_: unknown, platform: any) => <div className="flex flex-wrap gap-1">{platform.actions.slice(0, 3).map((action: string, index: number) => <span key={index} className="rounded bg-surface-container px-2 py-0.5 text-xs text-fg-muted">{action}</span>)}{platform.actions.length > 3 && <span className="rounded bg-surface-container px-2 py-0.5 text-xs text-fg-muted">+{platform.actions.length - 3}</span>}</div> },
+            { key: 'operations', label: '', width: '88px', align: 'center', render: (_: unknown, platform: any) => <div className="flex justify-center gap-1"><button type="button" onClick={() => handleConfigure(platform)} className="rounded p-1.5 text-fg-muted hover:bg-surface-container hover:text-fg-default" title="Configure"><Edit3 size={14} /></button><button type="button" onClick={() => handleTestConnection(platform)} disabled={testingId === platform.id || !platform.configured} className="rounded p-1.5 text-fg-muted hover:bg-surface-container hover:text-fg-default disabled:opacity-50" title="Test Connection">{testingId === platform.id ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}</button></div> },
+          ]}
+          data={filteredPlatforms}
+          rowHeight={64}
+          height="auto"
+          emptyMessage="No platforms found"
+        />
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-fg-muted">
               <Link size={48} className="mb-4" />
@@ -402,5 +316,50 @@ export const PlatformManagement = () => {
     </div>
   );
 };
+
+// Skeleton component for platforms table
+const PlatformSkeleton = () => (
+  <div className="space-y-6 animate-in fade-in duration-700">
+    {/* Header */}
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse">
+      <div className="space-y-2">
+        <div className="w-64 h-8 bg-surface-container rounded"></div>
+        <div className="w-48 h-4 bg-surface-container rounded"></div>
+      </div>
+      <div className="flex gap-3 items-center">
+        <div className="w-72 h-10 bg-surface-container rounded"></div>
+        <div className="w-32 h-10 bg-surface-container rounded"></div>
+        <div className="w-24 h-10 bg-surface-container rounded"></div>
+      </div>
+    </div>
+    
+    {/* Table */}
+    <div className="bg-surface-container-lowest whisper-shadow overflow-hidden animate-pulse">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <div key={index} className="border-b border-outline-variant/10 p-4">
+          <div className="flex items-center gap-4">
+            <div className="w-5 h-5 bg-surface-container rounded"></div>
+            <div className="flex items-center gap-3 flex-1">
+              <div className="w-10 h-10 bg-surface-container rounded"></div>
+              <div className="space-y-2">
+                <div className="w-48 h-4 bg-surface-container rounded"></div>
+                <div className="w-64 h-3 bg-surface-container rounded"></div>
+              </div>
+            </div>
+            <div className="w-20 h-4 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="w-16 h-4 bg-surface-container rounded"></div>
+            <div className="flex gap-2">
+              <div className="w-8 h-8 bg-surface-container rounded"></div>
+              <div className="w-8 h-8 bg-surface-container rounded"></div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 export default PlatformManagement;

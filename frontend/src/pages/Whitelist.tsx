@@ -39,8 +39,8 @@ import {
   createWhitelistEntry,
   deleteWhitelistEntry,
   fetchTrafficSources,
-  fetchWhitelistEntries,
-  syncWhitelist,
+  fetchWhitelist,
+  syncWhitelistEntry,
   updateWhitelistEntry,
 } from '../services/api';
 import {
@@ -265,7 +265,7 @@ export const Whitelist = () => {
       }
 
       const [entriesPayload, trafficSourcesPayload] = await Promise.all([
-        fetchWhitelistEntries(),
+        fetchWhitelist(),
         fetchTrafficSources(false),
       ]);
 
@@ -286,7 +286,7 @@ export const Whitelist = () => {
   const handleSync = async (trafficSourceId: string) => {
     try {
       setSyncing(trafficSourceId);
-      const data = await syncWhitelist(trafficSourceId);
+      const data = await syncWhitelistEntry(trafficSourceId);
       if (data.success) {
         alert(`Sync completed: ${data.data.synced} synced, ${data.data.failed} failed`);
         await fetchData();

@@ -38,9 +38,9 @@ import { clampInput, truncateLabel } from '../utils/text';
 import {
   createBlacklistEntry,
   deleteBlacklistEntry,
-  fetchBlacklistEntries,
+  fetchBlacklist,
   fetchTrafficSources,
-  syncBlacklist,
+  syncBlacklistEntry,
   updateBlacklistEntry,
 } from '../services/api';
 import {
@@ -265,7 +265,7 @@ export const Blacklist = () => {
       }
 
       const [entriesPayload, trafficSourcesPayload] = await Promise.all([
-        fetchBlacklistEntries(),
+        fetchBlacklist(),
         fetchTrafficSources(false),
       ]);
 
@@ -286,7 +286,7 @@ export const Blacklist = () => {
   const handleSync = async (trafficSourceId: string) => {
     try {
       setSyncing(trafficSourceId);
-      const data = await syncBlacklist(trafficSourceId);
+      const data = await syncBlacklistEntry(trafficSourceId);
       if (data.success) {
         alert(`Sync completed: ${data.data.synced} synced, ${data.data.failed} failed`);
         await fetchData();

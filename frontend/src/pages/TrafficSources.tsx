@@ -5,7 +5,7 @@
  * Logic: 使用 EntityForm 组件实现表单，支持搜索、筛选、分页
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Globe, 
   Plus, 
@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Play,
   Pause,
+  Copy,
   Check,
   X,
   Loader2,
@@ -33,23 +34,17 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { TrafficSourceForm } from '../components/TrafficSourceForm';
 import { useToast } from '../components/Toast';
-import {
-  fetchTrafficSources,
-  createTrafficSource,
-  updateTrafficSource,
-  deleteTrafficSource,
-  fetchTrafficSourceAutoruleScopeConfigs,
-  type AutoruleScopeConfig,
-} from '../services/api';
+import { fetchTrafficSources, createTrafficSource, updateTrafficSource, deleteTrafficSource } from '../services/api';
 import { ExportButton } from '../components/ExportButton';
 import { formatTrafficSourceForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import type { TrafficSource, ParameterTemplate, PostbackConfig } from '../types/trafficSource';
 import { getTemplateById } from '../data/trafficSourceTemplates';
-import { readBootstrapPage } from '../services/bootstrap';
-import { useLocation } from 'react-router-dom';
-import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
-import { truncateLabel } from '../utils/text';
+import { usePageData } from '@/context/DataCacheContext';
+import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
+import { TablePagination } from '../components/TablePagination';
+
+
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -79,15 +74,14 @@ const getTemplateName = (templateId?: string): string => {
 
 export const TrafficSources = () => {
   const toast = useToast();
-  const location = useLocation();
-  const bootstrap = readBootstrapPage<{ trafficSources?: TrafficSource[] }>('traffic-sources');
-  const hasBootstrap = Boolean(bootstrap);
-  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>(
-    Array.isArray(bootstrap?.data?.trafficSources) ? bootstrap.data.trafficSources : []
+  
+  // 使用 usePageData hook 自动处理 SSR 缓存、加载和错误状态
+  const { data: trafficSourcesData, isLoading, error, refetch } = usePageData(
+    'trafficSources',
+    fetchTrafficSources
   );
-  const [autoruleScopeConfigs, setAutoruleScopeConfigs] = useState<AutoruleScopeConfig[]>([]);
-  const [loading, setLoading] = useState(!hasBootstrap);
-  const [error, setError] = useState<string | null>(null);
+  
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
   
   // Form modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -95,13 +89,7 @@ export const TrafficSources = () => {
   const [selectedSource, setSelectedSource] = useState<Partial<TrafficSource> | undefined>(undefined);
   
   // Search and filter state
-  const [searchTerm, setSearchTerm] = useState(() => {
-    if (typeof window === 'undefined') {
-      return '';
-    }
-
-    return new URLSearchParams(window.location.search).get('search') || '';
-  });
+  const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
   const [filterType, setFilterType] = useState<string>('All');
   
@@ -118,42 +106,15 @@ export const TrafficSources = () => {
     to: new Date().toISOString().split('T')[0]
   });
 
-  // Fetch traffic sources from API
+  // 当 trafficSourcesData 变化时，更新本地状态
   useEffect(() => {
-    setSearchTerm(new URLSearchParams(location.search).get('search') || '');
-  }, [location.search]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterStatus, filterType]);
-
-  useEffect(() => {
-    const loadTrafficSources = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const [data, scopeConfigs] = await Promise.all([
-          fetchTrafficSources(true, {
-            startDate: dateRange.from,
-            endDate: dateRange.to,
-          }),
-          fetchTrafficSourceAutoruleScopeConfigs().catch(() => []),
-        ]);
-        if (Array.isArray(data)) {
-          setTrafficSources(data);
-          setAutoruleScopeConfigs(Array.isArray(scopeConfigs) ? scopeConfigs : []);
-        } else {
-          setError('Failed to load traffic sources');
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load traffic sources');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadTrafficSources();
-  }, [dateRange.from, dateRange.to, hasBootstrap]);
+    if (!trafficSourcesData) return;
+    
+    // 确保数据是数组
+    if (Array.isArray(trafficSourcesData)) {
+      setTrafficSources(trafficSourcesData);
+    }
+  }, [trafficSourcesData]);
 
   const handleCreateSource = () => {
     setFormMode('create');
@@ -219,7 +180,38 @@ export const TrafficSources = () => {
       setIsFormOpen(false);
     } catch (err) {
       toast.error('Failed to save traffic source', err instanceof Error ? err.message : 'Unknown error');
-      return;
+      // For demo, add to local state with apiConfig preserved
+      if (formMode === 'create') {
+        const newSource: TrafficSource = {
+          id: `ts${Date.now()}`,
+          name: submitData.name,
+          type: submitData.type || 'other',
+          status: submitData.status || 'active',
+          postbackUrl: submitData.postbackUrl || '',
+          costModel: submitData.costModel || 'cpc',
+          costValue: parseFloat(submitData.costValue) || 0,
+          currency: submitData.currency || 'USD',
+          apiConfig: submitData.apiConfig,
+          campaignCount: 0,
+          clicks: 0,
+          conversions: 0,
+          revenue: 0,
+          cost: 0,
+          profit: 0,
+          roi: 0,
+          updatedAt: new Date().toISOString()
+        };
+        setTrafficSources(prev => [...prev, newSource]);
+      } else {
+        setTrafficSources(prev => 
+          prev.map(s => 
+            s.id === selectedSource?.id 
+              ? { ...s, ...submitData, updatedAt: new Date().toISOString() }
+              : s
+          )
+        );
+      }
+      setIsFormOpen(false);
     }
   };
 
@@ -232,6 +224,7 @@ export const TrafficSources = () => {
       toast.success('Traffic source deleted successfully');
     } catch (err) {
       toast.error('Failed to delete traffic source', err instanceof Error ? err.message : 'Unknown error');
+      setTrafficSources(prev => prev.filter(s => s.id !== id));
     }
   };
 
@@ -298,11 +291,6 @@ export const TrafficSources = () => {
     currentPage * itemsPerPage
   );
 
-  const scopeConfigMap = useMemo(
-    () => new Map(autoruleScopeConfigs.map((config) => [config.scopeId, config])),
-    [autoruleScopeConfigs]
-  );
-
   const getTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
       social: 'Social',
@@ -331,16 +319,132 @@ export const TrafficSources = () => {
     return colors[type] || 'bg-gray-100 text-gray-700';
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 size={48} className="animate-spin text-primary" />
+  // Skeleton component for table rows
+  const TrafficSourceSkeleton = () => (
+    <div className="space-y-6 animate-in fade-in duration-700">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse">
+        <div className="space-y-2">
+          <div className="w-64 h-8 bg-surface-container rounded"></div>
+          <div className="w-48 h-4 bg-surface-container rounded"></div>
+        </div>
+        <div className="flex gap-3 items-center">
+          <div className="w-72 h-10 bg-surface-container rounded"></div>
+          <div className="w-32 h-10 bg-surface-container rounded"></div>
+          <div className="w-24 h-10 bg-surface-container rounded"></div>
+          <div className="w-32 h-10 bg-surface-container rounded"></div>
+        </div>
       </div>
-    );
+      
+      {/* Toolbar */}
+      <div className="bg-surface-container-lowest p-4 whisper-shadow animate-pulse">
+        <div className="flex items-center gap-2">
+          <div className="flex gap-2">
+            <div className="w-8 h-8 bg-surface-container rounded"></div>
+            <div className="w-8 h-8 bg-surface-container rounded"></div>
+            <div className="w-8 h-8 bg-surface-container rounded"></div>
+            <div className="w-8 h-8 bg-surface-container rounded"></div>
+          </div>
+          <div className="relative flex-1 min-w-[300px]">
+            <div className="w-full h-10 bg-surface-container rounded"></div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="w-32 h-4 bg-surface-container rounded"></div>
+            <div className="flex gap-2">
+              <div className="w-16 h-10 bg-surface-container rounded"></div>
+              <div className="w-16 h-10 bg-surface-container rounded"></div>
+              <div className="w-16 h-10 bg-surface-container rounded"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Table */}
+      <div className="bg-surface-container-lowest whisper-shadow overflow-hidden animate-pulse">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-surface-container-low">
+                <th className="px-4 py-4 w-10"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4"></th>
+                <th className="px-4 py-4 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 5 }).map((_, index) => (
+                <tr key={index} className="border-t border-outline-variant/10">
+                  <td className="px-4 py-4">
+                    <div className="w-5 h-5 bg-surface-container rounded"></div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-surface-container rounded"></div>
+                      <div className="space-y-2">
+                        <div className="w-48 h-4 bg-surface-container rounded"></div>
+                        <div className="w-32 h-3 bg-surface-container rounded"></div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="w-24 h-6 bg-surface-container rounded"></div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="w-20 h-6 bg-surface-container rounded"></div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="space-y-1">
+                      <div className="w-32 h-4 bg-surface-container rounded"></div>
+                      <div className="w-24 h-3 bg-surface-container rounded"></div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    <div className="w-12 h-4 bg-surface-container rounded mx-auto"></div>
+                  </td>
+                  <td className="px-4 py-4 text-right">
+                    <div className="w-16 h-4 bg-surface-container rounded"></div>
+                  </td>
+                  <td className="px-4 py-4 text-right">
+                    <div className="w-12 h-4 bg-surface-container rounded"></div>
+                  </td>
+                  <td className="px-4 py-4 text-right">
+                    <div className="w-20 h-4 bg-surface-container rounded"></div>
+                  </td>
+                  <td className="px-4 py-4 text-right">
+                    <div className="w-20 h-4 bg-surface-container rounded"></div>
+                  </td>
+                  <td className="px-4 py-4 text-right">
+                    <div className="w-16 h-6 bg-surface-container rounded"></div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex gap-2">
+                      <div className="w-8 h-8 bg-surface-container rounded"></div>
+                      <div className="w-8 h-8 bg-surface-container rounded"></div>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (isLoading && trafficSources.length === 0) {
+    return <TrafficSourceSkeleton />;
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="space-y-6">
       {/* Traffic Source Form Modal */}
       <TrafficSourceForm
         isOpen={isFormOpen}
@@ -351,14 +455,14 @@ export const TrafficSources = () => {
       />
 
       {/* Header */}
-      <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-primary">Traffic Sources</h1>
           <p className="text-sm text-on-surface-variant">Manage your traffic sources and campaigns</p>
         </div>
-        <div className="flex w-full xl:w-auto flex-wrap justify-start xl:justify-end items-end gap-3">
+        <div className="flex gap-3">
           {/* Date Range Picker */}
-          <div className="w-full sm:w-[280px] shrink-0">
+          <div className="w-[280px]">
             <QuickDateRangePicker
               value="today"
               onChange={(preset, range) => {
@@ -373,7 +477,7 @@ export const TrafficSources = () => {
               maxRangeDays={365}
             />
           </div>
-          <button className="flex h-10 shrink-0 items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors" aria-label="Open traffic source filters">
+          <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
             <Filter size={16} />
             Filters
           </button>
@@ -384,7 +488,7 @@ export const TrafficSources = () => {
           />
           <button 
             onClick={handleCreateSource}
-            className="btn-create flex h-10 shrink-0 items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
+            className="btn-create flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest transition-all rounded-sm"
           >
             <Plus size={18} />
             New Traffic Source
@@ -392,52 +496,44 @@ export const TrafficSources = () => {
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-sm border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
-          {error}
-        </div>
-      ) : null}
-
       {/* Toolbar */}
       <div className="bg-surface-container-lowest p-4 whisper-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          {selectedItems.size > 0 && (
-            <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
+          {selectedItems.size > 0 ? (
+            <>
+              <span className="text-sm text-on-surface-variant mr-2">{selectedItems.size} selected</span>
+              <button 
+                onClick={() => handleBulkAction('activate')}
+                className="btn-icon-create p-2 rounded transition-colors" 
+                title="Activate"
+              >
+                <Play size={18} />
+              </button>
+              <button 
+                onClick={() => handleBulkAction('pause')}
+                className="btn-icon-pause p-2 rounded transition-colors" 
+                title="Pause"
+              >
+                <Pause size={18} />
+              </button>
+              <button 
+                onClick={() => handleBulkAction('delete')}
+                className="btn-icon-delete p-2 rounded transition-colors" 
+                title="Delete"
+              >
+                <Trash2 size={18} />
+              </button>
+              <div className="h-6 w-px bg-outline-variant/20 mx-2" />
+            </>
+          ) : (
+            <>
+              <button className="btn-icon-create p-2 rounded transition-colors" title="Play"><Play size={18} /></button>
+              <button className="btn-icon-pause p-2 rounded transition-colors" title="Pause"><Pause size={18} /></button>
+              <button className="p-2 text-on-surface-variant hover:text-primary transition-colors rounded" title="Copy"><Copy size={18} /></button>
+              <button className="btn-icon-delete p-2 rounded transition-colors" title="Delete"><Trash2 size={18} /></button>
+              <div className="h-6 w-px bg-outline-variant/20 mx-2" />
+            </>
           )}
-          <button 
-            onClick={() => handleBulkAction('activate')}
-            disabled={selectedItems.size === 0}
-            className={cn(
-              "btn-icon-create p-2 rounded transition-colors",
-              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
-            )}
-            title="Activate"
-          >
-            <Play size={18} />
-          </button>
-          <button 
-            onClick={() => handleBulkAction('pause')}
-            disabled={selectedItems.size === 0}
-            className={cn(
-              "btn-icon-pause p-2 rounded transition-colors",
-              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
-            )}
-            title="Pause"
-          >
-            <Pause size={18} />
-          </button>
-          <button 
-            onClick={() => handleBulkAction('delete')}
-            disabled={selectedItems.size === 0}
-            className={cn(
-              "btn-icon-delete p-2 rounded transition-colors",
-              selectedItems.size === 0 && "opacity-40 cursor-not-allowed pointer-events-none"
-            )}
-            title="Delete"
-          >
-            <Trash2 size={18} />
-          </button>
-          <div className="h-6 w-px bg-outline-variant/20 mx-2" />
           <div className="relative flex-1 min-w-[300px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
             <input 
@@ -480,234 +576,155 @@ export const TrafficSources = () => {
         </div>
       </div>
 
-      {/* Traffic Sources Table */}
-      <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-container-low">
-                <th className="px-4 py-4 w-10">
-                  <input 
-                    type="checkbox" 
-                    className="rounded border-outline-variant"
-                    checked={selectedItems.size === filteredSources.length && filteredSources.length > 0}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-<th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Source</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Type</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Status</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Cost Model</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-center">Campaigns</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Clicks</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Conv.</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Revenue</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Profit</th>
-                <th className="px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">ROI</th>
-                <th className="px-4 py-4 w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedSources.map((source) => (
-                <tr 
-                  key={source.id} 
-                  className={cn(
-                    "border-t border-outline-variant/10 hover:bg-surface-container/50 transition-colors",
-                    selectedItems.has(source.id) && "bg-surface-container/30"
-                  )}
-                >
-                  <td className="px-4 py-4">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-outline-variant"
-                      checked={selectedItems.has(source.id)}
-                      onChange={() => handleSelectItem(source.id)}
-                    />
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
-                        <Globe size={20} className="text-primary" />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-bold text-primary truncate max-w-[180px]" title={source.name}>
-                          {truncateLabel(source.name, DISPLAY_MAX_LENGTH.TABLE_PRIMARY_TEXT)}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          <p className="text-xs text-on-surface-variant">ID: {source.displayId || source.id}</p>
-                          {source.templateId && (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded max-w-[110px] truncate" title={getTemplateName(source.templateId)}>
-                              {truncateLabel(getTemplateName(source.templateId), DISPLAY_MAX_LENGTH.TAG_TEXT)}
-                            </span>
-                          )}
-                          {scopeConfigMap.get(source.id)?.enabled ? (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-secondary-container text-secondary rounded">
-                              Autorule: {scopeConfigMap.get(source.id)?.mode}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-surface-container-high text-on-surface-variant rounded">
-                              Autorule: inherit global
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={cn(
-                      "px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm",
-                      getTypeColor(source.type)
-                    )}>
-                      {getTypeLabel(source.type)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-sm w-fit",
-                      source.status === 'active' ? "status-active" : "status-paused"
-                    )}>
-                      <div className={cn(
-                        "w-2 h-2 rounded-full",
-                        source.status === 'active' ? "bg-green-500" : "bg-yellow-500"
-                      )} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">{source.status}</span>
-                    </div>
-                  </td>
-<td className="px-4 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-on-surface uppercase">{source.costModel}</span>
-                      <span className="text-[10px] text-on-surface-variant">
-                        {source.costValue} {source.currency}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className="text-sm font-medium text-on-surface">
-                      {source.campaignCount !== undefined ? source.campaignCount : '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-on-surface">{(source.clicks || 0).toLocaleString()}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-on-surface">{(source.conversions || 0).toLocaleString()}</span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="text-sm font-medium text-secondary">
-                      ${typeof source.revenue === 'number' ? source.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : source.revenue}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className={cn(
-                      "text-sm font-medium",
-                      (typeof source.profit === 'number' ? source.profit : parseFloat(source.profit as string)) < 0 ? "text-error" : "text-secondary"
-                    )}>
-                      ${typeof source.profit === 'number' 
-                        ? (source.profit < 0 ? '-' : '') + Math.abs(source.profit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                        : source.profit}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className={cn(
-                      "text-sm font-medium px-2 py-1 rounded-sm",
-                      (typeof source.roi === 'number' ? source.roi : parseFloat(source.roi as string)) < 0 ? "bg-error/10 text-error" : "bg-secondary-container text-secondary"
-                    )}>
-                      {typeof source.roi === 'number' ? `${source.roi}%` : source.roi}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-1">
-                      {source.parameters && (
-                        <span className="p-1.5 text-on-surface-variant/50" title="Has Parameters">
-                          <Code size={14} />
-                        </span>
-                      )}
-                      {source.postbackConfig && (
-                        <span className="p-1.5 text-on-surface-variant/50" title="Has Postback">
-                          <Link size={14} />
-                        </span>
-                      )}
-                      {source.apiConfig && parseJsonField<{enabled: boolean}>(source.apiConfig, {enabled: false}).enabled && (
-                        <span className="p-1.5 text-secondary/70" title="API Enabled">
-                          <Plug size={14} />
-                        </span>
-                      )}
-                      <button 
-                        onClick={() => handleEditSource(source)}
-                        className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                        title="Edit"
-                      >
-                        <Edit3 size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteSource(source.id)}
-                        className="p-2 text-on-surface-variant hover:text-error transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="hidden md:block">
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredSources.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          label="sources"
+        />
+      </div>
 
-        {filteredSources.length === 0 && (
-          <div className="p-8 text-center text-on-surface-variant">
-            <p>No traffic sources found</p>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t border-outline-variant/10">
-            <span className="text-sm text-on-surface-variant">
-              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredSources.length)} of {filteredSources.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === 1 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronLeft size={20} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={cn(
-                    "w-8 h-8 text-sm font-medium rounded-sm transition-colors",
-                    currentPage === page
-                      ? "bg-primary text-on-primary"
-                      : "text-on-surface-variant hover:bg-surface-container"
-                  )}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className={cn(
-                  "p-2 rounded-sm transition-colors",
-                  currentPage === totalPages 
-                    ? "text-on-surface-variant/30 cursor-not-allowed" 
-                    : "text-on-surface-variant hover:bg-surface-container"
-                )}
-              >
-                <ChevronRight size={20} />
-              </button>
+      <div className="space-y-3 md:hidden">
+        {paginatedSources.map((source) => (
+          <article key={source.id} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-bold text-primary">{source.name}</h2>
+                <p className="mt-0.5 truncate text-xs text-on-surface-variant">ID: {source.displayId || source.id}</p>
+              </div>
+              <span className={cn('shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-widest', source.status === 'active' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>{source.status}</span>
             </div>
-          </div>
-        )}
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <div><dt className="text-fg-subtle">Type</dt><dd className="mt-0.5 text-fg-default">{getTypeLabel(source.type)}</dd></div>
+              <div><dt className="text-fg-subtle">Cost</dt><dd className="mt-0.5 text-fg-default">{source.costModel} {source.costValue} {source.currency}</dd></div>
+              <div><dt className="text-fg-subtle">Clicks</dt><dd className="mt-0.5 font-mono text-fg-default">{(source.clicks || 0).toLocaleString()}</dd></div>
+              <div><dt className="text-fg-subtle">Revenue</dt><dd className="mt-0.5 font-mono text-secondary">${typeof source.revenue === 'number' ? source.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : source.revenue}</dd></div>
+            </dl>
+            <div className="mt-3 flex justify-end gap-2 border-t border-outline-variant/10 pt-2">
+              <button type="button" onClick={() => handleEditSource(source)} className="rounded-md border border-outline-variant/30 px-3 py-1.5 text-xs text-fg-default">Edit</button>
+              <button type="button" onClick={() => handleDeleteSource(source.id)} className="rounded-md border border-error/20 px-3 py-1.5 text-xs text-error">Delete</button>
+            </div>
+          </article>
+        ))}
+        {paginatedSources.length === 0 && <div className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">No traffic sources found</div>}
+      </div>
+
+      <div className="hidden md:block">
+        <VirtualTableEnhanced
+          tableId="traffic-sources"
+          columns={[
+            {
+              key: 'name',
+              label: 'Source',
+              width: '220px',
+              className: 'flex-1 min-w-0',
+              sorter: (a: TrafficSource, b: TrafficSource) => a.name.localeCompare(b.name),
+              showSorter: true,
+              render: (_: unknown, source: TrafficSource) => (
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-primary/10">
+                    <Globe size={18} className="text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-primary">{source.name}</p>
+                    <p className="truncate text-xs text-fg-muted">ID: {source.displayId || source.id}</p>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'type',
+              label: 'Type',
+              width: '100px',
+              render: (_: unknown, source: TrafficSource) => <span className={cn('px-2 py-1 text-[10px] font-bold uppercase tracking-widest', getTypeColor(source.type))}>{getTypeLabel(source.type)}</span>,
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              width: '110px',
+              render: (_: unknown, source: TrafficSource) => <span className={cn('px-2 py-1 text-[10px] font-bold uppercase tracking-widest', source.status === 'active' ? 'status-active' : 'status-paused')}>{source.status}</span>,
+            },
+            {
+              key: 'costModel',
+              label: 'Cost Model',
+              width: '100px',
+              defaultHidden: true,
+              render: (_: unknown, source: TrafficSource) => <span className="text-xs text-fg-default">{source.costModel} <span className="text-fg-subtle">{source.costValue} {source.currency}</span></span>,
+            },
+            {
+              key: 'campaigns',
+              label: 'Campaigns',
+              width: '90px',
+              align: 'center',
+              defaultHidden: true,
+              render: (_: unknown, source: TrafficSource) => <span className="text-fg-default">{source.campaignCount ?? '-'}</span>,
+            },
+            {
+              key: 'clicks',
+              label: 'Clicks',
+              width: '80px',
+              align: 'right',
+              sorter: (a: TrafficSource, b: TrafficSource) => (a.clicks || 0) - (b.clicks || 0),
+              showSorter: true,
+              render: (_: unknown, source: TrafficSource) => <span className="font-mono text-fg-default">{(source.clicks || 0).toLocaleString()}</span>,
+            },
+            {
+              key: 'conversions',
+              label: 'Conv.',
+              width: '80px',
+              align: 'right',
+              render: (_: unknown, source: TrafficSource) => <span className="font-mono text-fg-default">{(source.conversions || 0).toLocaleString()}</span>,
+            },
+            {
+              key: 'revenue',
+              label: 'Revenue',
+              width: '100px',
+              align: 'right',
+              sorter: (a: TrafficSource, b: TrafficSource) => Number(a.revenue || 0) - Number(b.revenue || 0),
+              showSorter: true,
+              render: (_: unknown, source: TrafficSource) => <span className="font-mono text-secondary">${typeof source.revenue === 'number' ? source.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : source.revenue}</span>,
+            },
+            {
+              key: 'profit',
+              label: 'Profit',
+              width: '90px',
+              align: 'right',
+              defaultHidden: true,
+              render: (_: unknown, source: TrafficSource) => <span className={cn('font-mono', Number(source.profit) < 0 ? 'text-error' : 'text-secondary')}>${source.profit}</span>,
+            },
+            {
+              key: 'roi',
+              label: 'ROI',
+              width: '76px',
+              align: 'right',
+              defaultHidden: true,
+              render: (_: unknown, source: TrafficSource) => <span className={cn('px-2 py-1 text-xs font-medium', Number(source.roi) < 0 ? 'bg-error/10 text-error' : 'bg-secondary-container text-secondary')}>{typeof source.roi === 'number' ? String(source.roi) + '%' : source.roi}</span>,
+            },
+            {
+              key: 'actions',
+              label: '',
+              width: '88px',
+              align: 'center',
+              render: (_: unknown, source: TrafficSource) => (
+                <div className="flex items-center justify-center gap-1">
+                  <button type="button" onClick={() => handleEditSource(source)} className="p-2 text-fg-muted hover:text-primary" title="Edit"><Edit3 size={16} /></button>
+                  <button type="button" onClick={() => handleDeleteSource(source.id)} className="p-2 text-fg-muted hover:text-error" title="Delete"><Trash2 size={16} /></button>
+                </div>
+              ),
+            },
+          ]}
+          data={paginatedSources}
+          rowHeight={72}
+          height="auto"
+          selectable
+          selectedRows={selectedItems}
+          onSelectionChange={setSelectedItems}
+          getRowId={(row) => row.id}
+          emptyMessage="No traffic sources found"
+        />
       </div>
     </div>
   );
