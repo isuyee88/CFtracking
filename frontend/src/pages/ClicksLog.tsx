@@ -34,6 +34,7 @@ import {
 import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
 import { GroupByFilter, DEFAULT_GROUP_BY_OPTIONS, filterByGroupBy } from '@/components/GroupByFilter';
 import { ActiveFilterBar } from '@/components/ActiveFilterBar';
+import { TableColumnSettings, useTableColumnLayout, type TableColumnItem } from '@/components/TableColumnSettings';
 import type { GroupByState, GroupByOption } from '@/types/filter';
 import { fetchClicks, fetchClickStats, type ClickLogParams, type ClickStats } from '../services/api';
 import { useDataCache } from '@/context/DataCacheContext';
@@ -306,6 +307,33 @@ export const ClicksLog = () => {
     return <Monitor size={14} />;
   };
 
+  const clickColumnDefs: Array<{ key: string; label: string; render: (click: ClickLog) => React.ReactNode }> = [
+    { key: 'time', label: 'Time', render: (click) => formatTimestamp(click.timestamp) },
+    { key: 'campaign', label: 'Campaign', render: (click) => click.campaignId },
+    { key: 'ip', label: 'IP', render: (click) => <span className="font-mono">{click.ip}</span> },
+    { key: 'country', label: 'Country', render: (click) => click.country || '-' },
+    { key: 'device', label: 'Device', render: (click) => <div className="flex items-center gap-1">{getDeviceIcon(click.device)}<span>{click.device || '-'}</span></div> },
+    { key: 'browser', label: 'Browser', render: (click) => click.browser || '-' },
+    { key: 'os', label: 'OS', render: (click) => click.os || '-' },
+    {
+      key: 'type',
+      label: 'Type',
+      render: (click) => (
+        <span className={cn(
+          'px-2 py-1 text-xs font-medium rounded',
+          click.isUnique ? 'bg-accent-fg/10 text-accent-fg' : 'bg-fg-muted/10 text-fg-muted',
+        )}>
+          {click.isUnique ? 'Unique' : 'Non-unique'}
+        </span>
+      ),
+    },
+  ];
+  const clickColumnItems: TableColumnItem[] = clickColumnDefs.map((column) => ({ key: column.key, label: column.label }));
+  const { visible: visibleClickColumns, toggle: toggleClickColumn, move: moveClickColumn, reset: resetClickColumns } = useTableColumnLayout('clicks-log', clickColumnItems);
+  const displayClickColumns = visibleClickColumns
+    .map((key) => clickColumnDefs.find((column) => column.key === key))
+    .filter((column): column is (typeof clickColumnDefs)[number] => Boolean(column));
+
   // 楠ㄦ灦灞忔樉绀洪€昏緫锛氶娆″姞杞戒笖鏃犳暟鎹椂鏄剧ず
   const showSkeleton = loading && clicksList.length === 0;
 
@@ -515,6 +543,16 @@ export const ClicksLog = () => {
 
       {/* Table (desktop/tablet) */}
       <div className="hidden overflow-hidden rounded-lg border border-border-default bg-surface md:block">
+        <div className="flex h-9 items-center justify-between border-b border-border-default px-3">
+          <span className="text-[11px] font-medium text-fg-subtle">{clicksList.length} rows</span>
+          <TableColumnSettings
+            items={clickColumnItems}
+            visible={visibleClickColumns}
+            onToggle={toggleClickColumn}
+            onMove={moveClickColumn}
+            onReset={resetClickColumns}
+          />
+        </div>
         <div className="overflow-x-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12">
@@ -526,14 +564,11 @@ export const ClicksLog = () => {
               <thead>
                 <tr className="bg-surface-container border-b border-border-default">
                   <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider"></th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Time</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Campaign</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">IP</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Country</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Device</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Browser</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">OS</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">Type</th>
+                  {displayClickColumns.map((column) => (
+                    <th key={column.key} className="px-4 py-3 text-left text-xs font-medium text-fg-muted uppercase tracking-wider">
+                      {column.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-default">
@@ -551,30 +586,15 @@ export const ClicksLog = () => {
                             <ChevronRight size={16} className="text-fg-muted" />
                           )}
                         </td>
-                        <td className="px-4 py-3 text-sm text-fg-default">{formatTimestamp(click.timestamp)}</td>
-                        <td className="px-4 py-3 text-sm text-fg-default">{click.campaignId}</td>
-                        <td className="px-4 py-3 text-sm font-mono text-fg-default">{click.ip}</td>
-                        <td className="px-4 py-3 text-sm text-fg-default">{click.country || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-fg-default">
-                          <div className="flex items-center gap-1">
-                            {getDeviceIcon(click.device)}
-                            <span>{click.device || '-'}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-fg-default">{click.browser || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-fg-default">{click.os || '-'}</td>
-                        <td className="px-4 py-3">
-                          <span className={cn(
-                            "px-2 py-1 text-xs font-medium rounded",
-                            click.isUnique ? "bg-accent-fg/10 text-accent-fg" : "bg-fg-muted/10 text-fg-muted"
-                          )}>
-                            {click.isUnique ? 'Unique' : 'Non-unique'}
-                          </span>
-                        </td>
+                        {displayClickColumns.map((column) => (
+                          <td key={column.key} className="px-4 py-3 text-sm text-fg-default whitespace-nowrap">
+                            {column.render(click)}
+                          </td>
+                        ))}
                       </tr>
                       {expandedRows.includes(click.clickId) && (
                         <tr className="bg-surface-container">
-                          <td colSpan={9} className="px-4 py-4">
+                          <td colSpan={displayClickColumns.length + 1} className="px-4 py-4">
                             <div className="space-y-4">
                               {/* Basic Info */}
                               <div>

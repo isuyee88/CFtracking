@@ -710,6 +710,7 @@ export const Offers = () => {
               key: 'name',
               label: 'Offer',
               width: '220px',
+              className: 'flex-1 min-w-0',
               // 绛涢€夊拰鎺掑簭閰嶇疆
               filters: [
                 { text: 'Active', value: 'active' },
@@ -743,7 +744,7 @@ export const Offers = () => {
             {
               key: 'status',
               label: 'Status',
-              width: '100px',
+              width: '110px',
               // 绛涢€夊拰鎺掑簭閰嶇疆
               filters: [
                 { text: 'Active', value: 'active' },
@@ -819,7 +820,7 @@ export const Offers = () => {
             {
               key: 'clicks',
               label: 'Clicks',
-              width: '80px',
+              width: '84px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
@@ -828,7 +829,7 @@ export const Offers = () => {
             {
               key: 'conversions',
               label: 'Conv.',
-              width: '70px',
+              width: '80px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-on-surface">{(value || 0).toLocaleString()}</span>
@@ -837,7 +838,7 @@ export const Offers = () => {
             {
               key: 'revenue',
               label: 'Revenue',
-              width: '90px',
+              width: '100px',
               align: 'right',
               render: (value) => (
                 <span className="text-sm font-medium text-secondary">

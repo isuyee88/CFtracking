@@ -626,7 +626,8 @@ export const CampaignManagement = () => {
             {
               key: 'name',
               label: 'Campaign',
-              width: '240px',
+              width: '220px',
+              className: 'flex-1 min-w-0',
               sorter: (a: any, b: any) => a.name.localeCompare(b.name),
               showSorter: true,
               render: (_: any, row: any) => (
@@ -649,7 +650,7 @@ export const CampaignManagement = () => {
             {
               key: 'status',
               label: 'Status',
-              width: '100px',
+              width: '110px',
               filters: [
                 { text: 'Active', value: 'Active' },
                 { text: 'Paused', value: 'Paused' },
@@ -699,7 +700,7 @@ export const CampaignManagement = () => {
             {
               key: 'clicks',
               label: 'Clicks',
-              width: '80px',
+              width: '84px',
               align: 'right',
               sorter: (a: any, b: any) => a.clicks - b.clicks,
               showSorter: true,
@@ -710,7 +711,7 @@ export const CampaignManagement = () => {
             {
               key: 'conversions',
               label: 'Conv.',
-              width: '70px',
+              width: '80px',
               align: 'right',
               sorter: (a: any, b: any) => a.conversions - b.conversions,
               showSorter: true,
@@ -721,7 +722,7 @@ export const CampaignManagement = () => {
             {
               key: 'revenue',
               label: 'Revenue',
-              width: '86px',
+              width: '100px',
               align: 'right',
               sorter: (a: any, b: any) => parseFloat(a.revenue.replace('$', '')) - parseFloat(b.revenue.replace('$', '')),
               showSorter: true,
@@ -747,7 +748,7 @@ export const CampaignManagement = () => {
             {
               key: 'roi',
               label: 'ROI',
-              width: '80px',
+              width: '72px',
               className: 'hidden xl:flex',
               align: 'right',
               sorter: (a: any, b: any) => parseFloat(a.roi.replace('%', '')) - parseFloat(b.roi.replace('%', '')),

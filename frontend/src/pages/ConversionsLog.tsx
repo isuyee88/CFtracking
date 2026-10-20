@@ -40,6 +40,7 @@ import {
 import { QuickDateRangePicker, type DateRangeValue, getDateRange } from '@/components/DateRangePicker';
 import { GroupByFilter, filterByGroupBy } from '@/components/GroupByFilter';
 import { ActiveFilterBar } from '@/components/ActiveFilterBar';
+import { TableColumnSettings, useTableColumnLayout, type TableColumnItem } from '@/components/TableColumnSettings';
 import type { GroupByState, GroupByOption } from '@/types/filter';
 import { useDataCache } from '@/context/DataCacheContext';
 import { fetchConversions, fetchConversionStats, type Conversion } from '../services/api';
@@ -234,6 +235,42 @@ export const ConversionsLog = () => {
       prev.includes(id) ? prev.filter(rowId => rowId !== id) : [...prev, id]
     );
   };
+
+  const conversionColumnDefs: Array<{ key: string; label: string; render: (conv: any) => React.ReactNode }> = [
+    { key: 'time', label: 'Time', render: (conv) => <span className="flex items-center gap-2 text-[10px] font-mono text-on-surface-variant"><Clock size={12} />{conv.time}</span> },
+    { key: 'id', label: 'ID', render: (conv) => <span className="text-[10px] font-mono text-on-surface-variant">{conv.id}</span> },
+    { key: 'campaign', label: 'Campaign', render: (conv) => <span className="text-xs font-bold text-primary">{conv.campaign}</span> },
+    { key: 'offer', label: 'Offer', render: (conv) => <span className="text-xs text-on-surface-variant">{conv.offer}</span> },
+    { key: 'type', label: 'Type', render: (conv) => <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{conv.type}</span> },
+    { key: 'payout', label: 'Payout', render: (conv) => <span className="text-xs font-mono font-bold text-secondary">${conv.payout}</span> },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (conv) => (
+        <span className={cn(
+          'text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm',
+          conv.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
+            conv.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-error/10 text-error',
+        )}>{conv.status}</span>
+      ),
+    },
+    {
+      key: 'postback',
+      label: 'Postback',
+      render: (conv) => (
+        <span className={cn(
+          'text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm',
+          conv.postbackStatus === 'Success' ? 'bg-emerald-100 text-emerald-700' :
+            conv.postbackStatus === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-error/10 text-error',
+        )}>{conv.postbackStatus}</span>
+      ),
+    },
+  ];
+  const conversionColumnItems: TableColumnItem[] = conversionColumnDefs.map((column) => ({ key: column.key, label: column.label }));
+  const { visible: visibleConversionColumns, toggle: toggleConversionColumn, move: moveConversionColumn, reset: resetConversionColumns } = useTableColumnLayout('conversions-log', conversionColumnItems);
+  const displayConversionColumns = visibleConversionColumns
+    .map((key) => conversionColumnDefs.find((column) => column.key === key))
+    .filter((column): column is (typeof conversionColumnDefs)[number] => Boolean(column));
 
   // 搴旂敤 Group By 绛涢€?
   const filteredWithGroupBy = useMemo(() => {
@@ -484,19 +521,26 @@ export const ConversionsLog = () => {
 
       {/* Conversions Table (desktop/tablet) */}
       <div className="hidden overflow-hidden border border-outline-variant/10 bg-surface-container-lowest whisper-shadow md:block">
+        <div className="flex h-9 items-center justify-between border-b border-outline-variant/10 px-3">
+          <span className="text-[11px] font-medium text-on-surface-variant">{filteredConversions.length} rows</span>
+          <TableColumnSettings
+            items={conversionColumnItems}
+            visible={visibleConversionColumns}
+            onToggle={toggleConversionColumn}
+            onMove={moveConversionColumn}
+            onReset={resetConversionColumns}
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-container-low border-b border-outline-variant/10">
                 <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest"></th>
-                <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Time</th>
-                <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">ID</th>
-                <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Campaign</th>
-                <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Offer</th>
-                <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Type</th>
-                <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Payout</th>
-                <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Status</th>
-                <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Postback</th>
+                {displayConversionColumns.map((column) => (
+                  <th key={column.key} className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+                    {column.label}
+                  </th>
+                ))}
                 <th className="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">Actions</th>
               </tr>
             </thead>
@@ -512,45 +556,11 @@ export const ConversionsLog = () => {
                         {expandedRows.includes(conv.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                       </button>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-2 text-[10px] font-mono text-on-surface-variant">
-                        <Clock size={12} />
-                        {conv.time}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-[10px] font-mono text-on-surface-variant">{conv.id}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-bold text-primary hover:underline cursor-pointer">{conv.campaign}</span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-on-surface-variant">{conv.offer}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-                        {conv.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-mono font-bold text-secondary">${conv.payout}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={cn(
-                        "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm",
-                        conv.status === 'Approved' ? "bg-emerald-100 text-emerald-700" :
-                        conv.status === 'Pending' ? "bg-amber-100 text-amber-700" :
-                        "bg-error/10 text-error"
-                      )}>
-                        {conv.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={cn(
-                        "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm",
-                        conv.postbackStatus === 'Success' ? "bg-emerald-100 text-emerald-700" :
-                        conv.postbackStatus === 'Pending' ? "bg-amber-100 text-amber-700" :
-                        "bg-error/10 text-error"
-                      )}>
-                        {conv.postbackStatus}
-                      </span>
-                    </td>
+                    {displayConversionColumns.map((column) => (
+                      <td key={column.key} className="px-4 py-3 whitespace-nowrap">
+                        {column.render(conv)}
+                      </td>
+                    ))}
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
@@ -572,7 +582,7 @@ export const ConversionsLog = () => {
                   {/* Expanded Details */}
                   {expandedRows.includes(conv.id) && (
                     <tr className="bg-surface-container-low/50">
-                      <td colSpan={10} className="px-4 py-4">
+                      <td colSpan={displayConversionColumns.length + 2} className="px-4 py-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                           {/* Financial Info */}
                           <div className="space-y-3">

@@ -15,6 +15,7 @@ import { TableFilterIcon } from './TableFilterIcon';
 import { TableFilterDropdown } from './TableFilterDropdown';
 import { processTableData } from '../utils/tableUtils';
 import { useTablePersistence, type TableFilterState, type TableSorterState } from '../hooks/useTablePersistence';
+import { TableColumnSettings, useTableColumnLayout, type TableColumnItem } from './TableColumnSettings';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -115,6 +116,21 @@ export function VirtualTableEnhanced<T = any>({
   const processedData = useMemo(() => {
     return processTableData(dataArray, columns, filters, sorter);
   }, [dataArray, columns, filters, sorter]);
+
+  // === 列显示 / 排序（持久化） ===
+  const columnItems = useMemo<TableColumnItem[]>(
+    () => columns.map((column) => ({
+      key: column.key,
+      label: column.label || column.key,
+      locked: column.key === 'select' || column.key === 'actions',
+    })),
+    [columns],
+  );
+  const { visible, toggle, move, reset } = useTableColumnLayout(tableId, columnItems);
+  const displayColumns = useMemo(
+    () => visible.map((key) => columns.find((column) => column.key === key)).filter((column): column is VirtualTableColumn<T> => Boolean(column)),
+    [columns, visible],
+  );
 
   // 计算可见行范围
   const { visibleStart, visibleEnd, totalHeight } = useMemo(() => {
@@ -226,15 +242,26 @@ export function VirtualTableEnhanced<T = any>({
   }
 
   return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      className={cn('overflow-auto relative border border-gray-200 rounded-md', className)}
-      style={{
-        height: typeof height === 'number' ? height : height === 'auto' ? undefined : height,
-        minHeight: typeof height === 'string' && height !== 'auto' ? height : undefined,
-      }}
-    >
+    <div className={cn('relative rounded-md border border-gray-200 bg-surface', className)}>
+      <div className="flex h-9 items-center justify-between gap-2 border-b border-outline-variant/20 px-2">
+        <span className="text-[11px] font-medium text-fg-subtle">{processedData.length} rows</span>
+        <TableColumnSettings
+          items={columnItems}
+          visible={visible}
+          onToggle={toggle}
+          onMove={move}
+          onReset={reset}
+        />
+      </div>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="overflow-auto relative"
+        style={{
+          height: typeof height === 'number' ? height : height === 'auto' ? undefined : height,
+          minHeight: typeof height === 'string' && height !== 'auto' ? height : undefined,
+        }}
+      >
       {/* 固定表头 */}
       <div
         className="sticky top-0 z-10 bg-surface-container dark:bg-surface-container-high border-b border-outline-variant/20"
@@ -254,7 +281,7 @@ export function VirtualTableEnhanced<T = any>({
               />
             </div>
           )}
-          {columns.map((column) => {
+          {displayColumns.map((column) => {
             const columnSortOrder = sorter?.columnKey === column.key ? sorter.order : column.sortOrder;
             const columnFilters = column.filteredValue || (filters[column.key] ? filters[column.key] : null);
             const hasFilter = columnFilters && (Array.isArray(columnFilters) ? columnFilters.length > 0 : true);
@@ -395,7 +422,7 @@ export function VirtualTableEnhanced<T = any>({
                       />
                     </div>
                   )}
-                  {columns.map((column) => {
+                  {displayColumns.map((column) => {
                     const value = (row as any)[column.dataIndex || column.key];
                     const content = column.render
                       ? column.render(value, row, actualIndex)
@@ -429,6 +456,7 @@ export function VirtualTableEnhanced<T = any>({
           })}
         </div>
       </div>
+    </div>
     </div>
   );
 }
