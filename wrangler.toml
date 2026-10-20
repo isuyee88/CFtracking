@@ -1,4 +1,4 @@
-# 手写：与 deploy-prod/wrangler.toml 完全一致，只把 main 指向「线上最新 bundle + offer-analysis 补丁」。
+﻿# 手写：与 deploy-prod/wrangler.toml 完全一致，只把 main 指向「线上最新 bundle + offer-analysis 补丁」。
 # 生成原因是 deploy-prod 由 scripts/build-cftracking-deploy.mjs 从线上 settings 生成、main 固定指向
 # parts/00-index.patched.js（那份对应更早的版本），而 offer-analysis 插件必须打在最新的 v879 bundle 上。
 #
@@ -91,6 +91,7 @@ binding = "ANALYTICS"
 dataset = "cftracking_events"
 
 [vars]
+AUTOMATION_APPLY = "true"
 ADMIN_USERNAME = "admin"
 AI_OPTIMIZATION_GATEWAY_ID = ""
 AI_OPTIMIZATION_MODEL = "@cf/meta/llama-3.1-8b-instruct"
@@ -103,3 +104,17 @@ CLICK_AE_ONLY = "true"
 JWT_EXPIRES_IN = "24h"
 REALTIME_ENABLED = false
 SSE_ENABLED = false
+
+# /* automation-scheduler-plugin */ Durable Object alarm 定时器（不占账号 cron 名额）
+[[durable_objects.bindings]]
+name = "AUTOMATION_DO"
+class_name = "AutomationSchedulerDO"
+
+[[migrations]]
+tag = "v10"
+new_sqlite_classes = []
+
+[[migrations]]
+tag = "v11"
+new_sqlite_classes = ["AutomationSchedulerDO"]
+

@@ -1,6 +1,899 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
+// ../../cftracking-plugins/automation-scheduler/index.js
+import { DurableObject } from "cloudflare:workers";
+
+// ../../cftracking-plugins/automation-scheduler/cron.js
+var FIELD_SPECS = [
+  { name: "minute", min: 0, max: 59 },
+  { name: "hour", min: 0, max: 23 },
+  { name: "dayOfMonth", min: 1, max: 31 },
+  { name: "month", min: 1, max: 12 },
+  { name: "dayOfWeek", min: 0, max: 6 }
+];
+function expandField(raw2, min, max) {
+  const text = String(raw2 ?? "").trim();
+  if (!text) return null;
+  const values = /* @__PURE__ */ new Set();
+  for (const chunk of text.split(",")) {
+    const part = chunk.trim();
+    if (!part) return null;
+    const slash = part.indexOf("/");
+    const head = slash === -1 ? part : part.slice(0, slash);
+    const step = slash === -1 ? 1 : Number(part.slice(slash + 1));
+    if (!Number.isInteger(step) || step < 1) return null;
+    let lo;
+    let hi;
+    if (head === "*") {
+      lo = min;
+      hi = max;
+    } else if (head.includes("-")) {
+      const [a, b] = head.split("-").map((item) => Number(item));
+      if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
+      lo = Math.min(a, b);
+      hi = Math.max(a, b);
+    } else {
+      const single = Number(head);
+      if (!Number.isInteger(single)) return null;
+      lo = single;
+      hi = slash === -1 ? single : max;
+    }
+    if (lo < min || hi > max || lo > hi) return null;
+    for (let value = lo; value <= hi; value += step) values.add(value);
+  }
+  return values.size > 0 ? values : null;
+}
+__name(expandField, "expandField");
+function parseCron(schedule) {
+  const source = String(schedule ?? "").trim();
+  if (!source) return null;
+  const parts = source.split(/\s+/);
+  if (parts.length !== 5) return null;
+  const fields = [];
+  for (let index = 0; index < FIELD_SPECS.length; index += 1) {
+    const spec = FIELD_SPECS[index];
+    const expanded = expandField(parts[index], spec.min, spec.max);
+    if (!expanded) return null;
+    fields.push(expanded);
+  }
+  return {
+    fields,
+    domRestricted: parts[2] !== "*",
+    dowRestricted: parts[4] !== "*",
+    source
+  };
+}
+__name(parseCron, "parseCron");
+function cronMatches(schedule, date = /* @__PURE__ */ new Date()) {
+  const parsed = parseCron(schedule);
+  if (!parsed) return false;
+  const [minutes, hours, days, months, weekdays] = parsed.fields;
+  const when = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(when.getTime())) return false;
+  if (!minutes.has(when.getUTCMinutes())) return false;
+  if (!hours.has(when.getUTCHours())) return false;
+  if (!months.has(when.getUTCMonth() + 1)) return false;
+  const domHit = days.has(when.getUTCDate());
+  const dowHit = weekdays.has(when.getUTCDay());
+  if (parsed.domRestricted && parsed.dowRestricted) return domHit || dowHit;
+  return domHit && dowHit;
+}
+__name(cronMatches, "cronMatches");
+function hourKeyUtc(ms = Date.now()) {
+  return new Date(ms).toISOString().slice(0, 13);
+}
+__name(hourKeyUtc, "hourKeyUtc");
+
+// ../../cftracking-plugins/automation-scheduler/targets.js
+var ZONE_EXPR = "COALESCE(NULLIF(c.subId1, ''), NULLIF(c.subId2, ''), NULLIF(c.subId3, ''))";
+var AGGREGATE_SQL = `
+WITH conv AS (
+  SELECT
+    clickId AS clickId,
+    COUNT(*) AS conversionCount,
+    COALESCE(SUM(CASE WHEN status = 'approved' THEN payout ELSE 0 END), 0) AS revenue
+  FROM conversions
+  WHERE timestamp >= ? AND timestamp < ?
+  GROUP BY clickId
+)
+SELECT
+  c.campaignId AS campaignId,
+  COALESCE(NULLIF(camp.trafficSource, ''), 'general') AS platform,
+  ${ZONE_EXPR} AS zoneId,
+  c.subId1 AS subId1,
+  c.subId2 AS subId2,
+  c.subId3 AS subId3,
+  COUNT(*) AS clicks,
+  COALESCE(SUM(COALESCE(conv.conversionCount, 0)), 0) AS conversions,
+  COALESCE(SUM(COALESCE(c.cost, 0)), 0) AS spend,
+  COALESCE(SUM(COALESCE(conv.revenue, 0)), 0) AS revenue
+FROM clicks c
+LEFT JOIN conv ON conv.clickId = c.clickId
+LEFT JOIN campaigns camp ON camp.id = c.campaignId
+WHERE c.timestamp >= ? AND c.timestamp < ?
+  AND ${ZONE_EXPR} IS NOT NULL
+GROUP BY c.campaignId, COALESCE(NULLIF(camp.trafficSource, ''), 'general'), ${ZONE_EXPR}
+HAVING COUNT(*) >= ?
+ORDER BY spend DESC
+LIMIT ?
+`.trim();
+var UPSERT_SQL = `
+INSERT INTO optimization_targets (
+  id, platform, zone_id, pubid, subid, device, geo,
+  clicks, conversions, spend, revenue, roi, cr, epc,
+  status, optimization_action, window_start, window_end, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT(id) DO UPDATE SET
+  clicks = excluded.clicks,
+  conversions = excluded.conversions,
+  spend = excluded.spend,
+  revenue = excluded.revenue,
+  roi = excluded.roi,
+  cr = excluded.cr,
+  epc = excluded.epc,
+  window_start = excluded.window_start,
+  window_end = excluded.window_end,
+  updated_at = CURRENT_TIMESTAMP
+`.trim();
+function clampInt(value, min, max, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(numeric)));
+}
+__name(clampInt, "clampInt");
+function readFlag(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  const text = String(value ?? "").trim().toLowerCase();
+  if (["1", "true", "on", "yes"].includes(text)) return true;
+  if (["0", "false", "off", "no"].includes(text)) return false;
+  return fallback;
+}
+__name(readFlag, "readFlag");
+function resolveOptions(env, now = Date.now()) {
+  const windowHours = clampInt(env?.AUTOMATION_WINDOW_HOURS, 1, 6, 2);
+  return {
+    now,
+    windowHours,
+    windowStart: now - windowHours * 60 * 60 * 1e3,
+    windowEnd: now,
+    minClicks: clampInt(env?.AUTOMATION_MIN_CLICKS, 1, 1e5, 20),
+    maxGroups: clampInt(env?.AUTOMATION_MAX_GROUPS, 1, 500, 100),
+    // 单轮写操作上限（黑名单插入 + target 禁用共用），防止规则写错一次封掉一大片
+    maxWrites: clampInt(env?.AUTOMATION_MAX_WRITES, 1, 200, 20),
+    blacklistScope: String(env?.AUTOMATION_BLACKLIST_SCOPE || "campaign").trim().toLowerCase() === "source" ? "source" : "campaign",
+    apply: readFlag(env?.AUTOMATION_APPLY, false)
+  };
+}
+__name(resolveOptions, "resolveOptions");
+function targetIdFor(platform, campaignId, zoneId) {
+  const raw2 = `${platform || "general"}|${campaignId || ""}|${zoneId || ""}`;
+  let hash = 2166136261;
+  for (let index = 0; index < raw2.length; index += 1) {
+    hash ^= raw2.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `tgt-${(hash >>> 0).toString(36)}`;
+}
+__name(targetIdFor, "targetIdFor");
+function metricsFor(row) {
+  const clicks = Number(row?.clicks) || 0;
+  const conversions = Number(row?.conversions) || 0;
+  const spend = Number(row?.spend) || 0;
+  const revenue = Number(row?.revenue) || 0;
+  return {
+    clicks,
+    conversions,
+    spend,
+    revenue,
+    cr: clicks > 0 ? conversions / clicks * 100 : 0,
+    epc: clicks > 0 ? revenue / clicks : 0,
+    roi: spend > 0 ? (revenue - spend) / spend : 0
+  };
+}
+__name(metricsFor, "metricsFor");
+async function aggregateTargets(env, options) {
+  const { windowStart, windowEnd, minClicks, maxGroups } = options;
+  const startIso = new Date(windowStart).toISOString();
+  const endIso = new Date(windowEnd).toISOString();
+  const statement = env.DB.prepare(AGGREGATE_SQL).bind(
+    startIso,
+    endIso,
+    startIso,
+    endIso,
+    minClicks,
+    maxGroups
+  );
+  const { results } = await statement.all();
+  const rows = Array.isArray(results) ? results : [];
+  const targets = rows.map((row) => {
+    const platform = String(row.platform || "general");
+    const campaignId = String(row.campaignId || "");
+    const zoneId = String(row.zoneId || "");
+    return {
+      id: targetIdFor(platform, campaignId, zoneId),
+      campaignId,
+      platform,
+      zoneId,
+      subId1: row.subId1 ? String(row.subId1) : "",
+      subId2: row.subId2 ? String(row.subId2) : "",
+      subId3: row.subId3 ? String(row.subId3) : "",
+      ...metricsFor(row),
+      windowStart: startIso,
+      windowEnd: endIso
+    };
+  });
+  return { targets, windowStart: startIso, windowEnd: endIso };
+}
+__name(aggregateTargets, "aggregateTargets");
+async function persistTargets(env, targets) {
+  if (!Array.isArray(targets) || targets.length === 0) return { written: 0 };
+  const statements = targets.map(
+    (target) => env.DB.prepare(UPSERT_SQL).bind(
+      target.id,
+      target.platform,
+      target.zoneId,
+      target.subId3 || null,
+      target.subId2 || null,
+      target.clicks,
+      target.conversions,
+      target.spend,
+      target.revenue,
+      target.roi,
+      target.cr,
+      target.epc,
+      target.windowStart,
+      target.windowEnd
+    )
+  );
+  await env.DB.batch(statements);
+  return { written: statements.length };
+}
+__name(persistTargets, "persistTargets");
+
+// ../../cftracking-plugins/automation-scheduler/rules.js
+var ENTITY_TYPE_TO_LIST_TYPE = {
+  zone: "zone",
+  subid: "sub_id",
+  pubid: "sub_id",
+  ip: "ip",
+  device_combo: "device"
+};
+function safeJsonParse(raw2, fallback) {
+  if (raw2 === null || raw2 === void 0) return fallback;
+  if (typeof raw2 === "object") return raw2;
+  try {
+    const parsed = JSON.parse(String(raw2));
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+__name(safeJsonParse, "safeJsonParse");
+async function loadActiveCronRules(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT id, name, type, trigger_type, trigger_config, conditions, actions, priority
+       FROM automation_rules
+      WHERE status = 'active' AND trigger_type = 'cron'
+      ORDER BY priority DESC, created_at ASC
+      LIMIT 50`
+  ).all();
+  return (Array.isArray(results) ? results : []).map((row) => ({
+    id: String(row.id),
+    name: String(row.name || row.id),
+    type: String(row.type || ""),
+    triggerType: String(row.trigger_type || ""),
+    schedule: String(safeJsonParse(row.trigger_config, {})?.schedule || ""),
+    conditions: safeJsonParse(row.conditions, {}),
+    actions: safeJsonParse(row.actions, []),
+    priority: Number(row.priority) || 0
+  }));
+}
+__name(loadActiveCronRules, "loadActiveCronRules");
+function ruleDueAt(rule, date) {
+  if (!rule?.schedule) return false;
+  return cronMatches(rule.schedule, date);
+}
+__name(ruleDueAt, "ruleDueAt");
+function matchConditions(conditions, target) {
+  const c = conditions || {};
+  const numeric = /* @__PURE__ */ __name((value) => Number.isFinite(Number(value)) ? Number(value) : void 0, "numeric");
+  const checks = [
+    ["min_clicks", (v) => target.clicks >= v],
+    ["max_clicks", (v) => target.clicks <= v],
+    ["min_conversions", (v) => target.conversions >= v],
+    ["max_conversions", (v) => target.conversions <= v],
+    ["min_spend", (v) => target.spend >= v],
+    ["max_spend", (v) => target.spend <= v],
+    ["min_revenue", (v) => target.revenue >= v],
+    ["min_roi", (v) => target.roi >= v],
+    ["max_roi", (v) => target.roi <= v],
+    ["min_cr", (v) => target.cr >= v],
+    ["max_cr", (v) => target.cr <= v],
+    ["min_epc", (v) => target.epc >= v],
+    ["max_epc", (v) => target.epc <= v]
+  ];
+  for (const [key, predicate] of checks) {
+    const bound = numeric(c[key]);
+    if (bound !== void 0 && !predicate(bound)) return false;
+  }
+  if (Array.isArray(c.platforms) && c.platforms.length > 0 && !c.platforms.includes(target.platform)) {
+    return false;
+  }
+  return true;
+}
+__name(matchConditions, "matchConditions");
+function platformMatches(actionPlatform, targetPlatform) {
+  const wanted = String(actionPlatform || "all").trim().toLowerCase();
+  if (!wanted || wanted === "all") return true;
+  return wanted === String(targetPlatform || "").trim().toLowerCase();
+}
+__name(platformMatches, "platformMatches");
+function resolveBlacklistEntry(target, entityType) {
+  const wanted = ENTITY_TYPE_TO_LIST_TYPE[String(entityType || "").trim().toLowerCase()];
+  if (!wanted) return null;
+  if (wanted === "zone") {
+    if (target.subId1) return { type: "zone", value: target.subId1 };
+    if (target.zoneId) return { type: "sub_id", value: target.zoneId };
+    return null;
+  }
+  if (wanted === "sub_id") {
+    const value = String(entityType).toLowerCase() === "pubid" ? target.subId3 || target.zoneId : target.zoneId;
+    return value ? { type: "sub_id", value } : null;
+  }
+  if (wanted === "ip") {
+    return null;
+  }
+  if (wanted === "device") {
+    return null;
+  }
+  return null;
+}
+__name(resolveBlacklistEntry, "resolveBlacklistEntry");
+function planActions(rule, target) {
+  const actions = Array.isArray(rule?.actions) ? rule.actions : [];
+  const planned = [];
+  for (const action of actions) {
+    const type = String(action?.type || "");
+    if (!type) continue;
+    if (!platformMatches(action.platform, target.platform)) {
+      planned.push({ type, supported: false, reason: "platform_mismatch" });
+      continue;
+    }
+    if (type === "add_blacklist") {
+      const entry = resolveBlacklistEntry(target, action.entity_type);
+      planned.push(
+        entry ? {
+          type,
+          supported: true,
+          payload: {
+            ...entry,
+            reason: String(action.reason || rule.type || "automation_rule"),
+            name: `${entry.type}:${entry.value}`
+          }
+        } : { type, supported: false, reason: "entity_not_aggregatable" }
+      );
+      continue;
+    }
+    if (type === "disable_zone") {
+      planned.push({
+        type,
+        supported: true,
+        payload: { targetId: target.id }
+      });
+      continue;
+    }
+    if (type === "send_notification") {
+      planned.push({ type, supported: false, reason: "no_transport_in_edge" });
+      continue;
+    }
+    planned.push({ type, supported: false, reason: "unsupported_in_patch" });
+  }
+  return planned;
+}
+__name(planActions, "planActions");
+async function insertBlacklist(env, target, payload, options) {
+  const trafficSourceId = target.platform || "general";
+  const campaignId = options.blacklistScope === "source" ? null : target.campaignId || null;
+  const nowIso2 = new Date(options.now).toISOString();
+  const id = `bl-${target.id}-${payload.type}-${payload.value}`.slice(0, 180);
+  const result = await env.DB.prepare(
+    // OR IGNORE 兜住「幂等 id 撞主键」的竞态：并发两轮都 INSERT 时，
+    // 落后者被静默忽略（changes=0 → inserted:false），而不是抛 UNIQUE 变成 failed。
+    `INSERT OR IGNORE INTO blacklist (
+       id, trafficSourceId, type, value, name, reason, status, synced, createdAt, updatedAt, campaignId, syncToPlatform
+     )
+     SELECT ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?, ?, 0
+      WHERE NOT EXISTS (
+        SELECT 1 FROM blacklist
+         WHERE type = ? AND value = ? AND status = 'active'
+           AND trafficSourceId = ?
+           AND (campaignId IS NULL OR campaignId = ?)
+      )`
+  ).bind(
+    id,
+    trafficSourceId,
+    payload.type,
+    payload.value,
+    payload.name,
+    payload.reason,
+    nowIso2,
+    nowIso2,
+    campaignId,
+    payload.type,
+    payload.value,
+    trafficSourceId,
+    campaignId
+  ).run();
+  const changes = result?.meta?.changes ?? result?.changes ?? 0;
+  return { inserted: Number(changes) > 0, id };
+}
+__name(insertBlacklist, "insertBlacklist");
+async function disableTarget(env, target) {
+  const result = await env.DB.prepare(
+    `UPDATE optimization_targets
+        SET status = 'disabled',
+            optimization_action = 'auto_disabled_by_rule',
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?`
+  ).bind(target.id).run();
+  const changes = result?.meta?.changes ?? result?.changes ?? 0;
+  return { updated: Number(changes) > 0 };
+}
+__name(disableTarget, "disableTarget");
+async function executePlan(env, rule, target, planned, options) {
+  const results = [];
+  let affected = 0;
+  const limit = Number(options.maxWrites) || 20;
+  for (const item of planned) {
+    if (!item.supported) {
+      results.push({ action: item.type, result: "skipped", details: { reason: item.reason } });
+      continue;
+    }
+    if (options.writes >= limit) {
+      results.push({ action: item.type, result: "skipped", details: { reason: "max_writes_per_run" } });
+      continue;
+    }
+    try {
+      if (item.type === "add_blacklist") {
+        const outcome = await insertBlacklist(env, target, item.payload, options);
+        if (outcome.inserted) {
+          options.writes += 1;
+          affected += 1;
+        }
+        results.push({
+          action: item.type,
+          result: "success",
+          details: { ...item.payload, inserted: outcome.inserted, id: outcome.id }
+        });
+        continue;
+      }
+      if (item.type === "disable_zone") {
+        const outcome = await disableTarget(env, target);
+        if (outcome.updated) {
+          options.writes += 1;
+          affected += 1;
+        }
+        results.push({ action: item.type, result: "success", details: outcome });
+        continue;
+      }
+      results.push({ action: item.type, result: "skipped", details: { reason: "unsupported_in_patch" } });
+    } catch (error2) {
+      results.push({
+        action: item.type,
+        result: "failed",
+        error: error2 instanceof Error ? error2.message : String(error2)
+      });
+    }
+  }
+  return { results, affected };
+}
+__name(executePlan, "executePlan");
+async function recordExecution(env, rule, { hourKey, durationMs: durationMs2, success: success2, results, affected, errors }) {
+  const id = `exec-${rule.id}-${hourKey}`.slice(0, 180);
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT OR REPLACE INTO rule_executions (
+         id, rule_id, execution_time, duration_ms, trigger_context, success, actions_taken, affected_count, errors
+       ) VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      id,
+      rule.id,
+      Math.max(0, Math.trunc(durationMs2)),
+      JSON.stringify({ source: "durable_object_alarm", hour_key: hourKey, schedule: rule.schedule }),
+      success2 ? 1 : 0,
+      JSON.stringify(results),
+      affected,
+      errors || null
+    ),
+    env.DB.prepare(
+      `UPDATE automation_rules
+          SET total_executions = total_executions + 1,
+              successful_executions = successful_executions + ?,
+              last_executed_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`
+    ).bind(success2 ? 1 : 0, rule.id)
+  ]);
+  return id;
+}
+__name(recordExecution, "recordExecution");
+
+// ../../cftracking-plugins/automation-scheduler/job.js
+var errorMessage = /* @__PURE__ */ __name((error2) => error2 instanceof Error ? error2.message : String(error2), "errorMessage");
+function summarizePlan(perTargetPlans) {
+  const planned = {};
+  const skipped = {};
+  for (const plans of perTargetPlans) {
+    for (const item of plans) {
+      if (item.supported) planned[item.type] = (planned[item.type] || 0) + 1;
+      else skipped[`${item.type}:${item.reason}`] = (skipped[`${item.type}:${item.reason}`] || 0) + 1;
+    }
+  }
+  return { planned, skipped };
+}
+__name(summarizePlan, "summarizePlan");
+async function runAutomationTick(env, input = {}) {
+  const now = Number(input.now) > 0 ? Number(input.now) : Date.now();
+  const options = resolveOptions(env, now);
+  if (input.apply !== void 0) options.apply = !!input.apply;
+  else options.apply = readFlag(env?.AUTOMATION_APPLY, false);
+  options.now = now;
+  options.writes = 0;
+  const hourKey = hourKeyUtc(now);
+  const startedAt = Date.now();
+  const summary = {
+    at: new Date(now).toISOString(),
+    hourKey,
+    apply: options.apply,
+    window: {
+      hours: options.windowHours,
+      start: new Date(options.windowStart).toISOString(),
+      end: new Date(options.windowEnd).toISOString(),
+      minClicks: options.minClicks,
+      maxGroups: options.maxGroups
+    },
+    aggregate: { groups: 0, written: 0, error: null },
+    rules: [],
+    writes: 0,
+    degraded: false,
+    errors: [],
+    durationMs: 0
+  };
+  if (!env?.DB) {
+    summary.degraded = true;
+    summary.errors.push("db_binding_missing");
+    summary.durationMs = Date.now() - startedAt;
+    return summary;
+  }
+  let targets = [];
+  try {
+    const aggregated = await aggregateTargets(env, options);
+    targets = aggregated.targets;
+    summary.aggregate.groups = targets.length;
+  } catch (error2) {
+    summary.degraded = true;
+    summary.aggregate.error = errorMessage(error2);
+    summary.errors.push(`aggregate: ${summary.aggregate.error}`);
+    summary.durationMs = Date.now() - startedAt;
+    return summary;
+  }
+  if (options.apply && targets.length > 0) {
+    try {
+      const persisted = await persistTargets(env, targets);
+      summary.aggregate.written = persisted.written;
+    } catch (error2) {
+      summary.aggregate.error = errorMessage(error2);
+      summary.errors.push(`persist_targets: ${summary.aggregate.error}`);
+    }
+  }
+  let rules = [];
+  try {
+    rules = await loadActiveCronRules(env);
+  } catch (error2) {
+    summary.errors.push(`load_rules: ${errorMessage(error2)}`);
+    summary.degraded = true;
+    summary.durationMs = Date.now() - startedAt;
+    return summary;
+  }
+  const referenceDate = new Date(now);
+  for (const rule of rules) {
+    if (!ruleDueAt(rule, referenceDate)) continue;
+    const entry = {
+      id: rule.id,
+      name: rule.name,
+      schedule: rule.schedule,
+      matched: 0,
+      planned: {},
+      skipped: {},
+      executed: null,
+      affected: 0,
+      error: null
+    };
+    try {
+      const matched = targets.filter((target) => matchConditions(rule.conditions, target));
+      entry.matched = matched.length;
+      const plans = matched.map((target) => planActions(rule, target));
+      const summarized = summarizePlan(plans);
+      entry.planned = summarized.planned;
+      entry.skipped = summarized.skipped;
+      if (!options.apply) {
+        summary.rules.push(entry);
+        continue;
+      }
+      const startedRuleAt = Date.now();
+      const actionResults = [];
+      let affected = 0;
+      for (let index = 0; index < matched.length; index += 1) {
+        const outcome = await executePlan(env, rule, matched[index], plans[index], options);
+        affected += outcome.affected;
+        actionResults.push(...outcome.results);
+      }
+      const failed = actionResults.filter((item) => item.result === "failed");
+      const success2 = failed.length === 0;
+      entry.affected = affected;
+      entry.executed = actionResults.length;
+      try {
+        await recordExecution(env, rule, {
+          hourKey,
+          durationMs: Date.now() - startedRuleAt,
+          success: success2,
+          results: actionResults,
+          affected,
+          errors: failed.length > 0 ? failed.map((item) => `${item.action}:${item.error}`).join("; ") : null
+        });
+      } catch (error2) {
+        entry.error = `record_execution: ${errorMessage(error2)}`;
+        summary.errors.push(`${rule.id}: ${entry.error}`);
+      }
+      if (!success2) {
+        entry.error = entry.error || `action_failed: ${failed.length}`;
+      }
+      summary.rules.push(entry);
+    } catch (error2) {
+      entry.error = errorMessage(error2);
+      summary.errors.push(`${rule.id}: ${entry.error}`);
+      summary.rules.push(entry);
+    }
+  }
+  summary.writes = options.writes;
+  summary.durationMs = Date.now() - startedAt;
+  return summary;
+}
+__name(runAutomationTick, "runAutomationTick");
+function isRetryable(summary) {
+  if (!summary) return false;
+  return Boolean(summary.aggregate?.error || summary.errors.some((item) => item.startsWith("aggregate:") || item.startsWith("load_rules:")));
+}
+__name(isRetryable, "isRetryable");
+
+// ../../cftracking-plugins/automation-scheduler/schedule.js
+var RUN_OFFSET_MS = 2 * 60 * 1e3;
+var RETRY_DELAY_MS = 5 * 60 * 1e3;
+var MAX_RETRIES = 3;
+function nextHourlyAlarmMs(now = Date.now()) {
+  const hour = 60 * 60 * 1e3;
+  let next = Math.ceil((now - RUN_OFFSET_MS) / hour) * hour + RUN_OFFSET_MS;
+  while (next <= now) next += hour;
+  return next;
+}
+__name(nextHourlyAlarmMs, "nextHourlyAlarmMs");
+function decideNextAlarm({ now, ok: ok2, failures }) {
+  const consecutiveFailures = Number.isFinite(failures) ? failures : 0;
+  if (!ok2 && consecutiveFailures <= MAX_RETRIES) {
+    return { at: now + RETRY_DELAY_MS, reason: "retry" };
+  }
+  return { at: nextHourlyAlarmMs(now), reason: "hourly" };
+}
+__name(decideNextAlarm, "decideNextAlarm");
+
+// ../../cftracking-plugins/automation-scheduler/index.js
+var STATE_KEY = "state";
+var ARM_THROTTLE_MS = 10 * 60 * 1e3;
+var KEEP_RUNS = 5;
+function json(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }
+  });
+}
+__name(json, "json");
+var errorMessage2 = /* @__PURE__ */ __name((error2) => error2 instanceof Error ? error2.message : String(error2), "errorMessage");
+function trimSummary(summary) {
+  if (!summary) return null;
+  return {
+    at: summary.at,
+    hourKey: summary.hourKey,
+    apply: summary.apply,
+    window: summary.window,
+    aggregate: summary.aggregate,
+    writes: summary.writes,
+    degraded: summary.degraded,
+    errors: summary.errors.slice(0, 5),
+    rules: (summary.rules || []).map((rule) => ({
+      id: rule.id,
+      schedule: rule.schedule,
+      matched: rule.matched,
+      planned: rule.planned,
+      skipped: rule.skipped,
+      affected: rule.affected,
+      error: rule.error
+    })),
+    durationMs: summary.durationMs
+  };
+}
+__name(trimSummary, "trimSummary");
+var AutomationSchedulerDO = class extends DurableObject {
+  static {
+    __name(this, "AutomationSchedulerDO");
+  }
+  async fetch(request) {
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    try {
+      if (path === "/" || path === "/status") {
+        return json(await this.status());
+      }
+      if (path === "/ensure") {
+        return json(await this.ensureArmed());
+      }
+      if (path === "/run") {
+        const applyParam = url.searchParams.get("apply");
+        const nowParam = Number(url.searchParams.get("now"));
+        const summary = await this.runOnce({
+          manual: true,
+          apply: applyParam === null ? void 0 : applyParam === "1" || applyParam === "true",
+          now: Number.isFinite(nowParam) && nowParam > 0 ? nowParam : void 0
+        });
+        return json(summary);
+      }
+      if (path === "/disarm") {
+        await this.ctx.storage.deleteAlarm();
+        const state = await this.readState() || {};
+        await this.writeState({ ...state, armedAt: null, disarmedAt: (/* @__PURE__ */ new Date()).toISOString() });
+        return json({ armed: false });
+      }
+      return json({ error: "not_found", path }, 404);
+    } catch (error2) {
+      return json({ error: "scheduler_error", message: errorMessage2(error2) }, 500);
+    }
+  }
+  /** DO alarm：执行一轮，然后无论如何都排下一次（否则定时链断掉） */
+  async alarm() {
+    await this.runOnce({ manual: false });
+  }
+  async readState() {
+    const raw2 = await this.ctx.storage.get(STATE_KEY);
+    return raw2 && typeof raw2 === "object" ? raw2 : null;
+  }
+  async writeState(next) {
+    await this.ctx.storage.put(STATE_KEY, next);
+  }
+  async status() {
+    const state = await this.readState() || {};
+    const alarmAt = await this.ctx.storage.getAlarm();
+    return {
+      armed: Boolean(alarmAt),
+      alarmAt: alarmAt ? new Date(alarmAt).toISOString() : null,
+      nextHourlyAt: new Date(nextHourlyAlarmMs(Date.now())).toISOString(),
+      lastRunAt: state.lastRunAt || null,
+      lastRunHour: state.lastRunHour || null,
+      lastOk: state.lastOk ?? null,
+      lastError: state.lastError || null,
+      failures: state.failures || 0,
+      runs: Array.isArray(state.runs) ? state.runs : []
+    };
+  }
+  /** arm：没有 alarm 就排到下一个 HH:02（幂等，重复调用不会推迟已有的 alarm） */
+  async ensureArmed() {
+    const existing = await this.ctx.storage.getAlarm();
+    if (existing) {
+      return { armed: true, alarmAt: new Date(existing).toISOString(), created: false };
+    }
+    const at = nextHourlyAlarmMs(Date.now());
+    await this.ctx.storage.setAlarm(at);
+    const state = await this.readState() || {};
+    await this.writeState({ ...state, armedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    return { armed: true, alarmAt: new Date(at).toISOString(), created: true };
+  }
+  /**
+   * 跑一轮（alarm 与手工 /run 共用）。
+   * @param {{ manual: boolean, apply?: boolean, now?: number }} input
+   */
+  async runOnce(input) {
+    const now = input.now || Date.now();
+    const hourKey = hourKeyUtc(now);
+    const previous = await this.readState() || {};
+    if (!input.manual && previous.lastRunHour === hourKey && previous.lastOk) {
+      const alarm2 = decideNextAlarm({ now, ok: true, failures: 0 });
+      await this.ctx.storage.setAlarm(alarm2.at);
+      return {
+        skipped: true,
+        reason: "already_ran_this_hour",
+        hourKey,
+        nextAlarmAt: new Date(alarm2.at).toISOString()
+      };
+    }
+    const startedAt = Date.now();
+    let summary = null;
+    let error2 = null;
+    try {
+      summary = await runAutomationTick(this.env, { now, apply: input.apply });
+    } catch (caught) {
+      error2 = errorMessage2(caught);
+    }
+    const ok2 = !error2 && summary ? !isRetryable(summary) : false;
+    const failures = ok2 ? 0 : (previous.failures || 0) + 1;
+    const alarm = decideNextAlarm({ now: Date.now(), ok: ok2, failures });
+    await this.ctx.storage.setAlarm(alarm.at);
+    const entry = {
+      at: new Date(now).toISOString(),
+      manual: Boolean(input.manual),
+      ok: ok2,
+      nextAlarmAt: new Date(alarm.at).toISOString(),
+      nextReason: alarm.reason,
+      error: error2 || (summary?.errors?.length ? summary.errors.join("; ") : null),
+      summary: trimSummary(summary)
+    };
+    const runs = [entry, ...Array.isArray(previous.runs) ? previous.runs : []].slice(0, KEEP_RUNS);
+    await this.writeState({
+      armedAt: previous.armedAt || (/* @__PURE__ */ new Date()).toISOString(),
+      lastRunAt: entry.at,
+      lastRunHour: ok2 ? hourKey : previous.lastRunHour || null,
+      lastOk: ok2,
+      lastError: entry.error,
+      failures,
+      runs
+    });
+    return {
+      ok: ok2,
+      manual: Boolean(input.manual),
+      hourKey,
+      durationMs: Date.now() - startedAt,
+      nextAlarmAt: new Date(alarm.at).toISOString(),
+      nextReason: alarm.reason,
+      error: entry.error,
+      summary
+    };
+  }
+};
+async function handleAutomationSchedulerRequest(request, env) {
+  const namespace = env?.AUTOMATION_DO;
+  if (!namespace || typeof namespace.idFromName !== "function") {
+    return json(
+      {
+        error: "automation_do_not_bound",
+        hint: 'wrangler.toml \u9700\u8981 [[durable_objects.bindings]] name="AUTOMATION_DO" \u4E0E\u5BF9\u5E94 migrations'
+      },
+      503
+    );
+  }
+  const url = new URL(request.url);
+  const suffix = url.pathname.replace(/^\/api\/automation-scheduler/, "") || "/";
+  const target = new URL(`https://automation-scheduler.internal${suffix.startsWith("/") ? suffix : `/${suffix}`}`);
+  target.search = url.search;
+  const stub = namespace.get(namespace.idFromName("hourly"));
+  return stub.fetch(new Request(target.toString(), {
+    method: request.method,
+    headers: request.headers
+  }));
+}
+__name(handleAutomationSchedulerRequest, "handleAutomationSchedulerRequest");
+var lastArmAt = 0;
+function armAutomationScheduler(env, ctx) {
+  const namespace = env?.AUTOMATION_DO;
+  if (!namespace || typeof namespace.idFromName !== "function") return;
+  const now = Date.now();
+  if (now - lastArmAt < ARM_THROTTLE_MS) return;
+  lastArmAt = now;
+  const task = namespace.get(namespace.idFromName("hourly")).fetch("https://automation-scheduler.internal/ensure", { method: "POST" }).catch(() => {
+  });
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(task);
+  else task.catch(() => {
+  });
+}
+__name(armAutomationScheduler, "armAutomationScheduler");
+
 // ../../cftracking-plugins/offer-analysis/config.js
 var DEFAULT_CONFIG = {
   enabled: true,
@@ -53,7 +946,7 @@ var asStringArray = /* @__PURE__ */ __name((value, fallback, lower = true) => {
   const out = value.filter((v) => typeof v === "string" && v.trim()).map((v) => lower ? v.trim().toLowerCase() : v.trim());
   return out.length ? [...new Set(out)] : fallback;
 }, "asStringArray");
-var clampInt = /* @__PURE__ */ __name((value, min, max, fallback) => {
+var clampInt2 = /* @__PURE__ */ __name((value, min, max, fallback) => {
   const n = Math.floor(Number(value));
   if (!Number.isFinite(n)) return fallback;
   return Math.min(Math.max(n, min), max);
@@ -80,11 +973,11 @@ function normalizeConfig(input = {}, base = DEFAULT_CONFIG) {
     devices: devices.length ? devices : base.devices,
     oses: oses.length ? oses : base.oses,
     geoSource: merged.geoSource === "requested" ? "requested" : "offer",
-    cooldownDays: clampInt(merged.cooldownDays, 1, 90, base.cooldownDays),
-    maxPerSweep: clampInt(merged.maxPerSweep, 1, 5, base.maxPerSweep),
+    cooldownDays: clampInt2(merged.cooldownDays, 1, 90, base.cooldownDays),
+    maxPerSweep: clampInt2(merged.maxPerSweep, 1, 5, base.maxPerSweep),
     withCopy: merged.withCopy !== false,
     screenshot: ["none", "hash", "base64"].includes(merged.screenshot) ? merged.screenshot : base.screenshot,
-    maxHops: clampInt(merged.maxHops, 1, 10, base.maxHops),
+    maxHops: clampInt2(merged.maxHops, 1, 10, base.maxHops),
     renderMode,
     provider,
     fallbackProvider,
@@ -95,16 +988,16 @@ function normalizeConfig(input = {}, base = DEFAULT_CONFIG) {
     asn,
     browser,
     locale: String(merged.locale || base.locale).trim().slice(0, 20) || base.locale,
-    maxCostCentsPerProbe: clampInt(merged.maxCostCentsPerProbe, 0, 1e4, base.maxCostCentsPerProbe),
-    dailyProbeCap: clampInt(merged.dailyProbeCap, 1, 5e3, base.dailyProbeCap),
-    dailyProviderBudgetCents: clampInt(merged.dailyProviderBudgetCents, 0, 1e6, base.dailyProviderBudgetCents)
+    maxCostCentsPerProbe: clampInt2(merged.maxCostCentsPerProbe, 0, 1e4, base.maxCostCentsPerProbe),
+    dailyProbeCap: clampInt2(merged.dailyProbeCap, 1, 5e3, base.dailyProbeCap),
+    dailyProviderBudgetCents: clampInt2(merged.dailyProviderBudgetCents, 0, 1e6, base.dailyProviderBudgetCents)
   };
 }
 __name(normalizeConfig, "normalizeConfig");
-function parseConfigJson(json) {
-  if (!json) return normalizeConfig({});
+function parseConfigJson(json2) {
+  if (!json2) return normalizeConfig({});
   try {
-    return normalizeConfig(JSON.parse(json));
+    return normalizeConfig(JSON.parse(json2));
   } catch {
     return normalizeConfig({});
   }
@@ -290,13 +1183,13 @@ async function getConfigRow(db) {
   return db.prepare(`SELECT json, updatedAt FROM oa_config WHERE id = 1`).first();
 }
 __name(getConfigRow, "getConfigRow");
-async function saveConfig(db, json) {
+async function saveConfig(db, json2) {
   const updatedAt = nowIso();
   await db.prepare(
     `INSERT INTO oa_config (id, json, updatedAt) VALUES (1, ?, ?)
        ON CONFLICT(id) DO UPDATE SET json = excluded.json, updatedAt = excluded.updatedAt`
-  ).bind(json, updatedAt).run();
-  return { json, updatedAt };
+  ).bind(json2, updatedAt).run();
+  return { json: json2, updatedAt };
 }
 __name(saveConfig, "saveConfig");
 async function enqueueJob(db, { offerId, windowKey: windowKey2, reason = "offer_created" }) {
@@ -921,7 +1814,7 @@ var JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-C
 var ok = /* @__PURE__ */ __name((data, meta, status = 200) => new Response(JSON.stringify({ success: true, data, error: null, meta }), { status, headers: JSON_HEADERS }), "ok");
 var bad = /* @__PURE__ */ __name((message, code = "OFFER_ANALYSIS_ERROR", status = 400) => new Response(JSON.stringify({ success: false, data: null, error: { code, message } }), { status, headers: JSON_HEADERS }), "bad");
 var html = /* @__PURE__ */ __name((body, status = 200) => new Response(body, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } }), "html");
-var clampInt2 = /* @__PURE__ */ __name((value, min, max, fallback) => {
+var clampInt3 = /* @__PURE__ */ __name((value, min, max, fallback) => {
   const n = Math.floor(Number(value));
   if (!Number.isFinite(n)) return fallback;
   return Math.min(Math.max(n, min), max);
@@ -991,7 +1884,7 @@ __name(loadConfig, "loadConfig");
 async function sweep(env, ctx, limitOverride) {
   const { config } = await loadConfig(env);
   if (!config.enabled) return { enabled: false, picked: 0, results: [] };
-  const limit = clampInt2(limitOverride, 1, 5, config.maxPerSweep);
+  const limit = clampInt3(limitOverride, 1, 5, config.maxPerSweep);
   const resetCount = await resetStaleJobs(env.DB, 10);
   const results = [];
   for (let i = 0; i < limit; i += 1) {
@@ -1284,9 +2177,9 @@ async function handleOfferAnalysis(request, env, user, ctx) {
 }
 __name(handleOfferAnalysis, "handleOfferAnalysis");
 
-// ../../recovered/cf-tracking/live/00-index.patched.js
-import { DurableObject } from "cloudflare:workers";
+// ../cftracking-automation-build/00-index.patched.js
 import { DurableObject as DurableObject2 } from "cloudflare:workers";
+import { DurableObject as DurableObject22 } from "cloudflare:workers";
 import { DurableObject as DurableObject3 } from "cloudflare:workers";
 import { DurableObject as DurableObject4 } from "cloudflare:workers";
 var __defProp2 = Object.defineProperty;
@@ -2037,7 +2930,7 @@ var CacheEventBrokerDurableObject;
 var init_cache_event_broker_do = __esm({
   "src/handlers/do/cache-event-broker.do.ts"() {
     "use strict";
-    CacheEventBrokerDurableObject = class extends DurableObject {
+    CacheEventBrokerDurableObject = class extends DurableObject2 {
       static {
         __name(this, "CacheEventBrokerDurableObject");
       }
@@ -2226,7 +3119,7 @@ var TrackingStatsDO;
 var init_tracking_stats_do = __esm({
   "src/handlers/do/tracking-stats.do.ts"() {
     "use strict";
-    TrackingStatsDO = class extends DurableObject2 {
+    TrackingStatsDO = class extends DurableObject22 {
       static {
         __name(this, "TrackingStatsDO");
       }
@@ -4907,8 +5800,8 @@ var init_postback_sender = __esm({
             willRetry: false
           };
         } catch (error2) {
-          const errorMessage = error2 instanceof Error ? error2.message : "Unexpected error";
-          console.error("[PostbackSender] Unexpected error:", errorMessage);
+          const errorMessage3 = error2 instanceof Error ? error2.message : "Unexpected error";
+          console.error("[PostbackSender] Unexpected error:", errorMessage3);
           return {
             success: false,
             taskId: task.id,
@@ -4916,7 +5809,7 @@ var init_postback_sender = __esm({
             url: task.postbackUrl,
             latencyMs: Date.now() - startTime,
             retryCount: currentRetryCount,
-            errorMessage,
+            errorMessage: errorMessage3,
             willRetry: false
           };
         }
@@ -5452,7 +6345,7 @@ var init_postback_repo = __esm({
        * @description 在手动或自动重试后调用，
        * 更新原始日志的最终状态。
        */
-      async updateLogStatus(logId, _status, statusCode, errorMessage) {
+      async updateLogStatus(logId, _status, statusCode, errorMessage3) {
         await this.ensureTable();
         try {
           const result = await this.db.prepare(`
@@ -5462,7 +6355,7 @@ var init_postback_repo = __esm({
             errorMessage = COALESCE(?, errorMessage),
             retryCount = retryCount + 1
           WHERE id = ?
-        `).bind(statusCode ?? null, errorMessage ?? null, logId).run();
+        `).bind(statusCode ?? null, errorMessage3 ?? null, logId).run();
           return result.success;
         } catch (error2) {
           console.error("[PostbackLogRepository] updateLogStatus error:", error2);
@@ -6912,10 +7805,10 @@ var init_postback_service = __esm({
               results.push(result);
               await this.logPostback(this.buildLogFromResult(task, result));
             } catch (error2) {
-              const errorMessage = error2 instanceof Error ? error2.message : "Unknown error";
+              const errorMessage3 = error2 instanceof Error ? error2.message : "Unknown error";
               console.error(
                 `[PostbackService] Error processing task ${task.id}:`,
-                errorMessage
+                errorMessage3
               );
               const failedResult = {
                 success: false,
@@ -6924,7 +7817,7 @@ var init_postback_service = __esm({
                 url: task.postbackUrl,
                 latencyMs: Date.now() - startTime,
                 retryCount: 0,
-                errorMessage,
+                errorMessage: errorMessage3,
                 willRetry: false
               };
               try {
@@ -6936,7 +7829,7 @@ var init_postback_service = __esm({
                 );
               }
               results.push(failedResult);
-              await this.logPostback(this.buildErrorLog(task, errorMessage));
+              await this.logPostback(this.buildErrorLog(task, errorMessage3));
             }
           }
           const totalDuration = Date.now() - startTime;
@@ -6945,8 +7838,8 @@ var init_postback_service = __esm({
           );
           return results;
         } catch (error2) {
-          const errorMessage = error2 instanceof Error ? error2.message : "Unknown error";
-          console.error("[PostbackService] onConversion error:", errorMessage);
+          const errorMessage3 = error2 instanceof Error ? error2.message : "Unknown error";
+          console.error("[PostbackService] onConversion error:", errorMessage3);
           return [];
         }
       }
@@ -7223,12 +8116,12 @@ var init_postback_service = __esm({
       }
       async recordFailedDelivery(task, result) {
         if (!this.idempotencyRepo) return;
-        const errorMessage = result.errorMessage || `HTTP ${result.statusCode ?? "unknown"}`;
+        const errorMessage3 = result.errorMessage || `HTTP ${result.statusCode ?? "unknown"}`;
         if (result.retryCount >= task.maxRetries) {
           await this.idempotencyRepo.markDeadLetter(
             task.conversionId,
             task.platform,
-            errorMessage,
+            errorMessage3,
             result.statusCode,
             task.id
           );
@@ -7238,7 +8131,7 @@ var init_postback_service = __esm({
         await this.idempotencyRepo.markAsRetry(
           task.conversionId,
           task.platform,
-          errorMessage,
+          errorMessage3,
           result.retryCount + 1,
           void 0,
           result.statusCode,
@@ -7560,7 +8453,7 @@ var init_postback_service = __esm({
        *
        * @private 内部方法
        */
-      buildErrorLog(task, errorMessage) {
+      buildErrorLog(task, errorMessage3) {
         return {
           id: generateUUID(),
           taskId: task.id,
@@ -7573,7 +8466,7 @@ var init_postback_service = __esm({
           statusCode: 0,
           latencyMs: 0,
           success: false,
-          errorMessage,
+          errorMessage: errorMessage3,
           retryCount: 0,
           createdAt: (/* @__PURE__ */ new Date()).toISOString()
         };
@@ -8484,8 +9377,8 @@ var init_conversion_service = __esm({
             success: true
           };
         } catch (error2) {
-          const errorMessage = error2 instanceof Error ? error2.message : "Unknown error";
-          console.error(`[ConversionService] Conversion failed: ${errorMessage}`);
+          const errorMessage3 = error2 instanceof Error ? error2.message : "Unknown error";
+          console.error(`[ConversionService] Conversion failed: ${errorMessage3}`);
           return {
             conversionId,
             success: false
@@ -17428,9 +18321,9 @@ var PlatformTaskProcessor = class {
       });
       console.log(`Task ${task.id} completed: ${result.message}`);
     } catch (error2) {
-      const errorMessage = error2 instanceof Error ? error2.message : String(error2);
-      await this.taskRepo.markFailed(task.id, errorMessage);
-      console.error(`Task ${task.id} failed: ${errorMessage}`);
+      const errorMessage3 = error2 instanceof Error ? error2.message : String(error2);
+      await this.taskRepo.markFailed(task.id, errorMessage3);
+      console.error(`Task ${task.id} failed: ${errorMessage3}`);
     }
   }
   /**
@@ -23603,6 +24496,7 @@ function __installPageCache(router2, scope) {
         const hit = await caches.default.match(key);
         if (hit) {
           const headers = new Headers(hit.headers);
+          headers.set("cache-control", "no-store");
           headers.set("x-page-cache", "hit");
           return new Response(hit.body, { status: hit.status, headers });
         }
@@ -23612,11 +24506,15 @@ function __installPageCache(router2, scope) {
       if (c.res && c.res.ok) {
         try {
           const source = c.res.clone();
-          const headers = new Headers(source.headers);
-          headers.set("cache-control", "public, max-age=3600");
-          headers.set("x-page-cache", "miss");
-          const stored = new Response(source.body, { status: source.status, headers });
+          const storedHeaders = new Headers(source.headers);
+          storedHeaders.set("cache-control", "public, max-age=3600");
+          storedHeaders.set("x-page-cache", "miss");
+          const stored = new Response(source.body, { status: source.status, headers: storedHeaders });
           c.executionCtx.waitUntil(caches.default.put(key, stored));
+          const clientHeaders = new Headers(c.res.headers);
+          clientHeaders.set("cache-control", "no-store");
+          clientHeaders.set("x-page-cache", "miss");
+          c.res = new Response(c.res.body, { status: c.res.status, headers: clientHeaders });
         } catch {
         }
       }
@@ -30328,11 +31226,11 @@ var LPPreloadService = class {
         cached: false
       };
     } catch (error2) {
-      const errorMessage = error2 instanceof Error ? error2.message : "Unknown error";
+      const errorMessage3 = error2 instanceof Error ? error2.message : "Unknown error";
       return {
         success: false,
         cached: false,
-        error: errorMessage
+        error: errorMessage3
       };
     }
   }
@@ -41640,8 +42538,8 @@ var ZodIssueCode = util.arrayToEnum([
   "not_finite"
 ]);
 var quotelessJson = /* @__PURE__ */ __name22((obj) => {
-  const json = JSON.stringify(obj, null, 2);
-  return json.replace(/"([^"]+)":/g, "$1:");
+  const json2 = JSON.stringify(obj, null, 2);
+  return json2.replace(/"([^"]+)":/g, "$1:");
 }, "quotelessJson");
 var ZodError = class _ZodError extends Error {
   static {
@@ -41874,15 +42772,15 @@ var makeIssue = /* @__PURE__ */ __name22((params) => {
       message: issueData.message
     };
   }
-  let errorMessage = "";
+  let errorMessage3 = "";
   const maps = errorMaps.filter((m) => !!m).slice().reverse();
   for (const map of maps) {
-    errorMessage = map(fullIssue, { data, defaultError: errorMessage }).message;
+    errorMessage3 = map(fullIssue, { data, defaultError: errorMessage3 }).message;
   }
   return {
     ...issueData,
     path: fullPath,
-    message: errorMessage
+    message: errorMessage3
   };
 }, "makeIssue");
 var EMPTY_PATH = [];
@@ -55358,10 +56256,10 @@ async function handleInboundPostback(c, platform, paramMapping) {
       conversionId
     }));
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    const errorMessage3 = err instanceof Error ? err.message : "Unknown error";
     console.error(`[InboundPostback][${platform}] Error:`, err);
     c.status(HTTP_STATUS.INTERNAL_ERROR);
-    return c.json(error(errorMessage, "INTERNAL_ERROR"));
+    return c.json(error(errorMessage3, "INTERNAL_ERROR"));
   }
 }
 __name(handleInboundPostback, "handleInboundPostback");
@@ -58543,6 +59441,10 @@ var index_default = {
         });
       }
     }
+    if (url.pathname === "/api/automation-scheduler" || url.pathname.startsWith("/api/automation-scheduler/")) {
+      return handleAutomationSchedulerRequest(request, env);
+    }
+    armAutomationScheduler(env, ctx);
     try {
       const validationErrors = validateEnvironment(env);
       throwOnValidationErrors(validationErrors);
@@ -58699,6 +59601,7 @@ var index_default = {
   }
 };
 export {
+  AutomationSchedulerDO,
   CacheDurableObject,
   CacheEventBrokerDurableObject,
   CounterDurableObject,
