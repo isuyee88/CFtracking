@@ -22,7 +22,10 @@ import {
   Percent,
   AlertCircle,
   Download,
-  Upload
+  Upload,
+  Search,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -63,10 +66,7 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   onSave,
   onCancel,
 }) => {
-  const [flows, setFlows] = useState<FlowNode[]>(initialFlows.length > 0 ? initialFlows : [
-    { id: 'flow-1', type: 'landing', name: 'Landing Page A', weight: 50 },
-    { id: 'flow-2', type: 'landing', name: 'Landing Page B', weight: 50 },
-  ]);
+  const [flows, setFlows] = useState<FlowNode[]>([]);
   const [landings, setLandings] = useState<{id: string; name: string; url?: string; group?: string}[]>([]);
   const [offers, setOffers] = useState<{id: string; name: string; payout?: number; network?: string; payoutType?: string; group?: string}[]>([]);
 
@@ -81,6 +81,25 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   const [offerSearch, setOfferSearch] = useState('');
   const [offerNetworkFilter, setOfferNetworkFilter] = useState('');
   const [offerPayoutTypeFilter, setOfferPayoutTypeFilter] = useState('');
+  const [pickerType, setPickerType] = useState<'landing' | 'offer'>('landing');
+  const [pickerQuery, setPickerQuery] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerSelection, setPickerSelection] = useState<{ id: string; name: string } | null>(null);
+  const [pickerWeight, setPickerWeight] = useState(50);
+
+  // 同步 initialFlows 变化到 flows 状态
+  useEffect(() => {
+    if (initialFlows && initialFlows.length > 0) {
+      console.log('[FlowDesigner] Syncing initialFlows:', initialFlows);
+      setFlows(initialFlows);
+    } else {
+      // 如果没有初始 flows，使用默认示例
+      setFlows([
+        { id: 'flow-1', type: 'landing', name: 'Landing Page A', weight: 50 },
+        { id: 'flow-2', type: 'landing', name: 'Landing Page B', weight: 50 },
+      ]);
+    }
+  }, [initialFlows]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -118,18 +137,38 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   const totalWeight = flows.reduce((sum, f) => sum + f.weight, 0);
 
   // Add new flow node
-  const handleAddNode = (type: FlowNode['type'], item?: { id: string; name: string }) => {
+  const handleAddNode = (type: FlowNode['type'], item?: { id: string; name: string }, weight = 50) => {
     const newNode: FlowNode = {
       // 使用唯一的 flow ID，而不是 item.id（item.id 是 offer/landing 的 ID）
       id: `flow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type,
       // 如果是从 item 添加，使用 item.name 作为初始名称，但用户可以编辑
       name: item?.name || (type === 'landing' ? 'New Landing Page' : type === 'offer' ? 'New Offer' : 'New Node'),
-      weight: 50,
+      weight,
       // 保存关联的 offer/landing ID，用于后续 API 调用
       config: item ? { itemId: item.id } : {},
     };
     setFlows([...flows, newNode]);
+  };
+
+  const pickerItems = (pickerType === 'landing' ? landings : offers).filter((item) => {
+    const query = pickerQuery.trim().toLowerCase();
+    if (!query) return true;
+    return item.name.toLowerCase().includes(query);
+  });
+
+  const handlePick = (item: { id: string; name: string }) => {
+    setPickerSelection(item);
+    setPickerQuery(item.name);
+    setPickerOpen(false);
+  };
+
+  const handleAddPicked = () => {
+    if (!pickerSelection) return;
+    handleAddNode(pickerType, pickerSelection, pickerWeight);
+    setPickerSelection(null);
+    setPickerQuery('');
+    setPickerWeight(50);
   };
 
   // Delete flow node
@@ -314,7 +353,7 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
   return (
     <div className="bg-surface-container-lowest whisper-shadow">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-outline-variant/10">
+      <div className="flex flex-col gap-3 border-b border-outline-variant/10 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary/10 rounded-sm flex items-center justify-center">
             <GitBranch size={20} className="text-primary" />
@@ -324,7 +363,7 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
             <p className="text-xs text-on-surface-variant">Design traffic distribution for campaign</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Import/Export Buttons */}
           <div className="flex items-center gap-2">
             <button
@@ -389,140 +428,149 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
         </div>
       </div>
 
-      <div className="flex">
-        {/* Left Sidebar - Tools */}
-        <div className="w-72 border-r border-outline-variant/10 p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-200px)]">
-          <div>
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-3">
-              Add Nodes (Empty)
-            </h3>
-            <div className="space-y-2">
+      <div className="flex flex-col lg:flex-row">
+        {/* Builder - one searchable picker instead of long raw lists */}
+        <aside className="w-full border-b border-outline-variant/10 lg:w-80 lg:border-b-0 lg:border-r">
+          <div className="space-y-4 p-4 lg:sticky lg:top-0">
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-fg-default">Add traffic node</h3>
+              <p className="text-xs text-fg-muted">Choose a landing page or offer, then set its share.</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-container p-1" role="tablist" aria-label="Node type">
               <button
-                onClick={() => handleAddNode('landing')}
-                className="w-full flex items-center gap-3 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 text-sm hover:bg-blue-100 transition-colors"
+                type="button"
+                role="tab"
+                aria-selected={pickerType === 'landing'}
+                onClick={() => { setPickerType('landing'); setPickerSelection(null); setPickerQuery(''); }}
+                className={cn('flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors', pickerType === 'landing' ? 'bg-surface text-primary shadow-sm' : 'text-fg-muted hover:text-fg-default')}
               >
-                <Layers size={16} />
-                + Landing Page
+                <Layers size={14} /> Landing
               </button>
               <button
-                onClick={() => handleAddNode('offer')}
-                className="w-full flex items-center gap-3 px-3 py-2 bg-green-50 border border-green-200 text-green-700 text-sm hover:bg-green-100 transition-colors"
+                type="button"
+                role="tab"
+                aria-selected={pickerType === 'offer'}
+                onClick={() => { setPickerType('offer'); setPickerSelection(null); setPickerQuery(''); }}
+                className={cn('flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors', pickerType === 'offer' ? 'bg-surface text-primary shadow-sm' : 'text-fg-muted hover:text-fg-default')}
               >
-                <Target size={16} />
-                + Offer
-              </button>
-              <button
-                onClick={() => handleAddNode('condition')}
-                className="w-full flex items-center gap-3 px-3 py-2 bg-yellow-50 border border-yellow-200 text-yellow-700 text-sm hover:bg-yellow-100 transition-colors"
-              >
-                <GitBranch size={16} />
-                + Condition
+                <Target size={14} /> Offer
               </button>
             </div>
-          </div>
 
-          <div className="border-t border-outline-variant/10 pt-4">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-3">
-              Select Landing Page
-            </h3>
-            <input
-              type="text"
-              placeholder="Search landing pages..."
-              value={landingSearch}
-              onChange={(e) => setLandingSearch(e.target.value)}
-              className="w-full px-2 py-1.5 text-xs border border-outline-variant bg-surface rounded mb-2"
-            />
-            <div className="space-y-1 max-h-32 overflow-y-auto">
-              {landings
-                .filter(lp => lp.name.toLowerCase().includes(landingSearch.toLowerCase()))
-                .map(lp => (
-                  <div
-                    key={lp.id}
-                    className="px-2 py-1.5 text-xs text-on-surface bg-surface-container rounded cursor-pointer hover:bg-blue-50 hover:text-blue-700 border border-transparent hover:border-blue-200 transition-colors"
-                    onClick={() => handleAddNode('landing', { id: lp.id, name: lp.name })}
-                  >
-                    <div className="font-medium">{lp.name}</div>
-                    {lp.url && <div className="text-[10px] text-on-surface-variant truncate">{lp.url}</div>}
-                  </div>
-                ))}
-              {landings.filter(lp => lp.name.toLowerCase().includes(landingSearch.toLowerCase())).length === 0 && (
-                <div className="text-xs text-on-surface-variant text-center py-2">No landing pages found</div>
+            <div className="relative">
+              <label htmlFor="flow-node-picker" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                {pickerType === 'landing' ? 'Landing page' : 'Offer'}
+              </label>
+              <div className="relative">
+                <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle" />
+                <input
+                  id="flow-node-picker"
+                  role="combobox"
+                  aria-expanded={pickerOpen}
+                  aria-controls="flow-node-picker-list"
+                  value={pickerQuery}
+                  onChange={(event) => { setPickerQuery(event.target.value); setPickerSelection(null); setPickerOpen(true); }}
+                  onFocus={() => setPickerOpen(true)}
+                  placeholder={pickerType === 'landing' ? 'Search landing pages…' : 'Search offers…'}
+                  className="h-9 w-full rounded-md border border-border-default bg-surface ps-8 pe-8 text-sm text-fg-default outline-none focus:border-accent-fg focus:ring-2 focus:ring-accent-fg/20"
+                />
+                <ChevronDown size={14} className={cn('pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-subtle transition-transform', pickerOpen && 'rotate-180')} />
+              </div>
+
+              {pickerOpen && (
+                <div id="flow-node-picker-list" role="listbox" className="absolute inset-x-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-lg border border-border-default bg-surface-container-lowest p-1 shadow-xl">
+                  {pickerItems.slice(0, 30).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="option"
+                      aria-selected={pickerSelection?.id === item.id}
+                      onClick={() => handlePick(item)}
+                      className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-surface-container"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-fg-default">{item.name}</span>
+                        <span className="block truncate text-[10px] text-fg-muted">
+                          {pickerType === 'landing' ? ((item as { url?: string }).url || 'No URL') : [(item as { network?: string }).network, (item as { payout?: number }).payout !== undefined ? '$' + (item as { payout?: number }).payout : ''].filter(Boolean).join(' · ') || 'No network'}
+                        </span>
+                      </span>
+                      {pickerSelection?.id === item.id && <Check size={14} className="shrink-0 text-primary" />}
+                    </button>
+                  ))}
+                  {pickerItems.length === 0 && <p className="px-2.5 py-6 text-center text-xs text-fg-muted">No {pickerType === 'landing' ? 'landing pages' : 'offers'} found</p>}
+                </div>
               )}
             </div>
-          </div>
 
-          <div className="border-t border-outline-variant/10 pt-4">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-3">
-              Select Offer
-            </h3>
-            <input
-              type="text"
-              placeholder="Search offers..."
-              value={offerSearch}
-              onChange={(e) => setOfferSearch(e.target.value)}
-              className="w-full px-2 py-1.5 text-xs border border-outline-variant bg-surface rounded mb-2"
-            />
-            <div className="flex gap-2 mb-2">
-              <select
-                value={offerNetworkFilter}
-                onChange={(e) => setOfferNetworkFilter(e.target.value)}
-                className="flex-1 px-2 py-1 text-xs border border-outline-variant bg-surface rounded"
-              >
-                <option value="">All Networks</option>
-                {[...new Set(offers.map(o => o.network).filter(Boolean))].map(network => (
-                  <option key={network} value={network}>{network}</option>
-                ))}
-              </select>
-              <select
-                value={offerPayoutTypeFilter}
-                onChange={(e) => setOfferPayoutTypeFilter(e.target.value)}
-                className="flex-1 px-2 py-1 text-xs border border-outline-variant bg-surface rounded"
-              >
-                <option value="">All Types</option>
-                <option value="fixed">Fixed</option>
-                <option value="percentage">Percentage</option>
-              </select>
+            {pickerSelection && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-accent-fg/20 bg-accent-fg/5 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium text-fg-default">{pickerSelection.name}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-fg-subtle">{pickerType}</p>
+                </div>
+                <button type="button" onClick={() => { setPickerSelection(null); setPickerQuery(''); }} aria-label="Clear selection" className="rounded p-1 text-fg-muted hover:bg-surface-container">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="flow-node-weight" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">Traffic share</label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="flow-node-weight"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={pickerWeight}
+                  onChange={(event) => setPickerWeight(Math.max(0, Math.min(100, Number(event.target.value) || 0)))}
+                  className="h-9 w-24 rounded-md border border-border-default bg-surface px-3 text-sm text-fg-default outline-none focus:border-accent-fg"
+                />
+                <span className="text-sm text-fg-muted">%</span>
+                <div className="ms-auto flex gap-1">
+                  {[25, 50, 100].map((value) => (
+                    <button key={value} type="button" onClick={() => setPickerWeight(value)} className={cn('rounded px-2 py-1 text-[10px] font-medium', pickerWeight === value ? 'bg-primary text-on-primary' : 'bg-surface-container text-fg-muted hover:bg-surface-container-high')}>{value}%</button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {offers
-                .filter(o => {
-                  const matchesSearch = o.name.toLowerCase().includes(offerSearch.toLowerCase());
-                  const matchesNetwork = !offerNetworkFilter || o.network === offerNetworkFilter;
-                  const matchesPayoutType = !offerPayoutTypeFilter || o.payoutType === offerPayoutTypeFilter;
-                  return matchesSearch && matchesNetwork && matchesPayoutType;
-                })
-                .map(offer => (
-                  <div
-                    key={offer.id}
-                    className="px-2 py-1.5 text-xs text-on-surface bg-surface-container rounded cursor-pointer hover:bg-green-50 hover:text-green-700 border border-transparent hover:border-green-200 transition-colors"
-                    onClick={() => handleAddNode('offer', { id: offer.id, name: offer.name })}
-                  >
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium">{offer.name}</span>
-                      {offer.payout !== undefined && (
-                        <span className="text-green-600 font-bold">${offer.payout}</span>
-                      )}
-                    </div>
-                    <div className="flex gap-2 text-[10px] text-on-surface-variant">
-                      {offer.network && <span>{offer.network}</span>}
-                      {offer.payoutType && <span>• {offer.payoutType}</span>}
-                    </div>
-                  </div>
-                ))}
-              {offers.filter(o => {
-                const matchesSearch = o.name.toLowerCase().includes(offerSearch.toLowerCase());
-                const matchesNetwork = !offerNetworkFilter || o.network === offerNetworkFilter;
-                const matchesPayoutType = !offerPayoutTypeFilter || o.payoutType === offerPayoutTypeFilter;
-                return matchesSearch && matchesNetwork && matchesPayoutType;
-              }).length === 0 && (
-                <div className="text-xs text-on-surface-variant text-center py-2">No offers found</div>
-              )}
+
+            <button
+              type="button"
+              onClick={handleAddPicked}
+              disabled={!pickerSelection}
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-on-primary transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Plus size={16} /> Add to flow
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAddNode('condition')}
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-border-default bg-surface px-3 py-2 text-xs font-medium text-fg-default hover:bg-surface-container"
+            >
+              <GitBranch size={14} /> Add condition
+            </button>
+
+            <div className="grid grid-cols-3 gap-2 border-t border-outline-variant/10 pt-4 text-center">
+              <div><div className="text-lg font-bold text-primary">{flows.filter(f => f.type === 'landing').length}</div><div className="text-[10px] uppercase text-fg-subtle">Landing</div></div>
+              <div><div className="text-lg font-bold text-success">{flows.filter(f => f.type === 'offer').length}</div><div className="text-[10px] uppercase text-fg-subtle">Offer</div></div>
+              <div><div className="text-lg font-bold text-warning">{flows.filter(f => f.type === 'condition').length}</div><div className="text-[10px] uppercase text-fg-subtle">Condition</div></div>
             </div>
+
+            {totalWeight !== 100 && (
+              <div className="rounded-md border border-warning/20 bg-warning/10 p-2.5">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0 text-warning" />
+                  <p className="text-[11px] text-fg-muted">Total weight is <strong className="text-fg-default">{totalWeight}%</strong>. Recommended: 100%.</p>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        </aside>
 
         {/* Main Canvas */}
-        <div className="flex-1 p-6">
+        <div className="min-w-0 flex-1 p-4 sm:p-6">
           {/* Weight Distribution Bar */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
@@ -574,7 +622,7 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
               <div
                 key={flow.id}
                 className={cn(
-                  "flex items-center gap-4 p-4 border-2 rounded-sm transition-all",
+                  "flex flex-col gap-3 p-4 border-2 rounded-sm transition-all sm:flex-row sm:items-center",
                   getNodeColor(flow.type),
                   selectedNode === flow.id ? 'ring-2 ring-primary' : '',
                   selectedNodes.has(flow.id) ? 'bg-opacity-80' : ''
@@ -599,17 +647,17 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
                 </div>
 
                 {/* Node Info */}
-                <div className="flex-1">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm">{flow.name}</span>
-                    <span className="text-[10px] uppercase px-2 py-0.5 bg-white/50 rounded">
+                    <span className="truncate font-bold text-sm">{flow.name}</span>
+                    <span className="shrink-0 text-[10px] uppercase px-2 py-0.5 bg-white/50 rounded">
                       {flow.type}
                     </span>
                   </div>
                 </div>
 
                 {/* Weight Control */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 sm:ms-auto">
                   <Percent size={14} className="text-current/50" />
                   <input
                     type="number"
@@ -653,114 +701,46 @@ export const FlowDesigner: React.FC<FlowDesignerProps> = ({
           )}
         </div>
 
-        {/* Right Sidebar - Properties */}
-        <div className="w-72 border-l border-outline-variant/10 p-4">
-          {isEditing && selectedNode ? (
-            <div>
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-4">
-                Edit Node
-              </h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-1">
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.name || ''}
-                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-outline-variant bg-surface"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-1">
-                    Type
-                  </label>
-                  <select
-                    value={editForm.type || 'landing'}
-                    onChange={(e) => setEditForm({ ...editForm, type: e.target.value as FlowNode['type'] })}
-                    className="w-full px-3 py-2 text-sm border border-outline-variant bg-surface"
-                  >
-                    <option value="landing">Landing Page</option>
-                    <option value="offer">Offer</option>
-                    <option value="condition">Condition</option>
-                    <option value="action">Action</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-1">
-                    Weight
-                  </label>
-                  <input
-                    type="number"
-                    value={editForm.weight || 0}
-                    onChange={(e) => setEditForm({ ...editForm, weight: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 text-sm border border-outline-variant bg-surface"
-                    min="0"
-                  />
-                </div>
-                <div className="flex gap-2 pt-4">
-                  <button
-                    onClick={() => setIsEditing(false)}
-                    className="flex-1 px-3 py-2 border border-outline-variant text-on-surface text-xs font-bold uppercase tracking-widest"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveEdit}
-                    className="flex-1 px-3 py-2 bg-primary text-on-primary text-xs font-bold uppercase tracking-widest"
-                  >
-                    Save
-                  </button>
+      {isEditing && selectedNode && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onMouseDown={() => setIsEditing(false)}>
+          <div className="w-full max-w-md rounded-t-2xl border border-border-default bg-surface-container-lowest p-5 shadow-2xl sm:rounded-xl" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-fg-default">Edit node</h3>
+                <p className="text-xs text-fg-muted">Update the label, type or traffic share.</p>
+              </div>
+              <button type="button" onClick={() => setIsEditing(false)} aria-label="Close editor" className="rounded p-1 text-fg-muted hover:bg-surface-container"><X size={16} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-fg-default">Name</label>
+                <input type="text" value={editForm.name || ''} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} className="h-9 w-full rounded-md border border-border-default bg-surface px-3 text-sm text-fg-default outline-none focus:border-accent-fg" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-fg-default">Type</label>
+                <select value={editForm.type || 'landing'} onChange={(event) => setEditForm({ ...editForm, type: event.target.value as FlowNode['type'] })} className="h-9 w-full rounded-md border border-border-default bg-surface px-3 text-sm text-fg-default outline-none focus:border-accent-fg">
+                  <option value="landing">Landing Page</option>
+                  <option value="offer">Offer</option>
+                  <option value="condition">Condition</option>
+                  <option value="action">Action</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-fg-default">Traffic share</label>
+                <div className="flex items-center gap-2">
+                  <input type="number" min={0} value={editForm.weight || 0} onChange={(event) => setEditForm({ ...editForm, weight: parseInt(event.target.value) || 0 })} className="h-9 w-28 rounded-md border border-border-default bg-surface px-3 text-sm text-fg-default outline-none focus:border-accent-fg" />
+                  <span className="text-sm text-fg-muted">%</span>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div>
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-4">
-                Flow Statistics
-              </h3>
-              <div className="space-y-3">
-                <div className="p-3 bg-surface-container rounded-sm">
-                  <div className="text-[10px] text-on-surface-variant uppercase">Total Nodes</div>
-                  <div className="text-2xl font-bold text-primary">{flows.length}</div>
-                </div>
-                <div className="p-3 bg-surface-container rounded-sm">
-                  <div className="text-[10px] text-on-surface-variant uppercase">Landing Pages</div>
-                  <div className="text-2xl font-bold text-blue-600">
-                    {flows.filter(f => f.type === 'landing').length}
-                  </div>
-                </div>
-                <div className="p-3 bg-surface-container rounded-sm">
-                  <div className="text-[10px] text-on-surface-variant uppercase">Offers</div>
-                  <div className="text-2xl font-bold text-green-600">
-                    {flows.filter(f => f.type === 'offer').length}
-                  </div>
-                </div>
-                <div className="p-3 bg-surface-container rounded-sm">
-                  <div className="text-[10px] text-on-surface-variant uppercase">Conditions</div>
-                  <div className="text-2xl font-bold text-yellow-600">
-                    {flows.filter(f => f.type === 'condition').length}
-                  </div>
-                </div>
+              <div className="flex justify-end gap-2 border-t border-border-default pt-3">
+                <button type="button" onClick={() => setIsEditing(false)} className="rounded-md border border-border-default px-4 py-2 text-xs font-medium text-fg-default hover:bg-surface-container">Cancel</button>
+                <button type="button" onClick={handleSaveEdit} className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-on-primary hover:opacity-90">Save node</button>
               </div>
-
-              {totalWeight !== 100 && (
-                <div className="mt-4 p-3 bg-warning/10 border border-warning/20 rounded-sm">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle size={16} className="text-warning flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-xs font-bold text-warning">Weight Warning</div>
-                      <div className="text-[10px] text-on-surface-variant">
-                        Total weight is {totalWeight}%. Recommended: 100%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
-          )}
+          </div>
         </div>
+      )}
+
       </div>
     </div>
   );
