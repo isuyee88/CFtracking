@@ -29854,6 +29854,7 @@ init_constants();
 init_flow_filters();
 function createFlowRouter() {
   const router2 = new Hono2();
+  __installPageCache(router2, "flows");
   router2.post("/simulation", async (c) => {
     try {
       const body = await c.req.json();
@@ -30383,7 +30384,6 @@ function createFlowRouter() {
       throw err;
     }
   });
-  __installPageCache(router2, "flows");
   return router2;
 }
 __name(createFlowRouter, "createFlowRouter");
