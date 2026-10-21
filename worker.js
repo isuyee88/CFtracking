@@ -59290,6 +59290,21 @@ async function __publishClickCfg(env, mutation) {
       const r = cfgRows[0];
       const snapshot = { campaignId: r.campaignId, flowId: r.flowId, offerId: r.offerId, offerUrl: r.offerUrl, landingPageId: r.landingPageId || null, status: "active", updatedAt: new Date().toISOString() };
       await env.UNIQUENESS_KV.put("clickcfg:" + alias, JSON.stringify(snapshot));
+      const fullFlows = [];
+      const flowRows = (await env.DB.prepare("SELECT * FROM flows WHERE campaignId = ? AND status = 'active'").bind(r.campaignId).all()).results || [];
+      for (const flowRow of flowRows) {
+        const offerRows = (await env.DB.prepare("SELECT fo.offerId, fo.weight, o.url FROM flowOffers fo JOIN offers o ON o.id = fo.offerId WHERE fo.flowId = ? AND o.status = 'active'").bind(flowRow.id).all()).results || [];
+        const landingRows = (await env.DB.prepare("SELECT landingPageId, weight FROM flowLandingPages WHERE flowId = ?").bind(flowRow.id).all()).results || [];
+        let filters = [];
+        let actionConfig = {};
+        try { filters = JSON.parse(flowRow.filters || "[]"); } catch {}
+        try { actionConfig = JSON.parse(flowRow.actionConfig || "{}"); } catch {}
+        fullFlows.push({ id: flowRow.id, type: flowRow.type || "regular", weight: Number(flowRow.weight) || 0, status: flowRow.status, filters, actionType: flowRow.actionType || "redirect", actionConfig, offers: offerRows.map((x) => ({ offerId: x.offerId, weight: Number(x.weight) || 0, url: x.url || null })), landingPages: landingRows.map((x) => ({ landingPageId: x.landingPageId, weight: Number(x.weight) || 0 })) });
+      }
+      const version = Date.now().toString(36) + "-" + r.campaignId;
+      const full = { scope: alias, version, campaign: { id: r.campaignId, alias, status: "active" }, flows: fullFlows, updatedAt: new Date().toISOString() };
+      await env.UNIQUENESS_KV.put("cfg:snapshot:" + alias + ":" + version, JSON.stringify(full), { expirationTtl: 604800 });
+      await env.UNIQUENESS_KV.put("cfg:pointer:" + alias, JSON.stringify({ version, updatedAt: full.updatedAt }), { expirationTtl: 604800 });
       console.log("[cfg-publish] " + alias + " " + snapshot.flowId + " " + snapshot.offerId);
     }
   } catch (error) {
