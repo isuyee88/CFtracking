@@ -37696,6 +37696,70 @@ async function tryKvClick(c, campaignAlias) {
 }
 __name(tryKvClick, "tryKvClick");
 __name2(tryKvClick, "tryKvClick");
+function __snapshotCtx(c) {
+  const cf = c.req.raw.cf || {};
+  const q = (name) => c.req.query(name) || "";
+  return {
+    ip: getClientIP(c), userAgent: c.req.header("User-Agent") || "",
+    referer: c.req.header("Referer") || "", country: cf.country || cf.ipCountry || "",
+    city: cf.city || "", device: detectDevice(c.req.header("User-Agent") || ""),
+    browser: detectBrowser(c.req.header("User-Agent") || ""), os: detectOS(c.req.header("User-Agent") || ""),
+    subId: q("sub1") || q("subid1") || q("sub_id_1") || "", params: q
+  };
+}
+__name(__snapshotCtx, "__snapshotCtx");
+function __snapshotFilterValue(target, ctx) {
+  const field = String(target || "");
+  if (field.startsWith("visitor.")) {
+    const map = { ip: ctx.ip, userAgent: ctx.userAgent, country: ctx.country, city: ctx.city, device: ctx.device, browser: ctx.browser, os: ctx.os };
+    return map[field.slice(8)];
+  }
+  if (field.startsWith("visit.")) {
+    const name = field.slice(6);
+    if (name === "referrer") return ctx.referer;
+    if (name === "subId") return ctx.subId;
+    return undefined;
+  }
+  return ctx.params(field) || undefined;
+}
+__name(__snapshotFilterValue, "__snapshotFilterValue");
+function __snapshotFlowMatches(flow, ctx) {
+  const filters = Array.isArray(flow.filters) ? flow.filters : [];
+  for (const f of filters) {
+    const value = __snapshotFilterValue(f.target, ctx);
+    try { if (!executeFilter(f.operator, value, f.value, ctx)) return false; } catch { return false; }
+  }
+  return true;
+}
+__name(__snapshotFlowMatches, "__snapshotFlowMatches");
+function __snapshotPickWeighted(items, weightOf) {
+  const total = items.reduce((sum, item) => sum + Math.max(0, Number(weightOf(item)) || 0), 0);
+  if (!items.length || total <= 0) return items[0] || null;
+  let cursor = Math.random() * total;
+  for (const item of items) { cursor -= Math.max(0, Number(weightOf(item)) || 0); if (cursor <= 0) return item; }
+  return items[items.length - 1] || null;
+}
+__name(__snapshotPickWeighted, "__snapshotPickWeighted");
+function __resolveSnapshotClick(c, snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.flows)) return null;
+  const campaign = snapshot.campaign || {};
+  if (String(campaign.status || "") !== "active") return null;
+  const ctx = __snapshotCtx(c);
+  const active = snapshot.flows.filter((flow) => flow.status === "active" && __snapshotFlowMatches(flow, ctx));
+  if (!active.length) return null;
+  const forced = active.filter((flow) => flow.type === "forced").sort((a, b) => (a.weight || 0) - (b.weight || 0));
+  const regular = active.filter((flow) => flow.type === "regular");
+  const fallback = active.filter((flow) => flow.type === "default");
+  const flow = forced[0] || __snapshotPickWeighted(regular, (f) => f.weight) || fallback[0];
+  if (!flow) return null;
+  const offers = (flow.offers || []).filter((offer) => offer.url);
+  const offer = __snapshotPickWeighted(offers, (item) => item.weight);
+  if (!offer || !offer.url) return null;
+  const landings = (flow.landingPages || []).filter((item) => item.landingPageId);
+  const landing = __snapshotPickWeighted(landings, (item) => item.weight);
+  return { campaignId: campaign.id || snapshot.campaignId || "", flowId: flow.id, offerId: offer.offerId, offerUrl: offer.url, landingPageId: landing ? landing.landingPageId : null };
+}
+__name(__resolveSnapshotClick, "__resolveSnapshotClick");
 async function trySnapshotClick(c, campaignAlias) {
   try {
     const __t0 = performance.now();
@@ -37734,10 +37798,11 @@ async function trySnapshotClick(c, campaignAlias) {
       snapshot = await kv.get(`cfg:snapshot:${campaignAlias}:${pointer.version}`, "json");
       if (snapshot) c.executionCtx.waitUntil(cache.put(snapshotUrl, new Response(JSON.stringify(snapshot), { headers: { "content-type": "application/json", "cache-control": "max-age=3600" } })));
     }
-    if (!snapshot || snapshot.status !== "active" || !snapshot.offerUrl) return null;
+    const cfg = __resolveSnapshotClick(c, snapshot);
+    if (!cfg || !cfg.offerUrl) return null;
     const clickId = generateClickId();
     const visitorId = await generateVisitorId(getClientIP(c), c.req.header("User-Agent") || "unknown");
-    const target = new URL(snapshot.offerUrl);
+    const target = new URL(cfg.offerUrl);
     target.searchParams.set("clickid", clickId);
     target.searchParams.set("visitor", visitorId);
     for (let i = 1; i <= 30; i++) {
@@ -37745,8 +37810,8 @@ async function trySnapshotClick(c, campaignAlias) {
       if (v) target.searchParams.set(`subid${i}`, v);
     }
     c.executionCtx.waitUntil(Promise.resolve().then(async () => {
-      await writeAeClick(c, { campaignId: snapshot.campaignId, flowId: snapshot.flowId, offerId: snapshot.offerId, clickId, subId: target.searchParams.get("subid1") || "", status: "302" });
-      await persistFastPathClick(c, snapshot, clickId, visitorId, target.toString());
+      await writeAeClick(c, { campaignId: cfg.campaignId, flowId: cfg.flowId, offerId: cfg.offerId, clickId, subId: target.searchParams.get("subid1") || "", status: "302" });
+      await persistFastPathClick(c, cfg, clickId, visitorId, target.toString());
     }));
     const response = c.redirect(target.toString(), 302);
     response.headers.set("X-Cfg-Cache", (pointerHit ? "p1" : "p0") + (snapshotHit ? "s1" : "s0"));
