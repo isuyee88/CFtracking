@@ -227,6 +227,9 @@ export const Whitelist = () => {
   const [submitting, setSubmitting] = useState(false);
   const [showAdvancedLogic, setShowAdvancedLogic] = useState(false);
 
+  // 渲染层与校验层共用：只有存在条件规则时才隐藏单值输入。
+  const hasConditionRules = formData.conditions.length > 0;
+
   const loadBootstrapData = () => {
     const bundle = readBootstrapPage<{
       entries?: WhitelistEntry[];
@@ -351,8 +354,6 @@ export const Whitelist = () => {
     if (!formData.trafficSourceId) {
       errors.trafficSourceId = 'Traffic source is required';
     }
-    const hasConditionRules = formData.conditions.length > 0;
-
     if (!hasConditionRules && !formData.value.trim()) {
       errors.value = 'Value is required';
     }
@@ -647,7 +648,7 @@ export const Whitelist = () => {
             { key: 'type', label: 'Type', width: '110px', render: (_: unknown, entry: any) => <span className="inline-flex items-center gap-1 rounded-sm bg-surface-container px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-fg-muted">{getTypeIcon(entry.type)}{getTypeLabel(entry.type)}</span> },
             { key: 'source', label: 'Traffic Source', width: '160px', render: (_: unknown, entry: any) => <span className="truncate text-fg-default">{getTrafficSourceName(entry.trafficSourceId)}</span> },
             { key: 'reason', label: 'Reason', width: '220px', defaultHidden: true, render: (_: unknown, entry: any) => <span className="truncate text-fg-muted">{entry.reason || '-'}</span> },
-            { key: 'status', label: 'Status', width: '100px', render: (_: unknown, entry: any) => <span className={entry.status === 'active' ? 'status-deleted rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-widest' : 'status-paused rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-widest'}>{entry.status}</span> },
+            { key: 'status', label: 'Status', width: '100px', render: (_: unknown, entry: any) => <span className={entry.status === 'active' ? 'status-active rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-widest' : 'status-paused rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-widest'}>{entry.status}</span> },
             { key: 'sync', label: 'Sync Status', width: '120px', render: (_: unknown, entry: any) => entry.synced ? <span className="flex items-center gap-1 text-xs text-secondary"><CheckCircle size={14} />Synced</span> : <span className="flex items-center gap-1 text-xs text-warning"><XCircle size={14} />Not Synced</span> },
             { key: 'created', label: 'Created', width: '100px', render: (_: unknown, entry: any) => <span className="text-xs text-fg-muted">{new Date(entry.createdAt).toLocaleDateString()}</span> },
             { key: 'actions', label: '', width: '88px', align: 'center', render: (_: unknown, entry: any) => <div className="flex justify-center gap-1"><button type="button" onClick={() => openEditModal(entry)} className="rounded p-2 text-fg-muted hover:text-primary" title="Edit"><Edit2 size={16} /></button><button type="button" onClick={() => handleRemove(entry.id)} className="rounded p-2 text-fg-muted hover:text-error" title="Remove"><Trash2 size={16} /></button></div> },
@@ -663,9 +664,14 @@ export const Whitelist = () => {
       {/* Add/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface-container-lowest w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="whitelist-modal-title"
+            className="bg-surface-container-lowest w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+          >
             <div className="p-6">
-              <h2 className="text-xl font-bold text-primary mb-4">
+              <h2 id="whitelist-modal-title" className="text-xl font-bold text-primary mb-4">
                 {isEditMode ? 'Edit Whitelist Entry' : 'Add Whitelist Entry'}
               </h2>
               

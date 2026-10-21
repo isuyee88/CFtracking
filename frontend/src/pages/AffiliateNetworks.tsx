@@ -188,6 +188,9 @@ export const AffiliateNetworks = () => {
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
+  // 写入类操作的失败信息：读取失败由 usePageData 的 error 承担，两者都要可见。
+  const [actionError, setActionError] = useState<string | null>(null);
+
   // Date range state
   const [dateRange, setDateRange] = useState<{from: string; to: string}>({
     from: new Date().toISOString().split('T')[0],
@@ -258,38 +261,9 @@ export const AffiliateNetworks = () => {
       }
       setIsFormOpen(false);
     } catch (err) {
+      // 失败时保持表单打开、列表不动：本地补一条假数据会让用户以为已保存，刷新后又消失。
       console.error('Failed to save affiliate network:', err);
-      if (formMode === 'create') {
-        const newNetwork: AffiliateNetwork = {
-          id: `an${Date.now()}`,
-          name: formData.name,
-          type: formData.type || 'api',
-          status: formData.status || 'active',
-          apiUrl: formData.apiUrl || '',
-          apiKey: formData.apiKey ? '••••••••••••' : '',
-          apiSecret: formData.apiSecret || '',
-          postbackUrl: formData.postbackUrl || '',
-          offerParameters: formData.offerParameters || [],
-          templateId: formData.templateId || '',
-          offerCount: 0,
-          clicks: 0,
-          conversions: 0,
-          epc: 0,
-          cr: 0,
-          revenue: 0,
-          updatedAt: new Date().toISOString()
-        };
-        setNetworks(prev => [...prev, newNetwork]);
-      } else {
-        setNetworks(prev =>
-          prev.map(n =>
-            n.id === selectedNetwork?.id
-              ? { ...n, ...submitData, updatedAt: new Date().toISOString() }
-              : n
-          )
-        );
-      }
-      setIsFormOpen(false);
+      setActionError(err instanceof Error ? err.message : 'Failed to save affiliate network');
     }
   };
 
@@ -300,8 +274,9 @@ export const AffiliateNetworks = () => {
       await deleteAffiliateNetwork(id);
       setNetworks(prev => prev.filter(n => n.id !== id));
     } catch (err) {
+      // 删除失败时保留行，避免“看起来删掉了、刷新又回来”。
       console.error('Failed to delete affiliate network:', err);
-      setNetworks(prev => prev.filter(n => n.id !== id));
+      setActionError(err instanceof Error ? err.message : 'Failed to delete affiliate network');
     }
   };
 
@@ -489,7 +464,7 @@ export const AffiliateNetworks = () => {
               <div className="h-6 w-px bg-outline-variant/20 mx-2" />
             </>
           )}
-          <div className="relative flex-1 min-w-[300px]">
+          <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
             <input 
               type="text" 
@@ -530,6 +505,22 @@ export const AffiliateNetworks = () => {
           </div>
         </div>
       </div>
+
+      {(error || actionError) && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-error/20 bg-error/10 px-4 py-3 text-sm text-fg-default">
+          <span className="min-w-0">{actionError || (error instanceof Error ? error.message : 'Failed to load affiliate networks')}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setActionError(null);
+              refetch();
+            }}
+            className="rounded-md border border-border-default px-3 py-1.5 text-xs font-medium"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <TablePagination
         currentPage={currentPage}
@@ -690,7 +681,7 @@ const AffiliateNetworkSkeleton = () => (
           <div className="w-8 h-8 bg-surface-container rounded"></div>
           <div className="w-8 h-8 bg-surface-container rounded"></div>
         </div>
-        <div className="relative flex-1 min-w-[300px]">
+        <div className="relative min-w-0 flex-1">
           <div className="w-full h-10 bg-surface-container rounded"></div>
         </div>
         <div className="flex items-center gap-4">

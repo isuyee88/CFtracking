@@ -1,40 +1,21 @@
 /**
- * @fileoverview Settings Page
- * @description System settings and user preferences
- * @module pages/Settings
+ * @fileoverview Settings 页面：本机偏好设置（时区/货币/日期格式/主题/语言/通知开关）。
+ * @owner frontend
+ * @invariant 偏好只写入 localStorage；当前 Worker 没有 /api/settings 契约，页面不得暗示已同步到账号。
+ * @invariant 不提供「修改密码 / 双因素」等没有后端支撑的假控件。
+ * @see docs/architecture/cftracking-admin-ux-review-2026-10-20.md
  */
 
-import React, { useState, useEffect } from 'react';
-import {
-  Settings as SettingsIcon,
-  User,
-  Globe,
-  Bell,
-  Shield,
-  Database,
-  Save,
-  Moon,
-  Sun,
-  Monitor,
-  AlertCircle
-} from 'lucide-react';
+import React, { useState } from 'react';
+import { Settings as SettingsIcon, Globe, Bell, Save, Moon, Sun, Monitor } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { TimezoneSelector } from '../components/TimezoneSelector';
+import { PageNotice } from '../components/PageNotice';
 import { useTheme } from '../context/ThemeContext';
 import type { UserSettings } from '../services/api';
 
 const SETTINGS_KEY = 'cftracking-settings';
-
-function loadSettings(): UserSettings {
-  try {
-    const saved = window.localStorage.getItem(SETTINGS_KEY);
-    if (saved) return { ...defaultSettings, ...JSON.parse(saved) } as UserSettings;
-  } catch {
-    // Corrupt or unavailable storage falls back to defaults.
-  }
-  return defaultSettings;
-}
 
 const defaultSettings: UserSettings = {
   timezone: 'UTC',
@@ -48,21 +29,42 @@ const defaultSettings: UserSettings = {
   twoFactorAuth: false,
 };
 
+/** 读取本机偏好；损坏的 JSON 回退到默认值，避免设置页白屏。 */
+function loadSettings(): UserSettings {
+  try {
+    const saved = window.localStorage.getItem(SETTINGS_KEY);
+    if (saved) return { ...defaultSettings, ...(JSON.parse(saved) as Partial<UserSettings>) };
+  } catch {
+    // 存储不可用时使用默认值即可，保存按钮会显示失败状态由用户自行处理。
+  }
+  return defaultSettings;
+}
+
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const themeOptions = [
+  { value: 'light' as const, icon: Sun, label: 'Light' },
+  { value: 'dark' as const, icon: Moon, label: 'Dark' },
+  { value: 'system' as const, icon: Monitor, label: 'System' },
+];
+
+const notificationOptions = [
+  { key: 'emailNotifications' as const, label: 'Email Notifications', desc: 'Receive email updates about your campaigns' },
+  { key: 'pushNotifications' as const, label: 'Push Notifications', desc: 'Receive push notifications in the browser' },
+  { key: 'weeklyReports' as const, label: 'Weekly Reports', desc: 'Receive a weekly performance summary' },
+];
+
 export const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'general' | 'account' | 'notifications' | 'security'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'notifications'>('general');
   const [saved, setSaved] = useState(false);
   const { setMode } = useTheme();
   const [settings, setSettings] = useState<UserSettings>(loadSettings);
 
   const tabs = [
-    { id: 'general', label: 'General', icon: Globe },
-    { id: 'account', label: 'Account', icon: User },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'security', label: 'Security', icon: Shield },
+    { id: 'general' as const, label: 'General', icon: Globe },
+    { id: 'notifications' as const, label: 'Notifications', icon: Bell },
   ];
 
   const handleSave = () => {
@@ -78,63 +80,63 @@ export const Settings: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-surface p-6">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 bg-secondary-container rounded-sm flex items-center justify-center">
+      <header className="mb-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-secondary-container">
             <SettingsIcon size={20} className="text-secondary" />
           </div>
           <div>
             <h1 className="text-2xl font-display font-bold text-primary">Settings</h1>
-            <p className="text-sm text-on-surface-variant">Manage your account and system preferences</p>
+            <p className="text-sm text-on-surface-variant">Manage your local preferences for this browser</p>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Sidebar */}
-        <div className="w-full lg:w-64 space-y-2">
+      <PageNotice
+        className="mb-6"
+        title="Preferences are stored in this browser"
+        description="This deployment has no settings API yet, so changes here apply to the current browser only and are not synced to your account."
+        hint="Use the same browser to keep these preferences; clearing site data resets them."
+      />
+
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <nav aria-label="Settings sections" className="w-full space-y-2 lg:w-64">
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              aria-current={activeTab === tab.id ? 'page' : undefined}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors",
+                'flex w-full items-center gap-3 px-4 py-3 text-sm font-medium transition-colors',
                 activeTab === tab.id
-                  ? "bg-primary text-on-primary"
-                  : "bg-surface-container-lowest text-on-surface hover:bg-surface-container"
+                  ? 'bg-primary text-on-primary'
+                  : 'bg-surface-container-lowest text-on-surface hover:bg-surface-container',
               )}
             >
               <tab.icon size={18} />
               {tab.label}
             </button>
           ))}
-        </div>
+        </nav>
 
-        {/* Content */}
         <div className="flex-1 bg-surface-container-lowest whisper-shadow">
           {activeTab === 'general' && (
             <div className="p-6">
-              <h2 className="text-lg font-bold text-primary mb-6">General Settings</h2>
-              
-              <div className="space-y-6">
-                {/* Timezone */}
-                <div>
-                  <TimezoneSelector 
-                    value={settings.timezone}
-                    onChange={(tz) => setSettings({ ...settings, timezone: tz })}
-                  />
-                </div>
+              <h2 className="mb-6 text-lg font-bold text-primary">General</h2>
 
-                {/* Currency */}
+              <div className="space-y-6">
+                <TimezoneSelector value={settings.timezone} onChange={(timezone) => setSettings({ ...settings, timezone })} />
+
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                  <label htmlFor="settings-currency" className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
                     Currency
                   </label>
                   <select
+                    id="settings-currency"
                     value={settings.currency}
-                    onChange={(e) => setSettings({ ...settings, currency: e.target.value })}
-                    className="w-full px-3 py-2 bg-surface border border-outline-variant text-sm"
+                    onChange={(event) => setSettings({ ...settings, currency: event.target.value })}
+                    className="w-full border border-outline-variant bg-surface px-3 py-2 text-sm"
                   >
                     <option value="USD">USD ($)</option>
                     <option value="EUR">EUR (€)</option>
@@ -146,15 +148,15 @@ export const Settings: React.FC = () => {
                   </select>
                 </div>
 
-                {/* Date Format */}
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                  <label htmlFor="settings-date-format" className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
                     Date Format
                   </label>
                   <select
+                    id="settings-date-format"
                     value={settings.dateFormat}
-                    onChange={(e) => setSettings({ ...settings, dateFormat: e.target.value })}
-                    className="w-full px-3 py-2 bg-surface border border-outline-variant text-sm"
+                    onChange={(event) => setSettings({ ...settings, dateFormat: event.target.value })}
+                    className="w-full border border-outline-variant bg-surface px-3 py-2 text-sm"
                   >
                     <option value="YYYY-MM-DD">YYYY-MM-DD</option>
                     <option value="MM/DD/YYYY">MM/DD/YYYY</option>
@@ -163,25 +165,20 @@ export const Settings: React.FC = () => {
                   </select>
                 </div>
 
-                {/* Theme */}
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                    Theme
-                  </label>
-                  <div className="flex gap-2">
-                    {[
-                      { value: 'light', icon: Sun, label: 'Light' },
-                      { value: 'dark', icon: Moon, label: 'Dark' },
-                      { value: 'system', icon: Monitor, label: 'System' },
-                    ].map((theme) => (
+                <fieldset>
+                  <legend className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Theme</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {themeOptions.map((theme) => (
                       <button
                         key={theme.value}
+                        type="button"
                         onClick={() => setSettings({ ...settings, theme: theme.value })}
+                        aria-pressed={settings.theme === theme.value}
                         className={cn(
-                          "flex items-center gap-2 px-4 py-2 border transition-colors",
+                          'flex items-center gap-2 border px-4 py-2 transition-colors',
                           settings.theme === theme.value
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-outline-variant text-on-surface hover:bg-surface-container"
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-outline-variant text-on-surface hover:bg-surface-container',
                         )}
                       >
                         <theme.icon size={16} />
@@ -189,17 +186,17 @@ export const Settings: React.FC = () => {
                       </button>
                     ))}
                   </div>
-                </div>
+                </fieldset>
 
-                {/* Language */}
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
+                  <label htmlFor="settings-language" className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
                     Language
                   </label>
                   <select
+                    id="settings-language"
                     value={settings.language}
-                    onChange={(e) => setSettings({ ...settings, language: e.target.value })}
-                    className="w-full px-3 py-2 bg-surface border border-outline-variant text-sm"
+                    onChange={(event) => setSettings({ ...settings, language: event.target.value })}
+                    className="w-full border border-outline-variant bg-surface px-3 py-2 text-sm"
                   >
                     <option value="en">English</option>
                     <option value="zh">中文</option>
@@ -214,188 +211,52 @@ export const Settings: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'account' && (
-            <div className="p-6">
-              <h2 className="text-lg font-bold text-primary mb-6">Account Settings</h2>
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value="user@example.com"
-                    disabled
-                    className="w-full px-3 py-2 bg-surface-container border border-outline-variant text-sm text-on-surface-variant"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                    Display Name
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue="Admin User"
-                    className="w-full px-3 py-2 bg-surface border border-outline-variant text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                    Company
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Your company name"
-                    className="w-full px-3 py-2 bg-surface border border-outline-variant text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
           {activeTab === 'notifications' && (
             <div className="p-6">
-              <h2 className="text-lg font-bold text-primary mb-6">Notification Settings</h2>
+              <h2 className="mb-6 text-lg font-bold text-primary">Notifications</h2>
               <div className="space-y-4">
-                {[
-                  { key: 'emailNotifications', label: 'Email Notifications', desc: 'Receive email updates about your campaigns' },
-                  { key: 'pushNotifications', label: 'Push Notifications', desc: 'Receive push notifications in browser' },
-                  { key: 'weeklyReports', label: 'Weekly Reports', desc: 'Receive weekly performance reports' },
-                ].map((item) => (
-                  <div key={item.key} className="flex items-center justify-between p-4 bg-surface-container rounded-sm">
-                    <div>
-                      <div className="font-medium text-on-surface">{item.label}</div>
-                      <div className="text-xs text-on-surface-variant">{item.desc}</div>
+                {notificationOptions.map((item) => {
+                  const checked = Boolean(settings[item.key]);
+                  return (
+                    <div key={item.key} className="flex items-center justify-between gap-4 rounded-sm bg-surface-container p-4">
+                      <div>
+                        <div className="font-medium text-on-surface">{item.label}</div>
+                        <div className="text-xs text-on-surface-variant">{item.desc}</div>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={checked}
+                        aria-label={item.label}
+                        onClick={() => setSettings({ ...settings, [item.key]: !checked })}
+                        className={cn('relative h-6 w-12 rounded-full transition-colors', checked ? 'bg-success' : 'bg-outline-variant')}
+                      >
+                        <span
+                          className={cn(
+                            'absolute top-1 h-4 w-4 rounded-full bg-white transition-transform',
+                            checked ? 'left-7' : 'left-1',
+                          )}
+                        />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => setSettings({ ...settings, [item.key]: !settings[item.key as keyof typeof settings] })}
-                      className={cn(
-                        "w-12 h-6 rounded-full transition-colors relative",
-                        settings[item.key as keyof typeof settings] ? "bg-success" : "bg-outline-variant"
-                      )}
-                    >
-                      <span className={cn(
-                        "absolute top-1 w-4 h-4 bg-white rounded-full transition-transform",
-                        settings[item.key as keyof typeof settings] ? "left-7" : "left-1"
-                      )} />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
+                <p className="text-xs text-fg-subtle">
+                  Delivery channels are not wired to a backend yet; these switches only record the preference locally.
+                </p>
               </div>
             </div>
           )}
 
-          {activeTab === 'security' && (
-            <div className="p-6">
-              <h2 className="text-lg font-bold text-primary mb-6">Security Settings</h2>
-              <div className="space-y-6">
-                <div className="flex items-center justify-between p-4 bg-surface-container rounded-sm">
-                  <div>
-                    <div className="font-medium text-on-surface">Two-Factor Authentication</div>
-                    <div className="text-xs text-on-surface-variant">Add an extra layer of security to your account</div>
-                  </div>
-                  <button
-                    onClick={() => setSettings({ ...settings, twoFactorAuth: !settings.twoFactorAuth })}
-                    className={cn(
-                      "w-12 h-6 rounded-full transition-colors relative",
-                      settings.twoFactorAuth ? "bg-success" : "bg-outline-variant"
-                    )}
-                  >
-                    <span className={cn(
-                      "absolute top-1 w-4 h-4 bg-white rounded-full transition-transform",
-                      settings.twoFactorAuth ? "left-7" : "left-1"
-                    )} />
-                  </button>
-                </div>
-
-                <div className="border-t border-outline-variant/10 pt-6">
-                  <h3 className="text-sm font-bold text-on-surface mb-4">Change Password</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Current Password
-                      </label>
-                      <input
-                        type="password"
-                        className="w-full px-3 py-2 bg-surface border border-outline-variant text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        New Password
-                      </label>
-                      <input
-                        type="password"
-                        className="w-full px-3 py-2 bg-surface border border-outline-variant text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                        Confirm New Password
-                      </label>
-                      <input
-                        type="password"
-                        className="w-full px-3 py-2 bg-surface border border-outline-variant text-sm"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Save Button */}
-          <div className="p-6 border-t border-outline-variant/10">
+          <div className="border-t border-outline-variant/10 p-6">
             <button
+              type="button"
               onClick={handleSave}
               className="modal-btn-primary flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-widest"
             >
               <Save size={16} />
-              {saved ? 'Saved' : 'Save Changes'}
+              {saved ? 'Saved in this browser' : 'Save in this browser'}
             </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// 骨架屏组件
-// ============================================
-
-const SettingsSkeleton: React.FC = () => {
-  return (
-    <div className="min-h-screen bg-surface p-6 animate-pulse">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 bg-surface-hover rounded-sm"></div>
-          <div>
-            <div className="h-8 bg-surface-hover rounded w-48 mb-2"></div>
-            <div className="h-4 bg-surface-hover rounded w-72"></div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Sidebar */}
-        <div className="w-full lg:w-64 space-y-2">
-          {[1,2,3,4].map((i) => (
-            <div key={i} className="h-12 bg-surface-hover rounded"></div>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 bg-surface-container-lowest p-6 rounded-sm">
-          <div className="h-6 bg-surface-hover rounded w-32 mb-6"></div>
-          <div className="space-y-6">
-            {[1,2,3,4,5].map((i) => (
-              <div key={i} className="space-y-2">
-                <div className="h-4 bg-surface-hover rounded w-24"></div>
-                <div className="h-10 bg-surface-hover rounded"></div>
-              </div>
-            ))}
           </div>
         </div>
       </div>

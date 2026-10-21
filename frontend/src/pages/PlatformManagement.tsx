@@ -164,7 +164,7 @@ export const PlatformManagement = () => {
 
       {/* Filters */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 bg-surface p-4 rounded-lg border border-border-default">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative min-w-0 flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" size={16} />
           <input 
             type="text" 

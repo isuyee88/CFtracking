@@ -320,7 +320,8 @@ export async function deleteBlacklistEntry(id: string | number) {
 }
 
 export async function syncBlacklistEntry(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/blacklist/${id}/sync`, {
+  // Worker 契约是 POST /api/blacklist/sync/:trafficSourceId（按流量源整体同步），不是按条目 id。
+  const response = await fetch(`${API_BASE_URL}/api/blacklist/sync/${id}`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
@@ -379,7 +380,8 @@ export async function deleteWhitelistEntry(id: string | number) {
 }
 
 export async function syncWhitelistEntry(id: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/whitelist/${id}/sync`, {
+  // Worker 契约是 POST /api/whitelist/sync/:trafficSourceId（按流量源整体同步），不是按条目 id。
+  const response = await fetch(`${API_BASE_URL}/api/whitelist/sync/${id}`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
@@ -1253,7 +1255,8 @@ export async function fetchConversionStats(startDate: string, endDate: string) {
   };
 }
 
-// ==================== Settings API ====================
+// ==================== Settings ====================
+// 只有类型：Worker 未实现 /api/settings，偏好由 Settings 页面存 localStorage。
 
 export interface UserSettings {
   timezone: string;
@@ -1267,23 +1270,8 @@ export interface UserSettings {
   twoFactorAuth: boolean;
 }
 
-export async function fetchSettings(): Promise<UserSettings> {
-  const response = await fetch(`${API_BASE_URL}/api/settings`);
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function updateSettings(settings: Partial<UserSettings>) {
-  const response = await fetch(`${API_BASE_URL}/api/settings`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(settings),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-// ==================== Target API ====================
+// ==================== Target ====================
+// 只有类型：Worker 未实现 /api/targets，草稿由 Target 页面存 localStorage。
 
 export interface Target {
   id: string;
@@ -1305,55 +1293,6 @@ export interface UpdateTargetDTO {
   type?: Target['type'];
   values?: string[];
   status?: Target['status'];
-}
-
-export async function fetchTargets(): Promise<Target[]> {
-  const response = await fetch(`${API_BASE_URL}/api/targets`);
-  const result = await handleResponse(response);
-  return result.data || [];
-}
-
-export async function fetchTargetById(id: string): Promise<Target> {
-  const response = await fetch(`${API_BASE_URL}/api/targets/${id}`);
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function createTarget(data: CreateTargetDTO): Promise<Target> {
-  const response = await fetch(`${API_BASE_URL}/api/targets`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function updateTarget(id: string, data: UpdateTargetDTO): Promise<Target> {
-  const response = await fetch(`${API_BASE_URL}/api/targets/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function deleteTarget(id: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/targets/${id}`, {
-    method: 'DELETE',
-  });
-  await handleResponse(response);
-}
-
-export async function toggleTargetStatus(id: string, status: Target['status']): Promise<Target> {
-  const response = await fetch(`${API_BASE_URL}/api/targets/${id}/status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
-  });
-  const result = await handleResponse(response);
-  return result.data;
 }
 
 // Export tasks are user-triggered; no background polling in the UI.

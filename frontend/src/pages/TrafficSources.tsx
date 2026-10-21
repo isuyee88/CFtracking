@@ -176,39 +176,8 @@ export const TrafficSources = () => {
       }
       setIsFormOpen(false);
     } catch (err) {
+      // 失败时保持表单打开、列表不动：本地补一条假数据会让用户以为已保存，刷新后又消失。
       toast.error('Failed to save traffic source', err instanceof Error ? err.message : 'Unknown error');
-      // For demo, add to local state with apiConfig preserved
-      if (formMode === 'create') {
-        const newSource: TrafficSource = {
-          id: `ts${Date.now()}`,
-          name: submitData.name,
-          type: submitData.type || 'other',
-          status: submitData.status || 'active',
-          postbackUrl: submitData.postbackUrl || '',
-          costModel: submitData.costModel || 'cpc',
-          costValue: parseFloat(submitData.costValue) || 0,
-          currency: submitData.currency || 'USD',
-          apiConfig: submitData.apiConfig,
-          campaignCount: 0,
-          clicks: 0,
-          conversions: 0,
-          revenue: 0,
-          cost: 0,
-          profit: 0,
-          roi: 0,
-          updatedAt: new Date().toISOString()
-        };
-        setTrafficSources(prev => [...prev, newSource]);
-      } else {
-        setTrafficSources(prev => 
-          prev.map(s => 
-            s.id === selectedSource?.id 
-              ? { ...s, ...submitData, updatedAt: new Date().toISOString() }
-              : s
-          )
-        );
-      }
-      setIsFormOpen(false);
     }
   };
 
@@ -220,8 +189,8 @@ export const TrafficSources = () => {
       setTrafficSources(prev => prev.filter(s => s.id !== id));
       toast.success('Traffic source deleted successfully');
     } catch (err) {
+      // 删除失败时保留行，避免“看起来删掉了、刷新又回来”。
       toast.error('Failed to delete traffic source', err instanceof Error ? err.message : 'Unknown error');
-      setTrafficSources(prev => prev.filter(s => s.id !== id));
     }
   };
 
@@ -347,7 +316,7 @@ export const TrafficSources = () => {
             <div className="w-8 h-8 bg-surface-container rounded"></div>
             <div className="w-8 h-8 bg-surface-container rounded"></div>
           </div>
-          <div className="relative flex-1 min-w-[300px]">
+          <div className="relative min-w-0 flex-1">
             <div className="w-full h-10 bg-surface-container rounded"></div>
           </div>
           <div className="flex items-center gap-4">
@@ -536,7 +505,7 @@ export const TrafficSources = () => {
               <div className="h-6 w-px bg-outline-variant/20 mx-2" />
             </>
           )}
-          <div className="relative flex-1 min-w-[300px]">
+          <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/40" size={16} />
             <input 
               type="text" 

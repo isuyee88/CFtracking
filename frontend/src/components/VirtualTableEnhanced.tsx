@@ -214,6 +214,24 @@ export function VirtualTableEnhanced<T = any>({
     onSelectionChange(newSelected);
   }, [selectedRows, onSelectionChange, getRowId, visibleStart]);
 
+  // 工具栏在空/加载态也保留：列设置是表格能力的一部分，不应因为没有数据就消失。
+  // 行数只声明「本页」：分页页面传入的是当前页切片，写总数会误导。
+  const toolbar = (
+    <div className={`flex items-center justify-between gap-2 border-b border-outline-variant/20 px-2 ${compactToolbar ? 'h-8' : 'h-9'}`}>
+      {!compactToolbar && <span className="text-[11px] font-medium text-fg-subtle">{processedData.length} rows on this page</span>}
+      <div className={compactToolbar ? 'ms-auto' : undefined}>
+        <TableColumnSettings
+          items={columnItems}
+          visible={visible}
+          onToggle={toggle}
+          onMove={move}
+          onReset={reset}
+          compact={compactToolbar}
+        />
+      </div>
+    </div>
+  );
+
   // 加载状态
   if (loading) {
     return (
@@ -222,6 +240,7 @@ export function VirtualTableEnhanced<T = any>({
         className={cn('overflow-auto border border-gray-200 rounded-md', className)}
         style={{ height: typeof height === 'number' ? height : height === 'auto' ? undefined : height }}
       >
+        {toolbar}
         <div className="flex items-center justify-center py-8">
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
         </div>
@@ -237,6 +256,7 @@ export function VirtualTableEnhanced<T = any>({
         className={cn('overflow-auto border border-gray-200 rounded-md', className)}
         style={{ height: typeof height === 'number' ? height : height === 'auto' ? undefined : height }}
       >
+        {toolbar}
         <div className="flex items-center justify-center py-8 text-gray-500">
           {emptyMessage}
         </div>
@@ -246,19 +266,7 @@ export function VirtualTableEnhanced<T = any>({
 
   return (
     <div className={cn('relative rounded-md border border-gray-200 bg-surface', className)}>
-      <div className={`flex items-center justify-between gap-2 border-b border-outline-variant/20 px-2 ${compactToolbar ? 'h-8' : 'h-9'}`}>
-        {!compactToolbar && <span className="text-[11px] font-medium text-fg-subtle">{processedData.length} rows</span>}
-        <div className={compactToolbar ? 'ms-auto' : undefined}>
-          <TableColumnSettings
-            items={columnItems}
-            visible={visible}
-            onToggle={toggle}
-            onMove={move}
-            onReset={reset}
-            compact={compactToolbar}
-          />
-        </div>
-      </div>
+      {toolbar}
       <div
         ref={containerRef}
         onScroll={handleScroll}

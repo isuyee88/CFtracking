@@ -34,6 +34,13 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * 规则是否生效：以 enabled 为准，status=paused 也算停用。
+ * 列表里的 Status 徽章与 Enabled 开关必须读同一个判断，否则点开关后徽章不变。
+ */
+const isRuleActive = (rule: { enabled?: boolean; status?: string }) =>
+  Boolean(rule.enabled) && rule.status !== 'paused';
+
 export const RuleManagement = () => {
   // 使用 usePageData hook 自动处理 SSR 缓存、加载和错误状态
   const { data: rulesData, isLoading, error, refetch } = usePageData(
@@ -242,7 +249,7 @@ export const RuleManagement = () => {
 
       {/* Filters */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 bg-surface p-4 rounded-lg border border-border-default">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative min-w-0 flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" size={16} />
           <input 
             type="text" 
@@ -296,7 +303,7 @@ export const RuleManagement = () => {
                 <h2 className="truncate text-sm font-bold text-fg-default">{rule.name}</h2>
                 <p className="mt-0.5 text-xs text-fg-muted">{rule.type} · priority {rule.priority}</p>
               </div>
-              <span className={rule.status === 'active' ? 'shrink-0 rounded-full bg-success/10 px-2 py-1 text-[10px] font-bold uppercase text-success' : 'shrink-0 rounded-full bg-warning/10 px-2 py-1 text-[10px] font-bold uppercase text-warning'}>{rule.status}</span>
+              <span className={isRuleActive(rule) ? 'shrink-0 rounded-full bg-success/10 px-2 py-1 text-[10px] font-bold uppercase text-success' : 'shrink-0 rounded-full bg-fg-muted/10 px-2 py-1 text-[10px] font-bold uppercase text-fg-muted'}>{isRuleActive(rule) ? 'Active' : 'Disabled'}</span>
             </div>
             <div className="mt-3 flex justify-end gap-2 border-t border-border-default pt-2">
               <button type="button" onClick={() => handleToggleStatus(rule)} className="rounded-md border border-border-default px-3 py-1.5 text-xs text-fg-default">{rule.enabled ? 'Disable' : 'Enable'}</button>
@@ -318,7 +325,7 @@ export const RuleManagement = () => {
             { key: 'name', label: 'Name', width: '220px', className: 'flex-1 min-w-0', render: (_: unknown, rule: any) => <div className="min-w-0"><p className="truncate font-medium text-fg-default">{rule.name}</p>{rule.description && <p className="truncate text-xs text-fg-muted">{rule.description}</p>}<p className="text-xs text-fg-subtle">{new Date(rule.updatedAt).toLocaleString()}</p></div> },
             { key: 'type', label: 'Type', width: '100px', render: (_: unknown, rule: any) => <span className={rule.type === 'campaign' ? 'rounded bg-accent-fg/10 px-2 py-1 text-xs text-accent-fg' : rule.type === 'platform' ? 'rounded bg-success/10 px-2 py-1 text-xs text-success' : 'rounded bg-warning/10 px-2 py-1 text-xs text-warning'}>{rule.type.charAt(0).toUpperCase() + rule.type.slice(1)}</span> },
             { key: 'priority', label: 'Priority', width: '90px', align: 'right', render: (_: unknown, rule: any) => <span className="font-mono text-fg-default">{rule.priority}</span> },
-            { key: 'status', label: 'Status', width: '100px', render: (_: unknown, rule: any) => <span className={rule.status === 'active' ? 'rounded bg-success/10 px-2 py-1 text-xs text-success' : rule.status === 'paused' ? 'rounded bg-warning/10 px-2 py-1 text-xs text-warning' : 'rounded bg-fg-muted/10 px-2 py-1 text-xs text-fg-muted'}>{rule.status.charAt(0).toUpperCase() + rule.status.slice(1)}</span> },
+            { key: 'status', label: 'Status', width: '100px', render: (_: unknown, rule: any) => <span className={isRuleActive(rule) ? 'rounded bg-success/10 px-2 py-1 text-xs text-success' : 'rounded bg-fg-muted/10 px-2 py-1 text-xs text-fg-muted'}>{isRuleActive(rule) ? 'Active' : 'Disabled'}</span> },
             { key: 'enabled', label: 'Enabled', width: '80px', align: 'center', render: (_: unknown, rule: any) => <button type="button" onClick={() => handleToggleStatus(rule)} className={rule.enabled ? 'rounded p-1.5 text-success hover:bg-success/10' : 'rounded p-1.5 text-fg-muted hover:bg-surface-container'} title={rule.enabled ? 'Disable' : 'Enable'}>{rule.enabled ? <Play size={16} /> : <Pause size={16} />}</button> },
             { key: 'actions', label: '', width: '88px', align: 'center', render: (_: unknown, rule: any) => <div className="flex justify-center gap-1"><button type="button" onClick={() => handleEdit(rule)} className="rounded p-1.5 text-fg-muted hover:bg-surface-container hover:text-fg-default" title="Edit"><Edit3 size={14} /></button><button type="button" onClick={() => handleDelete(rule.id)} className="rounded p-1.5 text-fg-muted hover:bg-error/10 hover:text-error" title="Delete"><Trash2 size={14} /></button></div> },
           ]}

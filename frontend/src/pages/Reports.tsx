@@ -14,6 +14,7 @@ import { useReportState } from '../hooks/useReportState';
 import { ReportColumnSelector, type ReportColumn } from '../components/ReportColumnSelector';
 import { ReportFilterBuilder, type ReportFilter } from '../components/ReportFilterBuilder';
 import { VirtualTableEnhanced, type VirtualTableColumn } from '../components/VirtualTableEnhanced';
+import { PageNotice } from '../components/PageNotice';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import type { DateRangeValue } from '@/components/DateRangePicker';
 import { usePageData } from '@/context/DataCacheContext';
@@ -25,8 +26,8 @@ function cn(...inputs: ClassValue[]) {
 }
 
 const Reports: React.FC = () => {
-  // The report API is not part of the current Worker contract (it only exposes POST /api/reports/generate).
-  // Keep the route navigable, but do not issue a guaranteed 404 on every visit.
+  // 报表接口不在当前 Worker 契约里：保留 /reports 路由可达，但不要在每次访问时发一个必然 404 的请求。
+  // 关闭时只渲染说明块，不渲染空工具栏（刷新/导出/筛选点了没有结果，等于把「不可用」伪装成「没数据」）。
   const reportsEnabled = false;
   const {
     columns,
@@ -172,6 +173,23 @@ const Reports: React.FC = () => {
     }));
   }, [visibleColumns, sortOrder]);
 
+  if (!reportsEnabled) {
+    return (
+      <div className="min-h-screen bg-background p-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-display font-bold text-on-surface">Reports</h1>
+          <p className="mt-1 text-sm text-fg-muted">Build custom reports with columns and filters</p>
+        </div>
+        <PageNotice
+          tone="warning"
+          title="Report builder is not available in this deployment"
+          description="The reporting API is not part of the current Worker contract, so this page has nothing to load yet."
+          hint="Use Dashboard, Trends, or Exports for the same numbers in the meantime."
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 bg-background min-h-screen">
       {/* 页面标题 */}
@@ -179,16 +197,6 @@ const Reports: React.FC = () => {
         <h1 className="text-2xl font-display font-bold text-on-surface">Reports</h1>
         <p className="text-sm text-fg-muted mt-1">Build custom reports with columns and filters</p>
       </div>
-
-      {!reportsEnabled && (
-        <div className="mb-4 flex items-start gap-3 rounded-lg border border-warning/20 bg-warning/10 p-3 text-sm text-fg-default">
-          <AlertCircle size={18} className="mt-0.5 shrink-0 text-warning" />
-          <div>
-            <p className="font-medium">Report builder is not enabled on this deployment</p>
-            <p className="mt-0.5 text-xs text-fg-muted">Use Dashboard analytics and exports while the reporting API is being completed.</p>
-          </div>
-        </div>
-      )}
 
       {/* 顶部工具栏 */}
       <div className="mb-4 flex items-center justify-between gap-4">
