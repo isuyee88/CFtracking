@@ -19,6 +19,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'Ad', paramName: 'utm_ad', macro: '{{ad.name}}' },
       { alias: 'Placement', paramName: 'utm_placement', macro: '{{placement}}' },
       { alias: 'SiteSource', paramName: 'utm_source', macro: '{{site_source_name}}' },
+      { alias: 'ClickID', paramName: 'sub1', macro: '{{fbclid}}' },
     ],
     postbackUrl: 'https://www.facebook.com/tr?ev=Purchase&cd[value]={{revenue}}&cd[currency]={{currency}}',
     postbackMacros: {
@@ -40,6 +41,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'MatchType', paramName: 'utm_matchtype', macro: '{matchtype}' },
       { alias: 'Device', paramName: 'utm_device', macro: '{device}' },
       { alias: 'Network', paramName: 'utm_network', macro: '{network}' },
+      { alias: 'ClickID', paramName: 'sub1', macro: '{gclid}' },
     ],
     postbackUrl: 'https://www.googleadservices.com/pagead/conversion/CONVERSION_ID/?value={{revenue}}&currency_code={{currency}}&label=LABEL&guid=ON&script=0',
     postbackMacros: {
@@ -58,7 +60,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'Site', paramName: 'utm_site', macro: '{site_id}' },
       { alias: 'Placement', paramName: 'utm_placement', macro: '{placement}' },
       { alias: 'Creative', paramName: 'utm_creative', macro: '{creative_id}' },
-      { alias: 'ClickID', paramName: 'click_id', macro: '{click_id}' },
+      { alias: 'ClickID', paramName: 'sub1', macro: '{click_id}' },
     ],
     postbackUrl: 'https://trc.taboola.com/sg/trk/click?s={{click_id}}&r={{revenue}}&c={{currency}}',
     postbackMacros: {
@@ -77,7 +79,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'AdGroup', paramName: 'utm_adgroup', macro: '__AID__' },
       { alias: 'Creative', paramName: 'utm_creative', macro: '__CID__' },
       { alias: 'Placement', paramName: 'utm_placement', macro: '__PLACEMENT__' },
-      { alias: 'TTCID', paramName: 'ttclid', macro: '__TTCLID__' },
+      { alias: 'TTCID', paramName: 'sub1', macro: '__TTCLID__' },
     ],
     postbackUrl: 'https://analytics.tiktok.com/api/v1/track?event=CompletePayment&value={{revenue}}&currency={{currency}}',
     postbackMacros: {
@@ -97,7 +99,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'Banner', paramName: 'utm_banner', macro: '{banner_id}' },
       { alias: 'Device', paramName: 'utm_device', macro: '{device}' },
       { alias: 'OS', paramName: 'utm_os', macro: '{os}' },
-      { alias: 'ClickID', paramName: 'click_id', macro: '{click_id}' },
+      { alias: 'ClickID', paramName: 'sub1', macro: '{click_id}' },
     ],
     postbackUrl: 'https://ad.propellerads.com/conversion?click_id={{click_id}}&payout={{revenue}}&currency={{currency}}',
     postbackMacros: {
@@ -135,7 +137,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'Source', paramName: 'utm_source', macro: '{source}' },
       { alias: 'Keyword', paramName: 'utm_keyword', macro: '{keyword}' },
       { alias: 'Match', paramName: 'utm_match', macro: '{match}' },
-      { alias: 'ClickID', paramName: 'click_id', macro: '{external_id}' },
+      { alias: 'ClickID', paramName: 'sub1', macro: '{external_id}' },
     ],
     postbackUrl: 'https://postback.zeropark.com/postback?external_id={{click_id}}&payout={{revenue}}&currency={{currency}}',
     postbackMacros: {
@@ -154,7 +156,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'Widget', paramName: 'utm_widget', macro: '{widget_id}' },
       { alias: 'Teaser', paramName: 'utm_teaser', macro: '{teaser_id}' },
       { alias: 'Geo', paramName: 'utm_geo', macro: '{geo}' },
-      { alias: 'ClickID', paramName: 'click_id', macro: '{click_id}' },
+      { alias: 'ClickID', paramName: 'sub1', macro: '{click_id}' },
     ],
     postbackUrl: 'https://mgid.com/conversion?click_id={{click_id}}&payout={{revenue}}&currency={{currency}}',
     postbackMacros: {
@@ -172,7 +174,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'Campaign', paramName: 'utm_campaign', macro: '{campaign_id}' },
       { alias: 'Section', paramName: 'utm_section', macro: '{section_id}' },
       { alias: 'Creative', paramName: 'utm_creative', macro: '{creative_id}' },
-      { alias: 'ClickID', paramName: 'click_id', macro: '{ob_click_id}' },
+      { alias: 'ClickID', paramName: 'sub1', macro: '{ob_click_id}' },
     ],
     postbackUrl: 'https://tr.outbrain.com/conversion?ob_click_id={{click_id}}&value={{revenue}}&currency={{currency}}',
     postbackMacros: {
@@ -191,7 +193,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'Widget', paramName: 'utm_widget', macro: '{widget_id}' },
       { alias: 'Target', paramName: 'utm_target', macro: '{target_id}' },
       { alias: 'Content', paramName: 'utm_content', macro: '{content_id}' },
-      { alias: 'ClickID', paramName: 'click_id', macro: '{rc_click_id}' },
+      { alias: 'ClickID', paramName: 'sub1', macro: '{rc_click_id}' },
     ],
     postbackUrl: 'https://revcontent.com/conversion?rc_click_id={{click_id}}&amount={{revenue}}',
     postbackMacros: {
@@ -209,7 +211,7 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
       { alias: 'Zone', paramName: 'utm_zone', macro: '{zone_id}' },
       { alias: 'Category', paramName: 'utm_category', macro: '{category_id}' },
       { alias: 'Site', paramName: 'utm_site', macro: '{site_id}' },
-      { alias: 'ClickID', paramName: 'click_id', macro: '{conversions_tracking}' },
+      { alias: 'ClickID', paramName: 'sub1', macro: '{conversions_tracking}' },
     ],
     postbackUrl: 'https://syndication.exoclick.com/conversion?tracking_id={{click_id}}&amount={{revenue}}',
     postbackMacros: {
