@@ -14890,9 +14890,17 @@ var OfferRepository = class extends BaseRepository {
   getExcludedStatusesCondition() {
     return "status != 'deleted'";
   }
-  async findAll(limit = 100, offset = 0) {
+  buildListFilter(status, search) {
+    const conditions = [];
+    const params = [];
+    if (status && status !== "all") { conditions.push("status = ?"); params.push(status); }
+    if (search) { conditions.push("(name LIKE ? OR url LIKE ? OR displayId LIKE ?)"); const p = "%" + search + "%"; params.push(p, p, p); }
+    return { where: conditions.length ? " AND " + conditions.join(" AND ") : "", params };
+  }
+  async findAll(limit = 100, offset = 0, filters = {}) {
+    const filter = this.buildListFilter(filters.status, filters.search);
     const excluded = this.getExcludedStatusesCondition();
-    const result = await this.db.prepare(`SELECT * FROM ${this.tableName} WHERE ${excluded} LIMIT ? OFFSET ?`).bind(limit, offset).all();
+    const result = await this.db.prepare(`SELECT * FROM ${this.tableName} WHERE ${excluded}${filter.where} LIMIT ? OFFSET ?`).bind(...filter.params, limit, offset).all();
     return result.results.map(this.transform.bind(this)) || [];
   }
   async findBy(field, value) {
@@ -15081,8 +15089,9 @@ var OfferRepository = class extends BaseRepository {
    * 子查询按 offerId 分组，每个 offer 至多匹配一行，
    * 因此 LIMIT/OFFSET 语义与 findAll 一致；不新增 ORDER BY，翻页顺序不变。
    */
-  async findAllWithCampaignCount(limit = 100, offset = 0) {
+  async findAllWithCampaignCount(limit = 100, offset = 0, filters = {}) {
     const excluded = this.getExcludedStatusesCondition();
+    const filter = this.buildListFilter(filters.status, filters.search);
     const result = await this.db.prepare(`
         SELECT o.*, COALESCE(cc.campaignCount, 0) AS campaignCount
         FROM ${this.tableName} o
@@ -15092,9 +15101,9 @@ var OfferRepository = class extends BaseRepository {
           JOIN flows f ON fo.flowId = f.id
           GROUP BY fo.offerId
         ) cc ON cc.offerId = o.id
-        WHERE ${excluded}
+        WHERE ${excluded}${filter.where}
         LIMIT ? OFFSET ?
-      `).bind(limit, offset).all();
+      `).bind(...filter.params, limit, offset).all();
     return result.results.map((row) => {
       const offer = this.transform(row);
       offer.campaignCount = Number(row.campaignCount) || 0;
@@ -24587,11 +24596,12 @@ var OfferService = class {
   /**
    * 获取 Offer 列表
    */
-  async getList(page = 1, pageSize = 20) {
+  async getList(page = 1, pageSize = 20, filters = {}) {
     const offset = (page - 1) * pageSize;
+    const filter = this.repo.buildListFilter(filters.status, filters.search);
     const [list, total] = await Promise.all([
-      this.repo.findAll(pageSize, offset),
-      this.repo.count()
+      this.repo.findAll(pageSize, offset, filters),
+      this.repo.count(filter.where ? filter.where.slice(5) : void 0, filter.params)
     ]);
     return { list, total };
   }
@@ -24659,11 +24669,12 @@ var OfferService = class {
    * 3. 1~N 次 `WHERE offerId IN (...) GROUP BY offerId` 的 stats（每 100 个 id 一块）。
    * 返回字段/类型/epc·cr 格式化与逐条版本保持一致。
    */
-  async getListWithStats(page = 1, pageSize = 20, startDate, endDate) {
+  async getListWithStats(page = 1, pageSize = 20, startDate, endDate, filters = {}) {
     const offset = (page - 1) * pageSize;
+    const filter = this.repo.buildListFilter(filters.status, filters.search);
     const [list, total] = await Promise.all([
-      this.repo.findAllWithCampaignCount(pageSize, offset),
-      this.repo.count()
+      this.repo.findAllWithCampaignCount(pageSize, offset, filters),
+      this.repo.count(filter.where ? filter.where.slice(5) : void 0, filter.params)
     ]);
     if (list.length === 0) {
       return { list: [], total };
@@ -31464,11 +31475,14 @@ function createOfferRouter() {
       pageSize: parseInt(c.req.query("pageSize") || "20"),
       withStats: c.req.query("withStats") === "true",
       startDate: c.req.query("startDate") || void 0,
-      endDate: c.req.query("endDate") || void 0
+      endDate: c.req.query("endDate") || void 0,
+      status: c.req.query("status") || void 0,
+      search: c.req.query("search") || void 0
     };
     const { page, pageSize } = validatePagination(query.page, query.pageSize);
     const service = new OfferService(c.env);
-    const result = query.withStats ? await service.getListWithStats(page, pageSize, query.startDate, query.endDate) : await service.getList(page, pageSize);
+    const filters = { status: query.status, search: query.search };
+    const result = query.withStats ? await service.getListWithStats(page, pageSize, query.startDate, query.endDate, filters) : await service.getList(page, pageSize, filters);
     return c.json(success(result.list, {
       page,
       pageSize,
