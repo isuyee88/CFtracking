@@ -277,17 +277,19 @@ export const TrafficSources = () => {
   };
 
   const getTypeColor = (type: string) => {
+    // 语义 token（success/warning/error/accent/secondary/surface）随 light/dark 自动切换；
+    // 之前写死的 bg-*-100/text-*-700 在深色模式下是浅底浅字，对比度不达标。
     const colors: Record<string, string> = {
-      social: 'bg-blue-100 text-blue-700',
-      search: 'bg-green-100 text-green-700',
-      native: 'bg-purple-100 text-purple-700',
-      push: 'bg-orange-100 text-orange-700',
-      pop: 'bg-pink-100 text-pink-700',
-      display: 'bg-yellow-100 text-yellow-700',
-      email: 'bg-indigo-100 text-indigo-700',
-      other: 'bg-gray-100 text-gray-700'
+      social: 'bg-accent-fg/10 text-accent-fg',
+      search: 'bg-success/10 text-success',
+      native: 'bg-success/10 text-success',
+      push: 'bg-warning/10 text-warning',
+      pop: 'bg-error/10 text-error',
+      display: 'bg-warning/10 text-warning',
+      email: 'bg-secondary/10 text-secondary',
+      other: 'bg-surface-container text-fg-muted'
     };
-    return colors[type] || 'bg-gray-100 text-gray-700';
+    return colors[type] || 'bg-surface-container text-fg-muted';
   };
 
   // Skeleton component for table rows
@@ -679,8 +681,8 @@ export const TrafficSources = () => {
               align: 'center',
               render: (_: unknown, source: TrafficSource) => (
                 <div className="flex items-center justify-center gap-1">
-                  <button type="button" onClick={() => handleEditSource(source)} className="p-2 text-fg-muted hover:text-primary" title="Edit"><Edit3 size={16} /></button>
-                  <button type="button" onClick={() => handleDeleteSource(source.id)} className="p-2 text-fg-muted hover:text-error" title="Delete"><Trash2 size={16} /></button>
+                  <button type="button" onClick={() => handleEditSource(source)} className="row-action" title="Edit" aria-label={`Edit traffic source ${source.name}`}><Edit3 size={16} /></button>
+                  <button type="button" onClick={() => handleDeleteSource(source.id)} className="row-action row-action--danger" title="Delete" aria-label={`Delete traffic source ${source.name}`}><Trash2 size={16} /></button>
                 </div>
               ),
             },

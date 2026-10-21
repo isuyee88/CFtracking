@@ -334,7 +334,7 @@ export default function CustomMetrics() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-lg border border-error/20 bg-error/10 p-3 text-sm text-error">
           {error}
         </div>
       )}
@@ -361,13 +361,13 @@ export default function CustomMetrics() {
                     <span
                       className={`rounded px-2 py-0.5 text-xs ${
                         metric.status === 'active'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-orange-100 text-orange-700'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-warning/10 text-warning'
                       }`}
                     >
                       {metric.status === 'active' ? 'Active' : 'Inactive'}
                     </span>
-                    <span className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{metric.type}</span>
+                    <span className="rounded bg-accent-fg/10 px-2 py-0.5 text-xs text-accent-fg">{metric.type}</span>
                   </div>
                   {metric.description && (
                     <p className="mt-1 break-words text-sm text-gray-600" title={metric.description}>
@@ -507,7 +507,7 @@ export default function CustomMetrics() {
                   required
                 />
                 {validationError && (
-                  <p className="mt-1 flex items-center gap-1 text-sm text-red-600">
+                  <p className="mt-1 flex items-center gap-1 text-sm text-error">
                     <AlertCircle className="h-4 w-4" />
                     {validationError}
                   </p>
@@ -629,9 +629,9 @@ export default function CustomMetrics() {
                   ))}
                 </div>
                 {previewResult && (
-                    <div className="flex flex-wrap items-center gap-2 rounded border border-green-200 bg-green-50 p-3">
-                    <Check className="h-5 w-5 text-green-600" />
-                    <span className="font-mono text-green-800">
+                    <div className="flex flex-wrap items-center gap-2 rounded border border-success/20 bg-success/10 p-3">
+                    <Check className="h-5 w-5 text-success" />
+                    <span className="font-mono text-success">
                       Result: {previewResult.formatted} ({previewResult.value})
                     </span>
                   </div>

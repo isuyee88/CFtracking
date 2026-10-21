@@ -149,10 +149,10 @@ export function SSEStatusBadge() {
   return (
     <div
       className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm ${
-        isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+        isConnected ? 'bg-success/10 text-success' : 'bg-error/10 text-error'
       }`}
     >
-      <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+      <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-success' : 'bg-error'}`} />
       {isConnected ? 'Real-time' : 'Offline'}
     </div>
   );

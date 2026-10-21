@@ -49,7 +49,7 @@ export default function App() {
         <ErrorBoundary>
           <Suspense fallback={
             <div className="flex min-h-screen items-center justify-center text-sm text-fg-muted">
-              鍔犺浇涓€?
+              Loading...
             </div>
           }>
             <Routes>

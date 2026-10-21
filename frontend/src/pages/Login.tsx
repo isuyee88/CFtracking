@@ -28,7 +28,7 @@ const Login: React.FC = () => {
         return;
       }
     } catch {
-      // fall through to clear the unusable token
+      // Token is unreadable: fall through and clear it so the form can be used again.
     }
     window.localStorage.removeItem('token');
     window.localStorage.removeItem('user');
@@ -44,16 +44,16 @@ const Login: React.FC = () => {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error?.message || payload?.message || '登录失败');
+        throw new Error(payload?.error?.message || payload?.message || 'Sign-in failed');
       }
       const token = payload?.data?.token;
-      if (!token) throw new Error('服务器未返回有效的认证令牌');
+      if (!token) throw new Error('The server did not return a session token');
       window.localStorage.setItem('token', token);
       window.localStorage.setItem('user', JSON.stringify(payload.data.user || {}));
-      message.success('登录成功');
+      message.success('Signed in');
       window.location.assign(target);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '登录失败，请稍后重试');
+      message.error(error instanceof Error ? error.message : 'Sign-in failed, please try again');
     } finally {
       setLoading(false);
     }
@@ -63,27 +63,27 @@ const Login: React.FC = () => {
     <div className="login-container">
       <Card className="login-card">
         <div className="login-header">
-          <Title level={2}>登录 CFTracking</Title>
-          <Text type="secondary">管理您的广告活动和跟踪数据</Text>
+          <Title level={2}>Sign in to CFTracking</Title>
+          <Text type="secondary">Manage your campaigns and tracking data</Text>
         </div>
 
         <Divider />
 
         <Form name="login" initialValues={{ remember: true }} onFinish={onFinish}>
-          <Form.Item name="username" rules={[{ required: true, message: '请输入用户名或邮箱' }]}>
+          <Form.Item name="username" rules={[{ required: true, message: 'Enter your username or email' }]}>
             <Input
               prefix={<UserOutlined className="site-form-item-icon" />}
-              placeholder="用户名或邮箱"
+              placeholder="Username or email"
               size="large"
               autoComplete="username"
             />
           </Form.Item>
 
-          <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
+          <Form.Item name="password" rules={[{ required: true, message: 'Enter your password' }]}>
             <Input
               prefix={<LockOutlined className="site-form-item-icon" />}
               type="password"
-              placeholder="密码"
+              placeholder="Password"
               size="large"
               autoComplete="current-password"
             />
@@ -91,35 +91,35 @@ const Login: React.FC = () => {
 
           <Form.Item>
             <Form.Item name="remember" valuePropName="checked" noStyle>
-              <Checkbox>记住我</Checkbox>
+              <Checkbox>Remember me</Checkbox>
             </Form.Item>
             <Link href="#" className="login-form-forgot">
-              忘记密码？
+              Forgot password?
             </Link>
           </Form.Item>
 
           <Form.Item>
             <Button type="primary" htmlType="submit" className="login-form-button" size="large" loading={loading} block>
-              {loading ? '登录中…' : '登录'}
+              {loading ? 'Signing in...' : 'Sign in'}
             </Button>
           </Form.Item>
         </Form>
 
-        <Divider>或</Divider>
+        <Divider>or</Divider>
 
         <div className="login-social">
           <Button type="default" icon={<GoogleOutlined />} className="social-button" size="large" block disabled>
-            使用 Google 账号登录（即将推出）
+            Continue with Google (coming soon)
           </Button>
         </div>
 
         <div className="login-footer">
-          <Text>还没有账号？ <Link href="#">立即注册</Link></Text>
+          <Text>No account yet? <Link href="#">Request access</Link></Text>
         </div>
 
         <Alert
-          message="安全提示"
-          description="您用的不是自己的电脑？请使用访客模式无痕登录。"
+          message="Security notice"
+          description="On a shared computer? Use a private window and sign out when you are done."
           type="info"
           showIcon
           className="login-alert"
@@ -127,9 +127,9 @@ const Login: React.FC = () => {
       </Card>
 
       <div className="login-footer-links">
-        <Link href="#">隐私政策</Link>
-        <Link href="#">服务条款</Link>
-        <Link href="#">帮助中心</Link>
+        <Link href="#">Privacy</Link>
+        <Link href="#">Terms</Link>
+        <Link href="#">Help center</Link>
       </div>
     </div>
   );

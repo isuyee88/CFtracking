@@ -517,7 +517,7 @@ export const ConversionsLog = () => {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-primary">{conv.campaign}</p>
-                <p className="mt-0.5 text-xs text-on-surface-variant">{conv.time} 路 {conv.type}</p>
+                <p className="mt-0.5 text-xs text-on-surface-variant">{conv.time} · {conv.type}</p>
               </div>
               <span className="shrink-0 font-mono text-sm font-bold text-secondary">${conv.payout}</span>
             </div>

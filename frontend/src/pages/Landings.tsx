@@ -728,15 +728,17 @@ export const Landings = () => {
                 <div className="flex items-center gap-1">
                   <button 
                     onClick={() => handleEditLanding(row as LandingPage)}
-                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    className="row-action"
                     title="Edit"
+                    aria-label={`Edit landing page ${(row as LandingPage).name}`}
                   >
                     <Edit3 size={16} />
                   </button>
                   <button 
                     onClick={() => handleDeleteLanding(row.id)}
-                    className="p-2 text-on-surface-variant hover:text-error transition-colors"
+                    className="row-action row-action--danger"
                     title="Delete"
+                    aria-label={`Delete landing page ${(row as LandingPage).name}`}
                   >
                     <Trash2 size={16} />
                   </button>

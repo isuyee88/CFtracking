@@ -357,13 +357,14 @@ export const AffiliateNetworks = () => {
   };
 
   const getTypeColor = (type: string) => {
+    // 与 TrafficSources 一致：只用语义 token，避免深色模式下浅底浅字。
     const colors: Record<string, string> = {
-      soap: 'bg-blue-100 text-blue-700',
-      rest: 'bg-green-100 text-green-700',
-      api: 'bg-purple-100 text-purple-700',
-      other: 'bg-gray-100 text-gray-700'
+      soap: 'bg-accent-fg/10 text-accent-fg',
+      rest: 'bg-success/10 text-success',
+      api: 'bg-secondary/10 text-secondary',
+      other: 'bg-surface-container text-fg-muted'
     };
-    return colors[type] || 'bg-gray-100 text-gray-700';
+    return colors[type] || 'bg-surface-container text-fg-muted';
   };
 
   if (isLoading && networks.length === 0) {
@@ -635,8 +636,8 @@ export const AffiliateNetworks = () => {
               align: 'center',
               render: (_: unknown, network: AffiliateNetwork) => (
                 <div className="flex items-center justify-center gap-1">
-                  <button type="button" onClick={() => handleEditNetwork(network)} className="p-2 text-fg-muted hover:text-primary" title="Edit"><Edit3 size={16} /></button>
-                  <button type="button" onClick={() => handleDeleteNetwork(network.id)} className="p-2 text-fg-muted hover:text-error" title="Delete"><Trash2 size={16} /></button>
+                  <button type="button" onClick={() => handleEditNetwork(network)} className="row-action" title="Edit" aria-label={`Edit affiliate network ${network.name}`}><Edit3 size={16} /></button>
+                  <button type="button" onClick={() => handleDeleteNetwork(network.id)} className="row-action row-action--danger" title="Delete" aria-label={`Delete affiliate network ${network.name}`}><Trash2 size={16} /></button>
                 </div>
               ),
             },

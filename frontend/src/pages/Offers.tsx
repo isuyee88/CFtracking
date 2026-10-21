@@ -892,15 +892,17 @@ export const Offers = () => {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => handleEditOffer(row as Offer)}
-                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    className="row-action"
                     title="Edit"
+                    aria-label={`Edit offer ${(row as Offer).name}`}
                   >
                     <Edit3 size={16} />
                   </button>
                   <button
                     onClick={() => handleDeleteOffer(row.id)}
-                    className="p-2 text-on-surface-variant hover:text-error transition-colors"
+                    className="row-action row-action--danger"
                     title="Delete"
+                    aria-label={`Delete offer ${(row as Offer).name}`}
                   >
                     <Trash2 size={16} />
                   </button>

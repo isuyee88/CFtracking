@@ -4,7 +4,6 @@ import {
   Zap,
   Plus,
   Search,
-  MoreHorizontal,
   ArrowUpRight,
   Play,
   Pause,
@@ -807,13 +806,11 @@ export const CampaignManagement = () => {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => handleEditCampaign(row)}
-                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    className="row-action"
                     title="Edit"
+                    aria-label={`Edit campaign ${row.name}`}
                   >
                     <Edit3 size={16} />
-                  </button>
-                  <button className="p-2 text-on-surface-variant hover:text-primary transition-colors">
-                    <MoreHorizontal size={18} />
                   </button>
                 </div>
               ),

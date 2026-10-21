@@ -1045,7 +1045,7 @@ export const Dashboard = () => {
               <span className="whitespace-nowrap">Real-time tracking overview</span>
               {queryTime && (
                 <span className="text-xs text-on-surface-variant/70">
-                  鏌ヨ鏃堕棿: {new Date(queryTime).toLocaleTimeString()}
+                  Query time: {new Date(queryTime).toLocaleTimeString()}
                 </span>
               )}
             </div>

@@ -1,19 +1,19 @@
 /**
- * @fileoverview React 全局错误边界
- * @description 捕获子组件树中的 JavaScript 错误，防止白屏
+ * @fileoverview Global React error boundary.
+ * @description Catches JavaScript errors in the child tree so the app never renders a blank page.
  * @module components/ErrorBoundary
  *
- * 用法: 在 React.lazy 的 Suspense 旁边使用
+ * Usage: wrap React.lazy Suspense boundaries.
  *   <ErrorBoundary>
  *     <Suspense fallback={<Loading />}>
  *       <LazyComponent />
  *     </Suspense>
  *   </ErrorBoundary>
  *
- * 支持:
- *   - 渲染错误捕获
- *   - React.lazy chunk 加载失败捕获（通过 window.onerror / unhandledrejection）
- *   - 自动恢复机制
+ * Covers:
+ *   - render errors
+ *   - React.lazy chunk load failures (via window.onerror / unhandledrejection)
+ *   - manual recovery
  */
 
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
@@ -23,7 +23,7 @@ const { Text, Paragraph } = Typography;
 
 interface Props {
   children: ReactNode;
-  /** 自定义 fallback，不传则使用默认 UI */
+  /** Optional custom fallback; defaults to the built-in UI. */
   fallback?: ReactNode;
 }
 
@@ -63,18 +63,18 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     if (this.state.hasError) {
-      // 使用自定义 fallback
+      // Custom fallback wins when supplied.
       if (this.props.fallback) {
         return this.props.fallback;
       }
 
-      const errorMessage = this.state.error?.message || '未知错误';
+      const errorMessage = this.state.error?.message || 'Unknown error';
       const isChunkError = errorMessage.includes('Loading chunk') ||
         errorMessage.includes('Failed to fetch dynamically imported module') ||
         errorMessage.includes('Importing a module script failed');
       const isDev = import.meta.env?.DEV;
 
-      // chunk 加载失败提示刷新即可恢复
+      // A stale chunk resolves with a reload, so offer that first.
       if (isChunkError) {
         return (
           <div style={{
@@ -87,14 +87,14 @@ export class ErrorBoundary extends Component<Props, State> {
           }}>
             <Result
               status="warning"
-              title="页面加载失败"
-              subTitle="页面资源未能正确加载，可能是网络波动或版本更新导致。请刷新页面重试。"
+              title="This page failed to load"
+              subTitle="Some assets could not be loaded. This is usually a network hiccup or a deploy in progress; reloading fixes it."
               extra={[
                 <Button key="reload" type="primary" onClick={this.handleReload}>
-                  刷新页面
+                  Reload page
                 </Button>,
                 <Button key="home" onClick={this.handleGoHome}>
-                  返回首页
+                  Back to dashboard
                 </Button>,
               ]}
             />
@@ -113,21 +113,21 @@ export class ErrorBoundary extends Component<Props, State> {
         }}>
           <Result
             status="error"
-            title="页面出错了"
-            subTitle={`错误信息：${errorMessage}`}
+            title="Something went wrong"
+            subTitle={`Error: ${errorMessage}`}
             extra={[
               <Button key="retry" onClick={this.handleReset}>
-                重试
+                Try again
               </Button>,
               <Button key="home" onClick={this.handleGoHome}>
-                返回首页
+                Back to dashboard
               </Button>,
               <Button key="reload" type="primary" onClick={this.handleReload}>
-                刷新页面
+                Reload page
               </Button>,
             ]}
           >
-            {/* 仅在开发环境显示错误详情 */}
+            {/* Error details are development-only. */}
             {isDev && this.state.errorInfo && (
               <Space direction="vertical" style={{ width: '100%', textAlign: 'left' }}>
                 <Paragraph>
@@ -135,7 +135,7 @@ export class ErrorBoundary extends Component<Props, State> {
                     strong
                     style={{ fontSize: 16 }}
                   >
-                    错误堆栈:
+                    Component stack:
                   </Text>
                 </Paragraph>
                 <pre style={{

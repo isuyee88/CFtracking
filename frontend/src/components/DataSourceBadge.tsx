@@ -1,11 +1,12 @@
 /**
- * @fileoverview 数据源指示器组件
- * @description 显示当前数据来源（AE实时或D1归档）
+ * @fileoverview Data source indicator.
+ * @description Shows where the dashboard numbers come from (Analytics Engine realtime or D1 archive).
  * @module components/DataSourceBadge
  *
- * 输入: dataSource ('AE' | 'D1' | 'MIXED')
- * 输出: 带样式的数据源徽章
- * 逻辑交互: 被 Dashboard.tsx 等页面调用
+ * Input: dataSource ('AE' | 'D1' | 'MIXED')
+ * Output: a badge with the source label and tone
+ * Used by: Dashboard and other analytics surfaces.
+ * @invariant Colors come from semantic tokens so light/dark stay legible.
  */
 
 import React from 'react';
@@ -22,33 +23,33 @@ export interface DataSourceBadgeProps {
 const dataSourceConfig = {
   AE: {
     label: 'Analytics Engine',
-    sublabel: '实时数据',
-    description: '数据来源: Analytics Engine (实时)',
+    sublabel: 'Realtime',
+    description: 'Source: Analytics Engine (realtime)',
     icon: Zap,
-    bgColor: 'bg-blue-500/10',
-    textColor: 'text-blue-500',
-    borderColor: 'border-blue-500/20',
-    dotColor: 'bg-blue-500',
+    bgColor: 'bg-accent-fg/10',
+    textColor: 'text-accent-fg',
+    borderColor: 'border-accent-fg/20',
+    dotColor: 'bg-accent-fg',
   },
   D1: {
     label: 'D1 Database',
-    sublabel: '归档数据',
-    description: '数据来源: D1数据库 (归档)',
+    sublabel: 'Archive',
+    description: 'Source: D1 database (archive)',
     icon: Database,
-    bgColor: 'bg-amber-500/10',
-    textColor: 'text-amber-500',
-    borderColor: 'border-amber-500/20',
-    dotColor: 'bg-amber-500',
+    bgColor: 'bg-warning/10',
+    textColor: 'text-warning',
+    borderColor: 'border-warning/20',
+    dotColor: 'bg-warning',
   },
   MIXED: {
     label: 'Mixed',
-    sublabel: '混合数据',
-    description: '数据来源: 混合 (AE + D1)',
+    sublabel: 'Mixed',
+    description: 'Source: mixed (AE + D1)',
     icon: Clock,
-    bgColor: 'bg-purple-500/10',
-    textColor: 'text-purple-500',
-    borderColor: 'border-purple-500/20',
-    dotColor: 'bg-purple-500',
+    bgColor: 'bg-secondary/10',
+    textColor: 'text-secondary',
+    borderColor: 'border-secondary/20',
+    dotColor: 'bg-secondary',
   },
 };
 
@@ -120,13 +121,13 @@ export const DataSourceInfo: React.FC<DataSourceInfoProps> = ({
     <div className={cn('flex items-center gap-3', className)}>
       <DataSourceBadge dataSource={dataSource} size="sm" />
       <span className="text-xs text-on-surface-variant">
-        {dataSource === 'AE' && 'AE 免费存储 3 个月，高吞吐实时查询'}
-        {dataSource === 'D1' && '归档数据，每日汇总更新'}
-        {dataSource === 'MIXED' && '跨时间段混合查询'}
+        {dataSource === 'AE' && 'Realtime events, queried on demand'}
+        {dataSource === 'D1' && 'Archived totals, rolled up daily'}
+        {dataSource === 'MIXED' && 'Mixed range spanning realtime and archive'}
       </span>
       {queryTime && (
         <span className="text-xs text-on-surface-variant/60">
-          • 查询时间: {new Date(queryTime).toLocaleTimeString()}
+          • Query time: {new Date(queryTime).toLocaleTimeString()}
         </span>
       )}
     </div>
@@ -144,9 +145,9 @@ export const DataSourceWarning: React.FC<DataSourceWarningProps> = ({
 }) => {
   if (dataSource === 'D1') {
     return (
-      <div className={cn('flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400', className)}>
+      <div className={cn('flex items-center gap-2 text-xs text-warning', className)}>
         <AlertCircle size={14} />
-        <span>数据为每日汇总，更新可能有延迟</span>
+        <span>Archived totals are updated daily and may lag behind realtime events.</span>
       </div>
     );
   }

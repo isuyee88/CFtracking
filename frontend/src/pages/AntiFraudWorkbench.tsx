@@ -159,7 +159,7 @@ export function AntiFraudWorkbench() {
           <div>
             <h1 className="text-2xl font-display font-bold text-fg-default">Anti Fraud Workbench</h1>
             <p className="text-sm text-fg-muted">
-              D1 反作弊增强入口：模拟检测、Bot 清单、Geo 风险画像、归档导入。
+              D1 anti-fraud entry: simulation checks, bot inventory, geo risk profiles and archive import.
             </p>
           </div>
         </div>

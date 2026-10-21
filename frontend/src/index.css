@@ -1076,6 +1076,53 @@ textarea.form-input {
 }
 
 /* ============================================
+   Table Row Actions
+   桌面保持紧凑（32px），触屏（pointer: coarse）放大到 44px 命中区；
+   焦点用 focus-visible 描边，键盘用户不必靠 hover 才能看到按钮。
+   ============================================ */
+
+.row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  border-radius: 0.375rem;
+  color: var(--color-fg-muted);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.row-action:hover,
+.row-action:focus-visible {
+  background-color: var(--color-surface-container);
+  color: var(--color-fg-default);
+}
+
+.row-action:focus-visible {
+  outline: 2px solid var(--color-accent-emphasis);
+  outline-offset: 2px;
+}
+
+.row-action--danger:hover,
+.row-action--danger:focus-visible {
+  background-color: var(--color-surface-container);
+  color: var(--color-danger-fg);
+}
+
+.row-action--success,
+.row-action--success:hover,
+.row-action--success:focus-visible {
+  color: var(--color-success-fg);
+}
+
+@media (pointer: coarse) {
+  .row-action {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
+/* ============================================
    Utility Classes
    ============================================ */
 

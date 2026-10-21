@@ -669,8 +669,8 @@ export const Blacklist = () => {
               <div><dt className="text-fg-subtle">Created</dt><dd className="mt-0.5 text-fg-default">{new Date(entry.createdAt).toLocaleDateString()}</dd></div>
             </dl>
             <div className="mt-3 flex justify-end gap-2 border-t border-outline-variant/10 pt-2">
-              <button type="button" onClick={() => openEditModal(entry)} className="rounded-md border border-outline-variant/30 px-3 py-1.5 text-xs text-fg-default">Edit</button>
-              <button type="button" onClick={() => handleRemove(entry.id)} className="rounded-md border border-error/20 px-3 py-1.5 text-xs text-error">Remove</button>
+              <button type="button" onClick={() => openEditModal(entry)} aria-label={`Edit entry ${entry.value}`} className="inline-flex min-h-11 items-center justify-center rounded-md border border-outline-variant/30 px-3 py-1.5 text-xs text-fg-default">Edit</button>
+              <button type="button" onClick={() => handleRemove(entry.id)} aria-label={`Remove entry ${entry.value}`} className="inline-flex min-h-11 items-center justify-center rounded-md border border-error/20 px-3 py-1.5 text-xs text-error">Remove</button>
             </div>
           </article>
         ))}
@@ -687,7 +687,7 @@ export const Blacklist = () => {
             { key: 'status', label: 'Status', width: '100px', render: (_: unknown, entry: any) => <span className={entry.status === 'active' ? 'status-active rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-widest' : 'status-paused rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-widest'}>{entry.status}</span> },
             { key: 'sync', label: 'Sync Status', width: '120px', render: (_: unknown, entry: any) => entry.synced ? <span className="flex items-center gap-1 text-xs text-secondary"><CheckCircle size={14} />Synced</span> : <span className="flex items-center gap-1 text-xs text-warning"><XCircle size={14} />Not Synced</span> },
             { key: 'created', label: 'Created', width: '100px', render: (_: unknown, entry: any) => <span className="text-xs text-fg-muted">{new Date(entry.createdAt).toLocaleDateString()}</span> },
-            { key: 'actions', label: '', width: '88px', align: 'center', render: (_: unknown, entry: any) => <div className="flex justify-center gap-1"><button type="button" onClick={() => openEditModal(entry)} className="rounded p-2 text-fg-muted hover:text-primary" title="Edit"><Edit2 size={16} /></button><button type="button" onClick={() => handleRemove(entry.id)} className="rounded p-2 text-fg-muted hover:text-error" title="Remove"><Trash2 size={16} /></button></div> },
+            { key: 'actions', label: '', width: '88px', align: 'center', render: (_: unknown, entry: any) => <div className="flex justify-center gap-1"><button type="button" onClick={() => openEditModal(entry)} className="row-action" title="Edit" aria-label={`Edit entry ${entry.value}`}><Edit2 size={16} /></button><button type="button" onClick={() => handleRemove(entry.id)} className="row-action row-action--danger" title="Remove" aria-label={`Remove entry ${entry.value}`}><Trash2 size={16} /></button></div> },
           ]}
           data={paginatedEntries}
           rowHeight={64}
