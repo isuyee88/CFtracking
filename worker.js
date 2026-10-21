@@ -24485,6 +24485,14 @@ async function __pageCacheBump(env, scope) {
   }
 }
 __name(__pageCacheBump, "__pageCacheBump");
+function __writePageCacheMetric(env, scope, result, path) {
+  try {
+    const ae = env && env.ANALYTICS;
+    if (!ae || typeof ae.writeDataPoint !== "function") return;
+    ae.writeDataPoint({ indexes: [String(scope || "")], blobs: ["cftracking-page-cache", String(scope || ""), String(result || ""), String(path || "")], doubles: [1] });
+  } catch {}
+}
+__name(__writePageCacheMetric, "__writePageCacheMetric");
 function __installPageCache(router2, scope) {
   router2.use("*", async (c, next) => {
     const isGet = c.req.method === "GET";
@@ -24495,6 +24503,7 @@ function __installPageCache(router2, scope) {
       try {
         const hit = await caches.default.match(key);
         if (hit) {
+          c.executionCtx.waitUntil(__writePageCacheMetric(c.env, scope, "hit", c.req.path));
           const headers = new Headers(hit.headers);
           headers.set("cache-control", "no-store");
           headers.set("x-page-cache", "hit");
@@ -24504,6 +24513,7 @@ function __installPageCache(router2, scope) {
       }
       await next();
       if (c.res && c.res.ok) {
+        c.executionCtx.waitUntil(__writePageCacheMetric(c.env, scope, "miss", c.req.path));
         try {
           const source = c.res.clone();
           const storedHeaders = new Headers(source.headers);
