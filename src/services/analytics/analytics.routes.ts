@@ -25,7 +25,7 @@ import type { Env } from '@/config/env';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS } from '@/config/constants';
 import { createDashboardQueryService } from './dashboard-query.service';
-import { ETagCacheManager } from '@/services/cache/etag-cache-manager';
+import { ETagCacheManager, CacheType } from '@/services/cache/etag-cache-manager';
 
 export function createAnalyticsRouter() {
   const router = new Hono<{ Bindings: Env }>();
@@ -178,21 +178,22 @@ export function createAnalyticsRouter() {
         );
       }
 
-      const dashboardQuery = createDashboardQueryService(c.env);
-
-      let stats: any[];
-      try {
-        stats = await dashboardQuery.getEntityStats(type, range);
-      } catch (entityError) {
-        // 静默处理错误，返回空数组
-        // 常见原因：数据源中没有该类型的数据，或者引用了已删除的实体
-        console.warn(`[Analytics API] Entity stats for ${type} unavailable, returning empty array`);
-        stats = [];
-      }
-
-      return c.json(success(stats));
+      const cacheManager = new ETagCacheManager(c.env);
+      const cacheType = range === 'today' ? CacheType.REALTIME : CacheType.RECENT;
+      return await cacheManager.fetch(
+        c.req.raw,
+        async () => {
+          const dashboardQuery = createDashboardQueryService(c.env);
+          try {
+            return success(await dashboardQuery.getEntityStats(type, range));
+          } catch (entityError) {
+            console.warn(`[Analytics API] Entity stats for ${type} unavailable, returning empty array`);
+            return success([]);
+          }
+        },
+        { cacheType, cacheKey: `entity-stats:${type}:${range}` }
+      );
     } catch (err) {
-      // 捕获所有未处理的错误，返回友好的错误信息
       console.warn('[Analytics API] Entity stats error:', err instanceof Error ? err.message : err);
       return c.json(
         error(err instanceof Error ? err.message : 'Failed to fetch entity stats'),

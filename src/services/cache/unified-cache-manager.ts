@@ -319,8 +319,8 @@ export class UnifiedCacheManager {
     const memoryResult = this.memoryCache.get<T>(key);
     if (memoryResult !== null) {
       this.stats.workersHits++;
-      // 后台更新(不阻塞响应)
-      this.backgroundUpdate(key, fetcher, edgeTTL, workersTTL, providedEtag);
+      // Do not trigger a D1 read on every cache hit. TTL bounds staleness;
+      // the next miss/revalidation refreshes the entry.
       return { data: memoryResult.data, etag: memoryResult.etag };
     }
     
@@ -328,7 +328,6 @@ export class UnifiedCacheManager {
     if (edgeResult !== null) {
       this.stats.edgeHits++;
       this.memoryCache.set(key, edgeResult.data, workersTTL, edgeResult.etag);
-      this.backgroundUpdate(key, fetcher, edgeTTL, workersTTL, providedEtag);
       return { data: edgeResult.data, etag: edgeResult.etag };
     }
     
@@ -379,22 +378,6 @@ export class UnifiedCacheManager {
     
     // 边缘缓存
     await this.setToEdgeCache(key, data, edgeTTL, etag);
-  }
-  
-  /**
-   * 后台更新
-   */
-  private backgroundUpdate<T>(
-    key: string,
-    fetcher: () => Promise<T>,
-    edgeTTL: number,
-    workersTTL: number,
-    etag?: string
-  ): void {
-    // 使用Promise但不等待,实现后台更新
-    fetcher()
-      .then(data => this.cacheToAllLayers(key, data, edgeTTL, workersTTL, etag))
-      .catch(error => console.error('[CacheManager] Background update failed:', error));
   }
   
   /**
@@ -464,7 +447,11 @@ export class UnifiedCacheManager {
    * 批量失效缓存
    */
   async invalidateBatch(keys: string[]): Promise<void> {
-    await Promise.all(keys.map(key => this.invalidate(key)));
+    const unique = [...new Set(keys)];
+    // Keep Cache API deletes below the per-invocation subrequest ceiling.
+    for (let i = 0; i < unique.length; i += 20) {
+      await Promise.all(unique.slice(i, i + 20).map(key => this.invalidate(key)));
+    }
   }
   
   /**

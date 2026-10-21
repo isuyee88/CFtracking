@@ -839,16 +839,26 @@ export const Dashboard = () => {
       }
 
       const currentEntities = config.entities;
-      const entityPromises = currentEntities.map(entityKey =>
-        fetchEntityStats(entityKey, timeRangeKey)
+      const bundledEntityStats = (statsData && (statsData as any).entityStats) || {};
+      const hasBundledEntities = currentEntities.every((entityKey) =>
+        Object.prototype.hasOwnProperty.call(bundledEntityStats, entityKey)
       );
-
-      const entityResults = await Promise.all(entityPromises);
       const newEntityData: Record<string, any[]> = {};
 
-      currentEntities.forEach((entityKey, index) => {
-        newEntityData[entityKey] = entityResults[index] || [];
-      });
+      if (hasBundledEntities) {
+        // dashboard 已返回同一时间范围的实体统计，避免再发 4 个
+        // /api/analytics/entity-stats 请求，重复扫描 trafficSummary。
+        currentEntities.forEach((entityKey) => {
+          newEntityData[entityKey] = bundledEntityStats[entityKey] || [];
+        });
+      } else {
+        const entityResults = await Promise.all(
+          currentEntities.map((entityKey) => fetchEntityStats(entityKey, timeRangeKey))
+        );
+        currentEntities.forEach((entityKey, index) => {
+          newEntityData[entityKey] = entityResults[index] || [];
+        });
+      }
 
       setEntityData(newEntityData);
 

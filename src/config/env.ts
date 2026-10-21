@@ -16,6 +16,8 @@ export interface Env {
   
   /** 去重专用 KV 存储 */
   UNIQUENESS_KV: KVNamespace;
+  /** true: click 只写 AE/KV context，conversion 才落 D1 */
+  CLICK_AE_ONLY?: string;
   /** Landing Page 缓存 */
   LANDING_PAGE_CACHE: KVNamespace;
   

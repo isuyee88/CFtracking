@@ -25,6 +25,7 @@ import { DOService } from '@/handlers/do';
 import { UniquenessService, type UniquenessMethod } from './uniqueness.service';
 import { FilterService } from './filter.service';
 import { FlowActionService } from './flow-action.service';
+import { isAeOnlyClickPersistence, writeClickContext } from './click-context';
 
 import type { Env } from '@/config/env';
 import type { ClickData } from '@/types/tracking';
@@ -112,6 +113,7 @@ export interface ActionConfig {
 }
 
 export class ClickService {
+  private env: Env;
   private flowRepo: FlowRepository;
   private campaignRepo: CampaignRepository;
   private offerRepo: OfferRepository;
@@ -123,6 +125,7 @@ export class ClickService {
   private flowActionService: FlowActionService;
 
   constructor(env: Env) {
+    this.env = env;
     const db = getD1Connection(env);
     this.flowRepo = new FlowRepository(db);
     this.campaignRepo = new CampaignRepository(db);
@@ -345,8 +348,12 @@ export class ClickService {
         riskReasons: request.riskAssessment?.reasons ?? [],
       };
 
-      // Persist the canonical click record before returning the redirect.
-      await this.clickRepo.saveClick(clickData);
+      // AE-only: click context goes to KV; conversion materializes it into D1.
+      if (isAeOnlyClickPersistence(this.env)) {
+        await writeClickContext(this.env, clickData);
+      } else {
+        await this.clickRepo.saveClick(clickData);
+      }
 
       // 异步记录分析数据到 Durable Objects
       console.log('[ClickService] About to track click to Durable Objects:', {

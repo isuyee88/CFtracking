@@ -9,6 +9,11 @@ import type { D1Database } from './index';
 import type { Offer, CreateOfferDTO, UpdateOfferDTO } from '@/types/offer';
 import { IdService } from '@/services/id.service';
 
+// COUNT(*) scans the offers table; list/dashboard burst calls repeat the same
+// count. Keep a short per-isolate memo; invalidation is bounded by TTL.
+const COUNT_TTL_MS = 30_000;
+const COUNT_CACHE = new Map<string, { value: number; expiresAt: number }>();
+
 export class OfferRepository extends BaseRepository<Offer> {
   private idService: IdService;
 
@@ -69,10 +74,15 @@ export class OfferRepository extends BaseRepository<Offer> {
     if (conditions) {
       sql += ` AND ${conditions}`;
     }
+    const cacheKey = `${sql}|${JSON.stringify(params || [])}`;
+    const cached = COUNT_CACHE.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
     const stmt = this.db.prepare(sql);
     const bound = params ? stmt.bind(...params) : stmt;
     const result = await bound.first();
-    return (result?.count as number) || 0;
+    const value = (result?.count as number) || 0;
+    COUNT_CACHE.set(cacheKey, { value, expiresAt: Date.now() + COUNT_TTL_MS });
+    return value;
   }
 
   async exists(id: string): Promise<boolean> {
@@ -125,6 +135,7 @@ export class OfferRepository extends BaseRepository<Offer> {
       )
       .run();
 
+    COUNT_CACHE.clear();
     const offer = await this.findById(displayId);
     return offer!;
   }
@@ -162,6 +173,7 @@ export class OfferRepository extends BaseRepository<Offer> {
       .bind(...values)
       .run();
 
+    COUNT_CACHE.clear();
     return this.findById(id);
   }
 

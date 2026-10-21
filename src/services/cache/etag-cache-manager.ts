@@ -33,22 +33,22 @@ export const CACHE_CONFIGS = {
     description: '静态资源(JS/CSS/图片)',
   },
   [CacheType.HISTORICAL]: {
-    maxAge: 86400,        // 24小时
-    swr: 172800,          // 2天SWR
+    maxAge: 604800,       // 7天；历史汇总已结算，不再变化
+    swr: 604800,
     immutable: false,
-    description: '历史数据(昨天及之前,不再变化)',
+    description: '历史汇总(已结算)',
   },
   [CacheType.RECENT]: {
-    maxAge: 21600,        // 6小时
-    swr: 43200,           // 12小时SWR
+    maxAge: 3600,         // 1小时
+    swr: 7200,
     immutable: false,
-    description: '近期数据(过去7天/30天,基本稳定)',
+    description: '近期汇总(过去7天/30天)',
   },
   [CacheType.REALTIME]: {
-    maxAge: 300,          // 5分钟
-    swr: 600,             // 10分钟SWR
+    maxAge: 60,           // today 短 TTL，由读请求自然刷新
+    swr: 120,
     immutable: false,
-    description: '实时数据(今天,频繁变化)',
+    description: '实时汇总(今天)',
   },
 };
 

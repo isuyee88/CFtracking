@@ -67,6 +67,13 @@ export interface DashboardQueryResult {
 export class DashboardQueryService {
   private trafficRepo: TrafficRepository;
 
+  // Dashboard aggregation scans trafficSummary several times. A short
+  // per-isolate memo coalesces concurrent calls for the same range.
+  private static dashboardMemo = new Map<string, { value: DashboardQueryResult; expiresAt: number }>();
+  private static dashboardInflight = new Map<string, Promise<DashboardQueryResult>>();
+  private static entityMemo = new Map<string, { value: EntityStatItem[]; expiresAt: number }>();
+  private static entityInflight = new Map<string, Promise<EntityStatItem[]>>();
+
   constructor(env: Env) {
     this.trafficRepo = new TrafficRepository(getD1Connection(env));
   }
@@ -78,6 +85,12 @@ export class DashboardQueryService {
    * - > 90天数据 ──► D1读取
    */
   async getDashboardStats(range: string, env: Env): Promise<DashboardQueryResult> {
+    const memoKey = String(range || 'today');
+    const memo = DashboardQueryService.dashboardMemo.get(memoKey);
+    if (memo && memo.expiresAt > Date.now()) return memo.value;
+    const inflight = DashboardQueryService.dashboardInflight.get(memoKey);
+    if (inflight) return inflight;
+
     const { startDate, endDate } = this.getDateRange(range);
     
     // 判断是否在90天以内
@@ -89,12 +102,18 @@ export class DashboardQueryService {
 
     console.log(`[DashboardQueryService] Range: ${range}, DataSource: ${dataSource}, Start: ${startDate}, End: ${endDate}`);
 
-    if (useDO) {
-      // 从 DO 获取数据
-      return this.getDashboardStatsFromDO(range, env);
-    } else {
-      // 从 D1 获取数据
-      return this.getDashboardStatsFromD1(range);
+    const pending = (async () => {
+      const value = useDO
+        ? await this.getDashboardStatsFromDO(range, env)
+        : await this.getDashboardStatsFromD1(range);
+      DashboardQueryService.dashboardMemo.set(memoKey, { value, expiresAt: Date.now() + 30_000 });
+      return value;
+    })();
+    DashboardQueryService.dashboardInflight.set(memoKey, pending);
+    try {
+      return await pending;
+    } finally {
+      DashboardQueryService.dashboardInflight.delete(memoKey);
     }
   }
 
@@ -211,16 +230,31 @@ export class DashboardQueryService {
    * 从 D1 获取数据
    */
   async getEntityStats(entityType: string, range: string): Promise<EntityStatItem[]> {
-    const stats = await this.trafficRepo.getEntityStats(entityType, range);
-    return stats.map((item: any) => ({
-      name: item.name || 'Unknown',
-      clicks: Number(item.clicks) || 0,
-      impressions: Number(item.impressions) || 0,
-      conversions: Number(item.conversions) || 0,
-      spend: Number(item.spend) || 0,
-      revenue: Number(item.revenue) || 0,
-      unique_visitors: 0,
-    }));
+    const key = `${entityType}|${range}`;
+    const memo = DashboardQueryService.entityMemo.get(key);
+    if (memo && memo.expiresAt > Date.now()) return memo.value;
+    const inflight = DashboardQueryService.entityInflight.get(key);
+    if (inflight) return inflight;
+    const pending = (async () => {
+      const stats = await this.trafficRepo.getEntityStats(entityType, range);
+      const value = stats.map((item: any) => ({
+        name: item.name || 'Unknown',
+        clicks: Number(item.clicks) || 0,
+        impressions: Number(item.impressions) || 0,
+        conversions: Number(item.conversions) || 0,
+        spend: Number(item.spend) || 0,
+        revenue: Number(item.revenue) || 0,
+        unique_visitors: 0,
+      }));
+      DashboardQueryService.entityMemo.set(key, { value, expiresAt: Date.now() + 30_000 });
+      return value;
+    })();
+    DashboardQueryService.entityInflight.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      DashboardQueryService.entityInflight.delete(key);
+    }
   }
 
 
@@ -229,7 +263,7 @@ export class DashboardQueryService {
    * 从 D1 获取实体统计数据
    */
   private async getEntityStatsFromD1(range: string): Promise<Record<string, EntityStatItem[]>> {
-    const entityTypes = ['campaigns', 'countries', 'device_types', 'browsers'];
+    const entityTypes = ['campaigns', 'landings', 'offers', 'sources'];
     const stats: Record<string, EntityStatItem[]> = {};
 
     for (const entityType of entityTypes) {

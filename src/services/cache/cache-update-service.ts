@@ -129,8 +129,13 @@ export class CacheUpdateService {
     const start = Date.now();
     
     try {
-      // 根据实体类型失效相关缓存
-      const keysToInvalidate = this.getRelatedCacheKeys(entity, id, action);
+      // Click is an event, not page content: no cache invalidation. Conversion
+      // only changes today's aggregate and the affected conversion entry.
+      const keysToInvalidate = entity.startsWith('click')
+        ? []
+        : (entity.startsWith('conversion')
+          ? [CacheKeyBuilder.entityDetail('conversion', id), CacheKeyBuilder.dashboard('today')]
+          : this.getRelatedCacheKeys(entity, id, action));
       
       // 失效缓存
       await this.cacheManager.invalidateBatch(keysToInvalidate);
@@ -145,8 +150,8 @@ export class CacheUpdateService {
         this.sseNotification.notifyDataChanged(entity, id, action, userId);
       }
       
-      // 预热关键缓存
-      if (action !== 'delete') {
+      // 点击/转化是高频事件，不走全量预热。
+      if (action !== 'delete' && !entity.startsWith('click') && !entity.startsWith('conversion')) {
         await this.warmupEntityCache(entity, id);
       }
       
@@ -318,8 +323,8 @@ export class CacheUpdateService {
     const start = Date.now();
     const keys: string[] = [];
     
-    // 失效所有页的列表缓存
-    for (let page = 1; page <= 10; page++) {
+    // 失效第一页列表；其他页按需过期，不做 10 页 fan-out。
+    for (let page = 1; page <= 1; page++) {
       const key = CacheKeyBuilder.entityList(entity, page);
       await this.cacheManager.invalidate(key);
       keys.push(key);
@@ -390,24 +395,12 @@ export class CacheUpdateService {
    * 获取相关缓存键
    */
   private getRelatedCacheKeys(entity: string, id: string, _action: string): string[] {
-    const keys: string[] = [];
-    
-    // 实体列表缓存
-    for (let page = 1; page <= 5; page++) {
-      keys.push(CacheKeyBuilder.entityList(entity, page));
-    }
-    
-    // 实体详情缓存
-    keys.push(CacheKeyBuilder.entityDetail(entity, id));
-    
-    // Dashboard统计缓存
-    if (['campaign', 'offer', 'click', 'conversion'].includes(entity)) {
-      keys.push(CacheKeyBuilder.dashboard('today'));
-      keys.push(CacheKeyBuilder.dashboard('last7days'));
-      keys.push(CacheKeyBuilder.dashboard('last30days'));
-    }
-    
-    return keys;
+    // Invalidate only the changed entry and the first list page. A full
+    // dashboard/list fan-out turns one write into dozens of cache misses.
+    return [
+      CacheKeyBuilder.entityDetail(entity, id),
+      CacheKeyBuilder.entityList(entity, 1),
+    ];
   }
   
   /**
