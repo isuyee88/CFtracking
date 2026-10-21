@@ -10,6 +10,7 @@ import { success, error } from '@/utils/response';
 import { validatePagination, validateRequired, validateStringLength } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
+import { ETagCacheManager, CacheType } from '@/services/cache/etag-cache-manager';
 
 export function createCampaignRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -23,14 +24,19 @@ export function createCampaignRouter(): Hono<{ Bindings: Env }> {
     };
 
     const { page, pageSize } = validatePagination(query.page, query.pageSize);
-    const service = new CampaignService(c.env);
-    const result = await service.getList({ ...query, page, pageSize });
-
-    return c.json(success(result.list, {
-      page,
-      pageSize,
-      total: result.total,
-    }));
+    const cacheManager = new ETagCacheManager(c.env);
+    return cacheManager.fetch(
+      c.req.raw,
+      async () => {
+        const service = new CampaignService(c.env);
+        const result = await service.getList({ ...query, page, pageSize });
+        return success(result.list, { page, pageSize, total: result.total });
+      },
+      {
+        cacheType: CacheType.RECENT,
+        cacheKey: `campaigns:list:${page}:${pageSize}:${query.status || 'all'}:${query.search || ''}`,
+      }
+    );
   });
 
   router.get('/active', async (c) => {

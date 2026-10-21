@@ -19,15 +19,23 @@ import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
 import type { FlowStatus } from '@/types/flow';
 import { getAvailableOperators, getAvailableTargets } from '@/utils/flow.filters';
+import { ETagCacheManager, CacheType } from '@/services/cache/etag-cache-manager';
 
 export function createFlowRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
 
   router.get('/campaign/:campaignId', async (c) => {
     const campaignId = c.req.param('campaignId');
-    const service = new FlowService(c.env);
-    const flows = await service.getByCampaignId(campaignId);
-    return c.json(success(flows));
+    const cacheManager = new ETagCacheManager(c.env);
+    return cacheManager.fetch(
+      c.req.raw,
+      async () => {
+        const service = new FlowService(c.env);
+        const flows = await service.getByCampaignId(campaignId);
+        return success(flows);
+      },
+      { cacheType: CacheType.RECENT, cacheKey: `flows:list:${campaignId}` }
+    );
   });
 
   router.get('/campaign/:campaignId/active', async (c) => {

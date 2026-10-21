@@ -23,6 +23,24 @@ export interface ClickConfigSnapshot {
   updatedAt: string;
 }
 
+export interface FullConfigSnapshot {
+  scope: string;
+  version: string;
+  campaign: unknown;
+  flows: Array<{
+    id: string;
+    type: string;
+    weight: number;
+    status: string;
+    filters: unknown;
+    actionType: string;
+    actionConfig: unknown;
+    offers: Array<{ offerId: string; weight: number; url: string | null }>;
+    landingPages: Array<{ landingPageId: string; weight: number }>;
+  }>;
+  updatedAt: string;
+}
+
 export class ConfigSnapshotPublisher {
   private campaignRepo: CampaignRepository;
   private flowRepo: FlowRepository;
@@ -66,9 +84,55 @@ export class ConfigSnapshotPublisher {
         updatedAt: new Date().toISOString(),
       };
       await this.env.UNIQUENESS_KV.put(`${KEY_PREFIX}${campaign.alias}`, JSON.stringify(snapshot));
+      await this.publishFullSnapshot(campaign, flows);
       return snapshot;
     }
     return null;
+  }
+
+  /**
+   * Immutable full snapshot for the future flow/rule-aware click fast path.
+   * `clickcfg` remains the compatibility fast path until that engine is live.
+   */
+  private async publishFullSnapshot(campaign: any, flows: any[]): Promise<void> {
+    const fullFlows = [];
+    for (const flow of flows) {
+      const [offerAssocs, landingAssocs] = await Promise.all([
+        this.flowRepo.getOffers(flow.id),
+        this.flowRepo.getLandingPages(flow.id),
+      ]);
+      const offers = [];
+      for (const assoc of offerAssocs) {
+        const offer = await this.offerRepo.findById(assoc.offerId);
+        offers.push({ offerId: assoc.offerId, weight: Number(assoc.weight) || 0, url: offer?.url || null });
+      }
+      fullFlows.push({
+        id: flow.id,
+        type: String(flow.type || 'regular'),
+        weight: Number(flow.weight) || 0,
+        status: String(flow.status || 'active'),
+        filters: flow.filters || [],
+        actionType: String(flow.actionType || 'redirect'),
+        actionConfig: flow.actionConfig || {},
+        offers,
+        landingPages: landingAssocs.map((item) => ({ landingPageId: item.landingPageId, weight: Number(item.weight) || 0 })),
+      });
+    }
+    const version = Date.now().toString(36);
+    const full: FullConfigSnapshot = {
+      scope: campaign.alias,
+      version,
+      campaign,
+      flows: fullFlows,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.env.UNIQUENESS_KV.put(`cfg:snapshot:${campaign.alias}:${version}`, JSON.stringify(full), {
+      expirationTtl: 7 * 24 * 60 * 60,
+    });
+    await this.env.UNIQUENESS_KV.put(`cfg:pointer:${campaign.alias}`, JSON.stringify({
+      version,
+      updatedAt: full.updatedAt,
+    }), { expirationTtl: 7 * 24 * 60 * 60 });
   }
 
   async publishAll(): Promise<{ total: number; published: number }> {

@@ -10,6 +10,7 @@ import { success, error } from '@/utils/response';
 import { validatePagination, validateRequired, isValidUrl } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
+import { ETagCacheManager, CacheType } from '@/services/cache/etag-cache-manager';
 
 export function createLandingPageRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -22,18 +23,18 @@ export function createLandingPageRouter(): Hono<{ Bindings: Env }> {
     };
 
     const { page, pageSize } = validatePagination(query.page, query.pageSize);
-    const service = new LandingPageService(c.env);
-    
-    // Use getListWithStats if withStats=true
-    const result = query.withStats 
-      ? await service.getListWithStats(page, pageSize)
-      : await service.getList(page, pageSize);
-
-    return c.json(success(result.list, {
-      page,
-      pageSize,
-      total: result.total,
-    }));
+    const cacheManager = new ETagCacheManager(c.env);
+    return cacheManager.fetch(
+      c.req.raw,
+      async () => {
+        const service = new LandingPageService(c.env);
+        const result = query.withStats
+          ? await service.getListWithStats(page, pageSize)
+          : await service.getList(page, pageSize);
+        return success(result.list, { page, pageSize, total: result.total });
+      },
+      { cacheType: CacheType.RECENT, cacheKey: `landings:list:${page}:${pageSize}:${query.withStats ? 'stats' : 'plain'}` }
+    );
   });
 
   router.get('/active', async (c) => {
