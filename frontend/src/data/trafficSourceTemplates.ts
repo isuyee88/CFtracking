@@ -116,7 +116,9 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
     parameters: [
       { alias: 'ClickID', paramName: 'sub1', macro: '{token}' },
       { alias: 'Keyword ID', paramName: 'sub2', macro: '{keywordID}' },
-      { alias: 'Domain ID', paramName: 'sub3', macro: '{targetingDomainId}' },
+      { alias: 'Campaign ID', paramName: 'sub3', macro: '{campaignID}' },
+      { alias: 'Creative Name', paramName: 'sub4', macro: '{creativeName}' },
+      { alias: 'Domain ID', paramName: 'sub5', macro: '{targetingDomainId}' },
       { alias: 'Cost', paramName: 'cost', macro: '{bid}' },
     ],
     postbackUrl: '',

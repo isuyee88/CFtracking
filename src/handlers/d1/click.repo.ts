@@ -59,8 +59,8 @@ export class ClickRepository extends BaseRepository<ClickData> {
             id, clickId, campaignId, flowId, landingPageId, offerId,
             timestamp, ip, userAgent, referer, country, city,
             device, browser, os, isp, connectionType, visitorId,
-            subId1, subId2, subId3, cost, isUnique, redirectUrl, createdAt
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            subId1, subId2, subId3, subId4, subId5, cost, isUnique, redirectUrl, createdAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .bind(
           data.clickId,
@@ -84,6 +84,8 @@ export class ClickRepository extends BaseRepository<ClickData> {
           data.subId1,
           data.subId2,
           data.subId3,
+          data.subId4,
+          data.subId5,
           data.cost,
           1,
           data.redirectUrl,
@@ -109,7 +111,7 @@ export class ClickRepository extends BaseRepository<ClickData> {
   //           id, clickId, campaignId, flowId, landingPageId, offerId,
   //           timestamp, ip, userAgent, referer, country, city,
   //           device, browser, os, isp, connectionType, visitorId,
-  //           subId1, subId2, subId3, cost, isUnique, redirectUrl, createdAt
+  //           subId1, subId2, subId3, subId4, subId5, cost, isUnique, redirectUrl, createdAt
   //         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   //       `)
   //       .bind(
@@ -237,7 +239,7 @@ export class ClickRepository extends BaseRepository<ClickData> {
         clickId, campaignId, flowId, landingPageId, offerId,
         timestamp, ip, userAgent, referer, country, city,
         device, browser, os, isp, connectionType, visitorId,
-        subId1, subId2, subId3, cost
+        subId1, subId2, subId3, subId4, subId5, cost
       FROM clicks 
       ${whereClause}
       ORDER BY timestamp DESC
@@ -266,7 +268,7 @@ export class ClickRepository extends BaseRepository<ClickData> {
           clickId, campaignId, flowId, landingPageId, offerId,
           timestamp, ip, userAgent, referer, country, city,
           device, browser, os, isp, connectionType, visitorId,
-          subId1, subId2, subId3, cost
+          subId1, subId2, subId3, subId4, subId5, cost
         FROM clicks 
         WHERE clickId = ?
       `)
@@ -285,7 +287,7 @@ export class ClickRepository extends BaseRepository<ClickData> {
         clickId, campaignId, flowId, landingPageId, offerId,
         timestamp, ip, userAgent, referer, country, city,
         device, browser, os, isp, connectionType, visitorId,
-        subId1, subId2, subId3, cost
+        subId1, subId2, subId3, subId4, subId5, cost
       FROM clicks 
     `;
     
@@ -349,7 +351,7 @@ export class ClickRepository extends BaseRepository<ClickData> {
           clickId, campaignId, flowId, landingPageId, offerId,
           timestamp, ip, userAgent, referer, country, city,
           device, browser, os, isp, connectionType, visitorId,
-          subId1, subId2, subId3, cost
+          subId1, subId2, subId3, subId4, subId5, cost
         FROM clicks 
         WHERE visitorId = ?
         ORDER BY timestamp DESC
