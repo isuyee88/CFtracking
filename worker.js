@@ -19472,31 +19472,31 @@ var CACHE_CONFIGS = {
     "historical"
     /* HISTORICAL */
   ]: {
-    browserMaxAge: 0,
-    edgeMaxAge: 43200,
-    swr: 43200,
+    browserMaxAge: 604800,
+    edgeMaxAge: 604800,
+    swr: 604800,
     immutable: false,
-    description: "Non-today analytical windows cached at the edge for 12 hours with browser revalidation"
+    description: "Historical settled aggregates cached for 7 days"
   },
   [
     "recent"
     /* RECENT */
   ]: {
-    browserMaxAge: 0,
-    edgeMaxAge: 43200,
-    swr: 43200,
+    browserMaxAge: 3600,
+    edgeMaxAge: 3600,
+    swr: 7200,
     immutable: false,
-    description: "Near-stable analytical windows cached at the edge for 12 hours with browser revalidation"
+    description: "Recent aggregates cached for 1 hour"
   },
   [
     "realtime"
     /* REALTIME */
   ]: {
-    browserMaxAge: 0,
-    edgeMaxAge: 300,
-    swr: 300,
+    browserMaxAge: 60,
+    edgeMaxAge: 60,
+    swr: 120,
     immutable: false,
-    description: "Today and other actively changing views cached at the edge for 5 minutes"
+    description: "Today aggregates cached for 60 seconds"
   }
 };
 var ETagGenerator = class {
@@ -28378,11 +28378,8 @@ var CacheUpdateService = class {
     const start = Date.now();
     try {
       const highFrequency = ["click", "clicks", "conversion", "conversions"].includes(entity);
-      const keysToInvalidate = highFrequency ? [
-        CacheKeyBuilder.entityDetail(entity, id),
-        CacheKeyBuilder.entityList(entity, 1),
-        CacheKeyBuilder.dashboard("today")
-      ] : this.getRelatedCacheKeys(entity, id);
+      // Click/conversion are events; do not invalidate page caches from them.
+      const keysToInvalidate = highFrequency ? [] : this.getRelatedCacheKeys(entity, id);
       await this.cacheManager.invalidateBatch(keysToInvalidate);
       await this.sseNotification.notifyCacheInvalidatedMany(keysToInvalidate, userId);
       if (entity && id) {
@@ -28577,39 +28574,12 @@ var CacheUpdateService = class {
     }
   }
   getRelatedCacheKeys(entity, id) {
-    const keys = [];
-    for (let page = 1; page <= 5; page++) {
-      keys.push(CacheKeyBuilder.entityList(entity, page));
-    }
-    keys.push(CacheKeyBuilder.entityDetail(entity, id));
-    if (["campaign", "campaigns", "offer", "offers", "click", "clicks", "conversion", "conversions"].includes(entity)) {
-      keys.push(CacheKeyBuilder.dashboard("today"));
-      keys.push(CacheKeyBuilder.dashboard("last7days"));
-      keys.push(CacheKeyBuilder.dashboard("last30days"));
-      keys.push(CacheKeyBuilder.custom(["recent-clicks", "today", "limit-10", "all"]));
-      keys.push(CacheKeyBuilder.custom(["recent-clicks", "last7days", "limit-10", "all"]));
-      keys.push(CacheKeyBuilder.custom(["recent-clicks", "last30days", "limit-10", "all"]));
-      for (const range of DASHBOARD_REFRESH_RANGES) {
-        for (const entityType of DASHBOARD_ENTITY_TYPES) {
-          keys.push(CacheKeyBuilder.custom(["entity-stats", entityType, range]));
-        }
-      }
-      keys.push(...this.getDashboardBootstrapKeys([...DASHBOARD_REFRESH_RANGES]));
-      keys.push(...this.getAdminBootstrapKeysForEntity(entity));
-    }
-    if (entity === "rule") {
-      keys.push(...this.getAdminBootstrapKeysForPages(this.getAdminBootstrapWarmSpecs(["rules"])));
-    }
-    if (entity === "user-preferences") {
-      keys.push(...this.getAdminBootstrapKeysForPages(this.getAdminBootstrapWarmSpecs(["settings"])));
-    }
-    if (entity === "blacklist") {
-      keys.push(...this.getAdminBootstrapKeysForPages(this.getAdminBootstrapWarmSpecs(["blacklist"])));
-    }
-    if (entity === "whitelist") {
-      keys.push(...this.getAdminBootstrapKeysForPages(this.getAdminBootstrapWarmSpecs(["whitelist"])));
-    }
-    return keys;
+    // Only the changed entity and its first list page. Dashboard, entity-stats
+    // and bootstrap keys expire by TTL; one write must not cause a miss storm.
+    return [
+      CacheKeyBuilder.entityDetail(entity, id),
+      CacheKeyBuilder.entityList(entity, 1)
+    ];
   }
   async warmupEntityCache(entity, id) {
     void id;
