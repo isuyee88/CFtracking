@@ -48,13 +48,9 @@ export class OfferService {
   /**
    * 获取 Offer 列表
    */
-  async getList(page = 1, pageSize = 20): Promise<{ list: Offer[]; total: number }> {
+  async getList(page = 1, pageSize = 20, filters: { status?: string; search?: string } = {}): Promise<{ list: Offer[]; total: number }> {
     const offset = (page - 1) * pageSize;
-    const [list, total] = await Promise.all([
-      this.repo.findAll(pageSize, offset),
-      this.repo.count(),
-    ]);
-    return { list, total };
+    return this.repo.findPage({ limit: pageSize, offset, status: filters.status, search: filters.search });
   }
 
   /**
@@ -123,11 +119,11 @@ export class OfferService {
   /**
    * 获取 Offer 列表（包含统计数据）
    */
-  async getListWithStats(page = 1, pageSize = 20): Promise<{ 
+  async getListWithStats(page = 1, pageSize = 20, filters: { status?: string; search?: string } = {}): Promise<{ 
     list: (Offer & { campaignCount: number; clicks: number; conversions: number; revenue: number; epc: number; cr: number })[]; 
     total: number 
   }> {
-    const { list, total } = await this.getList(page, pageSize);
+    const { list, total } = await this.getList(page, pageSize, filters);
     
     const listWithStats = await Promise.all(
       list.map(async (offer) => {

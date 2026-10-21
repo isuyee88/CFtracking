@@ -58,6 +58,36 @@ export class OfferRepository extends BaseRepository<Offer> {
     return (result.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [];
   }
 
+  /**
+   * Paginated list with optional status/search. The route previously ignored
+   * these query params, so `status=active` returned the unfiltered list.
+   */
+  async findPage({ limit = 20, offset = 0, status, search }: {
+    limit?: number; offset?: number; status?: string; search?: string;
+  } = {}): Promise<{ list: Offer[]; total: number }> {
+    const excluded = this.getExcludedStatusesCondition();
+    const conditions: string[] = [excluded];
+    const params: unknown[] = [];
+    if (status && status !== 'all') {
+      conditions.push('status = ?');
+      params.push(status);
+    }
+    if (search) {
+      conditions.push('(name LIKE ? OR url LIKE ? OR displayId LIKE ?)');
+      const pattern = `%${search}%`;
+      params.push(pattern, pattern, pattern);
+    }
+    const where = conditions.join(' AND ');
+    const [list, total] = await Promise.all([
+      this.db.prepare(`SELECT * FROM offers WHERE ${where} ORDER BY createdAt DESC LIMIT ? OFFSET ?`).bind(...params, limit, offset).all(),
+      this.count(conditions.slice(1).join(' AND ') || undefined, params),
+    ]);
+    return {
+      list: (list.results as unknown as Record<string, unknown>[]).map(this.transform.bind(this)) || [],
+      total,
+    };
+  }
+
   async findOneBy(field: string, value: unknown): Promise<Offer | null> {
     const excluded = this.getExcludedStatusesCondition();
     const result = await this.db

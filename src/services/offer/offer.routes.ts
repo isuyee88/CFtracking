@@ -20,6 +20,8 @@ export function createOfferRouter(): Hono<{ Bindings: Env }> {
       page: parseInt(c.req.query('page') || '1'),
       pageSize: parseInt(c.req.query('pageSize') || '20'),
       withStats: c.req.query('withStats') === 'true',
+      status: c.req.query('status') || undefined,
+      search: c.req.query('search') || undefined,
     };
 
     const { page, pageSize } = validatePagination(query.page, query.pageSize);
@@ -28,14 +30,15 @@ export function createOfferRouter(): Hono<{ Bindings: Env }> {
       c.req.raw,
       async () => {
         const service = new OfferService(c.env);
+        const filters = { status: query.status, search: query.search };
         const result = query.withStats
-          ? await service.getListWithStats(page, pageSize)
-          : await service.getList(page, pageSize);
+          ? await service.getListWithStats(page, pageSize, filters)
+          : await service.getList(page, pageSize, filters);
         return success(result.list, { page, pageSize, total: result.total });
       },
       {
         cacheType: CacheType.RECENT,
-        cacheKey: `offers:list:${page}:${pageSize}:${query.withStats ? 'stats' : 'plain'}`,
+        cacheKey: `offers:list:${page}:${pageSize}:${query.withStats ? 'stats' : 'plain'}:${query.status || 'all'}:${query.search || ''}`,
       }
     );
   });
