@@ -107,6 +107,24 @@ export const TRAFFIC_SOURCE_TEMPLATES: TrafficSourceTemplate[] = [
     }
   },
   {
+    id: 'oddbytes',
+    name: 'Oddbytes',
+    domain: 'oddbytes.com',
+    type: 'push',
+    parameters: [
+      { alias: 'ClickID', paramName: 'sub1', macro: '{token}' },
+      { alias: 'Keyword ID', paramName: 'sub2', macro: '{keywordID}' },
+      { alias: 'Domain ID', paramName: 'sub3', macro: '{targetingDomainId}' },
+      { alias: 'Cost', paramName: 'cost', macro: '{bid}' },
+    ],
+    postbackUrl: '',
+    postbackMacros: {
+      clickId: '{token}',
+      revenue: '{{revenue}}',
+      currency: '{{currency}}'
+    }
+  },
+  {
     id: 'zeropark',
     name: 'Zeropark',
     domain: 'zeropark.com',
