@@ -162,6 +162,62 @@ export class CampaignRepository extends BaseRepository<Campaign> {
   }
 
   /**
+   * 查询流量经过指定 Offer 的 Campaign。
+   *
+   * flowOffers 没有 offerId 索引，但这是低 QPS 的管理写路径、两张表都是
+   * 控制面规模，一次扫描比新增写路径迁移更划算。软删除的 Campaign 排除。
+   */
+  async findByOfferId(offerId: string): Promise<Campaign[]> {
+    const result = await this.db
+      .prepare(`
+        SELECT DISTINCT c.*
+        FROM campaigns c
+        JOIN flows f ON (f.campaignId = c.id OR f.campaignId = c.displayId)
+        JOIN flowOffers fo ON fo.flowId = f.id
+        WHERE fo.offerId = ? AND c.status != 'deleted'
+      `)
+      .bind(offerId)
+      .all();
+    const rows = (result.results as unknown as Record<string, unknown>[]) || [];
+    return rows.map(this.transform.bind(this));
+  }
+
+  /**
+   * 查询某个 Flow 所属的 Campaign（Flow 变更后重发点击配置用）。
+   */
+  async findByFlowId(flowId: string): Promise<Campaign[]> {
+    const result = await this.db
+      .prepare(`
+        SELECT DISTINCT c.*
+        FROM campaigns c
+        JOIN flows f ON (f.campaignId = c.id OR f.campaignId = c.displayId)
+        WHERE f.id = ? AND c.status != 'deleted'
+      `)
+      .bind(flowId)
+      .all();
+    const rows = (result.results as unknown as Record<string, unknown>[]) || [];
+    return rows.map(this.transform.bind(this));
+  }
+
+  /**
+   * 查询流量经过指定 Landing Page 的 Campaign。
+   */
+  async findByLandingPageId(landingPageId: string): Promise<Campaign[]> {
+    const result = await this.db
+      .prepare(`
+        SELECT DISTINCT c.*
+        FROM campaigns c
+        JOIN flows f ON (f.campaignId = c.id OR f.campaignId = c.displayId)
+        JOIN flowLandingPages flp ON flp.flowId = f.id
+        WHERE flp.landingPageId = ? AND c.status != 'deleted'
+      `)
+      .bind(landingPageId)
+      .all();
+    const rows = (result.results as unknown as Record<string, unknown>[]) || [];
+    return rows.map(this.transform.bind(this));
+  }
+
+  /**
    * 查询列表（支持搜索和过滤）
    */
   async findList(query: CampaignListQuery): Promise<{ list: Campaign[]; total: number }> {

@@ -20,6 +20,7 @@ import type { Env } from '@/config/env';
 import type { FlowStatus } from '@/types/flow';
 import { getAvailableOperators, getAvailableTargets } from '@/utils/flow.filters';
 import { ETagCacheManager, CacheType } from '@/services/cache/etag-cache-manager';
+import { CacheUpdateService } from '../cache/cache-update-service';
 
 export function createFlowRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -91,6 +92,9 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const flow = await service.create(body);
+      await new CacheUpdateService(c.env).onDataChanged('flow', flow.id, 'create', undefined, {
+        campaignId: flow.campaignId,
+      });
       return c.json(success(flow), HTTP_STATUS.CREATED);
     } catch (err) {
       if (err instanceof Error && err.message === 'Campaign not found') {
@@ -107,6 +111,9 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const flow = await service.update(id, body);
+      await new CacheUpdateService(c.env).onDataChanged('flow', flow.id, 'update', undefined, {
+        campaignId: flow.campaignId,
+      });
       return c.json(success(flow));
     } catch (err) {
       if (err instanceof Error && err.message === 'Flow not found') {
@@ -121,7 +128,12 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
     const service = new FlowService(c.env);
 
     try {
+      // The flow row (and its campaignId) is gone after delete; capture it now.
+      const existing = await service.getById(id);
       await service.delete(id);
+      await new CacheUpdateService(c.env).onDataChanged('flow', id, 'delete', undefined, {
+        campaignId: existing.campaignId,
+      });
       return c.json(success({ deleted: true }));
     } catch (err) {
       if (err instanceof Error && err.message === 'Flow not found') {
@@ -144,6 +156,8 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const result = await service.addLandingPage(flowId, body.landingPageId, body.weight);
+      // Landing/offer associations change the redirect target; republish.
+      await new CacheUpdateService(c.env).onDataChanged('flow', flowId, 'update');
       return c.json(success(result), HTTP_STATUS.CREATED);
     } catch (err) {
       if (err instanceof Error && err.message === 'Flow not found') {
@@ -166,6 +180,7 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const result = await service.addOffer(flowId, body.offerId, body.weight);
+      await new CacheUpdateService(c.env).onDataChanged('flow', flowId, 'update');
       return c.json(success(result), HTTP_STATUS.CREATED);
     } catch (err) {
       if (err instanceof Error && err.message === 'Flow not found') {
@@ -181,6 +196,7 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
     const service = new FlowService(c.env);
 
     await service.removeLandingPage(flowId, landingPageId);
+    await new CacheUpdateService(c.env).onDataChanged('flow', flowId, 'update');
     return c.json(success({ removed: true }));
   });
 
@@ -190,6 +206,7 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
     const service = new FlowService(c.env);
 
     await service.removeOffer(flowId, offerId);
+    await new CacheUpdateService(c.env).onDataChanged('flow', flowId, 'update');
     return c.json(success({ removed: true }));
   });
 
@@ -493,16 +510,21 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
     }
 
     const service = new FlowService(c.env);
+    const cacheUpdate = new CacheUpdateService(c.env);
     const results: { flowId: string; success: boolean; error?: string }[] = [];
 
     for (const flowId of flowIds) {
       try {
         if (action === 'updateStatus') {
-          await service.update(flowId, { status: value as FlowStatus });
+          const flow = await service.update(flowId, { status: value as FlowStatus });
+          await cacheUpdate.onDataChanged('flow', flow.id, 'update', undefined, { campaignId: flow.campaignId });
         } else if (action === 'updateWeight') {
-          await service.update(flowId, { weight: value as number });
+          const flow = await service.update(flowId, { weight: value as number });
+          await cacheUpdate.onDataChanged('flow', flow.id, 'update', undefined, { campaignId: flow.campaignId });
         } else if (action === 'delete') {
+          const existing = await service.getById(flowId);
           await service.delete(flowId);
+          await cacheUpdate.onDataChanged('flow', flowId, 'delete', undefined, { campaignId: existing.campaignId });
         } else {
           throw new Error(`Unknown action: ${action}`);
         }
@@ -546,6 +568,9 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
       results.push({ flowId: flow.id, newWeight });
     }
 
+    // One republish covers every flow in the campaign.
+    await new CacheUpdateService(c.env).onDataChanged('campaign', campaignId, 'update');
+
     return c.json(success({ results }));
   });
 
@@ -558,6 +583,9 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const clonedFlow = await service.clone(flowId);
+      await new CacheUpdateService(c.env).onDataChanged('flow', clonedFlow.id, 'create', undefined, {
+        campaignId: clonedFlow.campaignId,
+      });
       return c.json(success(clonedFlow));
     } catch (err) {
       if (err instanceof Error && err.message === 'Flow not found') {

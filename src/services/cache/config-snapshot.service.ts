@@ -3,6 +3,10 @@
  *
  * Control-plane writes are followed by a snapshot publish; the click path then
  * reads only KV/Cache. This intentionally runs outside the click request path.
+ *
+ * Invariant: a published key must describe the current control-plane state. A
+ * rename/pause/delete therefore also *deletes* the alias key; leaving it in
+ * place makes the fast path redirect to an offer that was already edited.
  */
 
 import type { Env } from '@/config/env';
@@ -12,6 +16,7 @@ import { FlowRepository } from '@/handlers/d1/flow.repo';
 import { OfferRepository } from '@/handlers/d1/offer.repo';
 
 const KEY_PREFIX = 'clickcfg:';
+const POINTER_PREFIX = 'cfg:pointer:';
 
 export interface ClickConfigSnapshot {
   campaignId: string;
@@ -53,12 +58,34 @@ export class ConfigSnapshotPublisher {
     this.offerRepo = new OfferRepository(db);
   }
 
-  async publishCampaign(aliasOrId: string): Promise<ClickConfigSnapshot | null> {
+  /**
+   * Publish the alias-scoped config for one campaign.
+   *
+   * `previousAlias` is the alias the row had before an update: a rename would
+   * otherwise leave the old key serving the pre-rename config.
+   *
+   * Returns null when there is nothing publishable (campaign gone, paused, or
+   * no active offer). The alias key is deleted in that case so the click path
+   * falls back to D1 instead of serving a stale offer URL.
+   */
+  async publishCampaign(aliasOrId: string, previousAlias?: string): Promise<ClickConfigSnapshot | null> {
     const actualAlias = String(aliasOrId || '').trim();
     if (!actualAlias) return null;
     const campaign = await this.campaignRepo.findByAlias(actualAlias)
       || await this.campaignRepo.findById(actualAlias);
-    if (!campaign) return null;
+    if (!campaign) {
+      await this.invalidateAlias(actualAlias);
+      await this.dropPreviousAlias(previousAlias, actualAlias);
+      return null;
+    }
+
+    // The compatibility `clickcfg` reader ignores `status`, so a paused
+    // campaign must not keep a key at all.
+    if (campaign.status !== 'active') {
+      await this.invalidateAlias(campaign.alias);
+      await this.dropPreviousAlias(previousAlias, campaign.alias);
+      return null;
+    }
 
     const flows = await this.flowRepo.findByCampaignIdAndStatus(campaign.id, 'active');
     for (const flow of flows) {
@@ -85,9 +112,74 @@ export class ConfigSnapshotPublisher {
       };
       await this.env.UNIQUENESS_KV.put(`${KEY_PREFIX}${campaign.alias}`, JSON.stringify(snapshot));
       await this.publishFullSnapshot(campaign, flows);
+      await this.dropPreviousAlias(previousAlias, campaign.alias);
       return snapshot;
     }
+
+    await this.invalidateAlias(campaign.alias);
+    await this.dropPreviousAlias(previousAlias, campaign.alias);
     return null;
+  }
+
+  /**
+   * Remove the alias-scoped config. Deletion is the safe state: the click path
+   * falls back to D1, which is always fresher than a retained key.
+   */
+  async invalidateAlias(alias: string): Promise<void> {
+    const actualAlias = String(alias || '').trim();
+    if (!actualAlias) return;
+    await Promise.all([
+      this.env.UNIQUENESS_KV.delete(`${KEY_PREFIX}${actualAlias}`),
+      this.env.UNIQUENESS_KV.delete(`${POINTER_PREFIX}${actualAlias}`),
+    ]);
+  }
+
+  /**
+   * Re-publish every campaign alias affected by a control-plane write.
+   * Sequential on purpose: admin writes are low-QPS and this bounds D1 reads.
+   */
+  async publishAliases(aliases: string[]): Promise<number> {
+    let published = 0;
+    for (const alias of aliases) {
+      if (await this.publishCampaign(alias)) published += 1;
+    }
+    return published;
+  }
+
+  /** Republish every campaign whose flow references this offer. */
+  async publishForOffer(offerId: string): Promise<number> {
+    return this.publishAliases(await this.aliasesForOffer(offerId));
+  }
+
+  /** Republish the campaign that owns this flow. */
+  async publishForFlow(flowId: string): Promise<number> {
+    const campaigns = await this.campaignRepo.findByFlowId(flowId);
+    return this.publishAliases(campaigns.map((campaign) => campaign.alias));
+  }
+
+  /** Republish every campaign whose flow uses this landing page. */
+  async publishForLandingPage(landingPageId: string): Promise<number> {
+    return this.publishAliases(await this.aliasesForLandingPage(landingPageId));
+  }
+
+  /**
+   * Capture affected aliases *before* a delete: joining rows may cascade away,
+   * after which the affected campaigns can no longer be discovered.
+   */
+  async aliasesForOffer(offerId: string): Promise<string[]> {
+    const campaigns = await this.campaignRepo.findByOfferId(offerId);
+    return campaigns.map((campaign) => campaign.alias);
+  }
+
+  async aliasesForLandingPage(landingPageId: string): Promise<string[]> {
+    const campaigns = await this.campaignRepo.findByLandingPageId(landingPageId);
+    return campaigns.map((campaign) => campaign.alias);
+  }
+
+  private async dropPreviousAlias(previousAlias: string | undefined, currentAlias: string): Promise<void> {
+    if (previousAlias && previousAlias !== currentAlias) {
+      await this.invalidateAlias(previousAlias);
+    }
   }
 
   /**

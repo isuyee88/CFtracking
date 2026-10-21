@@ -11,6 +11,8 @@ import { validatePagination, validateRequired, isValidUrl } from '@/utils/valida
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
 import { ETagCacheManager, CacheType } from '@/services/cache/etag-cache-manager';
+import { CacheUpdateService } from '@/services/cache/cache-update-service';
+import { ConfigSnapshotPublisher } from '@/services/cache/config-snapshot.service';
 
 export function createLandingPageRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -83,6 +85,7 @@ export function createLandingPageRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const lp = await service.create(body);
+      await new CacheUpdateService(c.env).onDataChanged('landing', lp.id, 'create');
       return c.json(success(lp), HTTP_STATUS.CREATED);
     } catch (err) {
       if (err instanceof Error && err.message.includes('already exists')) {
@@ -103,6 +106,7 @@ export function createLandingPageRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const lp = await service.update(id, body);
+      await new CacheUpdateService(c.env).onDataChanged('landing', lp.id, 'update');
       return c.json(success(lp));
     } catch (err) {
       if (err instanceof Error && err.message === 'Landing Page not found') {
@@ -120,7 +124,10 @@ export function createLandingPageRouter(): Hono<{ Bindings: Env }> {
     const service = new LandingPageService(c.env);
 
     try {
+      // flowLandingPages cascades on delete; capture affected aliases first.
+      const affectedAliases = await new ConfigSnapshotPublisher(c.env).aliasesForLandingPage(id);
       await service.delete(id);
+      await new CacheUpdateService(c.env).onDataChanged('landing', id, 'delete', undefined, { affectedAliases });
       return c.json(success({ deleted: true }));
     } catch (err) {
       if (err instanceof Error && err.message === 'Landing Page not found') {

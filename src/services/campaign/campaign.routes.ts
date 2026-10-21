@@ -11,6 +11,7 @@ import { validatePagination, validateRequired, validateStringLength } from '@/ut
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
 import { ETagCacheManager, CacheType } from '@/services/cache/etag-cache-manager';
+import { CacheUpdateService } from '@/services/cache/cache-update-service';
 
 export function createCampaignRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -82,6 +83,7 @@ export function createCampaignRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const campaign = await service.create(body);
+      await new CacheUpdateService(c.env).onDataChanged('campaign', campaign.id, 'create');
       return c.json(success(campaign), HTTP_STATUS.CREATED);
     } catch (err) {
       if (err instanceof Error && err.message.includes('already exists')) {
@@ -97,7 +99,12 @@ export function createCampaignRouter(): Hono<{ Bindings: Env }> {
     const service = new CampaignService(c.env);
 
     try {
+      // An alias rename leaves the old key orphaned; capture it before update.
+      const previous = body.alias !== undefined ? await service.getById(id) : null;
       const campaign = await service.update(id, body);
+      await new CacheUpdateService(c.env).onDataChanged('campaign', campaign.id, 'update', undefined, {
+        previousAlias: previous?.alias,
+      });
       return c.json(success(campaign));
     } catch (err) {
       if (err instanceof Error && err.message === 'Campaign not found') {
@@ -115,7 +122,11 @@ export function createCampaignRouter(): Hono<{ Bindings: Env }> {
     const service = new CampaignService(c.env);
 
     try {
+      const existing = await service.getById(id);
       await service.delete(id);
+      await new CacheUpdateService(c.env).onDataChanged('campaign', id, 'delete', undefined, {
+        previousAlias: existing.alias,
+      });
       return c.json(success({ deleted: true }));
     } catch (err) {
       if (err instanceof Error && err.message === 'Campaign not found') {
@@ -131,6 +142,9 @@ export function createCampaignRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const campaign = await service.pause(id);
+      // Publishing now deletes the alias key, so a paused campaign stops
+      // redirecting through the compatibility fast path.
+      await new CacheUpdateService(c.env).onDataChanged('campaign', campaign.id, 'update');
       return c.json(success(campaign));
     } catch (err) {
       if (err instanceof Error && err.message === 'Campaign not found') {
@@ -146,6 +160,7 @@ export function createCampaignRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const campaign = await service.activate(id);
+      await new CacheUpdateService(c.env).onDataChanged('campaign', campaign.id, 'update');
       return c.json(success(campaign));
     } catch (err) {
       if (err instanceof Error && err.message === 'Campaign not found') {

@@ -245,10 +245,19 @@ export class ClickService {
       let responseBody: string | undefined;
 
       if (selectedFlow && selectedOffer) {
+        // FlowActionService replaces {clickid}/{visitor} from request.urlParams.
+        // Inject the click identity generated above so offer URLs can carry
+        // network-specific subid parameters (PartnerBoost uses `uid`).
+        const actionRequest: ClickRequest = {
+          ...request,
+          urlParams: request.urlParams ? new URLSearchParams(request.urlParams) : new URLSearchParams(),
+        };
+        actionRequest.urlParams?.set('clickid', clickId);
+        actionRequest.urlParams?.set('visitor', visitorId);
         // 使用 FlowActionService 执行 action
         const actionResult = await this.flowActionService.execute({
           flow: selectedFlow,
-          request,
+          request: actionRequest,
           offer: selectedOffer,
           landingPage: selectedLP || undefined,
         });

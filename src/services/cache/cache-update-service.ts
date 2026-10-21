@@ -38,6 +38,19 @@ export interface CacheUpdateResult {
 }
 
 /**
+ * 控制面写入后运维侧已知、但行数据本身已无法回读的上下文。
+ * 全部可选，现有调用方保持兼容。
+ */
+export interface DataChangeContext {
+  /** Campaign 改名/删除前的 alias，用于清理旧 clickcfg 键。 */
+  previousAlias?: string;
+  /** 变更/删除的 Flow 所属 Campaign，用于列表缓存键与重发。 */
+  campaignId?: string;
+  /** 删除会级联移除关联行，受影响 alias 必须先捕获再传入。 */
+  affectedAliases?: string[];
+}
+
+/**
  * 缓存更新服务 (优化版 - 集成SSE)
  */
 export class CacheUpdateService {
@@ -123,7 +136,8 @@ export class CacheUpdateService {
     entity: string,
     id: string,
     action: 'create' | 'update' | 'delete',
-    userId?: string
+    userId?: string,
+    context: DataChangeContext = {}
   ): Promise<void> {
     console.log(`[CacheUpdate] Entity ${entity}:${id} ${action}d`);
     
@@ -136,7 +150,7 @@ export class CacheUpdateService {
         ? []
         : (entity.startsWith('conversion')
           ? [CacheKeyBuilder.entityDetail('conversion', id), CacheKeyBuilder.dashboard('today')]
-          : this.getRelatedCacheKeys(entity, id, action));
+          : this.getRelatedCacheKeys(entity, id, action, context));
       
       // 失效缓存
       await this.cacheManager.invalidateBatch(keysToInvalidate);
@@ -156,15 +170,11 @@ export class CacheUpdateService {
         await this.warmupEntityCache(entity, id);
       }
 
-      // Control-plane changes publish the click snapshot. Click/conversion
-      // never enter this branch, keeping the click path off D1.
-      if (!entity.startsWith('click') && !entity.startsWith('conversion') && action !== 'delete') {
-        const publisher = new ConfigSnapshotPublisher(this.env);
-        if (entity === 'campaign' || entity === 'campaigns') {
-          await publisher.publishCampaign(id);
-        } else if (['offer', 'offers', 'flow', 'flows', 'landing', 'landings'].includes(entity)) {
-          await publisher.publishAll();
-        }
+      // Control-plane changes must republish the click config for every alias
+      // they affect; a retained key keeps redirecting to the old offer URL.
+      // Click/conversion never enter this branch, keeping the click path off D1.
+      if (!entity.startsWith('click') && !entity.startsWith('conversion')) {
+        await this.syncClickConfig(entity, id, action, context);
       }
       
       const duration = Date.now() - start;
@@ -405,13 +415,89 @@ export class CacheUpdateService {
   /**
    * 获取相关缓存键
    */
-  private getRelatedCacheKeys(entity: string, id: string, _action: string): string[] {
+  private getRelatedCacheKeys(entity: string, id: string, _action: string, context: DataChangeContext): string[] {
+    const kind = this.normalizeEntity(entity);
     // Invalidate only the changed entry and the first list page. A full
     // dashboard/list fan-out turns one write into dozens of cache misses.
-    return [
-      CacheKeyBuilder.entityDetail(entity, id),
-      CacheKeyBuilder.entityList(entity, 1),
+    const keys = [
+      CacheKeyBuilder.entityDetail(kind, id),
+      CacheKeyBuilder.entityList(kind, 1),
     ];
+
+    // List routes build their ETag key from the query tuple inline, not with
+    // CacheKeyBuilder. Cover the default first page the admin UI reads; other
+    // filter/page variants still expire via the RECENT TTL.
+    if (kind === 'offer') keys.push('offers:list:1:20:plain:all:', 'offers:list:1:20:stats:all:');
+    if (kind === 'campaign') keys.push('campaigns:list:1:20:all:');
+    if (kind === 'landing') keys.push('landings:list:1:20:plain', 'landings:list:1:20:stats');
+    if (kind === 'flow' && context.campaignId) keys.push(`flows:list:${context.campaignId}`);
+
+    return keys;
+  }
+
+  /**
+   * Keep the alias-scoped click config in sync with the entity that changed.
+   * Every branch runs on the write path so a click cannot observe pre-write
+   * config unless the KV write itself fails.
+   */
+  private async syncClickConfig(
+    entity: string,
+    id: string,
+    action: 'create' | 'update' | 'delete',
+    context: DataChangeContext
+  ): Promise<void> {
+    const publisher = new ConfigSnapshotPublisher(this.env);
+    const kind = this.normalizeEntity(entity);
+
+    switch (kind) {
+      case 'campaign':
+        if (action === 'delete') {
+          const aliases = context.affectedAliases
+            ?? (context.previousAlias ? [context.previousAlias] : []);
+          await publisher.publishAliases(aliases);
+        } else {
+          await publisher.publishCampaign(id, context.previousAlias);
+        }
+        return;
+
+      case 'offer':
+        if (action === 'delete') {
+          const aliases = context.affectedAliases?.length
+            ? context.affectedAliases
+            : await publisher.aliasesForOffer(id);
+          await publisher.publishAliases(aliases);
+        } else {
+          await publisher.publishForOffer(id);
+        }
+        return;
+
+      case 'flow':
+        if (context.campaignId) {
+          await publisher.publishCampaign(context.campaignId);
+        } else if (action !== 'delete') {
+          await publisher.publishForFlow(id);
+        }
+        return;
+
+      case 'landing':
+        if (action === 'delete') {
+          const aliases = context.affectedAliases?.length
+            ? context.affectedAliases
+            : await publisher.aliasesForLandingPage(id);
+          await publisher.publishAliases(aliases);
+        } else {
+          await publisher.publishForLandingPage(id);
+        }
+        return;
+
+      default:
+        return;
+    }
+  }
+
+  /** Route handlers pass both `offer` and `offers`; treat them the same. */
+  private normalizeEntity(entity: string): string {
+    return entity.endsWith('s') ? entity.slice(0, -1) : entity;
   }
   
   /**
@@ -482,9 +568,10 @@ export function createCacheUpdateRoutes(env: Env) {
       entity: string,
       id: string,
       action: 'create' | 'update' | 'delete',
-      userId?: string
+      userId?: string,
+      context: DataChangeContext = {}
     ): Promise<void> {
-      return service.onDataChanged(entity, id, action, userId);
+      return service.onDataChanged(entity, id, action, userId, context);
     },
     
     /**

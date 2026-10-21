@@ -11,6 +11,8 @@ import { validatePagination, validateRequired, isValidUrl, validateNumberRange }
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
 import { ETagCacheManager, CacheType } from '@/services/cache/etag-cache-manager';
+import { CacheUpdateService } from '@/services/cache/cache-update-service';
+import { ConfigSnapshotPublisher } from '@/services/cache/config-snapshot.service';
 
 export function createOfferRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -102,6 +104,8 @@ export function createOfferRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const offer = await service.create(body);
+      // Awaited: the click fast path must not keep the pre-create snapshot.
+      await new CacheUpdateService(c.env).onDataChanged('offer', offer.id, 'create');
       return c.json(success(offer), HTTP_STATUS.CREATED);
     } catch (err) {
       if (err instanceof Error && err.message.includes('already exists')) {
@@ -129,6 +133,8 @@ export function createOfferRouter(): Hono<{ Bindings: Env }> {
 
     try {
       const offer = await service.update(id, body);
+      // URL/status changes must republish every alias routing through it.
+      await new CacheUpdateService(c.env).onDataChanged('offer', offer.id, 'update');
       return c.json(success(offer));
     } catch (err) {
       if (err instanceof Error && err.message === 'Offer not found') {
@@ -146,7 +152,11 @@ export function createOfferRouter(): Hono<{ Bindings: Env }> {
     const service = new OfferService(c.env);
 
     try {
+      // Capture affected aliases first: deleting the offer may remove the
+      // joining rows that a post-delete lookup would need.
+      const affectedAliases = await new ConfigSnapshotPublisher(c.env).aliasesForOffer(id);
       await service.delete(id);
+      await new CacheUpdateService(c.env).onDataChanged('offer', id, 'delete', undefined, { affectedAliases });
       return c.json(success({ deleted: true }));
     } catch (err) {
       if (err instanceof Error && err.message === 'Offer not found') {
