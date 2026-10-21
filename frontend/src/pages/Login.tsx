@@ -19,7 +19,19 @@ const Login: React.FC = () => {
   const target = useMemo(redirectTarget, []);
 
   useEffect(() => {
-    if (window.localStorage.getItem('token')) window.location.replace(target);
+    const token = window.localStorage.getItem('token');
+    if (!token) return;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/') || ''));
+      if (!payload.exp || payload.exp > Date.now() / 1000) {
+        window.location.replace(target);
+        return;
+      }
+    } catch {
+      // fall through to clear the unusable token
+    }
+    window.localStorage.removeItem('token');
+    window.localStorage.removeItem('user');
   }, [target]);
 
   const onFinish = async (values: { username: string; password: string }) => {

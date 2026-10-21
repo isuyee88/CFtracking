@@ -32,9 +32,19 @@ export function installAuthFetch() {
     );
     if (!headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
 
-    if (input instanceof Request) {
-      return originalFetch(new Request(input, { headers }));
-    }
-    return originalFetch(input, { ...init, headers });
+    const request = input instanceof Request
+      ? originalFetch(new Request(input, { headers }))
+      : originalFetch(input, { ...init, headers });
+    return request.then((response) => {
+      if (response.status === 401 && !url.pathname.startsWith('/api/auth/')) {
+        window.localStorage.removeItem('token');
+        window.localStorage.removeItem('user');
+        if (window.location.pathname !== '/login') {
+          const redirect = `${window.location.pathname}${window.location.search}`;
+          window.location.assign(`/login?redirect=${encodeURIComponent(redirect)}`);
+        }
+      }
+      return response;
+    });
   };
 }
