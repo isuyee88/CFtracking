@@ -34,6 +34,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
 import { TablePagination } from '../components/TablePagination';
+import { PageNotice } from '../components/PageNotice';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { readBootstrapPage } from '../services/bootstrap';
 import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
@@ -212,6 +213,8 @@ export const Whitelist = () => {
     withGeneralTrafficSource(Array.isArray(bootstrap?.data?.trafficSources) ? bootstrap.data.trafficSources : [])
   );
   const [loading, setLoading] = useState(!hasBootstrap);
+  // 拉取失败回落到内嵌快照时的提示；成功后清空。
+  const [dataWarning, setDataWarning] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSource, setFilterSource] = useState<string>('all');
@@ -275,11 +278,18 @@ export const Whitelist = () => {
       setTrafficSources(
         withGeneralTrafficSource(Array.isArray(trafficSourcesPayload) ? trafficSourcesPayload : [])
       );
+      setDataWarning(null);
     } catch (err) {
       console.error('Failed to fetch whitelist:', err);
+      // 回落到页面内嵌快照时必须说明，否则"旧数据"看起来和实时数据一模一样。
       const fallback = loadBootstrapData();
       setEntries(fallback.entries);
       setTrafficSources(fallback.trafficSources);
+      setDataWarning(
+        fallback.entries.length > 0
+          ? 'Live data could not be loaded. Showing the snapshot embedded in this page, which may be stale.'
+          : 'Live data could not be loaded.',
+      );
     } finally {
       setLoading(false);
     }
@@ -347,6 +357,21 @@ export const Whitelist = () => {
     setShowAdvancedLogic(false);
     setFormErrors({});
   };
+
+  // 弹窗支持 Escape 关闭；关闭时重置表单，避免下次打开残留上次的输入。
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsModalOpen(false);
+        setFormData(initialFormData);
+        setShowAdvancedLogic(false);
+        setFormErrors({});
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isModalOpen]);
 
   const validateForm = (): boolean => {
     const errors: Partial<Record<keyof FormData, string>> = {};
@@ -503,6 +528,18 @@ export const Whitelist = () => {
         </div>
       </div>
 
+      {/* 分页条放在页头之后：移动端在 4 个统计卡 + 筛选区之后要滚动近 900px 才能看到翻页。 */}
+      <TablePagination currentPage={currentPage} totalPages={totalPages} totalItems={filteredEntries.length} itemsPerPage={itemsPerPage} onPageChange={setCurrentPage} label="whitelist" />
+
+      {dataWarning && (
+        <PageNotice
+          tone="warning"
+          title="Live data unavailable"
+          description={dataWarning}
+          hint="Hit Refresh to retry the live request."
+        />
+      )}
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-surface-container-lowest p-4 whisper-shadow">
@@ -618,7 +655,6 @@ export const Whitelist = () => {
 
       {/* Whitelist Table */}
       <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
-        <TablePagination currentPage={currentPage} totalPages={totalPages} totalItems={filteredEntries.length} itemsPerPage={itemsPerPage} onPageChange={setCurrentPage} label="whitelist" />
       <div className="space-y-3 md:hidden">
         {paginatedEntries.map((entry) => (
           <article key={entry.id} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">

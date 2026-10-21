@@ -80,6 +80,20 @@ export const TargetPage: React.FC = () => {
     setError(null);
   };
 
+  // 弹窗支持 Escape 关闭，键盘用户不必去找关闭按钮。
+  useEffect(() => {
+    if (!draft) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDraft(null);
+        setEditingId(null);
+        setError(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [draft]);
+
   const submitDraft = (event: React.FormEvent) => {
     event.preventDefault();
     if (!draft) return;

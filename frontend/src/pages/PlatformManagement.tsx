@@ -66,6 +66,16 @@ export const PlatformManagement = () => {
     }
   }, [platformsData]);
 
+  // 配置弹窗支持 Escape 关闭：键盘用户不应被模态框困住。
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsModalOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isModalOpen]);
+
   const filteredPlatforms = platforms.filter(platform => {
     const matchesSearch = platform.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = selectedType === 'all' || platform.type === selectedType;
@@ -253,13 +263,19 @@ export const PlatformManagement = () => {
       {/* Modal */}
       {isModalOpen && selectedPlatform && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface p-6 w-full max-w-md rounded-lg border border-border-default shadow-xl">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="platform-modal-title"
+            className="bg-surface p-6 w-full max-w-md rounded-lg border border-border-default shadow-xl"
+          >
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-fg-default">
+              <h3 id="platform-modal-title" className="text-xl font-bold text-fg-default">
                 Configure {selectedPlatform.name}
               </h3>
               <button 
                 onClick={() => setIsModalOpen(false)} 
+                aria-label="Close dialog"
                 className="p-2 text-fg-muted hover:text-fg-default hover:bg-surface-container rounded transition-colors"
               >
                 <X size={20} />
