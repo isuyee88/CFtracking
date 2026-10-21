@@ -30383,6 +30383,7 @@ function createFlowRouter() {
       throw err;
     }
   });
+  __installPageCache(router2, "flows");
   return router2;
 }
 __name(createFlowRouter, "createFlowRouter");
