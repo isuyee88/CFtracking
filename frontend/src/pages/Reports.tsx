@@ -18,6 +18,7 @@ import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import type { DateRangeValue } from '@/components/DateRangePicker';
 import { usePageData } from '@/context/DataCacheContext';
 import { fetchReports, fetchReportStats, type ReportRecord } from '../services/api';
+import { getPageWindow } from '../utils/pagination';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -74,10 +75,14 @@ const Reports: React.FC = () => {
     [dateRange.startDate, dateRange.endDate, filters]
   );
 
+  // 分页/筛选/排序指纹：usePageData 只在该值变化时重新取数。
+  const queryKey = `${dateRange.startDate}|${dateRange.endDate}|${page}|${pageSize}|${sortField || ''}|${sortOrder || ''}|${JSON.stringify(filters)}`;
+
   // 使用 usePageData hook 获取报表数据
   const { data: reportsData, isLoading, error, refetch } = usePageData(
     'reports',
-    fetchReportsData
+    fetchReportsData,
+    { refreshKey: queryKey }
   );
 
   // 使用 usePageData hook 获取报表统计
@@ -95,28 +100,23 @@ const Reports: React.FC = () => {
     }
   }, [reportsData]);
 
-  // 分页数据（从 SSR/API 数据中切片）
-  const paginatedData = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    const end = start + pageSize;
-    return reports.slice(start, end);
-  }, [reports, page, pageSize]);
+  // 后端已按 page/pageSize 返回当前页，前端不能再 slice 一次。
+  const paginatedData = reports;
 
-  // 总页数（从 meta 或本地计算）
-  const totalPages = useMemo(() => {
-    if (reportsData?.meta?.totalPages) {
-      return reportsData.meta.totalPages;
-    }
-    return Math.ceil(reports.length / pageSize);
-  }, [reportsData, reports, pageSize]);
+  const totalItems = Number(reportsData?.meta?.total) || reports.length;
+
+  // 页码收敛在有效范围内，空数据时页脚展示 0–0。
+  const pageWindow = getPageWindow(totalItems, pageSize, page);
+  const totalPages = pageWindow.totalPages;
+
+  // 日期/筛选/排序变化时回到第 1 页，避免停留在越界页。
+  const filterKey = `${dateRange.startDate}|${dateRange.endDate}|${sortField || ''}|${sortOrder || ''}|${JSON.stringify(filters)}`;
+  useEffect(() => {
+    setPage(1);
+  }, [filterKey, setPage]);
 
   // 加载状态
   const loading = isLoading;
-
-  // 过滤后的数据（用于分页显示）
-  const filteredData = useMemo(() => {
-    return reports;
-  }, [reports]);
 
   // 刷新数据
   const handleRefresh = useCallback(() => {
@@ -131,7 +131,7 @@ const Reports: React.FC = () => {
       sortField,
       sortOrder,
       dateRange,
-      totalRecords: filteredData.length,
+      totalRecords: totalItems,
     });
     // TODO: 实现导出功能
   };
@@ -294,22 +294,12 @@ const Reports: React.FC = () => {
 
           {/* 数据表格 */}
           <div className="bg-surface rounded-sm border border-outline-variant overflow-hidden">
-            <VirtualTableEnhanced
-              tableId="reports"
-              columns={tableColumns}
-              data={paginatedData}
-              rowHeight={48}
-              height={500}
-              overscan={5}
-              emptyMessage="暂无数据"
-            />
-
-            {/* 分页 */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-outline-variant">
+            {/* 分页放在表格上方：贴在表格底部时会被 500px 高的表格推到视窗外。 */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
               <div className="flex items-center gap-4">
                 <span className="text-sm text-fg-muted">
-                  显示 {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, filteredData.length)} 条，
-                  共 {filteredData.length} 条
+                  显示 {pageWindow.start} - {pageWindow.end} 条，
+                  共 {totalItems} 条
                 </span>
                 <select
                   value={pageSize}
@@ -328,24 +318,34 @@ const Reports: React.FC = () => {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page === 1}
+                  onClick={() => setPage(Math.max(1, pageWindow.page - 1))}
+                  disabled={pageWindow.page <= 1}
                   className="px-3 py-1.5 text-sm bg-surface-container border border-outline-variant rounded-sm text-on-surface disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-container-high transition-colors"
                 >
                   上一页
                 </button>
                 <span className="text-sm text-on-surface">
-                  第 {page} 页 / 共 {totalPages} 页
+                  第 {pageWindow.page} 页 / 共 {totalPages} 页
                 </span>
                 <button
-                  onClick={() => setPage(Math.min(totalPages, page + 1))}
-                  disabled={page === totalPages}
+                  onClick={() => setPage(Math.min(totalPages, pageWindow.page + 1))}
+                  disabled={pageWindow.page >= totalPages}
                   className="px-3 py-1.5 text-sm bg-surface-container border border-outline-variant rounded-sm text-on-surface disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-container-high transition-colors"
                 >
                   下一页
                 </button>
               </div>
             </div>
+
+            <VirtualTableEnhanced
+              tableId="reports"
+              columns={tableColumns}
+              data={paginatedData}
+              rowHeight={48}
+              height={500}
+              overscan={5}
+              emptyMessage="暂无数据"
+            />
           </div>
         </div>
       </div>

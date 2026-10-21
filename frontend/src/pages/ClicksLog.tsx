@@ -105,6 +105,8 @@ export const ClicksLog = () => {
     total: 0,
     totalPages: 1,
   });
+  const paginationRef = useRef(pagination);
+  paginationRef.current = pagination;
 
   // 浣跨敤 useRef 瀛樺偍鏌ヨ鍙傛暟锛岄伩鍏嶄緷璧栧彉鍖栧鑷寸殑鏃犻檺寰幆
   const paramsRef = useRef({
@@ -120,18 +122,8 @@ export const ClicksLog = () => {
     statusFilter,
   };
 
-  // 浣跨敤绋冲畾鐨?fetcher 鍑芥暟锛屼笉渚濊禆澶栭儴鐘舵€?
-  const fetchClicksData = useCallback(async () => {
-    const { searchQuery: sq, dateRange: dr, statusFilter: sf } = paramsRef.current;
-    return fetchClicks({
-      page: 1,
-      pageSize: 100,
-      search: sq || undefined,
-      startDate: dr.startDate.split('T')[0],
-      endDate: dr.endDate.split('T')[0],
-      isUnique: sf === 'unique' ? true : sf === 'nonunique' ? false : undefined,
-    });
-  }, []);
+  // 请求序号：快速翻页时丢弃过期响应，避免旧页数据覆盖新页。
+  const requestSeqRef = useRef(0);
 
   // SSR鏁版嵁缂撳瓨
   const { cache: ssrCache, isHydrated } = useDataCache();
@@ -152,7 +144,11 @@ export const ClicksLog = () => {
   const isInitialMount = useRef(true);
 
   // 鏁版嵁鑾峰彇鍑芥暟
-  const fetchData = useCallback(async (isRefresh = false) => {
+  // pageOverride：筛选变化时直接指定第 1 页，避免读到本轮渲染前的 page state。
+  const fetchData = useCallback(async (isRefresh = false, pageOverride?: number) => {
+    const requestedPage = pageOverride ?? paginationRef.current.page;
+    const requestId = ++requestSeqRef.current;
+
     if (isRefresh) {
       setIsRefreshing(true);
     } else {
@@ -167,14 +163,26 @@ export const ClicksLog = () => {
 
       const [clicksResult, statsResult] = await Promise.all([
         fetchClicks({
+          page: requestedPage,
+          pageSize: paginationRef.current.pageSize,
           startDate,
           endDate,
           search: sq || undefined,
+          isUnique: sf === 'unique' ? true : sf === 'nonunique' ? false : undefined,
         }),
         fetchClickStats(startDate, endDate),
       ]);
 
+      if (requestId !== requestSeqRef.current) return;
+
       setClicksList(clicksResult.list || []);
+      setPagination(prev => ({
+        ...prev,
+        page: clicksResult.page || prev.page,
+        pageSize: clicksResult.pageSize || prev.pageSize,
+        total: clicksResult.total ?? prev.total,
+        totalPages: clicksResult.totalPages || Math.max(1, Math.ceil((clicksResult.total || 0) / (clicksResult.pageSize || prev.pageSize))),
+      }));
       setStats(statsResult || {
         totalClicks: 0,
         uniqueClicks: 0,
@@ -182,11 +190,14 @@ export const ClicksLog = () => {
         deviceTypes: 0,
       });
     } catch (err) {
+      if (requestId !== requestSeqRef.current) return;
       console.error('[ClicksLog] Fetch error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
-      setLoading(false);
-      setIsRefreshing(false);
+      if (requestId === requestSeqRef.current) {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, []);
 
@@ -234,23 +245,22 @@ export const ClicksLog = () => {
   }, [isHydrated, ssrCache, fetchData]);
 
   // 鍙傛暟鍙樺寲鏃跺埛鏂版暟鎹?
-  const prevParamsRef = useRef({ searchQuery: '', dateRange: '', statusFilter: 'all' });
+  // 首次渲染只记录基线，不重复请求；之后筛选变化统一回到第 1 页并立即取数。
+  const currentParamsKey = `${searchQuery}|${dateRange.startDate}|${dateRange.endDate}|${statusFilter}`;
+  const prevParamsKeyRef = useRef<string | null>(null);
+  const pageChangeRequestedRef = useRef(false);
   useEffect(() => {
-    if (isInitialMount.current) return;
-
-    const currentParams = {
-      searchQuery,
-      dateRange: `${dateRange.startDate}-${dateRange.endDate}`,
-      statusFilter,
-    };
-
-    if (prevParamsRef.current.searchQuery !== currentParams.searchQuery ||
-        prevParamsRef.current.dateRange !== currentParams.dateRange ||
-        prevParamsRef.current.statusFilter !== currentParams.statusFilter) {
-      prevParamsRef.current = currentParams;
-      fetchData(true);
+    if (prevParamsKeyRef.current === null) {
+      prevParamsKeyRef.current = currentParamsKey;
+      return;
     }
-  }, [searchQuery, dateRange.startDate, dateRange.endDate, statusFilter, fetchData]);
+    if (prevParamsKeyRef.current === currentParamsKey) return;
+
+    prevParamsKeyRef.current = currentParamsKey;
+    pageChangeRequestedRef.current = false;
+    setPagination(prev => (prev.page === 1 ? prev : { ...prev, page: 1 }));
+    fetchData(true, 1);
+  }, [currentParamsKey, fetchData]);
 
   const toggleRow = (id: string) => {
     setExpandedRows(prev =>
@@ -259,8 +269,17 @@ export const ClicksLog = () => {
   };
 
   const handlePageChange = (newPage: number) => {
+    pageChangeRequestedRef.current = true;
     setPagination(prev => ({ ...prev, page: newPage }));
   };
+
+  // 只响应用户翻页；初始挂载与内部页码同步不在这里重复取数。
+  useEffect(() => {
+    if (!pageChangeRequestedRef.current) return;
+    pageChangeRequestedRef.current = false;
+    if (!isHydrated) return;
+    fetchData(true);
+  }, [pagination.page, pagination.pageSize, isHydrated, fetchData]);
 
   const handleRefresh = () => {
     fetchData(true);
@@ -509,6 +528,16 @@ export const ClicksLog = () => {
         onClearAll={() => { setSearchQuery(''); setStatusFilter('all'); }}
       />
 
+      {/* 分页条放在卡片/表格之前：移动端不必先滚过一整页卡片才能翻页。 */}
+      <TablePagination
+        currentPage={pagination.page}
+        totalPages={pagination.totalPages}
+        totalItems={pagination.total}
+        itemsPerPage={pagination.pageSize}
+        onPageChange={handlePageChange}
+        label="clicks"
+      />
+
       {/* Mobile summary cards */}
       <div className="space-y-3 md:hidden">
         {clicksList.map((click) => (
@@ -542,17 +571,6 @@ export const ClicksLog = () => {
         )}
       </div>
 
-      {/* Table (desktop/tablet) */}
-      <div className="hidden md:block">
-        <TablePagination
-          currentPage={pagination.page}
-          totalPages={pagination.totalPages}
-          totalItems={pagination.total}
-          itemsPerPage={pagination.pageSize}
-          onPageChange={handlePageChange}
-          label="clicks"
-        />
-      </div>
       <div className="hidden overflow-hidden rounded-lg border border-border-default bg-surface md:block">
         <div className="flex h-9 items-center justify-between border-b border-border-default px-3">
           <span className="text-[11px] font-medium text-fg-subtle">{clicksList.length} rows</span>

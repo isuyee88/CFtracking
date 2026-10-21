@@ -32,6 +32,7 @@ import { useToast } from '../components/Toast';
 import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
 import type { VirtualTableColumn } from '../components/VirtualTable';
 import { usePageData } from '@/context/DataCacheContext';
+import { useClientPagination } from '../hooks/useClientPagination';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -139,10 +140,6 @@ export const CampaignManagement = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [selectedCampaign, setSelectedCampaign] = useState<Partial<Campaign> | undefined>(undefined);
-
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
 
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -333,12 +330,17 @@ export const CampaignManagement = () => {
     return result;
   }, [campaigns, searchTerm, filterStatus, groupByStates]);
 
-  // Pagination
-  const totalPages = Math.ceil(filteredCampaigns.length / itemsPerPage);
-  const paginatedCampaigns = filteredCampaigns.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Pagination：搜索/状态/分组变化时回到第 1 页，页码越界自动收敛。
+  const {
+    rows: paginatedCampaigns,
+    page: currentPage,
+    pageSize: itemsPerPage,
+    totalPages,
+    setPage: setCurrentPage,
+  } = useClientPagination(filteredCampaigns, {
+    pageSize: 10,
+    resetKey: `${searchTerm}|${filterStatus}|${JSON.stringify(groupByStates)}`,
+  });
 
   // Skeleton component for table rows
   const CampaignSkeleton = () => (
@@ -605,16 +607,14 @@ export const CampaignManagement = () => {
         {paginatedCampaigns.length === 0 && <div className="rounded-xl border border-dashed border-border-default p-8 text-center text-sm text-fg-muted">No campaigns found</div>}
       </div>
 
-      <div className="hidden md:block">
-        <TablePagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={filteredCampaigns.length}
-          itemsPerPage={itemsPerPage}
-          onPageChange={setCurrentPage}
-          label="campaigns"
-        />
-      </div>
+      <TablePagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={filteredCampaigns.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        label="campaigns"
+      />
 
       {/* Campaigns Table - VirtualTableEnhanced */}
       <div className="card hidden overflow-hidden md:block">

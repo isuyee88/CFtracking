@@ -34,6 +34,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
 import { TablePagination } from '../components/TablePagination';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { readBootstrapPage } from '../services/bootstrap';
 import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
 import { clampInput, truncateLabel } from '../utils/text';
@@ -225,10 +226,6 @@ export const Blacklist = () => {
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormData, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   const [showAdvancedLogic, setShowAdvancedLogic] = useState(false);
-  
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
 
   const loadBootstrapData = () => {
     const bundle = readBootstrapPage<{
@@ -457,12 +454,17 @@ export const Blacklist = () => {
     return matchesSearch && matchesSource && matchesSynced && matchesType;
   });
 
-  // Pagination
-  const totalPages = Math.ceil(filteredEntries.length / itemsPerPage);
-  const paginatedEntries = filteredEntries.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Pagination：搜索/来源/同步状态/类型变化时回到第 1 页，页码越界自动收敛。
+  const {
+    rows: paginatedEntries,
+    page: currentPage,
+    pageSize: itemsPerPage,
+    totalPages,
+    setPage: setCurrentPage,
+  } = useClientPagination(filteredEntries, {
+    pageSize: 20,
+    resetKey: `${searchTerm}|${filterSource}|${filterSynced}|${filterType}`,
+  });
 
   if (loading) {
     return (
@@ -615,9 +617,7 @@ export const Blacklist = () => {
 
       {/* Blacklist Table */}
       <div className="bg-surface-container-lowest whisper-shadow overflow-hidden">
-                <div className="hidden md:block">
         <TablePagination currentPage={currentPage} totalPages={totalPages} totalItems={filteredEntries.length} itemsPerPage={itemsPerPage} onPageChange={setCurrentPage} label="blacklist" />
-      </div>
       <div className="space-y-3 md:hidden">
         {paginatedEntries.map((entry) => (
           <article key={entry.id} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">

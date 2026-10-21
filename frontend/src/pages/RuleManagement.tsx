@@ -27,6 +27,8 @@ import { fetchRules, createRule, updateRule, deleteRule, enableRule, disableRule
 } from '../services/api';
 import { usePageData } from '@/context/DataCacheContext';
 import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
+import { TablePagination } from '../components/TablePagination';
+import { useClientPagination } from '../hooks/useClientPagination';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -76,9 +78,25 @@ export const RuleManagement = () => {
     }
   }, [rulesData]);
 
-  const filteredRules = rules.filter(rule => 
-    rule.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredRules = rules.filter(rule => {
+    const matchesSearch = rule.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = selectedType === 'all' || rule.type === selectedType;
+    const matchesStatus = selectedStatus === 'all' || rule.status === selectedStatus;
+    return matchesSearch && matchesType && matchesStatus;
+  });
+
+  // 搜索/筛选变化时回到第 1 页；页码越界自动收敛，避免表格空白。
+  const {
+    rows: paginatedRules,
+    page: rulePage,
+    pageSize: rulePageSize,
+    totalItems: ruleTotalItems,
+    totalPages: ruleTotalPages,
+    setPage: setRulePage,
+  } = useClientPagination(filteredRules, {
+    pageSize: 10,
+    resetKey: `${searchTerm}|${selectedType}|${selectedStatus}`,
+  });
 
   const handleCreate = () => {
     setIsEditMode(false);
@@ -261,8 +279,17 @@ export const RuleManagement = () => {
         </div>
       </div>
 
+      <TablePagination
+        currentPage={rulePage}
+        totalPages={ruleTotalPages}
+        totalItems={ruleTotalItems}
+        itemsPerPage={rulePageSize}
+        onPageChange={setRulePage}
+        label="rules"
+      />
+
       <div className="space-y-3 md:hidden">
-        {filteredRules.map((rule) => (
+        {paginatedRules.map((rule) => (
           <article key={rule.id} className="rounded-xl border border-border-default bg-surface p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -295,7 +322,7 @@ export const RuleManagement = () => {
             { key: 'enabled', label: 'Enabled', width: '80px', align: 'center', render: (_: unknown, rule: any) => <button type="button" onClick={() => handleToggleStatus(rule)} className={rule.enabled ? 'rounded p-1.5 text-success hover:bg-success/10' : 'rounded p-1.5 text-fg-muted hover:bg-surface-container'} title={rule.enabled ? 'Disable' : 'Enable'}>{rule.enabled ? <Play size={16} /> : <Pause size={16} />}</button> },
             { key: 'actions', label: '', width: '88px', align: 'center', render: (_: unknown, rule: any) => <div className="flex justify-center gap-1"><button type="button" onClick={() => handleEdit(rule)} className="rounded p-1.5 text-fg-muted hover:bg-surface-container hover:text-fg-default" title="Edit"><Edit3 size={14} /></button><button type="button" onClick={() => handleDelete(rule.id)} className="rounded p-1.5 text-fg-muted hover:bg-error/10 hover:text-error" title="Delete"><Trash2 size={14} /></button></div> },
           ]}
-          data={filteredRules}
+          data={paginatedRules}
           rowHeight={72}
           height="auto"
           emptyMessage="No rules found"

@@ -34,6 +34,7 @@ import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { TablePagination } from '../components/TablePagination';
 import { FilterPanel, type FilterConfig, type FilterValues } from '../components/FilterPanel';
 import { usePageData } from '@/context/DataCacheContext';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { useToast } from '../components/Toast';
 
 function cn(...inputs: ClassValue[]) {
@@ -126,10 +127,6 @@ export const Landings = () => {
     from: new Date().toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0]
   });
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
   
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -318,12 +315,17 @@ export const Landings = () => {
     return matchesSearch && matchesStatus && matchesFilters;
   });
 
-  // Pagination
-  const totalPages = Math.ceil(filteredLandings.length / itemsPerPage);
-  const paginatedLandings = filteredLandings.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Pagination：搜索/状态/高级筛选变化时回到第 1 页，页码越界自动收敛。
+  const {
+    rows: paginatedLandings,
+    page: currentPage,
+    pageSize: itemsPerPage,
+    totalPages,
+    setPage: setCurrentPage,
+  } = useClientPagination(filteredLandings, {
+    pageSize: 10,
+    resetKey: `${searchTerm}|${filterStatus}|${JSON.stringify(filterValues)}`,
+  });
 
   // Skeleton component for table rows
   const LandingSkeleton = () => (
@@ -543,27 +545,14 @@ export const Landings = () => {
         </div>
       </div>
 
-      <div className="hidden md:block">
-        <TablePagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={filteredLandings.length}
-          itemsPerPage={itemsPerPage}
-          onPageChange={setCurrentPage}
-          label="landings"
-        />
-      </div>
-
-      <div className="md:hidden">
-        <TablePagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={filteredLandings.length}
-          itemsPerPage={itemsPerPage}
-          onPageChange={setCurrentPage}
-          label="landings"
-        />
-      </div>
+      <TablePagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={filteredLandings.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        label="landings"
+      />
 
       <div className="space-y-3 md:hidden">
         {paginatedLandings.map((landing) => (

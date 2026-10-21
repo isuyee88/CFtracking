@@ -37,6 +37,7 @@ import { formatAffiliateNetworkForExport } from '../utils/export';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { AFFILIATE_NETWORK_TEMPLATES, getAffiliateTemplateById, type AffiliateNetworkOfferParameter } from '../data/affiliateNetworkTemplates';
 import { usePageData } from '@/context/DataCacheContext';
+import { useClientPagination } from '../hooks/useClientPagination';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -183,10 +184,6 @@ export const AffiliateNetworks = () => {
   // Search and filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
   
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -362,12 +359,17 @@ export const AffiliateNetworks = () => {
     return matchesSearch && matchesStatus;
   });
 
-  // Pagination
-  const totalPages = Math.ceil(filteredNetworks.length / itemsPerPage);
-  const paginatedNetworks = filteredNetworks.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Pagination：搜索/状态变化时回到第 1 页，页码越界自动收敛。
+  const {
+    rows: paginatedNetworks,
+    page: currentPage,
+    pageSize: itemsPerPage,
+    totalPages,
+    setPage: setCurrentPage,
+  } = useClientPagination(filteredNetworks, {
+    pageSize: 10,
+    resetKey: `${searchTerm}|${filterStatus}`,
+  });
 
   const getTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
@@ -529,16 +531,14 @@ export const AffiliateNetworks = () => {
         </div>
       </div>
 
-      <div className="hidden md:block">
-        <TablePagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={filteredNetworks.length}
-          itemsPerPage={itemsPerPage}
-          onPageChange={setCurrentPage}
-          label="networks"
-        />
-      </div>
+      <TablePagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={filteredNetworks.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        label="networks"
+      />
 
       <div className="space-y-3 md:hidden">
         {paginatedNetworks.map((network) => (

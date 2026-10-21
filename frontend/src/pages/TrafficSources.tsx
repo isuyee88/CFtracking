@@ -41,6 +41,7 @@ import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import type { TrafficSource, ParameterTemplate, PostbackConfig } from '../types/trafficSource';
 import { getTemplateById } from '../data/trafficSourceTemplates';
 import { usePageData } from '@/context/DataCacheContext';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { VirtualTableEnhanced } from '../components/VirtualTableEnhanced';
 import { TablePagination } from '../components/TablePagination';
 
@@ -92,10 +93,6 @@ export const TrafficSources = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
   const [filterType, setFilterType] = useState<string>('All');
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
   
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -284,12 +281,17 @@ export const TrafficSources = () => {
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  // Pagination
-  const totalPages = Math.ceil(filteredSources.length / itemsPerPage);
-  const paginatedSources = filteredSources.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Pagination：搜索/状态/类型变化时回到第 1 页，页码越界自动收敛。
+  const {
+    rows: paginatedSources,
+    page: currentPage,
+    pageSize: itemsPerPage,
+    totalPages,
+    setPage: setCurrentPage,
+  } = useClientPagination(filteredSources, {
+    pageSize: 10,
+    resetKey: `${searchTerm}|${filterStatus}|${filterType}`,
+  });
 
   const getTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
@@ -576,16 +578,14 @@ export const TrafficSources = () => {
         </div>
       </div>
 
-      <div className="hidden md:block">
-        <TablePagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={filteredSources.length}
-          itemsPerPage={itemsPerPage}
-          onPageChange={setCurrentPage}
-          label="sources"
-        />
-      </div>
+      <TablePagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={filteredSources.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        label="sources"
+      />
 
       <div className="space-y-3 md:hidden">
         {paginatedSources.map((source) => (

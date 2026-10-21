@@ -39,6 +39,7 @@ import { ActiveFilterBar } from '../components/ActiveFilterBar';
 import { TablePagination } from '../components/TablePagination';
 import { useToast } from '../components/Toast';
 import { usePageData } from '@/context/DataCacheContext';
+import { useClientPagination } from '../hooks/useClientPagination';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -171,10 +172,6 @@ export const Offers = () => {
   // Search and filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Paused'>('All');
-
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
 
   // Selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -411,12 +408,17 @@ export const Offers = () => {
     return matchesSearch && matchesStatus && matchesFilters;
   });
 
-  // Pagination
-  const totalPages = Math.ceil(filteredOffers.length / itemsPerPage);
-  const paginatedOffers = filteredOffers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Pagination：搜索/状态/高级筛选变化时回到第 1 页，页码越界自动收敛。
+  const {
+    rows: paginatedOffers,
+    page: currentPage,
+    pageSize: itemsPerPage,
+    totalPages,
+    setPage: setCurrentPage,
+  } = useClientPagination(filteredOffers, {
+    pageSize: 10,
+    resetKey: `${searchTerm}|${filterStatus}|${JSON.stringify(filterValues)}`,
+  });
 
   // Skeleton component for table rows
   const OfferSkeleton = () => (
@@ -686,16 +688,14 @@ export const Offers = () => {
         {paginatedOffers.length === 0 && <div className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">No offers found</div>}
       </div>
 
-      <div className="hidden md:block">
-        <TablePagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={filteredOffers.length}
-          itemsPerPage={itemsPerPage}
-          onPageChange={setCurrentPage}
-          label="offers"
-        />
-      </div>
+      <TablePagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={filteredOffers.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        label="offers"
+      />
 
       {/* Offers Table - 浣跨敤铏氭嫙婊氬姩 */}
       <div className="hidden bg-surface-container-lowest whisper-shadow overflow-hidden md:block">

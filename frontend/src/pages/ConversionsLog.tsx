@@ -42,6 +42,7 @@ import { GroupByFilter, filterByGroupBy } from '@/components/GroupByFilter';
 import { ActiveFilterBar } from '@/components/ActiveFilterBar';
 import { TableColumnSettings, useTableColumnLayout, type TableColumnItem } from '@/components/TableColumnSettings';
 import { TablePagination } from '@/components/TablePagination';
+import { useClientPagination } from '@/hooks/useClientPagination';
 import type { GroupByState, GroupByOption } from '@/types/filter';
 import { useDataCache } from '@/context/DataCacheContext';
 import { fetchConversions, fetchConversionStats, type Conversion } from '../services/api';
@@ -70,8 +71,6 @@ const CONVERSIONS_LOG_GROUP_BY_OPTIONS: GroupByOption[] = [
 export const ConversionsLog = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [conversionPage, setConversionPage] = useState(1);
-  const conversionPageSize = 20;
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
 
   // 鏃ユ湡绛涢€?- 浣跨敤鏂扮殑鏃ユ湡閫夋嫨鍣?
@@ -229,15 +228,6 @@ export const ConversionsLog = () => {
   const totalRevenue = stats.totalRevenue || 0;
   const totalPayout = stats.totalPayout || 0;
   const totalConversions = stats.totalConversions || filteredConversions.length;
-  const conversionTotalPages = Math.max(1, Math.ceil(filteredConversions.length / conversionPageSize));
-  const paginatedConversions = filteredConversions.slice(
-    (conversionPage - 1) * conversionPageSize,
-    conversionPage * conversionPageSize,
-  );
-
-  useEffect(() => {
-    setConversionPage(1);
-  }, [searchQuery, statusFilter]);
   const approvedConversions = stats.approvedConversions || filteredConversions.filter(c => c.status === 'Approved').length;
   const pendingConversions = stats.pendingConversions || filteredConversions.filter(c => c.status === 'Pending').length;
   const rejectedConversions = stats.rejectedConversions || filteredConversions.filter(c => c.status === 'Rejected').length;
@@ -288,6 +278,19 @@ export const ConversionsLog = () => {
   const filteredWithGroupBy = useMemo(() => {
     return filterByGroupBy(filteredConversions, groupByStates);
   }, [filteredConversions, groupByStates]);
+
+  // 分页必须基于 group-by 过滤后的集合，否则页数与实际展示行数会对不上。
+  const {
+    rows: paginatedConversions,
+    page: conversionPage,
+    pageSize: conversionPageSize,
+    totalItems: conversionTotalItems,
+    totalPages: conversionTotalPages,
+    setPage: setConversionPage,
+  } = useClientPagination(filteredWithGroupBy, {
+    pageSize: 20,
+    resetKey: `${searchQuery}|${statusFilter}|${dateRangeValue.startDate}|${dateRangeValue.endDate}|${JSON.stringify(groupByStates)}`,
+  });
 
   // 楠ㄦ灦灞忔樉绀洪€昏緫锛氶娆″姞杞戒笖鏃犳暟鎹椂鏄剧ず
   const showSkeleton = loading && conversions.length === 0;
@@ -481,7 +484,7 @@ export const ConversionsLog = () => {
         {/* Results Count */}
         <div className="flex items-center justify-between pt-2 border-t border-outline-variant/10">
           <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/60">
-            Showing {filteredConversions.length} conversions
+            Showing {conversionTotalItems} conversions
           </span>
           <span className="text-[10px] text-on-surface-variant/40">
             Date Range: {dateRange === 'custom' ? 'Custom Range' : dateRange.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
@@ -498,16 +501,14 @@ export const ConversionsLog = () => {
         onClearAll={() => { setSearchQuery(''); setStatusFilter('all'); }}
       />
 
-      <div className="hidden md:block">
-        <TablePagination
-          currentPage={conversionPage}
-          totalPages={conversionTotalPages}
-          totalItems={filteredConversions.length}
-          itemsPerPage={conversionPageSize}
-          onPageChange={setConversionPage}
-          label="conversions"
-        />
-      </div>
+      <TablePagination
+        currentPage={conversionPage}
+        totalPages={conversionTotalPages}
+        totalItems={conversionTotalItems}
+        itemsPerPage={conversionPageSize}
+        onPageChange={setConversionPage}
+        label="conversions"
+      />
 
       {/* Mobile summary cards */}
       <div className="space-y-3 md:hidden">
@@ -537,7 +538,7 @@ export const ConversionsLog = () => {
             </div>
           </article>
         ))}
-        {filteredConversions.length === 0 && (
+        {conversionTotalItems === 0 && (
           <div className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">No conversions found</div>
         )}
       </div>
