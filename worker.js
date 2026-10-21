@@ -59198,6 +59198,40 @@ async function resolveCacheMutationEvent(c) {
 __name(resolveCacheMutationEvent, "resolveCacheMutationEvent");
 __name2(resolveCacheMutationEvent, "resolveCacheMutationEvent");
 __name22(resolveCacheMutationEvent, "resolveCacheMutationEvent");
+async function __publishClickCfg(env, mutation) {
+  try {
+    if (!env || !env.DB || !env.UNIQUENESS_KV) return;
+    const entity = String(mutation.entity || "").toLowerCase();
+    if (!["campaign", "flow", "offer", "landing"].includes(entity)) return;
+    const id = String(mutation.entityId || "");
+    let rows = [];
+    if (entity === "campaign") {
+      rows = (await env.DB.prepare("SELECT alias FROM campaigns WHERE id = ? OR alias = ? LIMIT 1").bind(id, id).all()).results || [];
+    } else if (entity === "flow") {
+      rows = (await env.DB.prepare("SELECT c.alias AS alias FROM flows f JOIN campaigns c ON c.id = f.campaignId WHERE f.id = ? AND c.status = 'active'").bind(id).all()).results || [];
+    } else if (entity === "offer") {
+      rows = (await env.DB.prepare("SELECT DISTINCT c.alias AS alias FROM flowOffers fo JOIN flows f ON f.id = fo.flowId JOIN campaigns c ON c.id = f.campaignId WHERE fo.offerId = ? AND c.status = 'active' AND f.status = 'active'").bind(id).all()).results || [];
+    } else if (entity === "landing") {
+      rows = (await env.DB.prepare("SELECT DISTINCT c.alias AS alias FROM flowLandingPages flp JOIN flows f ON f.id = flp.flowId JOIN campaigns c ON c.id = f.campaignId WHERE flp.landingPageId = ? AND c.status = 'active' AND f.status = 'active'").bind(id).all()).results || [];
+    }
+    for (const row of rows) {
+      const alias = String(row.alias || "");
+      if (!alias) continue;
+      const cfgRows = (await env.DB.prepare("SELECT c.id AS campaignId, f.id AS flowId, fo.offerId AS offerId, o.url AS offerUrl, (SELECT flp.landingPageId FROM flowLandingPages flp WHERE flp.flowId = f.id ORDER BY flp.weight DESC LIMIT 1) AS landingPageId FROM campaigns c JOIN flows f ON f.campaignId = c.id AND f.status = 'active' JOIN flowOffers fo ON fo.flowId = f.id JOIN offers o ON o.id = fo.offerId AND o.status = 'active' WHERE c.alias = ? ORDER BY fo.weight DESC LIMIT 1").bind(alias).all()).results || [];
+      if (!cfgRows.length) {
+        if (mutation.action === "delete") await env.UNIQUENESS_KV.delete("clickcfg:" + alias);
+        continue;
+      }
+      const r = cfgRows[0];
+      const snapshot = { campaignId: r.campaignId, flowId: r.flowId, offerId: r.offerId, offerUrl: r.offerUrl, landingPageId: r.landingPageId || null, status: "active", updatedAt: new Date().toISOString() };
+      await env.UNIQUENESS_KV.put("clickcfg:" + alias, JSON.stringify(snapshot));
+      console.log("[cfg-publish] " + alias + " " + snapshot.flowId + " " + snapshot.offerId);
+    }
+  } catch (error) {
+    console.warn("[cfg-publish] failed:", error && error.message ? error.message : String(error));
+  }
+}
+__name(__publishClickCfg, "__publishClickCfg");
 app7.use("/api/*", async (c, next) => {
   await next();
   const mutation = await resolveCacheMutationEvent(c);
@@ -59209,6 +59243,7 @@ app7.use("/api/*", async (c, next) => {
       console.error("[CacheUpdate] Post-mutation invalidation failed:", error2);
     })
   );
+  c.executionCtx.waitUntil(__publishClickCfg(c.env, mutation));
 });
 app7.route("/api/campaigns", createCampaignRouter());
 app7.route("/api/flows", createFlowRouter());
