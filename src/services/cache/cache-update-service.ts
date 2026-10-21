@@ -12,6 +12,7 @@
 import type { Env } from '@/config/env';
 import { UnifiedCacheManager, CacheKeyBuilder } from './unified-cache-manager';
 import { SSECacheNotificationService } from './sse-cache-notification';
+import { ConfigSnapshotPublisher } from './config-snapshot.service';
 
 /**
  * 缓存更新方式
@@ -154,6 +155,17 @@ export class CacheUpdateService {
       if (action !== 'delete' && !entity.startsWith('click') && !entity.startsWith('conversion')) {
         await this.warmupEntityCache(entity, id);
       }
+
+      // Control-plane changes publish the click snapshot. Click/conversion
+      // never enter this branch, keeping the click path off D1.
+      if (!entity.startsWith('click') && !entity.startsWith('conversion') && action !== 'delete') {
+        const publisher = new ConfigSnapshotPublisher(this.env);
+        if (entity === 'campaign' || entity === 'campaigns') {
+          await publisher.publishCampaign(id);
+        } else if (['offer', 'offers', 'flow', 'flows', 'landing', 'landings'].includes(entity)) {
+          await publisher.publishAll();
+        }
+      }
       
       const duration = Date.now() - start;
       console.log(`[CacheUpdate] Programmatic update + SSE notification completed in ${duration}ms`);
@@ -283,8 +295,7 @@ export class CacheUpdateService {
       timestamp: new Date().toISOString(),
       errors: errors.length > 0 ? errors : undefined,
     };
-  }
-  
+  }  
   /**
    * 刷新Dashboard缓存
    */
