@@ -57,7 +57,7 @@ export function CampaignAutoruleBindingsModal({
       setError(null);
       try {
         const [rulesResult, bindingResult] = await Promise.all([
-          fetchRules({ page: 1, pageSize: 200, status: 'active' }),
+          fetchRules({ status: 'active' }),
           fetchCampaignAutoruleBindings(campaignId),
         ]);
 

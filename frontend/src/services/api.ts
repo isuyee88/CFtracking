@@ -1,142 +1,37 @@
 /**
- * @fileoverview API 服务
- * @description 统一封装后端 API 调用
+ * @fileoverview API 服务 - 前端 API 调用封装
+ * @description 统一封装后端 API 调用，提供类型安全的接口
  * @module services/api
+ *
+ * 数据存储架构 (ADR-001):
+ *   - D1 数据库: 主存储，持久化所有数据
+ *   - DO (Durable Objects): 实时计数、唯一性检查、缓存
+ *   - KV: 会话缓存、临时数据
+ *
+ * 数据流:
+ *   前端请求 → API 路由 → D1/DO 查询 → 返回数据
+ *
+ * 注意: Analytics Engine (AE) 已废弃，所有数据查询走 D1 + DO
  */
-
-import { getRawBootstrapData, loadBootstrapForLocation, normalizeRangeParam, readBootstrapPage } from './bootstrap';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
-let authRedirectInProgress = false;
 
-function safeGetStorageItem(key: string): string | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
+const DEFAULT_TIMEOUT = 15000; // 15秒超时
 
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function safeRemoveStorageItem(key: string) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    window.localStorage.removeItem(key);
-  } catch {
-    // Ignore storage access failures in restricted contexts.
-  }
-}
-
-function redirectToLoginOnUnauthorized(response: Response): Response {
-  if (typeof window === 'undefined' || response.status !== 401) {
-    return response;
-  }
-
-  if (window.location.pathname === '/login' || authRedirectInProgress) {
-    return response;
-  }
-
-  authRedirectInProgress = true;
-  safeRemoveStorageItem('token');
-  safeRemoveStorageItem('user');
-
-  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  const loginUrl = `/login?redirect=${encodeURIComponent(currentPath)}`;
-  window.location.assign(loginUrl);
-
-  return response;
-}
-
-/**
- * 获取认证请求头（包含 JWT Token）
- * @returns 包含 Authorization header 的对象
- */
-function getAuthHeaders(): Record<string, string> {
-  const token = safeGetStorageItem('token');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  return headers;
-}
-
-/**
- * 带认证的 fetch 封装
- * 自动附加 JWT Token 到请求头
- */
-async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const authHeaders = getAuthHeaders();
-
-  const response = await fetch(`${API_BASE_URL}${url}`, {
-    ...options,
-    headers: {
-      ...authHeaders,
-      ...(options.headers as Record<string, string>),
-    },
-  });
-
-  return redirectToLoginOnUnauthorized(response);
-}
-
-// 简单的内存缓存 - 用于减少重复请求
-interface ApiCacheEntry<T> {
-  data: T;
-  timestamp: number;
-  etag?: string;
-}
-
-type CacheMatcher = string | RegExp | ((key: string) => boolean);
-
-const apiCache = new Map<string, ApiCacheEntry<unknown>>();
+const apiCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 5000; // 5秒缓存
 
-function getCacheEntry<T>(key: string): ApiCacheEntry<T> | null {
-  return (apiCache.get(key) as ApiCacheEntry<T> | undefined) || null;
+function getCached<T>(key: string): T | null {
+  const cached = apiCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data as T;
+  }
+  apiCache.delete(key);
+  return null;
 }
 
-function storeEdgeCache<T>(key: string, data: T, etag?: string) {
-  const current = getCacheEntry<T>(key);
-  apiCache.set(key, {
-    data,
-    timestamp: Date.now(),
-    etag: etag ?? current?.etag,
-  });
-}
-
-export function invalidateApiCache(matcher?: CacheMatcher) {
-  if (!matcher) {
-    apiCache.clear();
-    return;
-  }
-
-  const matches = (key: string) => {
-    if (typeof matcher === 'string') {
-      return key.startsWith(matcher);
-    }
-
-    if (matcher instanceof RegExp) {
-      return matcher.test(key);
-    }
-
-    return matcher(key);
-  };
-
-  for (const key of Array.from(apiCache.keys())) {
-    if (matches(key)) {
-      apiCache.delete(key);
-    }
-  }
+function setCache(key: string, data: any) {
+  apiCache.set(key, { data, timestamp: Date.now() });
 }
 
 function createCacheKey(endpoint: string, params?: Record<string, any>): string {
@@ -148,719 +43,110 @@ function createCacheKey(endpoint: string, params?: Record<string, any>): string 
   return `${endpoint}?${sortedParams}`;
 }
 
-function matchesBootstrapScope(
-  actual: Record<string, unknown> | undefined,
-  expected: Record<string, unknown>
-): boolean {
-  if (!actual) {
-    return false;
-  }
-
-  const normalizeScopeValue = (key: string, value: unknown) => {
-    if (key === 'range') {
-      return normalizeRangeParam(typeof value === 'string' ? value : undefined);
-    }
-
-    if ((key === 'startDate' || key === 'endDate') && typeof value === 'string') {
-      return value.split('T')[0] || value;
-    }
-
-    return value;
-  };
-
-  return Object.entries(expected).every(([key, value]) => {
-    const current = normalizeScopeValue(key, actual[key]);
-    const expectedValue = normalizeScopeValue(key, value);
-    if (expectedValue === undefined || expectedValue === null || expectedValue === '') {
-      return current === undefined || current === null || current === '';
-    }
-    return current === expectedValue;
-  });
-}
-
-function createEmptyTrendsReport(filter: TrendsFilter = {}): TrendsReport {
-  return {
-    filter: {
-      startDate: filter.startDate || '',
-      endDate: filter.endDate || '',
-      interval: filter.interval || 'day',
-    },
-    summary: {
-      totalClicks: 0,
-      totalUniqueClicks: 0,
-      totalConversions: 0,
-      totalRevenue: 0,
-      totalCost: 0,
-      totalProfit: 0,
-      avgRoi: 0,
-      avgEpc: 0,
-      avgCpa: 0,
-      avgCtr: 0,
-      avgCr: 0,
-      trend: 'stable',
-      changePercent: 0,
-    },
-    data: [],
-  };
-}
-
-function readBootstrapValue<T>(
-  pages: string[],
-  selector: (bundle: { scope?: Record<string, unknown>; data?: Record<string, unknown> }) => T | undefined
-): T | undefined {
-  for (const page of pages) {
-    const bundle = readBootstrapPage(page);
-    if (!bundle) {
-      continue;
-    }
-
-    const value = selector(bundle);
-    if (value !== undefined) {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-function readDashboardBootstrap(): Record<string, any> | null {
-  const bundle = getRawBootstrapData<Record<string, any>>();
-  if (bundle && typeof bundle === 'object' && bundle.scope?.page === 'dashboard') {
-    return bundle;
-  }
-
-  return null;
-}
-
-function readSettingsBootstrapPreference(userId: string): UserPreferenceDocument | null {
-  const settingsBundle = readBootstrapPage('settings');
-  if (
-    settingsBundle &&
-    matchesBootstrapScope(settingsBundle.scope, {
-      userId,
-    }) &&
-    settingsBundle.data?.preferenceDocument
-  ) {
-    return settingsBundle.data.preferenceDocument as UserPreferenceDocument;
-  }
-
-  return null;
-}
-
-function readCampaignDetailFlowSchema(flowId: string): FlowSchemaDocument | null {
-  const campaignDetailBundle = readBootstrapPage('campaign-detail');
-  if (!campaignDetailBundle) {
-    return null;
-  }
-
-  const schemas = campaignDetailBundle.data?.flowSchemasById;
-  if (!schemas || typeof schemas !== 'object') {
-    return null;
-  }
-
-  const schema = (schemas as Record<string, unknown>)[flowId];
-  return schema && typeof schema === 'object' ? (schema as FlowSchemaDocument) : null;
-}
-
-function readCampaignDetailFlowRules(flowId: string): FlowRuleDocument[] | null {
-  const campaignDetailBundle = readBootstrapPage('campaign-detail');
-  if (!campaignDetailBundle) {
-    return null;
-  }
-
-  const rulesById = campaignDetailBundle.data?.flowRulesById;
-  if (rulesById && typeof rulesById === 'object') {
-    const rules = (rulesById as Record<string, unknown>)[flowId];
-    if (Array.isArray(rules)) {
-      return rules as FlowRuleDocument[];
-    }
-  }
-
-  const schema = readCampaignDetailFlowSchema(flowId);
-  return schema ? schema.rules : null;
-}
-
-function readCampaignDetailFlowLogs(
-  flowId: string,
-  params: { limit?: number; offset?: number; startDate?: string; endDate?: string } = {}
-): FlowLogListResult | null {
-  const isBootstrapScope =
-    (params.limit === undefined || params.limit === 8) &&
-    (params.offset === undefined || params.offset === 0) &&
-    !params.startDate &&
-    !params.endDate;
-
-  if (!isBootstrapScope) {
-    return null;
-  }
-
-  const campaignDetailBundle = readBootstrapPage('campaign-detail');
-  if (!campaignDetailBundle) {
-    return null;
-  }
-
-  const logsById = campaignDetailBundle.data?.flowLogsById;
-  if (!logsById || typeof logsById !== 'object') {
-    return null;
-  }
-
-  const logs = (logsById as Record<string, unknown>)[flowId];
-  return logs && typeof logs === 'object' ? (logs as FlowLogListResult) : null;
-}
-
-function matchesCampaignDetailBundle(
-  campaignId: string | number,
-  params: { startDate?: string; endDate?: string } = {}
-) {
-  const campaignDetailBundle = readBootstrapPage<Record<string, unknown>>('campaign-detail');
-  if (!campaignDetailBundle) {
-    return null;
-  }
-
-  const bundleCampaign =
-    campaignDetailBundle.data?.campaign && typeof campaignDetailBundle.data.campaign === 'object'
-      ? (campaignDetailBundle.data.campaign as Record<string, unknown>)
-      : null;
-
-  const knownIds = new Set(
-    [
-      typeof campaignDetailBundle.scope?.id === 'string' ? campaignDetailBundle.scope.id : '',
-      typeof bundleCampaign?.id === 'string' ? bundleCampaign.id : '',
-      typeof bundleCampaign?.displayId === 'string' ? bundleCampaign.displayId : '',
-    ].filter(Boolean)
-  );
-
-  if (!knownIds.has(String(campaignId))) {
-    return null;
-  }
-
-  if (params.startDate || params.endDate) {
-    if (
-      !matchesBootstrapScope(campaignDetailBundle.scope, {
-        startDate: params.startDate || '',
-        endDate: params.endDate || '',
-      })
-    ) {
-      return null;
-    }
-  }
-
-  return campaignDetailBundle;
-}
-
-function findBootstrapEntityById<T extends Record<string, unknown>>(
-  pages: string[],
-  collectionKey: string,
-  id: string | number
-): T | null {
-  const targetId = String(id);
-  const entities = readBootstrapValue<T[]>(pages, (bundle) => {
-    const collection = bundle.data?.[collectionKey];
-    return Array.isArray(collection) ? (collection as T[]) : undefined;
-  });
-
-  if (!Array.isArray(entities)) {
-    return null;
-  }
-
-  return (
-    entities.find((entity) => {
-      const entityId = typeof entity.id === 'string' ? entity.id : '';
-      const displayId = typeof entity.displayId === 'string' ? entity.displayId : '';
-      const conversionId = typeof entity.conversionId === 'string' ? entity.conversionId : '';
-      return entityId === targetId || displayId === targetId || conversionId === targetId;
-    }) || null
-  );
-}
-
-function matchesDashboardScope(
-  actual: Record<string, unknown> | undefined,
-  expected: {
-    range?: string;
-    campaignId?: string | null;
-  }
-): boolean {
-  if (!actual) {
-    return false;
-  }
-
-  const actualCampaignId = typeof actual.campaignId === 'string' ? actual.campaignId : '';
-  const expectedCampaignId = expected.campaignId || '';
-  const actualRange = normalizeRangeParam(typeof actual.range === 'string' ? actual.range : undefined);
-  const expectedRange = normalizeRangeParam(expected.range);
-
-  if (actualRange !== expectedRange) {
-    return false;
-  }
-
-  return actualCampaignId === expectedCampaignId;
-}
-
-async function ensureDashboardBootstrap(
-  expected: {
-    range?: string;
-    campaignId?: string | null;
-  }
-): Promise<Record<string, any> | null> {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  const currentUrl = new URL(window.location.href);
-  if (!['/', '/dashboard'].includes(currentUrl.pathname)) {
-    return null;
-  }
-
-  await loadBootstrapForLocation().catch(() => null);
-
-  const bundle = readDashboardBootstrap();
-  if (
-    bundle &&
-    matchesDashboardScope(bundle.scope, {
-      range: expected.range,
-      campaignId: expected.campaignId,
-    })
-  ) {
-    return bundle;
-  }
-
-  return null;
-}
-
-const FLOW_FILTER_OPERATORS: FlowFilterOption[] = [
-  { value: 'equals', label: 'Equals', description: 'Exact match' },
-  { value: 'notEquals', label: 'Not Equals', description: 'Not equal to value' },
-  { value: 'contains', label: 'Contains', description: 'String contains substring' },
-  { value: 'notContains', label: 'Not Contains', description: 'String does not contain substring' },
-  { value: 'startsWith', label: 'Starts With', description: 'String starts with value' },
-  { value: 'endsWith', label: 'Ends With', description: 'String ends with value' },
-  { value: 'regex', label: 'Regex', description: 'Matches regular expression' },
-  { value: 'in', label: 'In List', description: 'Value is in the list' },
-  { value: 'notIn', label: 'Not In List', description: 'Value is not in the list' },
-  { value: 'greaterThan', label: 'Greater Than', description: 'Number greater than value' },
-  { value: 'lessThan', label: 'Less Than', description: 'Number less than value' },
-  { value: 'greaterOrEquals', label: 'Greater Or Equals', description: 'Number greater or equal' },
-  { value: 'lessOrEquals', label: 'Less Or Equals', description: 'Number less or equal' },
-  { value: 'between', label: 'Between', description: 'Number in range [min, max]' },
-  { value: 'exists', label: 'Exists', description: 'Value exists and is not empty' },
-  { value: 'notExists', label: 'Not Exists', description: 'Value does not exist or is empty' },
-];
-
-const FLOW_FILTER_TARGETS: FlowTargetOption[] = [
-  { value: 'visitor.ip', label: 'IP Address', category: 'Visitor', type: 'string' },
-  { value: 'visitor.country', label: 'Country', category: 'Visitor', type: 'string' },
-  { value: 'visitor.region', label: 'Region', category: 'Visitor', type: 'string' },
-  { value: 'visitor.city', label: 'City', category: 'Visitor', type: 'string' },
-  { value: 'visitor.isp', label: 'ISP', category: 'Visitor', type: 'string' },
-  { value: 'visitor.connectionType', label: 'Connection Type', category: 'Visitor', type: 'string' },
-  { value: 'visitor.deviceType', label: 'Device Type', category: 'Visitor', type: 'string' },
-  { value: 'visitor.os', label: 'Operating System', category: 'Visitor', type: 'string' },
-  { value: 'visitor.browser', label: 'Browser', category: 'Visitor', type: 'string' },
-  { value: 'visitor.language', label: 'Language', category: 'Visitor', type: 'string' },
-  { value: 'visitor.userAgent', label: 'User Agent', category: 'Visitor', type: 'string' },
-  { value: 'visitor.isProxy', label: 'Is Proxy', category: 'Visitor', type: 'boolean' },
-  { value: 'visitor.isVpn', label: 'Is VPN', category: 'Visitor', type: 'boolean' },
-  { value: 'visitor.isDatacenter', label: 'Is Datacenter', category: 'Visitor', type: 'boolean' },
-  { value: 'visit.referrer', label: 'Referrer', category: 'Visit', type: 'string' },
-  { value: 'visit.source', label: 'Source', category: 'Visit', type: 'string' },
-  { value: 'visit.medium', label: 'Medium', category: 'Visit', type: 'string' },
-  { value: 'visit.campaign', label: 'Campaign', category: 'Visit', type: 'string' },
-  { value: 'visit.subId', label: 'Sub ID', category: 'Visit', type: 'string' },
-  { value: 'visit.clickId', label: 'Click ID', category: 'Visit', type: 'string' },
-  { value: 'visit.timestamp', label: 'Timestamp', category: 'Visit', type: 'number' },
-  { value: 'visit.hourOfDay', label: 'Hour of Day', category: 'Visit', type: 'number' },
-  { value: 'visit.dayOfWeek', label: 'Day of Week', category: 'Visit', type: 'number' },
-  { value: 'visit.landingPage', label: 'Landing Page', category: 'Visit', type: 'string' },
-  { value: 'visit.offer', label: 'Offer', category: 'Visit', type: 'string' },
-  { value: 'visit.conversion', label: 'Has Conversion', category: 'Visit', type: 'boolean' },
-  { value: 'visit.revenue', label: 'Revenue', category: 'Visit', type: 'number' },
-  { value: 'visit.visitsCount', label: 'Visits Count', category: 'Visit', type: 'number' },
-  { value: 'visit.firstVisit', label: 'First Visit', category: 'Visit', type: 'boolean' },
-  { value: 'visit.returning', label: 'Returning Visitor', category: 'Visit', type: 'boolean' },
-];
-
-
-
-
-// 通用响应处理函数
-async function handleResponse(response: Response) {
-  if (!response.ok) {
-    throw new Error(`API request failed with status ${response.status}`);
-  }
-  const data = await response.json();
-  return data;
-}
-
-async function handleRawJsonResponse<T>(response: Response): Promise<T> {
-  const payload = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const message =
-      (payload &&
-        typeof payload === 'object' &&
-        'message' in payload &&
-        typeof payload.message === 'string' &&
-        payload.message) ||
-      (payload &&
-        typeof payload === 'object' &&
-        'error' in payload &&
-        typeof payload.error === 'string' &&
-        payload.error) ||
-      `API request failed with status ${response.status}`;
-
-    throw new Error(message);
-  }
-
-  return payload as T;
-}
-
-function unwrapPayload<T>(payload: any): T {
-  if (payload && typeof payload === 'object' && 'data' in payload && payload.data !== undefined) {
-    return payload.data as T;
-  }
-
-  return payload as T;
-}
-
-function buildQueryString(params: Record<string, unknown>): string {
-  const query = new URLSearchParams();
-
-  Object.entries(params).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === '') {
-      return;
-    }
-
-    query.set(key, String(value));
-  });
-
-  const serialized = query.toString();
-  return serialized ? `?${serialized}` : '';
-}
-
-async function fetchListResult<T>(url: string): Promise<T[]> {
-  const response = await authenticatedFetch(url);
-  const payload = await handleRawJsonResponse<{
-    success?: boolean;
-    data?: T[];
-  }>(response);
-
-  const data = unwrapPayload<T[] | undefined>(payload);
-  return Array.isArray(data) ? data : [];
-}
-
-async function fetchPaginatedResult<T>(url: string): Promise<{
-  list: T[];
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-}> {
-  const response = await authenticatedFetch(url);
-  const payload = await handleRawJsonResponse<{
-    success?: boolean;
-    data?: T[];
-    meta?: {
-      page?: number;
-      pageSize?: number;
-      total?: number;
-      totalPages?: number;
-    };
-  }>(response);
-
-  const list = Array.isArray(payload?.data) ? payload.data : [];
-  const page = Number(payload?.meta?.page || 1);
-  const pageSize = Number(payload?.meta?.pageSize || list.length || 20);
-  const total = Number(payload?.meta?.total || list.length || 0);
-  const totalPages = Number(payload?.meta?.totalPages || (pageSize > 0 ? Math.ceil(total / pageSize) : 0));
-
-  return {
-    list,
-    page,
-    pageSize,
-    total,
-    totalPages,
-  };
-}
-
-async function mutateJsonData<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const response = await authenticatedFetch(url, options);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<T>(payload);
-}
-
-function getDeviceId(): string {
-  if (typeof window === 'undefined') {
-    return 'server-device';
-  }
-
-  const storageKey = 'cf_device_id';
-  const existingId = safeGetStorageItem(storageKey);
-  if (existingId) {
-    return existingId;
-  }
-
-  const newId =
-    typeof window.crypto?.randomUUID === 'function'
-      ? window.crypto.randomUUID()
-      : `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout: number = DEFAULT_TIMEOUT): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
   try {
-    window.localStorage.setItem(storageKey, newId);
-  } catch {
-    // Ignore storage write failures in restricted contexts.
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return newId;
 }
 
-// 获取 Campaign 列表
-// ==================== Anti-Fraud API ====================
-
-export interface HumanVerificationConfig {
-  enabled: boolean;
-  provider: 'turnstile' | 'recaptcha';
-  mode: 'managed' | 'invisible' | 'checkbox';
-  tokenField: string;
-  onSuspicious: boolean;
-  onFraudulent: boolean;
-  bypassVerifiedBots: boolean;
-  failOpen: boolean;
-  scoreThreshold: number;
-  siteKey?: string;
+interface ApiErrorResponse {
+  success?: boolean;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: Record<string, unknown>;
+  };
 }
 
-export interface HumanVerificationTokenResult {
+interface BackendResponse<T = any> {
   success: boolean;
-  provider: 'turnstile' | 'recaptcha';
-  challengeRequired: boolean;
-  score?: number;
-  action?: string;
-  hostname?: string;
-  challengeTs?: string;
-  errorCodes?: string[];
-  message?: string;
-}
-
-export interface AntiFraudDetectionEventPayload {
-  campaignId: string;
-  ip?: string;
-  userAgent?: string;
-  eventType?: 'impression' | 'click' | 'conversion';
-  url?: string;
-  timestamp?: string;
-  country?: string;
-  city?: string;
-  deviceType?: string;
-  screenResolution?: string;
-  referrer?: string;
-  context?: Record<string, unknown>;
-}
-
-export interface AntiFraudDetectionResult {
-  score: number;
-  status: 'clean' | 'suspicious' | 'fraudulent' | 'blocked';
-  action: 'allow' | 'log' | 'flag' | 'challenge' | 'block';
-  reasons: string[];
-  details: Record<string, unknown>;
-  blocked: boolean;
-  challengeRequired: boolean;
-  simulated?: boolean;
-}
-
-export interface AntiFraudBotListItem {
-  ip: string;
-  userAgent: string;
-  hits: number;
-  blockedHits: number;
-  suspiciousHits: number;
-  averageScore: number;
-  maxScore: number;
-  lastSeen: string;
-  category: 'bot' | 'automation' | 'datacenter' | 'unknown';
-}
-
-export interface AntiFraudBotListResult {
-  list: AntiFraudBotListItem[];
-  total: number;
-  summary: {
-    totalHits: number;
-    blockedHits: number;
-    suspiciousHits: number;
-    topCategory: string;
+  data: T;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: Record<string, unknown>;
+  };
+  meta?: {
+    total?: number;
+    page?: number;
+    pageSize?: number;
+    totalPages?: number;
+    [key: string]: any;
   };
 }
 
-export interface AntiFraudGeoProfileItem {
-  country: string;
-  total: number;
-  risky: number;
-  blocked: number;
-  riskRate: number;
-  blockedRate: number;
-  avgScore: number;
-  recommendation: 'allow' | 'challenge' | 'block';
-}
-
-export interface AntiFraudGeoProfileResult {
-  list: AntiFraudGeoProfileItem[];
-  recommendations: {
-    block: string[];
-    challenge: string[];
-  };
-}
-
-export interface AntiFraudArchiveImportResult {
-  type: 'ip-blacklist' | 'bot-rules';
-  total: number;
-  imported: number;
-  skipped: number;
-  failed: number;
-  errors: Array<{
-    row: number;
-    reason: string;
-    value?: string;
-  }>;
-}
-
-export async function fetchAntiFraudConfig(): Promise<any> {
-  const response = await authenticatedFetch('/api/anti-fraud/config');
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<any>(payload);
-}
-
-export async function updateAntiFraudConfig(config: Record<string, unknown>): Promise<any> {
-  const response = await authenticatedFetch('/api/anti-fraud/config', {
-    method: 'PUT',
-    body: JSON.stringify(config),
-  });
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<any>(payload);
-}
-
-export async function fetchHumanVerificationConfig(): Promise<HumanVerificationConfig> {
-  const response = await authenticatedFetch('/api/anti-fraud/human-verification/config');
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<HumanVerificationConfig>(payload);
-}
-
-export async function updateHumanVerificationConfig(
-  config: Partial<HumanVerificationConfig>
-): Promise<HumanVerificationConfig> {
-  const response = await authenticatedFetch('/api/anti-fraud/human-verification/config', {
-    method: 'PUT',
-    body: JSON.stringify(config),
-  });
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<HumanVerificationConfig>(payload);
-}
-
-export async function verifyHumanVerificationToken(params: {
-  token: string;
-  provider?: 'turnstile' | 'recaptcha';
-  remoteip?: string;
-}): Promise<HumanVerificationTokenResult> {
-  const response = await authenticatedFetch('/api/anti-fraud/human-verification/verify', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  });
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<HumanVerificationTokenResult>(payload);
-}
-
-export async function simulateAntiFraudDetection(
-  payload: AntiFraudDetectionEventPayload
-): Promise<AntiFraudDetectionResult> {
-  const response = await authenticatedFetch('/api/anti-fraud/simulate', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-  const result = await handleRawJsonResponse(response);
-  return unwrapPayload<AntiFraudDetectionResult>(result);
-}
-
-export async function fetchAntiFraudBotList(params: {
-  startDate?: string;
-  endDate?: string;
-  limit?: number;
-} = {}): Promise<AntiFraudBotListResult> {
-  const query = buildQueryString({
-    startDate: params.startDate,
-    endDate: params.endDate,
-    limit: params.limit,
-  });
-  const response = await authenticatedFetch(`/api/anti-fraud/bot-list${query}`);
-  const result = await handleRawJsonResponse(response);
-  return unwrapPayload<AntiFraudBotListResult>(result);
-}
-
-export async function fetchAntiFraudGeoProfile(params: {
-  startDate?: string;
-  endDate?: string;
-  top?: number;
-  minEvents?: number;
-} = {}): Promise<AntiFraudGeoProfileResult> {
-  const query = buildQueryString({
-    startDate: params.startDate,
-    endDate: params.endDate,
-    top: params.top,
-    minEvents: params.minEvents,
-  });
-  const response = await authenticatedFetch(`/api/anti-fraud/geo-profile${query}`);
-  const result = await handleRawJsonResponse(response);
-  return unwrapPayload<AntiFraudGeoProfileResult>(result);
-}
-
-export async function importAntiFraudArchive(payload: {
-  type: 'ip-blacklist' | 'bot-rules';
-  format?: 'json' | 'csv';
-  payload?: string;
-  items?: unknown[];
-  createdBy?: string;
-}): Promise<AntiFraudArchiveImportResult> {
-  const response = await authenticatedFetch('/api/anti-fraud/archive-import', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-  const result = await handleRawJsonResponse(response);
-  return unwrapPayload<AntiFraudArchiveImportResult>(result);
-}
-
-export async function fetchCampaigns() {
-  const bootstrapCampaigns = readBootstrapValue<any[]>(
-    ['campaigns', 'domains', 'trends'],
-    (bundle) => {
-      const campaigns = bundle.data?.campaigns;
-      return Array.isArray(campaigns) ? campaigns : undefined;
+async function handleResponse<T>(response: Response): Promise<{ data: T; meta?: BackendResponse['meta']; status: number }> {  const status = response.status;
+  
+  let responseData: BackendResponse<T>;
+  try {
+    responseData = await response.json();
+  } catch {
+    if (response.status === 204) {
+      return { data: {} as T, status };
     }
-  );
-
-  if (bootstrapCampaigns) {
-    return bootstrapCampaigns;
+    if (!response.ok) {
+      throw new Error(`HTTP ${status}: ${response.statusText || 'Request failed'}`);
+    }
+    return { data: {} as T, status };
   }
-
-  return fetchListResult<any>('/api/campaigns?page=1&pageSize=100');
+  
+  if (status === 200 || status === 201) {
+    if (responseData.success === false) {
+      throw new Error(responseData.error?.message || 'API request failed');
+    }
+    // Unwrap backend { success, data, meta } → { data, meta }
+    return {
+      data: responseData.data as T,
+      meta: responseData.meta,
+      status,
+    };
+  }
+  
+  const errorMessage = responseData.error?.message || `HTTP ${status}: ${response.statusText || 'Request failed'}`;
+  const error = new Error(errorMessage);
+  (error as any).status = status;
+  (error as any).response = responseData;
+  throw error;
 }
 
+async function fetchAllPages<T>(buildUrl: (page: number, pageSize: number) => string, pageSize = 100): Promise<T[]> {
+  const all: T[] = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const response = await fetch(buildUrl(page, pageSize));
+    const result = await handleResponse<{ list?: T[] } | T[]>(response);
+    const list = Array.isArray(result.data) ? result.data : (result.data?.list || []);
+    all.push(...list);
+    const total = Number(result.meta?.total) || all.length;
+    if (!list.length || all.length >= total) break;
+  }
+  return all;
+}
+
+// 获取 Campaign 列表（前端做搜索/分页，需完整集合）
+export async function fetchCampaigns() {
+  return fetchAllPages<any>((page, pageSize) => `${API_BASE_URL}/api/campaigns?page=${page}&pageSize=${pageSize}`);
+}
 // 获取单个 Campaign
 export async function fetchCampaign(id: string | number) {
-  const campaignDetailBundle = matchesCampaignDetailBundle(id);
-  if (campaignDetailBundle?.data?.campaign) {
-    return campaignDetailBundle.data.campaign;
-  }
-
-  const bootstrapEntity = findBootstrapEntityById(['campaigns', 'domains', 'trends'], 'campaigns', id);
-  if (bootstrapEntity) {
-    return bootstrapEntity;
-  }
-
-  const response = await authenticatedFetch(`/api/campaigns/${id}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload(payload);
+  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 // 创建 Campaign
 export async function createCampaign(data: any) {
-  const response = await authenticatedFetch('/api/campaigns', {
+  const response = await fetch(`${API_BASE_URL}/api/campaigns`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -869,168 +155,18 @@ export async function createCampaign(data: any) {
 
 // 更新 Campaign
 export async function updateCampaign(id: string | number, data: any) {
-  const response = await authenticatedFetch(`/api/campaigns/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
   return result.data;
 }
 
-export interface AutoruleBindingRecord {
-  id?: string;
-  scope: 'campaign' | 'flow';
-  scopeId: string;
-  ruleId: string;
-  priority: number;
-  createdAt?: string;
-  updatedAt: string;
-}
-
-export interface AutoruleBindingInput {
-  ruleId: string;
-  priority: number;
-}
-
-export type AutoruleScopeType = 'global' | 'traffic_source' | 'campaign';
-
-export type AutoruleScopeMode = 'inherit' | 'off' | 'rules' | 'whitelist_gate';
-
-export interface AutoruleScopeBinding {
-  ruleId: string;
-  priority: number;
-  enabled?: boolean;
-  updatedAt?: string;
-}
-
-export interface AutoruleScopeConfig {
-  id?: string;
-  scopeType: AutoruleScopeType;
-  scopeId: string;
-  mode: AutoruleScopeMode;
-  enabled: boolean;
-  bindings: AutoruleScopeBinding[];
-  createdAt?: string;
-  updatedAt: string;
-}
-
-export interface SaveAutoruleScopeConfigInput {
-  mode: AutoruleScopeMode;
-  enabled?: boolean;
-  bindings?: Array<{
-    ruleId: string;
-    priority?: number;
-    enabled?: boolean;
-  }>;
-}
-
-export async function fetchCampaignAutoruleBindings(campaignId: string | number): Promise<AutoruleBindingRecord[]> {
-  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-bindings`);
-  const result = await handleResponse(response);
-  return Array.isArray(result.data) ? result.data as AutoruleBindingRecord[] : [];
-}
-
-export async function replaceCampaignAutoruleBindings(
-  campaignId: string | number,
-  bindings: AutoruleBindingInput[]
-): Promise<AutoruleBindingRecord[]> {
-  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-bindings`, {
-    method: 'PUT',
-    body: JSON.stringify({ bindings }),
-  });
-  const result = await handleResponse(response);
-  return Array.isArray(result.data) ? result.data as AutoruleBindingRecord[] : [];
-}
-
-export async function clearCampaignAutoruleBindings(campaignId: string | number) {
-  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-bindings`, {
-    method: 'DELETE',
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function fetchCampaignAutoruleScopeConfig(
-  campaignId: string | number
-): Promise<AutoruleScopeConfig | null> {
-  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-scope-config`);
-  const result = await handleResponse(response);
-  return (result.data as AutoruleScopeConfig | null) || null;
-}
-
-export async function saveCampaignAutoruleScopeConfig(
-  campaignId: string | number,
-  input: SaveAutoruleScopeConfigInput
-): Promise<AutoruleScopeConfig> {
-  const response = await authenticatedFetch(`/api/campaigns/${campaignId}/autorule-scope-config`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  });
-  const result = await handleResponse(response);
-  return result.data as AutoruleScopeConfig;
-}
-
-export async function fetchGlobalAutoruleScopeConfig(): Promise<AutoruleScopeConfig | null> {
-  const response = await authenticatedFetch('/api/rules/global-scope-config');
-  const result = await handleResponse(response);
-  return (result.data as AutoruleScopeConfig | null) || null;
-}
-
-export async function saveGlobalAutoruleScopeConfig(
-  input: SaveAutoruleScopeConfigInput
-): Promise<AutoruleScopeConfig> {
-  const response = await authenticatedFetch('/api/rules/global-scope-config', {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  });
-  const result = await handleResponse(response);
-  return result.data as AutoruleScopeConfig;
-}
-
-export async function fetchTrafficSourceAutoruleScopeConfig(
-  trafficSourceId: string | number
-): Promise<AutoruleScopeConfig | null> {
-  const response = await authenticatedFetch(`/api/traffic-sources/${trafficSourceId}/autorule-scope-config`);
-  const result = await handleResponse(response);
-  return (result.data as AutoruleScopeConfig | null) || null;
-}
-
-export async function saveTrafficSourceAutoruleScopeConfig(
-  trafficSourceId: string | number,
-  input: SaveAutoruleScopeConfigInput
-): Promise<AutoruleScopeConfig> {
-  const response = await authenticatedFetch(`/api/traffic-sources/${trafficSourceId}/autorule-scope-config`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  });
-  const result = await handleResponse(response);
-  return result.data as AutoruleScopeConfig;
-}
-
-export async function batchApplyTrafficSourceAutoruleScopeConfig(
-  trafficSourceIds: Array<string | number>,
-  input: SaveAutoruleScopeConfigInput
-): Promise<AutoruleScopeConfig[]> {
-  const response = await authenticatedFetch('/api/traffic-sources/autorule-scope-configs/batch', {
-    method: 'PUT',
-    body: JSON.stringify({
-      trafficSourceIds: trafficSourceIds.map((item) => String(item)),
-      ...input,
-    }),
-  });
-  const result = await handleResponse(response);
-  return Array.isArray(result.data) ? (result.data as AutoruleScopeConfig[]) : [];
-}
-
-export async function fetchTrafficSourceAutoruleScopeConfigs(): Promise<AutoruleScopeConfig[]> {
-  const response = await authenticatedFetch('/api/traffic-sources/autorule-scope-configs');
-  const result = await handleResponse(response);
-  return Array.isArray(result.data) ? (result.data as AutoruleScopeConfig[]) : [];
-}
-
 // 删除 Campaign
 export async function deleteCampaign(id: string | number) {
-  const response = await authenticatedFetch(`/api/campaigns/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -1038,100 +174,36 @@ export async function deleteCampaign(id: string | number) {
 }
 
 // 获取 Campaign 统计
-export async function fetchCampaignStats(
-  id: string | number,
-  params: { startDate?: string; endDate?: string } = {}
-) {
-  const campaignDetailBundle = matchesCampaignDetailBundle(id, params);
-  if (campaignDetailBundle?.data?.stats) {
-    return campaignDetailBundle.data.stats;
-  }
-
-  const query = buildQueryString(params);
-  const response = await authenticatedFetch(`/api/campaigns/${id}/stats${query}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload(payload);
-}
-
-export async function regenerateCampaignToken(id: string | number) {
-  const response = await authenticatedFetch(`/api/campaigns/${id}/regenerate-token`, {
-    method: 'POST',
-  });
+export async function fetchCampaignStats(id: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}/stats`);
   const result = await handleResponse(response);
   return result.data;
 }
 
 // 获取 Tracking Script 代码
 export async function fetchTrackingScript(campaignId: string, type: 'tracking' | 'kclient' = 'tracking') {
-  const campaignDetailBundle = matchesCampaignDetailBundle(campaignId);
-  if (campaignDetailBundle) {
-    const value =
-      type === 'kclient'
-        ? campaignDetailBundle.data?.kclientScript
-        : campaignDetailBundle.data?.trackingScript;
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return null;
+  const response = await fetch(`${API_BASE_URL}/api/tracking/script/code?campaignId=${campaignId}&type=${type}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 // ==================== Offers API ====================
 
-export async function fetchOffers(
-  withStats = true,
-  dateParams: { startDate?: string; endDate?: string } = {}
-) {
-  const bootstrapOffers = readBootstrapValue<any[]>(
-    ['offers', 'campaign-detail', 'campaigns'],
-    (bundle) => {
-      if (
-        (dateParams.startDate || dateParams.endDate) &&
-        !matchesBootstrapScope(bundle.scope, {
-          startDate: dateParams.startDate,
-          endDate: dateParams.endDate,
-        })
-      ) {
-        return undefined;
-      }
-
-      const offers = bundle.data?.offers;
-      return Array.isArray(offers) ? offers : undefined;
-    }
-  );
-
-  if (bootstrapOffers) {
-    return bootstrapOffers;
-  }
-
-  const query = buildQueryString({
-    page: 1,
-    pageSize: 100,
-    withStats: withStats ? 'true' : 'false',
-    startDate: dateParams.startDate,
-    endDate: dateParams.endDate,
-  });
-  const result = await fetchListResult<any>(`/api/offers${query}`);
-  // fetchListResult returns the data array directly, but ensure it's an array
-  return Array.isArray(result) ? result : [];
+export async function fetchOffers(withStats = false) {
+  // The Offers page paginates locally, so it needs the complete collection.
+  return fetchAllPages<any>((page, pageSize) => `${API_BASE_URL}/api/offers?withStats=${withStats}&page=${page}&pageSize=${pageSize}`);
 }
 
 export async function fetchOffer(id: string | number) {
-  const bootstrapEntity = findBootstrapEntityById(['offers', 'campaign-detail', 'campaigns'], 'offers', id);
-  if (bootstrapEntity) {
-    return bootstrapEntity;
-  }
-
-  const response = await authenticatedFetch(`/api/offers/${id}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload(payload);
+  const response = await fetch(`${API_BASE_URL}/api/offers/${id}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 export async function createOffer(data: any) {
-  const response = await authenticatedFetch('/api/offers', {
+  const response = await fetch(`${API_BASE_URL}/api/offers`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1139,8 +211,9 @@ export async function createOffer(data: any) {
 }
 
 export async function updateOffer(id: string | number, data: any) {
-  const response = await authenticatedFetch(`/api/offers/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/offers/${id}`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1148,7 +221,7 @@ export async function updateOffer(id: string | number, data: any) {
 }
 
 export async function deleteOffer(id: string | number) {
-  const response = await authenticatedFetch(`/api/offers/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/offers/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -1157,173 +230,20 @@ export async function deleteOffer(id: string | number) {
 
 // ==================== Traffic Sources API ====================
 
-export interface TrafficSourceApiConnectionDiagnostics {
-  checkedAt?: string;
-  durationMs?: number;
-  platformType?: string;
-  baseUrl?: string;
-  httpStatus?: number;
-  hint?: string;
-}
-
-export interface TrafficSourceApiConnectionResult {
-  success: boolean;
-  message: string;
-  details?: {
-    accountName?: string;
-    accountId?: string;
-    balance?: number;
-    currency?: string;
-    [key: string]: unknown;
-  };
-  diagnostics?: TrafficSourceApiConnectionDiagnostics;
-}
-
-export interface TrafficSourceMacroPreviewResult {
-  generatedAt: string;
-  sampleContext: Record<string, string>;
-  trackingQuery: string;
-  parameterPreview: Array<{
-    alias: string;
-    paramName: string;
-    macro: string;
-    resolvedValue: string;
-    queryPair: string;
-    unresolved: boolean;
-  }>;
-  postbackTemplate: string;
-  postbackPreview: string;
-  detectedMacros: string[];
-  unresolvedMacros: string[];
-}
-
-export interface HostedAssetUploadResult {
-  assetId: string;
-  entityType: 'landing' | 'offer';
-  mode: 'local' | 'zip' | 'image';
-  name: string;
-  fileName: string;
-  mimeType: string;
-  byteSize: number;
-  publicUrl: string;
-  archiveUrl?: string;
-  createdAt: string;
-}
-
-export async function fetchTrafficSources(
-  withStats = true,
-  dateParams: { startDate?: string; endDate?: string } = {}
-) {
-  const bootstrapTrafficSources = readBootstrapValue<any[]>(
-    ['traffic-sources', 'campaign-detail', 'campaigns'],
-    (bundle) => {
-      if (
-        (dateParams.startDate || dateParams.endDate) &&
-        !matchesBootstrapScope(bundle.scope, {
-          startDate: dateParams.startDate,
-          endDate: dateParams.endDate,
-        })
-      ) {
-        return undefined;
-      }
-
-      const trafficSources = bundle.data?.trafficSources;
-      return Array.isArray(trafficSources) ? trafficSources : undefined;
-    }
-  );
-
-  if (bootstrapTrafficSources) {
-    return bootstrapTrafficSources;
-  }
-
-  const query = buildQueryString({
-    page: 1,
-    pageSize: 100,
-    withStats: withStats ? 'true' : 'false',
-    startDate: dateParams.startDate,
-    endDate: dateParams.endDate,
-  });
-  return fetchListResult<any>(`/api/traffic-sources${query}`);
-}
-
-export async function fetchBlacklistEntries() {
-  return fetchListResult<any>('/api/blacklist');
-}
-
-export async function fetchWhitelistEntries() {
-  return fetchListResult<any>('/api/whitelist');
-}
-
-export async function syncBlacklist(trafficSourceId: string) {
-  return mutateJsonData<any>(`/api/blacklist/sync/${trafficSourceId}`, {
-    method: 'POST',
-  });
-}
-
-export async function deleteBlacklistEntry(id: string) {
-  return mutateJsonData<any>(`/api/blacklist/${id}`, {
-    method: 'DELETE',
-  });
-}
-
-export async function createBlacklistEntry(payload: unknown) {
-  return mutateJsonData<any>('/api/blacklist', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function updateBlacklistEntry(id: string, payload: unknown) {
-  return mutateJsonData<any>(`/api/blacklist/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function syncWhitelist(trafficSourceId: string) {
-  return mutateJsonData<any>(`/api/whitelist/sync/${trafficSourceId}`, {
-    method: 'POST',
-  });
-}
-
-export async function deleteWhitelistEntry(id: string) {
-  return mutateJsonData<any>(`/api/whitelist/${id}`, {
-    method: 'DELETE',
-  });
-}
-
-export async function createWhitelistEntry(payload: unknown) {
-  return mutateJsonData<any>('/api/whitelist', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function updateWhitelistEntry(id: string, payload: unknown) {
-  return mutateJsonData<any>(`/api/whitelist/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  });
+export async function fetchTrafficSources(withStats = true) {
+  return fetchAllPages<any>((page, pageSize) => `${API_BASE_URL}/api/traffic-sources?withStats=${withStats}&page=${page}&pageSize=${pageSize}`);
 }
 
 export async function fetchTrafficSource(id: string | number) {
-  const bootstrapEntity = findBootstrapEntityById(
-    ['traffic-sources', 'campaign-detail', 'campaigns'],
-    'trafficSources',
-    id
-  );
-  if (bootstrapEntity) {
-    return bootstrapEntity;
-  }
-
-  const response = await authenticatedFetch(`/api/traffic-sources/${id}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload(payload);
+  const response = await fetch(`${API_BASE_URL}/api/traffic-sources/${id}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 export async function createTrafficSource(data: any) {
-  const response = await authenticatedFetch('/api/traffic-sources', {
+  const response = await fetch(`${API_BASE_URL}/api/traffic-sources`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1331,8 +251,9 @@ export async function createTrafficSource(data: any) {
 }
 
 export async function updateTrafficSource(id: string | number, data: any) {
-  const response = await authenticatedFetch(`/api/traffic-sources/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/traffic-sources/${id}`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1340,12 +261,217 @@ export async function updateTrafficSource(id: string | number, data: any) {
 }
 
 export async function deleteTrafficSource(id: string | number) {
-  const response = await authenticatedFetch(`/api/traffic-sources/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/traffic-sources/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
   return result.data;
 }
+
+// ==================== Blacklist API ====================
+
+export async function fetchBlacklist(params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  source?: string;
+  synced?: string;
+  type?: string;
+}) {
+  const build = (page: number, pageSize: number) => {
+    const queryParams = new URLSearchParams();
+    queryParams.set('page', String(page));
+    queryParams.set('pageSize', String(pageSize));
+    if (params?.search) queryParams.set('search', params.search);
+    if (params?.source) queryParams.set('source', params.source);
+    if (params?.synced) queryParams.set('synced', params.synced);
+    if (params?.type) queryParams.set('type', params.type);
+    return `${API_BASE_URL}/api/blacklist?${queryParams.toString()}`;
+  };
+  return fetchAllPages<any>(build);
+}
+
+export async function createBlacklistEntry(data: any) {
+  const response = await fetch(`${API_BASE_URL}/api/blacklist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function updateBlacklistEntry(id: string | number, data: any) {
+  const response = await fetch(`${API_BASE_URL}/api/blacklist/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function deleteBlacklistEntry(id: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/blacklist/${id}`, {
+    method: 'DELETE',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function syncBlacklistEntry(id: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/blacklist/${id}/sync`, {
+    method: 'POST',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+// ==================== Whitelist API ====================
+
+export async function fetchWhitelist(params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  source?: string;
+  synced?: string;
+  type?: string;
+}) {
+  const build = (page: number, pageSize: number) => {
+    const queryParams = new URLSearchParams();
+    queryParams.set('page', String(page));
+    queryParams.set('pageSize', String(pageSize));
+    if (params?.search) queryParams.set('search', params.search);
+    if (params?.source) queryParams.set('source', params.source);
+    if (params?.synced) queryParams.set('synced', params.synced);
+    if (params?.type) queryParams.set('type', params.type);
+    return `${API_BASE_URL}/api/whitelist?${queryParams.toString()}`;
+  };
+  return fetchAllPages<any>(build);
+}
+
+export async function createWhitelistEntry(data: any) {
+  const response = await fetch(`${API_BASE_URL}/api/whitelist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function updateWhitelistEntry(id: string | number, data: any) {
+  const response = await fetch(`${API_BASE_URL}/api/whitelist/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function deleteWhitelistEntry(id: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/whitelist/${id}`, {
+    method: 'DELETE',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function syncWhitelistEntry(id: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/whitelist/${id}/sync`, {
+    method: 'POST',
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+// ==================== Reports API ====================
+
+export interface ReportRecord {
+  id: number;
+  datetime: string;
+  campaign: string;
+  landing: string;
+  offer: string;
+  clicks: number;
+  unique_clicks: number;
+  conversions: number;
+  revenue: string;
+  cost: string;
+  profit: string;
+  roi: string;
+  cr: string;
+  epc: string;
+  country: string;
+  region: string;
+  city: string;
+  device_type: string;
+  os: string;
+  browser: string;
+  source: string;
+  referrer: string;
+  sub1: string;
+  sub2: string;
+  sub3: string;
+}
+
+export interface ReportsResult {
+  list: ReportRecord[];
+  meta: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export async function fetchReports(params: {
+  page?: number;
+  pageSize?: number;
+  startDate?: string;
+  endDate?: string;
+  filters?: Array<{ field: string; operator: string; value: string }>;
+  sortField?: string;
+  sortOrder?: 'asc' | 'desc';
+}) {
+  const queryParams = new URLSearchParams();
+  if (params.page) queryParams.set('page', params.page.toString());
+  if (params.pageSize) queryParams.set('pageSize', params.pageSize.toString());
+  if (params.startDate) queryParams.set('startDate', params.startDate);
+  if (params.endDate) queryParams.set('endDate', params.endDate);
+  if (params.sortField) queryParams.set('sortField', params.sortField);
+  if (params.sortOrder) queryParams.set('sortOrder', params.sortOrder);
+  if (params.filters) {
+    queryParams.set('filters', JSON.stringify(params.filters));
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/reports?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return {
+    list: result.data?.list || result.data || [],
+    meta: result.meta || { page: 1, pageSize: 20, total: 0, totalPages: 1 },
+  };
+}
+
+export async function fetchReportStats(params: {
+  startDate?: string;
+  endDate?: string;
+  filters?: Array<{ field: string; operator: string; value: string }>;
+}) {
+  const queryParams = new URLSearchParams();
+  if (params.startDate) queryParams.set('startDate', params.startDate);
+  if (params.endDate) queryParams.set('endDate', params.endDate);
+  if (params.filters) {
+    queryParams.set('filters', JSON.stringify(params.filters));
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/reports/stats?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+// ==================== Traffic Sources API ====================
 
 export async function testTrafficSourceConnection(data: {
   apiBaseUrl: string;
@@ -1353,77 +479,31 @@ export async function testTrafficSourceConnection(data: {
   apiSecret?: string;
   platformType?: string;
 }) {
-  const response = await authenticatedFetch('/api/traffic-sources/test-connection', {
+  const response = await fetch(`${API_BASE_URL}/api/traffic-sources/test-connection`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<TrafficSourceApiConnectionResult>(payload);
-}
-
-export async function previewTrafficSourceMacros(data: {
-  parameters?: Array<{ alias: string; paramName: string; macro: string }>;
-  postbackUrl?: string;
-  context?: Record<string, unknown>;
-}) {
-  const response = await authenticatedFetch('/api/traffic-sources/macro-preview', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<TrafficSourceMacroPreviewResult>(payload);
-}
-
-export async function uploadHostedAsset(data: {
-  entityType: 'landing' | 'offer';
-  mode: 'local' | 'zip' | 'image';
-  name?: string;
-  fileName?: string;
-  mimeType?: string;
-  contentBase64: string;
-}) {
-  const response = await authenticatedFetch('/api/hosted-assets/upload', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<HostedAssetUploadResult>(payload);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 // ==================== Affiliate Networks API ====================
 
 export async function fetchAffiliateNetworks(withStats = true) {
-  const bootstrapNetworks = readBootstrapValue<any[]>(
-    ['affiliate-networks', 'offers'],
-    (bundle) => {
-      const affiliateNetworks = bundle.data?.affiliateNetworks;
-      return Array.isArray(affiliateNetworks) ? affiliateNetworks : undefined;
-    }
-  );
-
-  if (bootstrapNetworks) {
-    return bootstrapNetworks;
-  }
-
-  return fetchListResult<any>(
-    `/api/affiliate-networks?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`
-  );
+  return fetchAllPages<any>((page, pageSize) => `${API_BASE_URL}/api/affiliate-networks?withStats=${withStats}&page=${page}&pageSize=${pageSize}`);
 }
 
 export async function fetchAffiliateNetwork(id: string | number) {
-  const bootstrapEntity = findBootstrapEntityById(['affiliate-networks', 'offers'], 'affiliateNetworks', id);
-  if (bootstrapEntity) {
-    return bootstrapEntity;
-  }
-
-  const response = await authenticatedFetch(`/api/affiliate-networks/${id}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload(payload);
+  const response = await fetch(`${API_BASE_URL}/api/affiliate-networks/${id}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 export async function createAffiliateNetwork(data: any) {
-  const response = await authenticatedFetch('/api/affiliate-networks', {
+  const response = await fetch(`${API_BASE_URL}/api/affiliate-networks`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1431,8 +511,9 @@ export async function createAffiliateNetwork(data: any) {
 }
 
 export async function updateAffiliateNetwork(id: string | number, data: any) {
-  const response = await authenticatedFetch(`/api/affiliate-networks/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/affiliate-networks/${id}`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1440,55 +521,7 @@ export async function updateAffiliateNetwork(id: string | number, data: any) {
 }
 
 export async function deleteAffiliateNetwork(id: string | number) {
-  const response = await authenticatedFetch(`/api/affiliate-networks/${id}`, {
-    method: 'DELETE',
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-// ==================== Domains API ====================
-
-export async function fetchDomains(withStats = true) {
-  const domainsBundle = readBootstrapPage('domains');
-  if (domainsBundle && Array.isArray(domainsBundle.data?.domains)) {
-    return domainsBundle.data.domains;
-  }
-
-  return fetchListResult<any>(`/api/domains?page=1&pageSize=100&withStats=${withStats ? 'true' : 'false'}`);
-}
-
-export async function fetchDomain(id: string | number) {
-  const bootstrapEntity = findBootstrapEntityById(['domains'], 'domains', id);
-  if (bootstrapEntity) {
-    return bootstrapEntity;
-  }
-
-  const response = await authenticatedFetch(`/api/domains/${id}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload(payload);
-}
-
-export async function createDomain(data: any) {
-  const response = await authenticatedFetch('/api/domains', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function updateDomain(id: string | number, data: any) {
-  const response = await authenticatedFetch(`/api/domains/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function deleteDomain(id: string | number) {
-  const response = await authenticatedFetch(`/api/domains/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/affiliate-networks/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -1498,17 +531,15 @@ export async function deleteDomain(id: string | number) {
 // ==================== Flow API ====================
 
 export async function fetchFlows(campaignId: string) {
-  const campaignDetailBundle = matchesCampaignDetailBundle(campaignId);
-  if (campaignDetailBundle && Array.isArray(campaignDetailBundle.data?.flows)) {
-    return campaignDetailBundle.data.flows;
-  }
-
-  return fetchListResult<any>(`/api/flows/campaign/${campaignId}`);
+  const response = await fetch(`${API_BASE_URL}/api/flows/campaign/${campaignId}`);
+  const result = await handleResponse(response);
+  return result.data || [];
 }
 
 export async function createFlow(data: any) {
-  const response = await authenticatedFetch('/api/flows', {
+  const response = await fetch(`${API_BASE_URL}/api/flows`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1516,8 +547,9 @@ export async function createFlow(data: any) {
 }
 
 export async function updateFlow(id: string | number, data: any) {
-  const response = await authenticatedFetch(`/api/flows/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${id}`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1525,7 +557,7 @@ export async function updateFlow(id: string | number, data: any) {
 }
 
 export async function deleteFlow(id: string | number) {
-  const response = await authenticatedFetch(`/api/flows/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
@@ -1533,8 +565,9 @@ export async function deleteFlow(id: string | number) {
 }
 
 export async function addLandingPageToFlow(flowId: string, landingPageId: string, weight?: number) {
-  const response = await authenticatedFetch(`/api/flows/${flowId}/landing-pages`, {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/landing-pages`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ landingPageId, weight }),
   });
   const result = await handleResponse(response);
@@ -1542,454 +575,31 @@ export async function addLandingPageToFlow(flowId: string, landingPageId: string
 }
 
 export async function addOfferToFlow(flowId: string, offerId: string, weight?: number) {
-  const response = await authenticatedFetch(`/api/flows/${flowId}/offers`, {
+  const response = await fetch(`${API_BASE_URL}/api/flows/${flowId}/offers`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ offerId, weight }),
   });
   const result = await handleResponse(response);
   return result.data;
 }
 
-export type FlowFilterOperator =
-  | 'equals'
-  | 'notEquals'
-  | 'contains'
-  | 'notContains'
-  | 'startsWith'
-  | 'endsWith'
-  | 'regex'
-  | 'in'
-  | 'notIn'
-  | 'greaterThan'
-  | 'lessThan'
-  | 'greaterOrEquals'
-  | 'lessOrEquals'
-  | 'between'
-  | 'exists'
-  | 'notExists';
-
-export type FlowFilterTarget = string;
-export type FlowLogicalOperator = 'AND' | 'OR';
-export type FlowRuleActionType = 'allow' | 'block' | 'redirect' | 'showPage' | 'showOffer';
-
-export interface FlowFilterOption {
-  value: FlowFilterOperator;
-  label: string;
-  description: string;
-}
-
-export interface FlowTargetOption {
-  value: FlowFilterTarget;
-  label: string;
-  category: string;
-  type: 'string' | 'number' | 'boolean';
-}
-
-export interface FlowRuleFilter {
-  id: string;
-  name?: string;
-  target: FlowFilterTarget;
-  operator: FlowFilterOperator;
-  value?: string | string[] | number | number[] | boolean | null;
-  enabled: boolean;
-}
-
-export interface FlowRuleGroup {
-  id: string;
-  name?: string;
-  logic: FlowLogicalOperator;
-  filters: FlowRuleFilter[];
-  groups?: FlowRuleGroup[];
-  enabled: boolean;
-}
-
-export interface FlowRuleActionConfig {
-  type: FlowRuleActionType;
-  targetId?: string;
-  redirectUrl?: string;
-  blockReason?: string;
-  weight?: number;
-}
-
-export interface FlowRuleDocument {
-  id: string;
-  name: string;
-  description?: string;
-  flowId: string;
-  priority: number;
-  condition: FlowRuleGroup;
-  action: FlowRuleActionConfig;
-  status: 'active' | 'paused' | 'deleted';
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface FlowSchemaDocument {
-  flow: {
-    id: string;
-    campaignId: string;
-    name: string;
-    type: 'regular' | 'forced' | 'default';
-    weight: number;
-    status: 'active' | 'paused' | 'deleted';
-  };
-  rules: FlowRuleDocument[];
-  defaultAction: FlowRuleActionConfig;
-  version: string;
-  updatedAt: string;
-}
-
-export interface CreateFlowRuleDTO {
-  name: string;
-  description?: string;
-  priority?: number;
-  condition: CreateFlowRuleGroupDTO;
-  action: FlowRuleActionConfig;
-}
-
-export interface UpdateFlowRuleDTO {
-  name?: string;
-  description?: string;
-  priority?: number;
-  condition?: CreateFlowRuleDTO['condition'];
-  action?: FlowRuleActionConfig;
-  status?: 'active' | 'paused' | 'deleted';
-}
-
-export interface CreateFlowRuleFilterDTO {
-  id: string;
-  target: FlowFilterTarget;
-  operator: FlowFilterOperator;
-  value?: string | string[] | number | number[] | boolean | null;
-  name?: string;
-  enabled: boolean;
-}
-
-export interface CreateFlowRuleGroupDTO {
-  id: string;
-  name?: string;
-  logic: FlowLogicalOperator;
-  filters: CreateFlowRuleFilterDTO[];
-  groups?: CreateFlowRuleGroupDTO[];
-  enabled: boolean;
-}
-
-export interface FlowValidationVisitData {
-  source?: string;
-  medium?: string;
-  campaign?: string;
-  subId?: string;
-  clickId?: string;
-  referrer?: string;
-  visitsCount?: number;
-  firstVisit?: boolean;
-  returning?: boolean;
-}
-
-export interface FlowValidationFilterResult {
-  valid: boolean;
-  matchedFilterId?: string;
-  matchedValue?: unknown;
-  reason?: string;
-}
-
-export interface FlowRuleValidationResult {
-  matched: boolean;
-  ruleId?: string;
-  ruleName?: string;
-  action?: FlowRuleActionConfig;
-  matchedFilters?: FlowValidationFilterResult[];
-  priority?: number;
-}
-
-export interface FlowValidationResult {
-  passed: boolean;
-  matchedRule?: FlowRuleValidationResult;
-  action: FlowRuleActionConfig;
-  ruleResults: FlowRuleValidationResult[];
-  validatedAt: string;
-  durationMs: number;
-}
-
-export interface FlowSimulationInput {
-  context: Record<string, unknown>;
-  schemas: FlowSchemaDocument[];
-  rotation?: 'position' | 'weight';
-  riskScore?: number | null;
-}
-
-export interface FlowSimulationTrace {
-  flowId: string;
-  flowType: FlowSchemaDocument['flow']['type'];
-  matched: boolean;
-  reason: string;
-  ruleResults: FlowRuleValidationResult[];
-  matchedRule?: FlowRuleValidationResult;
-}
-
-export interface FlowSimulationResult {
-  decision: 'flow' | 'default' | 'do_nothing';
-  flowId: string | null;
-  action: FlowRuleActionConfig;
-  matchedRule?: FlowRuleValidationResult;
-  trace: FlowSimulationTrace[];
-  riskScore: number | null;
-  reason: string;
-  latencyMs: number;
-}
-
-export async function fetchFlowSchema(flowId: string): Promise<FlowSchemaDocument> {
-  const bootstrapSchema = readCampaignDetailFlowSchema(flowId);
-  if (bootstrapSchema) {
-    return bootstrapSchema;
-  }
-
-  const response = await authenticatedFetch(`/api/flows/${flowId}/schema`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<FlowSchemaDocument>(payload);
-}
-
-export async function fetchFlowRules(flowId: string): Promise<FlowRuleDocument[]> {
-  const bootstrapRules = readCampaignDetailFlowRules(flowId);
-  if (bootstrapRules) {
-    return bootstrapRules;
-  }
-
-  return fetchListResult<FlowRuleDocument>(`/api/flows/${flowId}/rules`);
-}
-
-export async function createFlowRule(flowId: string, data: CreateFlowRuleDTO): Promise<FlowRuleDocument> {
-  const response = await authenticatedFetch(`/api/flows/${flowId}/rules`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function updateFlowRule(ruleId: string, data: UpdateFlowRuleDTO): Promise<FlowRuleDocument> {
-  const response = await authenticatedFetch(`/api/flows/rules/${ruleId}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function deleteFlowRule(ruleId: string) {
-  const response = await authenticatedFetch(`/api/flows/rules/${ruleId}`, {
-    method: 'DELETE',
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function testFlow(
-  flowId: string,
-  visitData: FlowValidationVisitData
-): Promise<FlowValidationResult> {
-  const response = await authenticatedFetch(`/api/flows/${flowId}/test`, {
-    method: 'POST',
-    body: JSON.stringify({ visitData }),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function simulateFlow(input: FlowSimulationInput): Promise<FlowSimulationResult> {
-  const response = await authenticatedFetch('/api/flows/simulation', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function fetchFlowFilterOperators(): Promise<FlowFilterOption[]> {
-  try {
-    return await fetchListResult<FlowFilterOption>('/api/flows/filters/operators');
-  } catch {
-    return FLOW_FILTER_OPERATORS;
-  }
-}
-
-export async function fetchFlowFilterTargets(): Promise<FlowTargetOption[]> {
-  try {
-    return await fetchListResult<FlowTargetOption>('/api/flows/filters/targets');
-  } catch {
-    return FLOW_FILTER_TARGETS;
-  }
-}
-
-export async function equalizeCampaignFlows(campaignId: string) {
-  const response = await authenticatedFetch('/api/flows/equalize', {
-    method: 'POST',
-    body: JSON.stringify({ campaignId }),
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export async function cloneFlow(flowId: string) {
-  const response = await authenticatedFetch(`/api/flows/${flowId}/clone`, {
-    method: 'POST',
-  });
-  const result = await handleResponse(response);
-  return result.data;
-}
-
-export interface FlowStats {
-  flowId: string;
-  flowName: string;
-  flowType: 'regular' | 'forced' | 'default';
-  clicks: number;
-  uniqueClicks: number;
-  bots: number;
-  conversions: number;
-  revenue: number;
-  cost: number;
-  profit: number;
-  conversionRate: number;
-  epc: number;
-  ctr: number;
-}
-
-export interface FlowTrafficLog {
-  id: string;
-  flowId: string;
-  campaignId: string;
-  visitorId: string;
-  clickId: string;
-  matchedRule?: string;
-  action: string;
-  actionTarget?: string;
-  executionTimeMs: number;
-  timestamp: string;
-  ip: string;
-  country?: string | null;
-  device?: string | null;
-  browser?: string | null;
-  os?: string | null;
-  isBot: boolean;
-  isUnique: boolean;
-}
-
-export interface FlowLogListResult {
-  logs: FlowTrafficLog[];
-  total: number;
-  hasMore: boolean;
-}
-
-export async function fetchCampaignFlowStats(
-  campaignId: string,
-  params: { startDate?: string; endDate?: string } = {}
-): Promise<FlowStats[]> {
-  const campaignDetailBundle = matchesCampaignDetailBundle(campaignId, params);
-  if (campaignDetailBundle && Array.isArray(campaignDetailBundle.data?.flowStats)) {
-    return campaignDetailBundle.data.flowStats as FlowStats[];
-  }
-
-  const query = buildQueryString({
-    startDate: params.startDate,
-    endDate: params.endDate,
-  });
-  return fetchListResult<FlowStats>(`/api/flows/campaign/${campaignId}/stats${query}`);
-}
-
-export async function fetchFlowLogs(
-  flowId: string,
-  params: { limit?: number; offset?: number; startDate?: string; endDate?: string } = {}
-): Promise<FlowLogListResult> {
-  const bootstrapLogs = readCampaignDetailFlowLogs(flowId, params);
-  if (bootstrapLogs) {
-    return bootstrapLogs;
-  }
-
-  const query = buildQueryString({
-    limit: params.limit,
-    offset: params.offset,
-    startDate: params.startDate,
-    endDate: params.endDate,
-  });
-  const response = await authenticatedFetch(`/api/flows/${flowId}/logs${query}`);
-  const payload = await handleRawJsonResponse(response);
-  const result = unwrapPayload<Partial<FlowLogListResult>>(payload);
-
-  return {
-    logs: Array.isArray(result?.logs) ? result.logs : [],
-    total: Number(result?.total || 0),
-    hasMore: Boolean(result?.hasMore),
-  };
-}
-
 // ==================== Landings API ====================
 
-export async function fetchLandings(
-  withStats = true,
-  dateParams: { startDate?: string; endDate?: string } = {}
-) {
-  const bootstrapLandings = readBootstrapValue<any[]>(
-    ['landings', 'campaign-detail', 'domains', 'campaigns'],
-    (bundle) => {
-      if (
-        (dateParams.startDate || dateParams.endDate) &&
-        !matchesBootstrapScope(bundle.scope, {
-          startDate: dateParams.startDate,
-          endDate: dateParams.endDate,
-        })
-      ) {
-        return undefined;
-      }
-
-      const landings = bundle.data?.landings;
-      return Array.isArray(landings) ? landings : undefined;
-    }
-  );
-
-  if (bootstrapLandings) {
-    return bootstrapLandings;
-  }
-
-  const query = buildQueryString({
-    page: 1,
-    pageSize: 100,
-    withStats: withStats ? 'true' : 'false',
-    startDate: dateParams.startDate,
-    endDate: dateParams.endDate,
-  });
-  return fetchListResult<any>(`/api/landing-pages${query}`);
+export async function fetchLandings(withStats = true) {
+  return fetchAllPages<any>((page, pageSize) => `${API_BASE_URL}/api/landing-pages?withStats=${withStats}&page=${page}&pageSize=${pageSize}`);
 }
 
 export async function fetchLanding(id: string | number) {
-  const bootstrapEntity = findBootstrapEntityById(
-    ['landings', 'campaign-detail', 'domains', 'campaigns'],
-    'landings',
-    id
-  );
-  if (bootstrapEntity) {
-    return bootstrapEntity;
-  }
-
-  const response = await authenticatedFetch(`/api/landing-pages/${id}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload(payload);
-}
-
-export async function importLandingManifest(data: {
-  runtimeUrl: string;
-  manifest: Record<string, unknown>;
-}) {
-  const response = await authenticatedFetch('/api/landing-pages/import-manifest', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  const response = await fetch(`${API_BASE_URL}/api/landing-pages/${id}`);
   const result = await handleResponse(response);
   return result.data;
 }
 
 export async function createLanding(data: any) {
-  const response = await authenticatedFetch('/api/landing-pages', {
+  const response = await fetch(`${API_BASE_URL}/api/landing-pages`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -1997,8 +607,9 @@ export async function createLanding(data: any) {
 }
 
 export async function updateLanding(id: string | number, data: any) {
-  const response = await authenticatedFetch(`/api/landing-pages/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/landing-pages/${id}`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -2006,302 +617,76 @@ export async function updateLanding(id: string | number, data: any) {
 }
 
 export async function deleteLanding(id: string | number) {
-  const response = await authenticatedFetch(`/api/landing-pages/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/landing-pages/${id}`, {
     method: 'DELETE',
   });
   const result = await handleResponse(response);
   return result.data;
 }
 
-export type LandingPageVersionStatus = 'draft' | 'preview' | 'published' | 'paused' | 'archived';
-
-export interface LandingPageVersion {
-  id: string;
-  landingPageId: string;
-  versionNumber: number;
-  assetId: string | null;
-  manifestSnapshot: Record<string, unknown> | null;
-  status: LandingPageVersionStatus;
-  publishedAt: string | null;
-  publishedBy: string | null;
-  rollbackFromVersion: number | null;
-  contentHash: string | null;
-  etag: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateLandingVersionInput {
-  assetId?: string | null;
-  manifestSnapshot?: Record<string, unknown> | null;
-  status?: 'draft' | 'preview';
-  publishedBy?: string | null;
-  rollbackFromVersion?: number | null;
-  contentHash?: string | null;
-  etag?: string | null;
-}
-
-export async function fetchLandingVersions(landingPageId: string | number): Promise<LandingPageVersion[]> {
-  const response = await authenticatedFetch(`/api/landing-pages/${landingPageId}/versions`);
-  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion[] }>(response);
-  const data = unwrapPayload<LandingPageVersion[]>(payload);
-  return Array.isArray(data) ? data : [];
-}
-
-export async function createLandingVersion(
-  landingPageId: string | number,
-  data: CreateLandingVersionInput,
-): Promise<LandingPageVersion> {
-  const response = await authenticatedFetch(`/api/landing-pages/${landingPageId}/versions`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion }>(response);
-  return unwrapPayload<LandingPageVersion>(payload);
-}
-
-export async function publishLandingVersion(
-  landingPageId: string | number,
-  versionId: string,
-  publishedBy?: string,
-): Promise<LandingPageVersion> {
-  const response = await authenticatedFetch(
-    `/api/landing-pages/${landingPageId}/versions/${versionId}/publish`,
-    {
-      method: 'POST',
-      body: JSON.stringify(publishedBy ? { publishedBy } : {}),
-    },
-  );
-  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion }>(response);
-  return unwrapPayload<LandingPageVersion>(payload);
-}
-
-export async function pauseLandingVersion(
-  landingPageId: string | number,
-  versionId: string,
-): Promise<LandingPageVersion> {
-  const response = await authenticatedFetch(
-    `/api/landing-pages/${landingPageId}/versions/${versionId}/pause`,
-    { method: 'POST' },
-  );
-  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion }>(response);
-  return unwrapPayload<LandingPageVersion>(payload);
-}
-
-export async function rollbackLandingVersion(
-  landingPageId: string | number,
-  versionNumber: number,
-  publishedBy?: string,
-): Promise<LandingPageVersion> {
-  const response = await authenticatedFetch(
-    `/api/landing-pages/${landingPageId}/versions/${versionNumber}/rollback`,
-    {
-      method: 'POST',
-      body: JSON.stringify(publishedBy ? { publishedBy } : {}),
-    },
-  );
-  const payload = await handleRawJsonResponse<{ data?: LandingPageVersion }>(response);
-  return unwrapPayload<LandingPageVersion>(payload);
-}
-
 // ==================== Analytics API ====================
 
 // 获取仪表板统计数据
-export async function fetchDashboardStats(timeRange: string = 'today', campaignId?: string | null) {
-  const normalizedRange = normalizeRangeParam(timeRange);
-  const dashboardBundle = readDashboardBootstrap();
-  if (
-    dashboardBundle &&
-    matchesDashboardScope(dashboardBundle.scope, {
-      range: normalizedRange,
-      campaignId,
-    })
-  ) {
-    return {
-      metrics: dashboardBundle.metrics || [],
-      chartData: dashboardBundle.chartData || [],
-      dataSource: dashboardBundle.dataSource || 'CACHE',
-      queryTime: dashboardBundle.queryTime || new Date().toISOString(),
-    };
-  }
-
-  const refreshedBundle = await ensureDashboardBootstrap({
-    range: normalizedRange,
-    campaignId,
-  });
-  if (refreshedBundle) {
-    return {
-      metrics: refreshedBundle.metrics || [],
-      chartData: refreshedBundle.chartData || [],
-      dataSource: refreshedBundle.dataSource || 'CACHE',
-      queryTime: refreshedBundle.queryTime || new Date().toISOString(),
-    };
-  }
-
-  const query = buildQueryString({
-    range: normalizedRange,
-    campaignId,
-  });
-  const response = await authenticatedFetch(`/api/analytics/dashboard${query}`);
-  const payload = await handleRawJsonResponse(response);
-  const result = unwrapPayload<{
-    metrics?: any[];
-    chartData?: any[];
-    dataSource?: 'DO' | 'D1' | 'MIXED' | 'CACHE' | 'DEFAULT';
-    queryTime?: string;
-  }>(payload);
-
-  return {
-    metrics: Array.isArray(result?.metrics) ? result.metrics : [],
-    chartData: Array.isArray(result?.chartData) ? result.chartData : [],
-    dataSource: result?.dataSource || 'DEFAULT',
-    queryTime: result?.queryTime || new Date().toISOString(),
-  };
+export async function fetchDashboardStats(timeRange: string = 'today') {
+  const cacheKey = createCacheKey('/api/analytics/dashboard', { range: timeRange });
+  const cached = getCached<any>(cacheKey);
+  if (cached) return cached;
+  
+  const response = await fetch(`${API_BASE_URL}/api/analytics/dashboard?range=${timeRange}`);
+  const result = await handleResponse(response);
+  setCache(cacheKey, result.data);
+  return result.data;
 }
 
 // 获取最近点击数据
-export async function fetchRecentClicks(
-  limit: number = 10,
-  timeRange: string = 'today',
-  campaignId?: string | null
-) {
-  const normalizedRange = normalizeRangeParam(timeRange);
-  const dashboardBundle = readDashboardBootstrap();
-  if (
-    dashboardBundle &&
-    limit === 10 &&
-    matchesDashboardScope(dashboardBundle.scope, {
-      range: normalizedRange,
-      campaignId,
-    })
-  ) {
-    return Array.isArray(dashboardBundle.recentClicks) ? dashboardBundle.recentClicks : [];
+export async function fetchRecentClicks(limit: number = 10) {
+  const cacheKey = createCacheKey('/api/analytics/recent-clicks', { limit });
+  const cached = getCached<any[]>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/analytics/recent-clicks?limit=${limit}`);
+    const result = await handleResponse(response);
+    let data = result.data?.list || [];
+
+    // 防御性检查：确保返回数组
+    if (!Array.isArray(data)) {
+      console.warn('[fetchRecentClicks] result.list is not an array, returning empty array');
+      data = [];
+    }
+
+    setCache(cacheKey, data);
+    return data;
+  } catch (error) {
+    console.error('[fetchRecentClicks] Error:', error);
+    return [];
   }
-
-  const refreshedBundle = await ensureDashboardBootstrap({
-    range: normalizedRange,
-    campaignId,
-  });
-  if (refreshedBundle && limit === 10) {
-    return Array.isArray(refreshedBundle.recentClicks) ? refreshedBundle.recentClicks : [];
-  }
-
-  const query = buildQueryString({
-    limit,
-    range: normalizedRange,
-    campaignId,
-  });
-  const response = await authenticatedFetch(`/api/analytics/recent-clicks${query}`);
-  const payload = await handleRawJsonResponse(response);
-  const result = unwrapPayload<{
-    list?: any[];
-  }>(payload);
-
-  return Array.isArray(result?.list) ? result.list : [];
 }
 
 // 获取实体统计数据
-export async function fetchEntityStats(
-  entityType: string,
-  timeRange: string = 'today',
-  campaignId?: string | null
-) {
-  const normalizedRange = normalizeRangeParam(timeRange);
-  const dashboardBundle = readDashboardBootstrap();
-  if (
-    dashboardBundle &&
-    matchesDashboardScope(dashboardBundle.scope, {
-      range: normalizedRange,
-      campaignId,
-    })
-  ) {
-    const entityData = dashboardBundle.entityData?.[entityType];
-    if (Array.isArray(entityData)) {
-      return entityData;
-    }
-  }
+export async function fetchEntityStats(entityType: string, timeRange: string = 'today') {
+  const cacheKey = createCacheKey('/api/analytics/entity-stats', { type: entityType, range: timeRange });
+  const cached = getCached<any[]>(cacheKey);
+  if (cached) return cached;
 
-  const refreshedBundle = await ensureDashboardBootstrap({
-    range: normalizedRange,
-    campaignId,
-  });
-  if (refreshedBundle) {
-    const refreshedEntityData = refreshedBundle.entityData?.[entityType];
-    if (Array.isArray(refreshedEntityData)) {
-      return refreshedEntityData;
-    }
-  }
-
-  const bootstrapEntityStats = readBootstrapValue<any[]>(
-    ['campaigns'],
-    (bundle) => {
-      if (!matchesBootstrapScope(bundle.scope, { range: normalizedRange })) {
-        return undefined;
-      }
-
-      const entityStats = bundle.data?.entityStats;
-      return Array.isArray(entityStats) && entityType === 'campaigns' ? entityStats : undefined;
-    }
-  );
-
-  if (bootstrapEntityStats) {
-    return bootstrapEntityStats;
-  }
-
-  const query = buildQueryString({
-    type: entityType,
-    range: normalizedRange,
-    campaignId,
-  });
-  const response = await authenticatedFetch(`/api/analytics/entity-stats${query}`);
-  const payload = await handleRawJsonResponse(response);
-  const result = unwrapPayload<any[]>(payload);
-  return Array.isArray(result) ? result : [];
+  const response = await fetch(`${API_BASE_URL}/api/analytics/entity-stats?type=${entityType}&range=${timeRange}`);
+  const result = await handleResponse(response);
+  setCache(cacheKey, result.data);
+  return result.data;
 }
 
 // ==================== Reports API ====================
 
 export type ReportType = 'traffic' | 'conversion' | 'financial' | 'roi';
 export type ExportFormat = 'csv' | 'excel';
-export type ReportDimension = string;
-export type ReportMetric = string;
-export type ReportFilterOperator = 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte';
-
-export interface ReportDimensionOption {
-  value: ReportDimension;
-  label: string;
-  hint?: string;
-}
-
-export interface ReportMetricOption {
-  value: ReportMetric;
-  label: string;
-  format: 'number' | 'currency' | 'percent';
-  isCustom?: boolean;
-}
-
-export interface ReportMetadata {
-  dimensions: ReportDimensionOption[];
-  metrics: ReportMetricOption[];
-}
-
-export interface ReportFilterCondition {
-  field: ReportDimension | ReportMetric;
-  operator: ReportFilterOperator;
-  value: string | number;
-}
 
 export interface ReportParams {
   startDate: string;
   endDate: string;
-  groupBy?: ReportDimension[];
-  metrics?: ReportMetric[];
-  filters?: ReportFilterCondition[];
+  groupBy?: string[];
   limit?: number;
-  sortBy?: ReportDimension | ReportMetric;
+  sortBy?: string;
   sortOrder?: 'asc' | 'desc';
-  // conversion 语义报表后端强制实时口径
-  reportType?: ReportType;
 }
 
 export interface ReportExportParams extends ReportParams {
@@ -2310,65 +695,24 @@ export interface ReportExportParams extends ReportParams {
   columns?: string[];
 }
 
-export type ExportTaskEntityType =
-  | 'campaigns'
-  | 'landing-pages'
-  | 'offers'
-  | 'traffic-sources'
-  | 'affiliate-networks'
-  | 'clicks'
-  | 'conversions'
-  | 'flows'
-  | 'reports';
-
-export interface CreateExportTaskParams {
-  name: string;
-  entityType: ExportTaskEntityType;
-  format: 'csv' | 'excel' | 'json';
-  filters?: Record<string, unknown>;
-  dateRange?: {
-    startDate: string;
-    endDate: string;
-  };
-  fields?: string[];
-  createdBy?: string;
-}
-
 export async function fetchReport(type: ReportType, params: ReportParams) {
-  void type;
-  return queryReport(params);
-}
+  const queryParams = new URLSearchParams();
+  queryParams.set('startDate', params.startDate);
+  queryParams.set('endDate', params.endDate);
+  if (params.groupBy) queryParams.set('groupBy', params.groupBy.join(','));
+  if (params.limit) queryParams.set('limit', params.limit.toString());
+  if (params.sortBy) queryParams.set('sortBy', params.sortBy);
+  if (params.sortOrder) queryParams.set('sortOrder', params.sortOrder);
 
-export async function fetchReportMetadata(): Promise<ReportMetadata> {
-  const response = await authenticatedFetch('/api/analytics/reports/metadata');
-  const payload = await handleRawJsonResponse<{
-    success?: boolean;
-    data?: Partial<ReportMetadata>;
-  }>(response);
-  const metadata = unwrapPayload<Partial<ReportMetadata>>(payload);
-
-  return {
-    dimensions: Array.isArray(metadata?.dimensions) ? metadata.dimensions : [],
-    metrics: Array.isArray(metadata?.metrics) ? metadata.metrics : [],
-  };
-}
-
-export async function queryReport(params: ReportParams) {
-  const response = await authenticatedFetch('/api/analytics/reports/query', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  });
-
-  const result = await handleRawJsonResponse(response);
-  const payload = unwrapPayload<{
-    data?: any[];
-  }>(result);
-  return Array.isArray(payload?.data) ? payload.data : [];
+  const response = await fetch(`${API_BASE_URL}/api/analytics/reports/${type}?${queryParams}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 export async function exportReport(params: ReportExportParams): Promise<Blob> {
-  const response = await authenticatedFetch('/api/analytics/reports/export', {
+  const response = await fetch(`${API_BASE_URL}/api/analytics/reports/export`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
 
@@ -2377,61 +721,6 @@ export async function exportReport(params: ReportExportParams): Promise<Blob> {
   }
 
   return await response.blob();
-}
-
-export interface ReportPresetRecord {
-  id: string;
-  name: string;
-  reportType: string;
-  config: unknown;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export async function listReportPresets(reportType?: string): Promise<ReportPresetRecord[]> {
-  const query = reportType ? `?reportType=${encodeURIComponent(reportType)}` : '';
-  const response = await authenticatedFetch(`/api/reports/presets${query}`);
-  const payload = await handleRawJsonResponse<{ success?: boolean; data?: unknown }>(response);
-  const data = unwrapPayload<unknown>(payload);
-  const list = Array.isArray(data)
-    ? data
-    : Array.isArray((data as { presets?: unknown[] })?.presets)
-      ? (data as { presets: unknown[] }).presets
-      : [];
-
-  return list.filter((item): item is ReportPresetRecord => {
-    const record = item as ReportPresetRecord | null;
-    return Boolean(record && typeof record.id === 'string' && typeof record.name === 'string');
-  });
-}
-
-export async function createReportPreset(params: {
-  name: string;
-  reportType: string;
-  config: unknown;
-}): Promise<ReportPresetRecord | null> {
-  const response = await authenticatedFetch('/api/reports/presets', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  });
-  const payload = await handleRawJsonResponse<{ success?: boolean; data?: unknown }>(response);
-  return unwrapPayload<ReportPresetRecord | null>(payload) ?? null;
-}
-
-export async function deleteReportPreset(id: string): Promise<void> {
-  const response = await authenticatedFetch(`/api/reports/presets/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to delete report preset (status ${response.status})`);
-  }
-}
-
-export async function createExportTask(params: CreateExportTaskParams) {
-  return mutateJsonData('/api/export-tasks', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  });
 }
 
 export function downloadReport(blob: Blob, filename: string) {
@@ -2445,182 +734,6 @@ export function downloadReport(blob: Blob, filename: string) {
   window.URL.revokeObjectURL(url);
 }
 
-export type CustomMetricType = 'calculated' | 'aggregated';
-export type CustomMetricDataType = 'number' | 'currency' | 'percent';
-export type CustomMetricFormat = 'number' | 'currency' | 'percent' | 'custom';
-export type CustomMetricStatus = 'active' | 'inactive' | 'deleted';
-
-export interface CustomMetricDefinition {
-  id: string;
-  name: string;
-  displayName: string;
-  description?: string;
-  type: CustomMetricType;
-  formula: string;
-  dataType: CustomMetricDataType;
-  format: CustomMetricFormat;
-  decimals: number;
-  prefix?: string;
-  suffix?: string;
-  status: CustomMetricStatus;
-  isSystem: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CustomMetricListResult {
-  list: CustomMetricDefinition[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-export interface CustomMetricListParams {
-  status?: CustomMetricStatus;
-  type?: CustomMetricType;
-  search?: string;
-  page?: number;
-  pageSize?: number;
-}
-
-export interface CreateCustomMetricPayload {
-  name: string;
-  displayName: string;
-  description?: string;
-  type?: CustomMetricType;
-  formula: string;
-  dataType?: CustomMetricDataType;
-  format?: CustomMetricFormat;
-  decimals?: number;
-  prefix?: string;
-  suffix?: string;
-}
-
-export interface UpdateCustomMetricPayload {
-  displayName?: string;
-  description?: string;
-  formula?: string;
-  dataType?: CustomMetricDataType;
-  format?: CustomMetricFormat;
-  decimals?: number;
-  prefix?: string;
-  suffix?: string;
-  status?: CustomMetricStatus;
-}
-
-export interface CustomMetricFormulaValidation {
-  valid: boolean;
-  error?: string;
-  variables?: string[];
-}
-
-export interface CustomMetricPreviewResult {
-  value: number;
-  formatted: string;
-  error?: string;
-}
-
-export async function fetchCustomMetrics(params: CustomMetricListParams = {}): Promise<CustomMetricListResult> {
-  const query = buildQueryString({
-    status: params.status,
-    type: params.type,
-    search: params.search,
-    page: params.page,
-    pageSize: params.pageSize,
-  });
-
-  const response = await authenticatedFetch(`/api/custom-metrics${query}`);
-  const payload = await handleRawJsonResponse<{
-    success?: boolean;
-    data?: Partial<CustomMetricListResult>;
-  }>(response);
-  const data = unwrapPayload<Partial<CustomMetricListResult>>(payload);
-
-  return {
-    list: Array.isArray(data?.list) ? data.list : [],
-    total: Number(data?.total || 0),
-    page: Number(data?.page || params.page || 1),
-    pageSize: Number(data?.pageSize || params.pageSize || 20),
-  };
-}
-
-export async function fetchActiveCustomMetrics(): Promise<CustomMetricDefinition[]> {
-  const response = await authenticatedFetch('/api/custom-metrics/active');
-  const payload = await handleRawJsonResponse<{
-    success?: boolean;
-    data?: CustomMetricDefinition[];
-  }>(response);
-  const list = unwrapPayload<CustomMetricDefinition[] | undefined>(payload);
-  return Array.isArray(list) ? list : [];
-}
-
-export async function createCustomMetric(payload: CreateCustomMetricPayload): Promise<CustomMetricDefinition> {
-  const response = await authenticatedFetch('/api/custom-metrics', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-  const result = await handleRawJsonResponse<{ success?: boolean; data?: CustomMetricDefinition }>(response);
-  return unwrapPayload<CustomMetricDefinition>(result);
-}
-
-export async function updateCustomMetric(
-  id: string,
-  payload: UpdateCustomMetricPayload
-): Promise<CustomMetricDefinition> {
-  const response = await authenticatedFetch(`/api/custom-metrics/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  });
-  const result = await handleRawJsonResponse<{ success?: boolean; data?: CustomMetricDefinition }>(response);
-  return unwrapPayload<CustomMetricDefinition>(result);
-}
-
-export async function deleteCustomMetric(id: string): Promise<boolean> {
-  const response = await authenticatedFetch(`/api/custom-metrics/${id}`, {
-    method: 'DELETE',
-  });
-  const result = await handleRawJsonResponse<{ success?: boolean }>(response);
-  return Boolean(result?.success);
-}
-
-export async function validateCustomMetricFormula(formula: string): Promise<CustomMetricFormulaValidation> {
-  const response = await authenticatedFetch('/api/custom-metrics/validate-formula', {
-    method: 'POST',
-    body: JSON.stringify({ formula }),
-  });
-  const payload = await handleRawJsonResponse<{
-    success?: boolean;
-    data?: CustomMetricFormulaValidation;
-  }>(response);
-  const result = unwrapPayload<CustomMetricFormulaValidation>(payload);
-  return {
-    valid: Boolean(result?.valid),
-    error: result?.error,
-    variables: Array.isArray(result?.variables) ? result.variables : [],
-  };
-}
-
-export async function previewCustomMetricFormula(
-  formula: string,
-  context: Record<string, number>
-): Promise<CustomMetricPreviewResult> {
-  const response = await authenticatedFetch('/api/custom-metrics/preview', {
-    method: 'POST',
-    body: JSON.stringify({ formula, context }),
-  });
-  const payload = await handleRawJsonResponse<{
-    success?: boolean;
-    data?: CustomMetricPreviewResult;
-  }>(response);
-  const result = unwrapPayload<CustomMetricPreviewResult>(payload);
-
-  return {
-    value: Number(result?.value || 0),
-    formatted: String(result?.formatted || '0'),
-    error: result?.error,
-  };
-}
-
 // ==================== Clicks Log API ====================
 
 export interface ClickLogParams {
@@ -2629,30 +742,10 @@ export interface ClickLogParams {
   campaignId?: string;
   startDate?: string;
   endDate?: string;
-  source?: string;
-  zoneId?: string;
-  utmSource?: string;
-  utmCampaign?: string;
-  subId1?: string;
-  subId2?: string;
-  subId3?: string;
-  subId4?: string;
-  subId5?: string;
-  subId6?: string;
-  subId7?: string;
-  subId8?: string;
-  subId9?: string;
-  subId10?: string;
-  minCost?: number;
-  maxCost?: number;
-  minRiskScore?: number;
-  maxRiskScore?: number;
   country?: string;
   device?: string;
   browser?: string;
   os?: string;
-  isp?: string;
-  fingerprint?: string;
   ip?: string;
   visitorId?: string;
   offerId?: string;
@@ -2677,464 +770,56 @@ export interface ClickStats {
 }
 
 export async function fetchClicks(params: ClickLogParams = {}): Promise<ClickLogListResult> {
-  const auditBundle = readBootstrapPage('audit');
-  const status =
-    params.isUnique === true ? 'unique' : params.isUnique === false ? 'nonunique' : 'all';
-  if (
-    auditBundle &&
-    matchesBootstrapScope(auditBundle.scope, {
-      page: params.page || 1,
-      pageSize: params.pageSize || 20,
-      campaignId: params.campaignId || '',
-      startDate: params.startDate || '',
-      endDate: params.endDate || '',
-      source: params.source || '',
-      zoneId: params.zoneId || '',
-      utmSource: params.utmSource || '',
-      utmCampaign: params.utmCampaign || '',
-      subId1: params.subId1 || '',
-      subId2: params.subId2 || '',
-      subId3: params.subId3 || '',
-      subId4: params.subId4 || '',
-      subId5: params.subId5 || '',
-      subId6: params.subId6 || '',
-      subId7: params.subId7 || '',
-      subId8: params.subId8 || '',
-      subId9: params.subId9 || '',
-      subId10: params.subId10 || '',
-      minCost: params.minCost ?? '',
-      maxCost: params.maxCost ?? '',
-      minRiskScore: params.minRiskScore ?? '',
-      maxRiskScore: params.maxRiskScore ?? '',
-      country: params.country || '',
-      device: params.device || '',
-      browser: params.browser || '',
-      os: params.os || '',
-      isp: params.isp || '',
-      fingerprint: params.fingerprint || '',
-      ip: params.ip || '',
-      visitorId: params.visitorId || '',
-      offerId: params.offerId || '',
-      flowId: params.flowId || '',
-      search: params.search || '',
-      status,
-    })
-  ) {
-    return {
-      list: Array.isArray(auditBundle.data?.clicks) ? auditBundle.data.clicks as any[] : [],
-      total: Number(auditBundle.data?.pagination?.total || 0),
-      page: Number(auditBundle.data?.pagination?.page || 1),
-      pageSize: Number(auditBundle.data?.pagination?.pageSize || 20),
-      totalPages: Number(auditBundle.data?.pagination?.totalPages || 0),
-    };
-  }
+  const queryParams = new URLSearchParams();
+  
+  if (params.page) queryParams.set('page', params.page.toString());
+  if (params.pageSize) queryParams.set('pageSize', params.pageSize.toString());
+  if (params.campaignId) queryParams.set('campaignId', params.campaignId);
+  if (params.startDate) queryParams.set('startDate', params.startDate);
+  if (params.endDate) queryParams.set('endDate', params.endDate);
+  if (params.country) queryParams.set('country', params.country);
+  if (params.device) queryParams.set('device', params.device);
+  if (params.browser) queryParams.set('browser', params.browser);
+  if (params.os) queryParams.set('os', params.os);
+  if (params.ip) queryParams.set('ip', params.ip);
+  if (params.visitorId) queryParams.set('visitorId', params.visitorId);
+  if (params.offerId) queryParams.set('offerId', params.offerId);
+  if (params.flowId) queryParams.set('flowId', params.flowId);
+  if (params.isUnique !== undefined) queryParams.set('isUnique', params.isUnique.toString());
+  if (params.search) queryParams.set('search', params.search);
 
-  const query = buildQueryString({
-    page: params.page || 1,
-    pageSize: params.pageSize || 20,
-    campaignId: params.campaignId,
-    startDate: params.startDate,
-    endDate: params.endDate,
-    source: params.source,
-    zoneId: params.zoneId,
-    utmSource: params.utmSource,
-    utmCampaign: params.utmCampaign,
-    subId1: params.subId1,
-    subId2: params.subId2,
-    subId3: params.subId3,
-    subId4: params.subId4,
-    subId5: params.subId5,
-    subId6: params.subId6,
-    subId7: params.subId7,
-    subId8: params.subId8,
-    subId9: params.subId9,
-    subId10: params.subId10,
-    minCost: params.minCost,
-    maxCost: params.maxCost,
-    minRiskScore: params.minRiskScore,
-    maxRiskScore: params.maxRiskScore,
-    country: params.country,
-    device: params.device,
-    browser: params.browser,
-    os: params.os,
-    isp: params.isp,
-    fingerprint: params.fingerprint,
-    ip: params.ip,
-    visitorId: params.visitorId,
-    offerId: params.offerId,
-    flowId: params.flowId,
-    isUnique: params.isUnique,
-    search: params.search,
-  });
-
-  return fetchPaginatedResult<any>(`/api/clicks${query}`);
+  const response = await fetch(`${API_BASE_URL}/api/clicks?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return {
+    list: result.data || [],
+    total: result.meta?.total || 0,
+    page: result.meta?.page || 1,
+    pageSize: result.meta?.pageSize || 20,
+    totalPages: result.meta?.totalPages || 0,
+  };
 }
 
-export async function fetchClickStats(params: ClickLogParams): Promise<ClickStats> {
-  const auditBundle = readBootstrapPage('audit');
-  const status =
-    params.isUnique === true ? 'unique' : params.isUnique === false ? 'nonunique' : 'all';
-  if (
-    auditBundle &&
-    matchesBootstrapScope(auditBundle.scope, {
-      startDate: params.startDate || '',
-      endDate: params.endDate || '',
-      campaignId: params.campaignId || '',
-      source: params.source || '',
-      zoneId: params.zoneId || '',
-      utmSource: params.utmSource || '',
-      utmCampaign: params.utmCampaign || '',
-      subId1: params.subId1 || '',
-      subId2: params.subId2 || '',
-      subId3: params.subId3 || '',
-      subId4: params.subId4 || '',
-      subId5: params.subId5 || '',
-      subId6: params.subId6 || '',
-      subId7: params.subId7 || '',
-      subId8: params.subId8 || '',
-      subId9: params.subId9 || '',
-      subId10: params.subId10 || '',
-      minCost: params.minCost ?? '',
-      maxCost: params.maxCost ?? '',
-      minRiskScore: params.minRiskScore ?? '',
-      maxRiskScore: params.maxRiskScore ?? '',
-      country: params.country || '',
-      device: params.device || '',
-      browser: params.browser || '',
-      os: params.os || '',
-      isp: params.isp || '',
-      fingerprint: params.fingerprint || '',
-      ip: params.ip || '',
-      visitorId: params.visitorId || '',
-      offerId: params.offerId || '',
-      flowId: params.flowId || '',
-      search: params.search || '',
-      status,
-    }) &&
-    auditBundle.data?.stats
-  ) {
-    return auditBundle.data.stats as ClickStats;
-  }
+export async function fetchClickStats(startDate: string, endDate: string, campaignId?: string): Promise<ClickStats> {
+  const queryParams = new URLSearchParams();
+  queryParams.set('startDate', startDate);
+  queryParams.set('endDate', endDate);
+  if (campaignId) queryParams.set('campaignId', campaignId);
 
-  const query = buildQueryString({
-    startDate: params.startDate,
-    endDate: params.endDate,
-    campaignId: params.campaignId,
-    source: params.source,
-    zoneId: params.zoneId,
-    utmSource: params.utmSource,
-    utmCampaign: params.utmCampaign,
-    subId1: params.subId1,
-    subId2: params.subId2,
-    subId3: params.subId3,
-    subId4: params.subId4,
-    subId5: params.subId5,
-    subId6: params.subId6,
-    subId7: params.subId7,
-    subId8: params.subId8,
-    subId9: params.subId9,
-    subId10: params.subId10,
-    minCost: params.minCost,
-    maxCost: params.maxCost,
-    minRiskScore: params.minRiskScore,
-    maxRiskScore: params.maxRiskScore,
-    country: params.country,
-    device: params.device,
-    browser: params.browser,
-    os: params.os,
-    isp: params.isp,
-    fingerprint: params.fingerprint,
-    ip: params.ip,
-    visitorId: params.visitorId,
-    offerId: params.offerId,
-    flowId: params.flowId,
-    isUnique: params.isUnique,
-    search: params.search,
-  });
-  const response = await authenticatedFetch(`/api/clicks/stats${query}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<ClickStats>(payload);
-}
-
-export async function fetchClickById(clickId: string) {
-  return findBootstrapEntityById(['audit'], 'clicks', clickId);
-}
-
-export async function fetchClicksByVisitor(visitorId: string, limit: number = 100) {
-  const auditBundle = readBootstrapPage('audit');
-  if (!auditBundle || !Array.isArray(auditBundle.data?.clicks)) {
-    return [];
-  }
-
-  return (auditBundle.data.clicks as any[])
-    .filter((item) => String(item.visitorId || '') === String(visitorId))
-    .slice(0, limit);
-}
-
-// ==================== Conversions API ====================
-
-export interface ConversionLogParams {
-  page?: number;
-  pageSize?: number;
-  campaignId?: string;
-  offerId?: string;
-  startDate?: string;
-  endDate?: string;
-  status?: 'approved' | 'pending' | 'rejected';
-  country?: string;
-  device?: string;
-  search?: string;
-}
-
-export interface ConversionLogItem {
-  conversionId: string;
-  clickId: string;
-  campaignId: string;
-  offerId: string;
-  timestamp: string;
-  revenue: number;
-  payout: number;
-  currency: string;
-  conversionType: string;
-  offerName: string;
-  status: 'approved' | 'pending' | 'rejected';
-  ip?: string | null;
-  country?: string | null;
-  device?: string | null;
-  browser?: string | null;
-  source?: string | null;
-  visitorId?: string | null;
-  subId1?: string | null;
-  subId2?: string | null;
-  subId3?: string | null;
-}
-
-export interface ConversionLogListResult {
-  list: ConversionLogItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-}
-
-export interface ConversionStats {
-  totalConversions: number;
-  approvedConversions: number;
-  pendingConversions: number;
-  rejectedConversions: number;
-  totalRevenue: number;
-  totalPayout: number;
-}
-
-export async function fetchConversions(params: ConversionLogParams = {}): Promise<ConversionLogListResult> {
-  const conversionsBundle = readBootstrapPage('conversions');
-  if (
-    conversionsBundle &&
-    matchesBootstrapScope(conversionsBundle.scope, {
-      page: params.page || 1,
-      pageSize: params.pageSize || 20,
-      startDate: params.startDate || '',
-      endDate: params.endDate || '',
-      search: params.search || '',
-      status: params.status || 'all',
-    })
-  ) {
-    return {
-      list: Array.isArray(conversionsBundle.data?.conversions)
-        ? conversionsBundle.data.conversions as ConversionLogItem[]
-        : [],
-      total: Number(conversionsBundle.data?.pagination?.total || 0),
-      page: Number(conversionsBundle.data?.pagination?.page || 1),
-      pageSize: Number(conversionsBundle.data?.pagination?.pageSize || 20),
-      totalPages: Number(conversionsBundle.data?.pagination?.totalPages || 0),
-    };
-  }
-
-  const campaignDetailBundle = readBootstrapPage('campaign-detail');
-  if (
-    campaignDetailBundle &&
-    params.pageSize === 6 &&
-    matchesBootstrapScope(campaignDetailBundle.scope, {
-      id: String(params.campaignId || ''),
-      startDate: params.startDate || '',
-      endDate: params.endDate || '',
-    }) &&
-    Array.isArray(campaignDetailBundle.data?.conversions)
-  ) {
-    const list = campaignDetailBundle.data.conversions as ConversionLogItem[];
-    return {
-      list,
-      total: list.length,
-      page: 1,
-      pageSize: list.length,
-      totalPages: 1,
-    };
-  }
-
-  const query = buildQueryString({
-    page: params.page || 1,
-    pageSize: params.pageSize || 20,
-    campaignId: params.campaignId,
-    offerId: params.offerId,
-    startDate: params.startDate,
-    endDate: params.endDate,
-    status: params.status,
-    country: params.country,
-    device: params.device,
-    search: params.search,
-  });
-
-  return fetchPaginatedResult<ConversionLogItem>(`/api/conversions${query}`);
-}
-
-export async function fetchConversionStats(
-  startDate: string,
-  endDate: string,
-  campaignId?: string
-): Promise<ConversionStats> {
-  const conversionsBundle = readBootstrapPage('conversions');
-  if (
-    !campaignId &&
-    conversionsBundle &&
-    matchesBootstrapScope(conversionsBundle.scope, {
-      startDate,
-      endDate,
-    }) &&
-    conversionsBundle.data?.stats
-  ) {
-    return conversionsBundle.data.stats as ConversionStats;
-  }
-
-  const query = buildQueryString({
-    startDate,
-    endDate,
-    campaignId,
-  });
-  const response = await authenticatedFetch(`/api/conversions/stats${query}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<ConversionStats>(payload);
-}
-
-export async function fetchConversionById(conversionId: string): Promise<ConversionLogItem> {
-  const conversion =
-    findBootstrapEntityById<ConversionLogItem>(['conversions'], 'conversions', conversionId) ||
-    findBootstrapEntityById<ConversionLogItem>(['campaign-detail'], 'conversions', conversionId);
-
-  if (!conversion) {
-    throw new Error(`Conversion ${conversionId} is not available in the current bootstrap payload`);
-  }
-
-  return conversion;
-}
-
-export async function updateConversionStatus(
-  conversionId: string,
-  status: 'approved' | 'pending' | 'rejected'
-): Promise<{ updated: boolean; conversionId: string; status: string }> {
-  const response = await authenticatedFetch(`/api/conversions/${conversionId}/status`, {
-    method: 'PUT',
-    body: JSON.stringify({ status }),
-  });
+  const response = await fetch(`${API_BASE_URL}/api/clicks/stats?${queryParams.toString()}`);
   const result = await handleResponse(response);
   return result.data;
 }
 
-// ==================== User Preferences API ====================
-
-export interface UserPreferenceDocument {
-  version: string;
-  lastUpdated: number;
-  lastModifiedBy: string;
-  preferences: {
-    ui: {
-      theme: 'light' | 'dark' | 'auto';
-      density: 'compact' | 'standard' | 'comfortable';
-      fontSize: 'small' | 'medium' | 'large';
-      sidebarCollapsed: boolean;
-    };
-    tables: Record<string, unknown>;
-    views: Record<string, unknown>;
-    system: {
-      language: string;
-      timezone: string;
-      refreshInterval: number;
-    };
-  };
-}
-
-export interface SaveUserPreferencesPayload {
-  lastKnownVersion?: number;
-  preferences: Partial<UserPreferenceDocument['preferences']>;
-}
-
-function createDefaultUserPreferenceDocument(userId: string): UserPreferenceDocument {
-  return {
-    version: '1.0',
-    lastUpdated: 0,
-    lastModifiedBy: userId,
-    preferences: {
-      ui: {
-        theme: 'auto',
-        density: 'standard',
-        fontSize: 'medium',
-        sidebarCollapsed: false,
-      },
-      tables: {},
-      views: {},
-      system: {
-        language: 'en',
-        timezone: 'UTC',
-        refreshInterval: 30000,
-      },
-    },
-  };
-}
-
-export async function fetchUserPreferences(userId: string): Promise<UserPreferenceDocument> {
-  const bootstrapPreference = readSettingsBootstrapPreference(userId);
-  if (bootstrapPreference) {
-    return bootstrapPreference;
-  }
-
-  try {
-    const response = await authenticatedFetch(`/api/user-preferences/preferences/${userId}`);
-    const result = await handleRawJsonResponse<{
-      success: boolean;
-      data?: UserPreferenceDocument;
-    }>(response);
-
-    if (result?.data) {
-      return result.data;
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message.toLowerCase() : '';
-    if (!message.includes('404') && !message.includes('not found')) {
-      throw err;
-    }
-  }
-
-  return createDefaultUserPreferenceDocument(userId);
-}
-
-export async function saveUserPreferences(
-  userId: string,
-  payload: SaveUserPreferencesPayload
-): Promise<UserPreferenceDocument> {
-  const response = await authenticatedFetch(`/api/user-preferences/preferences/${userId}`, {
-    method: 'POST',
-    headers: {
-      'X-Device-ID': getDeviceId(),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const result = await handleRawJsonResponse<{
-    success: boolean;
-    data: UserPreferenceDocument;
-    version: number;
-  }>(response);
-
+export async function fetchClickById(clickId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/clicks/${clickId}`);
+  const result = await handleResponse(response);
   return result.data;
+}
+
+export async function fetchClicksByVisitor(visitorId: string, limit: number = 100) {
+  const response = await fetch(`${API_BASE_URL}/api/clicks/visitor/${visitorId}?limit=${limit}`);
+  const result = await handleResponse(response);
+  return result.data || [];
 }
 
 // ==================== Trends API ====================
@@ -3198,57 +883,24 @@ export interface TrendsReport {
 }
 
 export async function fetchTrendsReport(filter: TrendsFilter = {}): Promise<TrendsReport> {
-  const campaignDetailBundle = readBootstrapPage('campaign-detail');
-  if (
-    campaignDetailBundle &&
-    matchesBootstrapScope(campaignDetailBundle.scope, {
-      id: String(filter.campaignId || ''),
-      startDate: filter.startDate || '',
-      endDate: filter.endDate || '',
-      interval: filter.interval || 'day',
-    }) &&
-    campaignDetailBundle.data &&
-    Object.prototype.hasOwnProperty.call(campaignDetailBundle.data, 'trends')
-  ) {
-    return (campaignDetailBundle.data.trends as TrendsReport | null) || createEmptyTrendsReport(filter);
-  }
+  const queryParams = new URLSearchParams();
+  
+  if (filter.startDate) queryParams.set('startDate', filter.startDate);
+  if (filter.endDate) queryParams.set('endDate', filter.endDate);
+  if (filter.campaignId) queryParams.set('campaignId', filter.campaignId);
+  if (filter.flowId) queryParams.set('flowId', filter.flowId);
+  if (filter.landingPageId) queryParams.set('landingPageId', filter.landingPageId);
+  if (filter.offerId) queryParams.set('offerId', filter.offerId);
+  if (filter.trafficSourceId) queryParams.set('trafficSourceId', filter.trafficSourceId);
+  if (filter.country) queryParams.set('country', filter.country);
+  if (filter.device) queryParams.set('device', filter.device);
+  if (filter.browser) queryParams.set('browser', filter.browser);
+  if (filter.os) queryParams.set('os', filter.os);
+  if (filter.interval) queryParams.set('interval', filter.interval);
 
-  const trendsBundle = readBootstrapPage('trends');
-  if (
-    trendsBundle &&
-    matchesBootstrapScope(trendsBundle.scope, {
-      startDate: filter.startDate || '',
-      endDate: filter.endDate || '',
-      interval: filter.interval || 'day',
-      campaignId: filter.campaignId || '',
-    }) &&
-    trendsBundle.data &&
-    Object.prototype.hasOwnProperty.call(trendsBundle.data, 'report')
-  ) {
-    return (trendsBundle.data.report as TrendsReport | null) || createEmptyTrendsReport(filter);
-  }
-
-  const query = buildQueryString({
-    startDate: filter.startDate,
-    endDate: filter.endDate,
-    interval: filter.interval || 'day',
-    campaignId: filter.campaignId,
-  });
-  const response = await authenticatedFetch(`/api/trends/report${query}`);
-  const payload = await handleRawJsonResponse(response);
-  const result = unwrapPayload<Partial<TrendsReport>>(payload);
-
-  if (
-    result &&
-    typeof result === 'object' &&
-    result.filter &&
-    result.summary &&
-    Array.isArray(result.data)
-  ) {
-    return result as TrendsReport;
-  }
-
-  return createEmptyTrendsReport(filter);
+  const response = await fetch(`${API_BASE_URL}/api/trends/report?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 export async function fetchTrendsCompare(params: {
@@ -3258,18 +910,16 @@ export async function fetchTrendsCompare(params: {
   previousEnd: string;
   campaignId?: string;
 }) {
-  return {
-    current: createEmptyTrendsReport({
-      startDate: params.currentStart,
-      endDate: params.currentEnd,
-      campaignId: params.campaignId,
-    }),
-    previous: createEmptyTrendsReport({
-      startDate: params.previousStart,
-      endDate: params.previousEnd,
-      campaignId: params.campaignId,
-    }),
-  };
+  const queryParams = new URLSearchParams();
+  queryParams.set('currentStart', params.currentStart);
+  queryParams.set('currentEnd', params.currentEnd);
+  queryParams.set('previousStart', params.previousStart);
+  queryParams.set('previousEnd', params.previousEnd);
+  if (params.campaignId) queryParams.set('campaignId', params.campaignId);
+
+  const response = await fetch(`${API_BASE_URL}/api/trends/compare?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 // ==================== Reports API ====================
@@ -3283,8 +933,17 @@ export interface ReportFilter {
 }
 
 export async function fetchReportData(filter: ReportFilter = {}) {
-  void filter;
-  return [];
+  const queryParams = new URLSearchParams();
+  
+  if (filter.startDate) queryParams.set('startDate', filter.startDate);
+  if (filter.endDate) queryParams.set('endDate', filter.endDate);
+  if (filter.groupBy?.length) queryParams.set('groupBy', filter.groupBy.join(','));
+  if (filter.metrics?.length) queryParams.set('metrics', filter.metrics.join(','));
+  if (filter.campaignId) queryParams.set('campaignId', filter.campaignId);
+
+  const response = await fetch(`${API_BASE_URL}/api/reports/data?${queryParams.toString()}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 // ==================== Rules API ====================
@@ -3298,7 +957,12 @@ export interface Rule {
   priority: number;
   enabled: boolean;
   status: 'active' | 'paused' | 'deleted';
-  conditions: RuleConditionPayload;
+  conditions: Array<{
+    metric: string;
+    operator: string;
+    value: number | string;
+    duration?: string;
+  }>;
   actions: Array<{
     type: string;
     platform?: string;
@@ -3314,7 +978,7 @@ export interface CreateRuleDTO {
   type: 'campaign' | 'platform' | 'flow';
   priority?: number;
   enabled?: boolean;
-  conditions: RuleConditionPayload;
+  conditions: Rule['conditions'];
   actions: Rule['actions'];
 }
 
@@ -3325,169 +989,52 @@ export interface UpdateRuleDTO {
   priority?: number;
   enabled?: boolean;
   status?: 'active' | 'paused' | 'deleted';
-  conditions?: RuleConditionPayload;
+  conditions?: Rule['conditions'];
   actions?: Rule['actions'];
 }
 
-export type RuleExpressionNode =
-  | { fn: 'in_blacklist' | 'in_whitelist' | 'repeat_window_exceeded'; args: string[] }
-  | { eq: [string, string | number | boolean | null] }
-  | { ne: [string, string | number | boolean | null] }
-  | { in: [string, Array<string | number | boolean>] }
-  | { contains: [string, string] }
-  | { not_contains: [string, string] }
-  | { gt: [string, string | number] }
-  | { gte: [string, string | number] }
-  | { lt: [string, string | number] }
-  | { lte: [string, string | number] }
-  | { exists: [string] }
-  | { all: RuleExpressionNode[] }
-  | { any: RuleExpressionNode[] }
-  | { not: RuleExpressionNode };
-
-export interface LegacyRuleCondition {
-  metric: string;
-  operator: string;
-  value: number | string;
-  duration?: string;
-}
-
-export type RuleConditionPayload = LegacyRuleCondition[] | RuleExpressionNode;
-
-export interface RuleConflict {
-  type: 'duplicate_priority' | 'condition_overlap' | 'action_conflict';
-  severity: 'high' | 'medium';
-  priority: number;
-  ruleIds: string[];
-  ruleNames: string[];
-  details: string;
-  conditionSignature?: string;
-}
-
-export interface RuleConflictReport {
-  totalRules: number;
-  conflictCount: number;
-  highSeverityCount: number;
-  conflicts: RuleConflict[];
-}
-
-export interface RuleTestBenchConditionCheck {
-  metric: string;
-  operator: string;
-  expected: unknown;
-  actual: unknown;
-  matched: boolean;
-}
-
-export interface RuleTestBenchRuleResult {
-  ruleId: string;
-  ruleName: string;
-  priority: number;
-  enabled: boolean;
-  status: string;
-  skipped: boolean;
-  matched: boolean;
-  reason?: string;
-  conditionChecks: RuleTestBenchConditionCheck[];
-  actionSummary: string;
-}
-
-export interface RuleTestBenchResult {
-  evaluatedAt: string;
-  context: Record<string, unknown>;
-  winner: null | {
-    ruleId: string;
-    ruleName: string;
-    priority: number;
-    actionSummary: string;
-  };
-  ruleResults: RuleTestBenchRuleResult[];
-}
-
+/**
+ * 获取规则列表。
+ *
+ * 规则页在客户端做搜索/筛选/排序，需要完整集合；因此显式分页参数以外的调用
+ * 必须翻完所有页，否则规则超过一页时表格会静默截断。
+ */
 export async function fetchRules(params: { page?: number; pageSize?: number; type?: string; status?: string } = {}) {
-  const rulesBundle = readBootstrapPage('rules');
-  if (
-    rulesBundle &&
-    matchesBootstrapScope(rulesBundle.scope, {
-      type: params.type || 'all',
-      status: params.status || 'all',
-    })
-  ) {
+  const buildUrl = (page: number, pageSize: number) => {
+    const queryParams = new URLSearchParams();
+    queryParams.set('page', String(page));
+    queryParams.set('pageSize', String(pageSize));
+    if (params.type) queryParams.set('type', params.type);
+    if (params.status) queryParams.set('status', params.status);
+    return `${API_BASE_URL}/api/rules?${queryParams.toString()}`;
+  };
+
+  if (params.page || params.pageSize) {
+    const response = await fetch(buildUrl(params.page || 1, params.pageSize || 20));
+    const result = await handleResponse<Rule[]>(response);
     return {
-      list: Array.isArray(rulesBundle.data?.rules) ? rulesBundle.data.rules : [],
-      meta: rulesBundle.data?.meta || { page: 1, pageSize: 200, total: 0 },
+      list: result.data || [],
+      meta: result.meta || { page: params.page || 1, pageSize: params.pageSize || 20, total: (result.data || []).length },
     };
   }
 
-  const query = buildQueryString({
-    page: params.page ?? 1,
-    pageSize: params.pageSize ?? 200,
-    type: params.type,
-    status: params.status,
-  });
-  const result = await fetchPaginatedResult<Rule>(`/api/rules${query}`);
-
+  const list = await fetchAllPages<Rule>(buildUrl);
   return {
-    list: result.list,
-    meta: {
-      page: result.page,
-      pageSize: result.pageSize,
-      total: result.total,
-      totalPages: result.totalPages,
-    },
+    list,
+    meta: { page: 1, pageSize: list.length || 20, total: list.length },
   };
 }
 
-export async function fetchExportTasks() {
-  const response = await authenticatedFetch('/api/export-tasks');
-  const payload = await handleRawJsonResponse<{
-    success?: boolean;
-    data?: { list?: any[] };
-  }>(response);
-  return Array.isArray(payload?.data?.list) ? payload.data.list : [];
-}
-
-export async function fetchExportTaskStats() {
-  const response = await authenticatedFetch('/api/export-tasks/stats');
-  const payload = await handleRawJsonResponse<{
-    success?: boolean;
-    data?: any;
-  }>(response);
-  return unwrapPayload<any>(payload);
-}
-
-export async function cancelExportTask(taskId: string) {
-  return mutateJsonData<any>(`/api/export-tasks/${taskId}/cancel`, {
-    method: 'POST',
-  });
-}
-
-export async function retryExportTask(taskId: string) {
-  return mutateJsonData<any>(`/api/export-tasks/${taskId}/retry`, {
-    method: 'POST',
-  });
-}
-
-export async function deleteExportTask(taskId: string) {
-  return mutateJsonData<any>(`/api/export-tasks/${taskId}`, {
-    method: 'DELETE',
-  });
-}
-
 export async function fetchRuleById(id: string): Promise<Rule> {
-  const rule = findBootstrapEntityById<Rule>(['rules'], 'rules', id);
-  if (rule) {
-    return rule;
-  }
-
-  const response = await authenticatedFetch(`/api/rules/${id}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<Rule>(payload);
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 export async function createRule(data: CreateRuleDTO): Promise<Rule> {
-  const response = await authenticatedFetch('/api/rules', {
+  const response = await fetch(`${API_BASE_URL}/api/rules`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -3495,8 +1042,9 @@ export async function createRule(data: CreateRuleDTO): Promise<Rule> {
 }
 
 export async function updateRule(id: string, data: UpdateRuleDTO): Promise<Rule> {
-  const response = await authenticatedFetch(`/api/rules/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   const result = await handleResponse(response);
@@ -3504,14 +1052,14 @@ export async function updateRule(id: string, data: UpdateRuleDTO): Promise<Rule>
 }
 
 export async function deleteRule(id: string): Promise<void> {
-  const response = await authenticatedFetch(`/api/rules/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}`, {
     method: 'DELETE',
   });
   await handleResponse(response);
 }
 
 export async function enableRule(id: string): Promise<Rule> {
-  const response = await authenticatedFetch(`/api/rules/${id}/enable`, {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}/enable`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
@@ -3519,37 +1067,17 @@ export async function enableRule(id: string): Promise<Rule> {
 }
 
 export async function disableRule(id: string): Promise<Rule> {
-  const response = await authenticatedFetch(`/api/rules/${id}/disable`, {
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}/disable`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
   return result.data;
 }
 
-export async function fetchRuleConflicts(): Promise<RuleConflictReport> {
-  const response = await authenticatedFetch('/api/rules/conflicts');
-  const result = await handleResponse(response);
-  return result.data as RuleConflictReport;
-}
-
-export async function runRuleTestBench(payload: {
-  context: Record<string, unknown>;
-  includeDisabled?: boolean;
-  includePaused?: boolean;
-  ruleIds?: string[];
-}): Promise<RuleTestBenchResult> {
-  const response = await authenticatedFetch('/api/rules/test-bench', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-  const result = await handleResponse(response);
-  return result.data as RuleTestBenchResult;
-}
-
 export async function getRuleExecutionHistory(id: string, limit: number = 50) {
-  void id;
-  void limit;
-  return [];
+  const response = await fetch(`${API_BASE_URL}/api/rules/${id}/history?limit=${limit}`);
+  const result = await handleResponse(response);
+  return result.data || [];
 }
 
 // ==================== Platforms API ====================
@@ -3571,42 +1099,34 @@ export interface Platform {
 }
 
 export async function fetchPlatforms(): Promise<Platform[]> {
-  const platformsBundle = readBootstrapPage('platforms');
-  if (platformsBundle && Array.isArray(platformsBundle.data?.platforms)) {
-    return platformsBundle.data.platforms as Platform[];
-  }
-
-  return fetchListResult<Platform>('/api/platforms');
+  const response = await fetch(`${API_BASE_URL}/api/platforms`);
+  const result = await handleResponse(response);
+  return result.data || [];
 }
 
 export async function fetchConfiguredPlatforms(): Promise<Platform[]> {
-  return fetchListResult<Platform>('/api/platforms/configured');
+  const response = await fetch(`${API_BASE_URL}/api/platforms/configured`);
+  const result = await handleResponse(response);
+  return result.data || [];
 }
 
 export async function fetchPlatformById(platformId: string): Promise<Platform> {
-  const bootstrapPlatforms = readBootstrapPage<{ platforms?: Platform[] }>('platforms');
-  if (bootstrapPlatforms && Array.isArray(bootstrapPlatforms.data?.platforms)) {
-    const matched = bootstrapPlatforms.data.platforms.find((platform) => platform.id === platformId);
-    if (matched) {
-      return matched;
-    }
-  }
-
-  const response = await authenticatedFetch(`/api/platforms/${platformId}`);
-  const payload = await handleRawJsonResponse(response);
-  return unwrapPayload<Platform>(payload);
+  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}`);
+  const result = await handleResponse(response);
+  return result.data;
 }
 
 export async function configurePlatform(platformId: string, config: Record<string, unknown>): Promise<void> {
-  const response = await authenticatedFetch(`/api/platforms/${platformId}/configure`, {
+  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}/configure`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
   await handleResponse(response);
 }
 
 export async function testPlatformConnection(platformId: string): Promise<{ platformId: string; connected: boolean }> {
-  const response = await authenticatedFetch(`/api/platforms/${platformId}/test`, {
+  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}/test`, {
     method: 'POST',
   });
   const result = await handleResponse(response);
@@ -3614,10 +1134,270 @@ export async function testPlatformConnection(platformId: string): Promise<{ plat
 }
 
 export async function executePlatformAction(platformId: string, action: string, parameters: Record<string, unknown> = {}): Promise<unknown> {
-  const response = await authenticatedFetch(`/api/platforms/${platformId}/execute`, {
+  const response = await fetch(`${API_BASE_URL}/api/platforms/${platformId}/execute`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, parameters }),
   });
   const result = await handleResponse(response);
+  return result.data;
+}
+
+// ==================== Conversions API ====================
+
+export interface Conversion {
+  id: string;
+  time: string;
+  campaignId: string;
+  campaign: string;
+  streamId: string;
+  stream: string;
+  landingId: string;
+  offerId: string;
+  offer: string;
+  affiliateNetwork: string;
+  source: string;
+  payout: string;
+  revenue: string;
+  currency: string;
+  status: 'Approved' | 'Pending' | 'Rejected';
+  type: 'Sale' | 'Lead' | 'Signup' | 'Deposit';
+  clickId: string;
+  ip: string;
+  userAgent: string;
+  country: string;
+  region: string;
+  city: string;
+  language: string;
+  deviceType: string;
+  deviceModel: string;
+  browser: string;
+  browserVersion: string;
+  os: string;
+  osVersion: string;
+  isp: string;
+  operator: string;
+  connectionType: string;
+  isUsingProxy: boolean;
+  isBot: boolean;
+  keyword: string;
+  referrer: string;
+  subId: string;
+  subId2: string;
+  subId3: string;
+  subId4: string;
+  subId5: string;
+  visitorCode: string;
+  creativeId: string;
+  externalId: string;
+  adCampaignId: string;
+  postbackUrl: string;
+  postbackStatus: string;
+  postbackTime: string;
+  transactionId: string;
+}
+
+export interface ConversionListParams {
+  page?: number;
+  pageSize?: number;
+  startDate?: string;
+  endDate?: string;
+  status?: string;
+  search?: string;
+}
+
+export interface ConversionListResult {
+  list: Conversion[];
+  meta: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export async function fetchConversions(params: ConversionListParams = {}): Promise<ConversionListResult> {
+  const all: Conversion[] = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const queryParams = new URLSearchParams();
+    queryParams.set('page', String(page));
+    queryParams.set('pageSize', '100');
+    if (params.startDate) queryParams.set('startDate', params.startDate);
+    if (params.endDate) queryParams.set('endDate', params.endDate);
+    if (params.status) queryParams.set('status', params.status);
+    if (params.search) queryParams.set('search', params.search);
+
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/conversions?${queryParams.toString()}`);
+    const result = await handleResponse<{ list?: Conversion[] } | Conversion[]>(response);
+    const list = Array.isArray(result.data) ? result.data : (result.data?.list || []);
+    all.push(...list);
+    const total = Number(result.meta?.total) || all.length;
+    if (!list.length || all.length >= total) break;
+  }
+  return {
+    list: all,
+    meta: { page: 1, pageSize: all.length || 20, total: all.length, totalPages: 1 },
+  };
+}
+
+export async function fetchConversionStats(startDate: string, endDate: string) {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/api/conversions/stats?startDate=${startDate}&endDate=${endDate}`);
+  const result = await handleResponse(response);
+  return result.data || {
+    totalConversions: 0,
+    approvedConversions: 0,
+    pendingConversions: 0,
+    rejectedConversions: 0,
+    totalRevenue: 0,
+    totalPayout: 0,
+  };
+}
+
+// ==================== Settings API ====================
+
+export interface UserSettings {
+  timezone: string;
+  currency: string;
+  dateFormat: string;
+  theme: 'light' | 'dark' | 'system';
+  language: string;
+  emailNotifications: boolean;
+  pushNotifications: boolean;
+  weeklyReports: boolean;
+  twoFactorAuth: boolean;
+}
+
+export async function fetchSettings(): Promise<UserSettings> {
+  const response = await fetch(`${API_BASE_URL}/api/settings`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function updateSettings(settings: Partial<UserSettings>) {
+  const response = await fetch(`${API_BASE_URL}/api/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+// ==================== Target API ====================
+
+export interface Target {
+  id: string;
+  name: string;
+  type: 'country' | 'device' | 'browser' | 'os' | 'isp' | 'ip';
+  values: string[];
+  status: 'active' | 'paused';
+  createdAt: string;
+}
+
+export interface CreateTargetDTO {
+  name: string;
+  type: Target['type'];
+  values: string[];
+}
+
+export interface UpdateTargetDTO {
+  name?: string;
+  type?: Target['type'];
+  values?: string[];
+  status?: Target['status'];
+}
+
+export async function fetchTargets(): Promise<Target[]> {
+  const response = await fetch(`${API_BASE_URL}/api/targets`);
+  const result = await handleResponse(response);
+  return result.data || [];
+}
+
+export async function fetchTargetById(id: string): Promise<Target> {
+  const response = await fetch(`${API_BASE_URL}/api/targets/${id}`);
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function createTarget(data: CreateTargetDTO): Promise<Target> {
+  const response = await fetch(`${API_BASE_URL}/api/targets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function updateTarget(id: string, data: UpdateTargetDTO): Promise<Target> {
+  const response = await fetch(`${API_BASE_URL}/api/targets/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+export async function deleteTarget(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/targets/${id}`, {
+    method: 'DELETE',
+  });
+  await handleResponse(response);
+}
+
+export async function toggleTargetStatus(id: string, status: Target['status']): Promise<Target> {
+  const response = await fetch(`${API_BASE_URL}/api/targets/${id}/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  const result = await handleResponse(response);
+  return result.data;
+}
+
+// Export tasks are user-triggered; no background polling in the UI.
+export async function fetchExportTasks(): Promise<any[]> {
+  const response = await fetch(`${API_BASE_URL}/api/export-tasks`);
+  const result = await handleResponse<any>(response);
+  return Array.isArray(result.data) ? result.data : (result.data as any)?.list || [];
+}
+
+export async function fetchExportTaskStats(): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/api/export-tasks/stats`);
+  const result = await handleResponse<any>(response);
+  return result.data;
+}
+
+export async function createExportTask(data: Record<string, any>): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/api/export-tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await handleResponse<any>(response);
+  return result.data;
+}
+
+export async function deleteExportTask(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/export-tasks/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  await handleResponse(response);
+}
+
+export async function cancelExportTask(id: string): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/api/export-tasks/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+  });
+  const result = await handleResponse<any>(response);
+  return result.data;
+}
+
+export async function retryExportTask(id: string): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/api/export-tasks/${encodeURIComponent(id)}/retry`, {
+    method: 'POST',
+  });
+  const result = await handleResponse<any>(response);
   return result.data;
 }

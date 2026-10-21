@@ -1,25 +1,22 @@
 /**
  * File: Trends.tsx
  * Purpose: Trends 趋势分析页面
- * Input/Output: 展示流量趋势数据、统计图�?
- * Logic: �?API 获取趋势数据，展示时间序列图表和多维度分�?
- * 前后端交�? 调用 /api/trends/report 接口
+ * Input/Output: 展示流量趋势数据、统计图表
+ * Logic: 从 API 获取趋势数据，展示时间序列图表和多维度分析
+ * 前后端交互: 调用 /api/trends/report 接口
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { 
+import React, { useState, useRef, useCallback, useMemo, Suspense, useEffect } from 'react';
+import {
   ChartWrapper,
-  LazyLineChart, LazyLine, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyLegend, LazyResponsiveContainer, 
-  LazyAreaChart, LazyArea, LazyPieChart, LazyPie, LazyCell, LazyBarChart, LazyBar 
+  LazyLineChart, LazyLine, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyLegend, LazyResponsiveContainer,
+  LazyAreaChart, LazyArea, LazyPieChart, LazyPie, LazyCell, LazyBarChart, LazyBar
 } from '../components/ChartWrapper';
 import { Calendar, TrendingUp, TrendingDown, Minus, Filter, Download, RefreshCw, ChevronDown, AlertCircle } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { fetchTrendsReport, type TrendsReport } from '../services/api';
-import { loadBootstrapForLocation, readBootstrapPage } from '../services/bootstrap';
-import { DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
-import { truncateLabel } from '../utils/text';
+import { usePageData } from '@/context/DataCacheContext';
+import { fetchTrendsReport, fetchCampaigns, type TrendsReport } from '../services/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -110,7 +107,7 @@ const PieChartCard = React.memo(({ title, data, dataKey, nameKey }: {
       {data && data.length > 0 ? (
         <ChartWrapper height={250}>
           <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-            <LazyResponsiveContainer width="100%" height={300}>
+            <LazyResponsiveContainer width="100%" height="100%">
               <LazyPieChart>
                 <LazyPie
                   data={data}
@@ -160,7 +157,7 @@ const BarChartCard = React.memo(({ title, data, dataKey }: {
       {data && data.length > 0 ? (
         <ChartWrapper height={250}>
           <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-            <LazyResponsiveContainer width="100%" height={300}>
+            <LazyResponsiveContainer width="100%" height="100%">
               <LazyBarChart data={data} layout="vertical">
                 <LazyCartesianGrid {...chartConfig.grid} />
                 <LazyXAxis {...chartConfig.xAxis} />
@@ -196,7 +193,7 @@ const MemoizedAreaChart = React.memo(({ data, dataKeys, colors, gradients, title
       {data && data.length > 0 ? (
         <ChartWrapper height={300}>
           <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-            <LazyResponsiveContainer width="100%" height={300}>
+            <LazyResponsiveContainer width="100%" height="100%">
               <LazyAreaChart data={data}>
                 <defs>
                   {gradients.map((grad, i) => (
@@ -237,41 +234,22 @@ const MemoizedAreaChart = React.memo(({ data, dataKeys, colors, gradients, title
 MemoizedAreaChart.displayName = 'MemoizedAreaChart';
 
 export const Trends = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const currentQuery = searchParams.toString();
-  const bootstrap = readBootstrapPage<{ report?: TrendsReport; campaigns?: Array<{ id: string; name: string }> }>('trends');
-  const [report, setReport] = useState<TrendsReport | null>((bootstrap?.data?.report as TrendsReport) || null);
-  const [loading, setLoading] = useState(!bootstrap?.data?.report);
-  const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState({
-    startDate:
-      typeof bootstrap?.scope?.startDate === 'string'
-        ? bootstrap.scope.startDate
-        : new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endDate:
-      typeof bootstrap?.scope?.endDate === 'string'
-        ? bootstrap.scope.endDate
-        : new Date().toISOString().split('T')[0],
+    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
   });
-  const [interval, setInterval] = useState<'hour' | 'day' | 'week' | 'month'>(
-    (bootstrap?.scope?.interval as 'hour' | 'day' | 'week' | 'month') || 'day'
-  );
+  const [interval, setInterval] = useState<'hour' | 'day' | 'week' | 'month'>('day');
   const [selectedPreset, setSelectedPreset] = useState<string>('Last 7 days');
   const [showDateDropdown, setShowDateDropdown] = useState(false);
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [tempDateRange, setTempDateRange] = useState(dateRange);
-  const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string }>>(
-    Array.isArray(bootstrap?.data?.campaigns) ? bootstrap.data.campaigns : []
-  );
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(
-    typeof bootstrap?.scope?.campaignId === 'string' ? bootstrap.scope.campaignId : ''
-  );
+  const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [activeChart, setActiveChart] = useState<'clicks' | 'revenue' | 'roi' | 'epc'>('clicks');
   const [isMobile, setIsMobile] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [selectedDimensions, setSelectedDimensions] = useState<string[]>(['country', 'device', 'os', 'browser']);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const skipInitialBootstrapLoadRef = useRef(Boolean(bootstrap?.data?.report));
 
   // Detect mobile viewport
   useEffect(() => {
@@ -281,6 +259,16 @@ export const Trends = () => {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Load campaigns for filter
+  useEffect(() => {
+    fetchCampaigns()
+      .then(data => {
+        const list = Array.isArray(data) ? data : data?.list || [];
+        setCampaigns(list.map((c: any) => ({ id: c.id || c.campaignId, name: c.name || c.campaignName })));
+      })
+      .catch(err => console.error('Failed to load campaigns:', err));
   }, []);
 
   // Close dropdown when clicking outside
@@ -298,7 +286,7 @@ export const Trends = () => {
   const handlePresetSelect = useCallback((preset: typeof DATE_PRESETS[number]) => {
     setSelectedPreset(preset.label);
     setShowDateDropdown(false);
-    
+
     if (preset.days === 'custom') {
       setShowCustomDatePicker(true);
       setTempDateRange(dateRange);
@@ -332,58 +320,22 @@ export const Trends = () => {
     });
   }, []);
 
-  // Fetch data when dateRange or interval changes
-  useEffect(() => {
-    if (skipInitialBootstrapLoadRef.current) {
-      skipInitialBootstrapLoadRef.current = false;
-      return;
-    }
+  // 使用 useCallback 包装 fetch 函数，避免无限循环
+  const fetchTrendsData = useCallback(() => 
+    fetchTrendsReport({
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate,
+      interval,
+      campaignId: selectedCampaignId || undefined,
+    }),
+    [dateRange.startDate, dateRange.endDate, interval, selectedCampaignId]
+  );
 
-    setLoading(true);
-    setError(null);
-
-    const loadReport = async () => {
-      try {
-        const nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set('startDate', dateRange.startDate);
-        nextUrl.searchParams.set('endDate', dateRange.endDate);
-        nextUrl.searchParams.set('interval', interval);
-        if (selectedCampaignId) {
-          nextUrl.searchParams.set('campaignId', selectedCampaignId);
-        } else {
-          nextUrl.searchParams.delete('campaignId');
-        }
-
-        const nextQuery = nextUrl.searchParams.toString();
-        if (nextQuery !== currentQuery) {
-          setSearchParams(nextUrl.searchParams, { replace: true });
-          return;
-        }
-
-        const bundle = await loadBootstrapForLocation({ url: nextUrl, force: true }).catch(() => null);
-        if (bundle?.page === 'trends') {
-          setReport((bundle.data?.report as TrendsReport) || null);
-          setCampaigns(Array.isArray(bundle.data?.campaigns) ? bundle.data.campaigns as Array<{ id: string; name: string }> : []);
-          return;
-        }
-
-        const data = await fetchTrendsReport({
-          startDate: dateRange.startDate,
-          endDate: dateRange.endDate,
-          interval,
-          campaignId: selectedCampaignId || undefined,
-        });
-        setReport(data);
-      } catch (err) {
-        console.error('Failed to fetch trends:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load trends data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void loadReport();
-  }, [currentQuery, dateRange, interval, selectedCampaignId, setSearchParams]);
+  // 使用 usePageData hook 获取趋势报告数据
+  const { data: report, isLoading, error } = usePageData(
+    'trends',
+    fetchTrendsData
+  );
 
   // Memoize data transformations to prevent re-calculation on every render
   // Must be called before any conditional returns
@@ -409,29 +361,17 @@ export const Trends = () => {
     [report?.breakdowns?.device]
   );
 
-  const selectedCampaignName = useMemo(() => {
-    if (!selectedCampaignId) {
-      return 'All Campaigns';
-    }
-    const campaign = campaigns.find(item => item.id === selectedCampaignId);
-    return campaign?.name || selectedCampaignId;
-  }, [campaigns, selectedCampaignId]);
-
-  // Conditional rendering after all hooks
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <RefreshCw className="animate-spin text-accent-fg" size={32} />
-      </div>
-    );
+  // 合并加载状态检查
+  if (isLoading && !report) {
+    return <TrendsSkeleton />;
   }
 
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-danger">
         <AlertCircle size={48} className="mb-4" />
-        <p className="text-lg font-medium">{error}</p>
-        <button 
+        <p className="text-lg font-medium">{error?.message || error}</p>
+        <button
           onClick={() => window.location.reload()}
           className="mt-4 px-4 py-2 bg-surface border border-border-default rounded-md text-fg-default hover:bg-surface-container transition-colors"
         >
@@ -587,7 +527,7 @@ export const Trends = () => {
         {/* Display selected date range */}
         <div className="flex items-center gap-2 text-sm text-fg-subtle">
           <span>{dateRange.startDate}</span>
-          <span>-</span>
+          <span>→</span>
           <span>{dateRange.endDate}</span>
         </div>
         
@@ -597,14 +537,11 @@ export const Trends = () => {
         <select
           value={selectedCampaignId}
           onChange={(e) => setSelectedCampaignId(e.target.value)}
-          className="w-[280px] min-w-[220px] px-3 py-2 bg-surface-container border border-border-default rounded-md text-sm text-fg-default focus:outline-none focus:border-accent-fg"
-          title={selectedCampaignName}
+          className="px-3 py-2 bg-surface-container border border-border-default rounded-md text-sm text-fg-default focus:outline-none focus:border-accent-fg"
         >
           <option value="">All Campaigns</option>
           {campaigns.map(c => (
-            <option key={c.id} value={c.id} title={c.name}>
-              {truncateLabel(c.name, DISPLAY_MAX_LENGTH.CAMPAIGN_OPTION_LABEL)}
-            </option>
+            <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
         
@@ -631,12 +568,12 @@ export const Trends = () => {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <StatCard title="Clicks" value={report.summary.totalClicks} trend={report.summary.trend} changePercent={report.summary.changePercent} />
-        <StatCard title="Conversions" value={report.summary.totalConversions} />
-        <StatCard title="Revenue" value={report.summary.totalRevenue} prefix="$" />
-        <StatCard title="Cost" value={report.summary.totalCost} prefix="$" />
-        <StatCard title="Profit" value={report.summary.totalProfit} prefix="$" />
-        <StatCard title="ROI" value={report.summary.avgRoi} prefix="%" />
+        <StatCard title="Clicks" value={report.summary?.totalClicks ?? 0} trend={report.summary?.trend} changePercent={report.summary?.changePercent} />
+        <StatCard title="Conversions" value={report.summary?.totalConversions ?? 0} />
+        <StatCard title="Revenue" value={report.summary?.totalRevenue ?? 0} prefix="$" />
+        <StatCard title="Cost" value={report.summary?.totalCost ?? 0} prefix="$" />
+        <StatCard title="Profit" value={report.summary?.totalProfit ?? 0} prefix="$" />
+        <StatCard title="ROI" value={report.summary?.avgRoi ?? 0} prefix="%" />
       </div>
 
       {/* Mobile Chart Tabs */}
@@ -678,7 +615,7 @@ export const Trends = () => {
             {report.data && report.data.length > 0 ? (
               <ChartWrapper height={300}>
                 <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                  <LazyResponsiveContainer width="100%" height={300}>
+                  <LazyResponsiveContainer width="100%" height="100%">
                     <LazyAreaChart data={report.data}>
                       <defs>
                         <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
@@ -716,7 +653,7 @@ export const Trends = () => {
             {report.data && report.data.length > 0 ? (
               <ChartWrapper height={300}>
                 <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                  <LazyResponsiveContainer width="100%" height={300}>
+                  <LazyResponsiveContainer width="100%" height="100%">
                     <LazyAreaChart data={report.data}>
                       <defs>
                         <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
@@ -754,7 +691,7 @@ export const Trends = () => {
             {report.data && report.data.length > 0 ? (
               <ChartWrapper height={300}>
                 <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                  <LazyResponsiveContainer width="100%" height={300}>
+                  <LazyResponsiveContainer width="100%" height="100%">
                     <LazyLineChart data={report.data}>
                       <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
@@ -781,7 +718,7 @@ export const Trends = () => {
             {report.data && report.data.length > 0 ? (
               <ChartWrapper height={300}>
                 <Suspense fallback={<div className="h-full flex items-center justify-center">Loading...</div>}>
-                  <LazyResponsiveContainer width="100%" height={300}>
+                  <LazyResponsiveContainer width="100%" height="100%">
                     <LazyLineChart data={report.data}>
                       <LazyCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <LazyXAxis dataKey="date" tick={{ fontSize: 12 }} />
@@ -833,6 +770,64 @@ export const Trends = () => {
           </p>
         </div>
       )}
+    </div>
+  );
+};
+
+// ============================================
+// 骨架屏组件
+// ============================================
+
+const TrendsSkeleton: React.FC = () => {
+  return (
+    <div className="space-y-6 animate-pulse">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="h-8 bg-surface-hover rounded w-48 mb-2"></div>
+          <div className="h-4 bg-surface-hover rounded w-72"></div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-24 bg-surface-hover rounded"></div>
+          <div className="h-10 w-24 bg-surface-hover rounded"></div>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="bg-surface p-4 rounded-lg border border-border-default">
+            <div className="h-4 bg-surface-hover rounded w-20 mb-2"></div>
+            <div className="h-8 bg-surface-hover rounded w-24"></div>
+          </div>
+        ))}
+      </div>
+
+      {/* Chart Card */}
+      <div className="bg-surface p-6 rounded-lg border border-border-default">
+        <div className="h-6 bg-surface-hover rounded w-32 mb-4"></div>
+        <div className="h-64 bg-surface-hover rounded"></div>
+      </div>
+
+      {/* Filter Panel */}
+      <div className="bg-surface p-6 rounded-lg border border-border-default">
+        <div className="h-6 bg-surface-hover rounded w-32 mb-4"></div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="h-10 bg-surface-hover rounded"></div>
+          <div className="h-10 bg-surface-hover rounded"></div>
+          <div className="h-10 bg-surface-hover rounded"></div>
+        </div>
+      </div>
+
+      {/* Breakdown Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="bg-surface p-6 rounded-lg border border-border-default">
+            <div className="h-6 bg-surface-hover rounded w-32 mb-4"></div>
+            <div className="h-48 bg-surface-hover rounded"></div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

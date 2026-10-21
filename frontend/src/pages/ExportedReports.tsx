@@ -135,8 +135,7 @@ export default function ExportedReports() {
   useEffect(() => {
     fetchTasks();
     fetchStats();
-    const interval = setInterval(fetchTasks, 5000); // 每5秒刷新一次
-    return () => clearInterval(interval);
+    // Export tasks are user-triggered, not realtime. Refresh on open/manual action.
   }, [fetchTasks, fetchStats]);
 
   const handleDownload = async (task: ExportTask) => {

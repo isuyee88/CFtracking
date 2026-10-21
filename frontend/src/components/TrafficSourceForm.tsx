@@ -23,12 +23,7 @@ import {
   FileText,
   Key
 } from 'lucide-react';
-import {
-  previewTrafficSourceMacros,
-  testTrafficSourceConnection,
-  type TrafficSourceApiConnectionDiagnostics,
-  type TrafficSourceMacroPreviewResult,
-} from '../services/api';
+import { testTrafficSourceConnection } from '../services/api';
 import { 
   TRAFFIC_SOURCE_TEMPLATES, 
   getTemplateById, 
@@ -40,8 +35,6 @@ import type {
   TrafficSourceApiConfig,
   ConversionStatus 
 } from '../types/trafficSource';
-import { FIELD_MAX_LENGTH, DISPLAY_MAX_LENGTH } from '../constants/fieldConstraints';
-import { clampInput, truncateLabel } from '../utils/text';
 
 interface TrafficSourceFormProps {
   isOpen: boolean;
@@ -60,7 +53,6 @@ interface TestResult {
     balance?: number;
     currency?: string;
   };
-  diagnostics?: TrafficSourceApiConnectionDiagnostics;
 }
 
 type FormStep = 'basic' | 'parameters' | 'postback' | 'api';
@@ -103,31 +95,6 @@ const EMPTY_PARAMETER: ParameterTemplate = {
   macro: ''
 };
 
-const TRAFFIC_SOURCE_NAME_MAX_LENGTH = FIELD_MAX_LENGTH.NAME;
-const TRAFFIC_SOURCE_NOTES_MAX_LENGTH = FIELD_MAX_LENGTH.NOTES;
-const TRAFFIC_SOURCE_URL_MAX_LENGTH = FIELD_MAX_LENGTH.URL;
-const TRAFFIC_SOURCE_API_KEY_MAX_LENGTH = FIELD_MAX_LENGTH.API_KEY;
-
-function renderLengthCounter(value: string | undefined, maxLength: number, className = 'mt-1 text-right text-[11px] text-on-surface-variant/70') {
-  return (
-    <p className={className}>
-      {(value || '').length}/{maxLength}
-    </p>
-  );
-}
-const DEFAULT_MACRO_CONTEXT_INPUT = `{
-  "click_id": "clk_demo_1001",
-  "campaign_id": "cmp_101",
-  "source": "facebook",
-  "geo": "US",
-  "device": "mobile",
-  "revenue": "3.20",
-  "payout": "2.50",
-  "currency": "USD",
-  "status": "sale",
-  "timestamp": "1712620800"
-}`;
-
 export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   isOpen,
   onClose,
@@ -160,10 +127,6 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const [isPreviewingMacros, setIsPreviewingMacros] = useState(false);
-  const [macroContextInput, setMacroContextInput] = useState(DEFAULT_MACRO_CONTEXT_INPUT);
-  const [macroPreview, setMacroPreview] = useState<TrafficSourceMacroPreviewResult | null>(null);
-  const [macroPreviewError, setMacroPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && initialData) {
@@ -222,9 +185,6 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
     setErrors({});
     setTestResult(null);
     setCurrentStep('basic');
-    setMacroPreview(null);
-    setMacroPreviewError(null);
-    setMacroContextInput(DEFAULT_MACRO_CONTEXT_INPUT);
   }, [isOpen, initialData]);
 
   const parseJsonField = <T,>(field: any, defaultValue: T): T => {
@@ -238,24 +198,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   };
 
   const handleChange = (name: string, value: any) => {
-    let nextValue = value;
-
-    if (typeof value === 'string') {
-      const maxLengthMap: Record<string, number> = {
-        name: TRAFFIC_SOURCE_NAME_MAX_LENGTH,
-        notes: TRAFFIC_SOURCE_NOTES_MAX_LENGTH,
-        postbackUrl: TRAFFIC_SOURCE_URL_MAX_LENGTH,
-        apiBaseUrl: TRAFFIC_SOURCE_URL_MAX_LENGTH,
-        apiKey: TRAFFIC_SOURCE_API_KEY_MAX_LENGTH,
-      };
-
-      const maxLength = maxLengthMap[name];
-      if (maxLength) {
-        nextValue = clampInput(value, maxLength);
-      }
-    }
-
-    setFormData(prev => ({ ...prev, [name]: nextValue }));
+    setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -296,16 +239,9 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   };
 
   const handleParameterChange = (index: number, field: keyof ParameterTemplate, value: string) => {
-    const maxLengthMap: Record<keyof ParameterTemplate, number> = {
-      alias: FIELD_MAX_LENGTH.PARAMETER_ALIAS,
-      paramName: FIELD_MAX_LENGTH.PARAMETER_NAME,
-      macro: FIELD_MAX_LENGTH.PARAMETER_VALUE,
-    };
-    const normalizedValue = clampInput(value, maxLengthMap[field]);
-
     setFormData(prev => {
       const newParams = [...(prev.parameters || [])];
-      newParams[index] = { ...newParams[index], [field]: normalizedValue };
+      newParams[index] = { ...newParams[index], [field]: value };
       return { ...prev, parameters: newParams };
     });
   };
@@ -431,16 +367,13 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
       if (response.success) {
         setTestResult({
           success: true,
-          message: response.message || 'Connection successful!',
-          details: response.details,
-          diagnostics: response.diagnostics,
+          message: response.data?.message || 'Connection successful!',
+          details: response.data?.details
         });
       } else {
         setTestResult({
           success: false,
-          message: response.message || 'Connection failed',
-          details: response.details,
-          diagnostics: response.diagnostics,
+          message: response.error?.message || 'Connection failed'
         });
       }
     } catch (error) {
@@ -450,40 +383,6 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
       });
     } finally {
       setIsTesting(false);
-    }
-  };
-
-  const handlePreviewMacros = async () => {
-    setMacroPreviewError(null);
-
-    let parsedContext: Record<string, unknown> = {};
-    const trimmed = macroContextInput.trim();
-    if (trimmed) {
-      try {
-        const contextCandidate = JSON.parse(trimmed);
-        if (!contextCandidate || typeof contextCandidate !== 'object' || Array.isArray(contextCandidate)) {
-          setMacroPreviewError('Sample context must be a JSON object');
-          return;
-        }
-        parsedContext = contextCandidate as Record<string, unknown>;
-      } catch {
-        setMacroPreviewError('Sample context JSON is invalid');
-        return;
-      }
-    }
-
-    setIsPreviewingMacros(true);
-    try {
-      const response = await previewTrafficSourceMacros({
-        parameters: formData.parameters || [],
-        postbackUrl: formData.postbackConfig?.url || formData.postbackUrl || '',
-        context: parsedContext,
-      });
-      setMacroPreview(response);
-    } catch (err) {
-      setMacroPreviewError(err instanceof Error ? err.message : 'Failed to preview macros');
-    } finally {
-      setIsPreviewingMacros(false);
     }
   };
 
@@ -497,8 +396,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center">
-      <div className="my-8 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden bg-surface-container-lowest sm:my-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-surface-container-lowest w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-outline-variant/10">
           <div>
@@ -518,27 +417,25 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
         </div>
 
         {/* Stepper */}
-        <div className="overflow-x-auto border-b border-outline-variant/10 bg-surface-container/30 px-6 py-4">
-          <div className="flex min-w-max items-center">
-            {steps.map((step, index) => (
-              <React.Fragment key={step.key}>
-                <button
-                  onClick={() => setCurrentStep(step.key)}
-                  className={`flex shrink-0 items-center gap-2 rounded-sm px-4 py-2 transition-all ${
-                    currentStep === step.key
-                      ? 'bg-primary text-on-primary'
-                      : 'text-on-surface-variant hover:bg-surface-container'
-                  }`}
-                >
-                  {step.icon}
-                  <span className="text-xs font-bold uppercase tracking-widest">{step.label}</span>
-                </button>
-                {index < steps.length - 1 && (
-                  <ChevronRight size={16} className="mx-2 shrink-0 text-on-surface-variant/30" />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
+        <div className="flex items-center px-6 py-4 bg-surface-container/30 border-b border-outline-variant/10">
+          {steps.map((step, index) => (
+            <React.Fragment key={step.key}>
+              <button
+                onClick={() => setCurrentStep(step.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-sm transition-all ${
+                  currentStep === step.key
+                    ? 'bg-primary text-on-primary'
+                    : 'text-on-surface-variant hover:bg-surface-container'
+                }`}
+              >
+                {step.icon}
+                <span className="text-xs font-bold uppercase tracking-widest">{step.label}</span>
+              </button>
+              {index < steps.length - 1 && (
+                <ChevronRight size={16} className="mx-2 text-on-surface-variant/30" />
+              )}
+            </React.Fragment>
+          ))}
         </div>
 
         {/* Form Content */}
@@ -557,8 +454,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                 >
                   {getTemplateOptions().map(opt => (
-                    <option key={opt.value} value={opt.value} title={opt.label}>
-                      {truncateLabel(opt.label, DISPLAY_MAX_LENGTH.SELECT_OPTION_LABEL)}
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
@@ -577,12 +474,10 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   value={formData.name}
                   onChange={(e) => handleChange('name', e.target.value)}
                   placeholder="Enter traffic source name"
-                  maxLength={TRAFFIC_SOURCE_NAME_MAX_LENGTH}
                   className={`w-full px-4 py-3 bg-surface border rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 ${
                     errors.name ? 'border-error' : 'border-outline-variant'
                   }`}
                 />
-                {renderLengthCounter(formData.name, TRAFFIC_SOURCE_NAME_MAX_LENGTH)}
                 {errors.name && <p className="mt-1 text-xs text-error">{errors.name}</p>}
               </div>
 
@@ -603,7 +498,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
               </div>
 
               {/* Cost Model & Value */}
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-1">
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                     Cost Model <span className="text-error">*</span>
@@ -675,7 +570,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                 <p className="text-xs text-on-surface-variant mb-3">
                   These fields will be captured from traffic source and available in reports:
                 </p>
-                 <div className="grid gap-2 md:grid-cols-2">
+                <div className="grid grid-cols-2 gap-2">
                   {formData.parameters && formData.parameters.length > 0 ? (
                     formData.parameters.map((param: ParameterTemplate, index: number) => (
                       <div key={index} className="flex items-center gap-2 px-3 py-2 bg-surface rounded-sm border border-outline-variant/20">
@@ -707,10 +602,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   onChange={(e) => handleChange('notes', e.target.value)}
                   placeholder="Add notes about this traffic source..."
                   rows={3}
-                  maxLength={TRAFFIC_SOURCE_NOTES_MAX_LENGTH}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
                 />
-                {renderLengthCounter(formData.notes, TRAFFIC_SOURCE_NOTES_MAX_LENGTH)}
               </div>
             </div>
           )}
@@ -730,8 +623,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
               </div>
 
               {/* Parameters Table */}
-              <div className="overflow-x-auto rounded-sm border border-outline-variant/20">
-                <table className="min-w-[720px] w-full">
+              <div className="border border-outline-variant/20 rounded-sm overflow-hidden">
+                <table className="w-full">
                   <thead className="bg-surface-container">
                     <tr>
                       <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
@@ -750,15 +643,13 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                     {(formData.parameters || []).map((param: ParameterTemplate, index: number) => (
                       <tr key={index} className="border-t border-outline-variant/10">
                         <td className="px-4 py-2">
-                   <input
+                          <input
                             type="text"
                             value={param.alias}
                             onChange={(e) => handleParameterChange(index, 'alias', e.target.value)}
                             placeholder="e.g., Campaign"
-                            maxLength={FIELD_MAX_LENGTH.PARAMETER_ALIAS}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
-                          {renderLengthCounter(param.alias, FIELD_MAX_LENGTH.PARAMETER_ALIAS, 'mt-1 text-right text-[10px] text-on-surface-variant/70')}
                         </td>
                         <td className="px-4 py-2">
                           <input
@@ -766,10 +657,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             value={param.paramName}
                             onChange={(e) => handleParameterChange(index, 'paramName', e.target.value)}
                             placeholder="e.g., utm_campaign"
-                            maxLength={FIELD_MAX_LENGTH.PARAMETER_NAME}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
-                          {renderLengthCounter(param.paramName, FIELD_MAX_LENGTH.PARAMETER_NAME, 'mt-1 text-right text-[10px] text-on-surface-variant/70')}
                         </td>
                         <td className="px-4 py-2">
                           <input
@@ -777,10 +666,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                             value={param.macro}
                             onChange={(e) => handleParameterChange(index, 'macro', e.target.value)}
                             placeholder="e.g., {campaign_id}"
-                            maxLength={FIELD_MAX_LENGTH.PARAMETER_VALUE}
                             className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-sm focus:border-primary focus:outline-none"
                           />
-                          {renderLengthCounter(param.macro, FIELD_MAX_LENGTH.PARAMETER_VALUE, 'mt-1 text-right text-[10px] text-on-surface-variant/70')}
                         </td>
                         <td className="px-4 py-2">
                           <button
@@ -812,75 +699,6 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                 <Plus size={14} />
                 Add Parameter
               </button>
-
-              <div className="border border-outline-variant/20 bg-surface-container/30 p-4 rounded-sm space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
-                      Macro Preview
-                    </h4>
-                    <p className="text-xs text-on-surface-variant/70 mt-1">
-                      Dry-run parameter macros and preview the final tracking query string.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handlePreviewMacros}
-                    disabled={isPreviewingMacros}
-                    className="flex items-center gap-2 px-3 py-2 bg-surface border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isPreviewingMacros ? <Loader2 size={14} className="animate-spin" /> : <Code size={14} />}
-                    {isPreviewingMacros ? 'Previewing...' : 'Generate Preview'}
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                    Sample Context (JSON)
-                  </label>
-                  <textarea
-                    value={macroContextInput}
-                    onChange={(e) => setMacroContextInput(e.target.value)}
-                    rows={6}
-                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded-sm text-xs font-mono focus:border-primary focus:outline-none"
-                  />
-                </div>
-
-                {macroPreviewError && (
-                  <div className="text-xs text-error flex items-center gap-2">
-                    <AlertCircle size={14} />
-                    <span>{macroPreviewError}</span>
-                  </div>
-                )}
-
-                {macroPreview && (
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">
-                        Tracking Query Preview
-                      </p>
-                      <code className="block w-full break-all px-3 py-2 bg-surface border border-outline-variant/20 text-xs text-primary">
-                        {macroPreview.trackingQuery || '(empty)'}
-                      </code>
-                    </div>
-
-                    {macroPreview.parameterPreview.length > 0 && (
-                      <div className="space-y-2">
-                        {macroPreview.parameterPreview.map((entry, index) => (
-                          <div key={`${entry.paramName}-${index}`} className="flex items-center justify-between gap-2 text-xs">
-                            <span className="text-on-surface-variant">
-                              {entry.paramName || '(unnamed)'} {'<-'} {entry.macro || '(empty)'}
-                            </span>
-                            <span className={entry.unresolved ? 'text-warning' : 'text-secondary'}>
-                              {entry.unresolved ? 'Unresolved' : entry.resolvedValue}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
 
               {/* Common Macros Help */}
               <div className="bg-surface-container/30 p-4 rounded-sm">
@@ -922,55 +740,14 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                   value={formData.postbackConfig?.url || ''}
                   onChange={(e) => setFormData(prev => ({
                     ...prev,
-                    postbackConfig: { ...prev.postbackConfig, url: clampInput(e.target.value, TRAFFIC_SOURCE_URL_MAX_LENGTH) }
+                    postbackConfig: { ...prev.postbackConfig, url: e.target.value }
                   }))}
                   placeholder="https://example.com/postback?click_id={click_id}&payout={payout}"
-                  maxLength={TRAFFIC_SOURCE_URL_MAX_LENGTH}
                   className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                 />
-                {renderLengthCounter(formData.postbackConfig?.url, TRAFFIC_SOURCE_URL_MAX_LENGTH)}
                 <p className="mt-1 text-xs text-on-surface-variant/60">
                   Use macros like {'{click_id}'}, {'{payout}'}, {'{revenue}'} in your URL
                 </p>
-              </div>
-
-              <div className="border border-outline-variant/20 bg-surface-container/30 p-4 rounded-sm space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
-                    Postback Preview
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={handlePreviewMacros}
-                    disabled={isPreviewingMacros}
-                    className="flex items-center gap-2 px-3 py-2 bg-surface border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isPreviewingMacros ? <Loader2 size={14} className="animate-spin" /> : <Link size={14} />}
-                    {isPreviewingMacros ? 'Previewing...' : 'Refresh Preview'}
-                  </button>
-                </div>
-
-                {macroPreviewError && (
-                  <div className="text-xs text-error flex items-center gap-2">
-                    <AlertCircle size={14} />
-                    <span>{macroPreviewError}</span>
-                  </div>
-                )}
-
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">
-                    Rendered URL
-                  </p>
-                  <code className="block w-full break-all px-3 py-2 bg-surface border border-outline-variant/20 text-xs text-primary">
-                    {macroPreview?.postbackPreview || '(click "Refresh Preview" to generate)'}
-                  </code>
-                </div>
-
-                {macroPreview && macroPreview.unresolvedMacros.length > 0 && (
-                  <div className="text-xs text-warning">
-                    Unresolved macros: {macroPreview.unresolvedMacros.join(', ')}
-                  </div>
-                )}
               </div>
 
               {/* Send Only Statuses */}
@@ -1008,13 +785,11 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                     value={formData.postbackConfig?.taboolaKey || ''}
                     onChange={(e) => setFormData(prev => ({
                       ...prev,
-                      postbackConfig: { ...prev.postbackConfig, taboolaKey: clampInput(e.target.value, TRAFFIC_SOURCE_API_KEY_MAX_LENGTH) }
+                      postbackConfig: { ...prev.postbackConfig, taboolaKey: e.target.value }
                     }))}
                     placeholder="Enter your Taboola API key"
-                    maxLength={TRAFFIC_SOURCE_API_KEY_MAX_LENGTH}
                     className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                   />
-                  {renderLengthCounter(formData.postbackConfig?.taboolaKey, TRAFFIC_SOURCE_API_KEY_MAX_LENGTH)}
                   <p className="mt-2 text-xs text-on-surface-variant">
                     Required for decoding CPC placeholder and tracking costs. 
                     Contact Taboola support to obtain this key (may take up to 72 hours).
@@ -1079,10 +854,8 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                       value={formData.apiBaseUrl}
                       onChange={(e) => handleChange('apiBaseUrl', e.target.value)}
                       placeholder="https://api.example.com/v1"
-                      maxLength={TRAFFIC_SOURCE_URL_MAX_LENGTH}
                       className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                     />
-                    {renderLengthCounter(formData.apiBaseUrl, TRAFFIC_SOURCE_URL_MAX_LENGTH)}
                   </div>
 
                   {/* API Key */}
@@ -1095,14 +868,12 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                       value={formData.apiKey}
                       onChange={(e) => handleChange('apiKey', e.target.value)}
                       placeholder="Enter your API key"
-                      maxLength={TRAFFIC_SOURCE_API_KEY_MAX_LENGTH}
                       className="w-full px-4 py-3 bg-surface border border-outline-variant rounded-sm text-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
                     />
-                    {renderLengthCounter(formData.apiKey, TRAFFIC_SOURCE_API_KEY_MAX_LENGTH)}
                   </div>
 
                   {/* Test Connection */}
-                  <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <div className="flex items-center gap-3 pt-2">
                     <button
                       type="button"
                       onClick={handleTestConnection}
@@ -1148,32 +919,6 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
                       </div>
                     </div>
                   )}
-
-                  {testResult?.diagnostics && (
-                    <div className="p-3 bg-surface-container/40 rounded-sm text-xs text-on-surface-variant space-y-1">
-                      <p className="font-bold uppercase tracking-widest text-[10px] text-on-surface-variant">
-                        Verify Diagnostics
-                      </p>
-                      {testResult.diagnostics.platformType && (
-                        <p>Platform: {testResult.diagnostics.platformType}</p>
-                      )}
-                      {testResult.diagnostics.baseUrl && (
-                        <p>Base URL: {testResult.diagnostics.baseUrl}</p>
-                      )}
-                      {testResult.diagnostics.httpStatus !== undefined && (
-                        <p>HTTP Status: {testResult.diagnostics.httpStatus}</p>
-                      )}
-                      {testResult.diagnostics.durationMs !== undefined && (
-                        <p>Latency: {testResult.diagnostics.durationMs}ms</p>
-                      )}
-                      {testResult.diagnostics.checkedAt && (
-                        <p>Checked At: {testResult.diagnostics.checkedAt}</p>
-                      )}
-                      {testResult.diagnostics.hint && (
-                        <p className="text-warning">Hint: {testResult.diagnostics.hint}</p>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -1181,7 +926,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex flex-wrap items-center justify-between gap-3 p-6 border-t border-outline-variant/10">
+        <div className="flex items-center justify-between p-6 border-t border-outline-variant/10">
           <button
             type="button"
             onClick={onClose}
@@ -1189,7 +934,7 @@ export const TrafficSourceForm: React.FC<TrafficSourceFormProps> = ({
           >
             Cancel
           </button>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3">
             {currentStep !== 'basic' && (
               <button
                 type="button"

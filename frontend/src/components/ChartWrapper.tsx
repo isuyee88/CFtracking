@@ -38,7 +38,6 @@ export const ChartWrapper: React.FC<ChartWrapperProps> = ({
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,84 +63,33 @@ export const ChartWrapper: React.FC<ChartWrapperProps> = ({
 
   useEffect(() => {
     if (isVisible && !hasLoaded) {
-      const scheduleLoad = () => setHasLoaded(true);
-      const isCompactViewport = typeof window !== 'undefined' && window.innerWidth < 768;
-
-      if (isCompactViewport) {
-        const timeoutId = window.setTimeout(scheduleLoad, 2200);
-        return () => window.clearTimeout(timeoutId);
-      }
-
-      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-        const idleId = window.requestIdleCallback(scheduleLoad, { timeout: 600 });
-        return () => window.cancelIdleCallback?.(idleId);
-      }
-
-      const timeoutId = window.setTimeout(scheduleLoad, 180);
-      return () => window.clearTimeout(timeoutId);
+      setHasLoaded(true);
     }
   }, [isVisible, hasLoaded]);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        if (width > 0 && height > 0) {
-          setContainerSize({ width, height });
-        }
-      }
-    });
-
-    resizeObserver.observe(containerRef.current);
-
-    return () => resizeObserver.disconnect();
-  }, [hasLoaded]);
-
   const skeletonStyle = {
     height: typeof height === 'number' ? `${height}px` : height,
-    background: 'linear-gradient(180deg, rgba(148, 163, 184, 0.12), rgba(148, 163, 184, 0.05))',
-    border: '1px solid rgba(148, 163, 184, 0.12)',
+    background: 'linear-gradient(90deg, #f8f8f8 25%, #f0f0f0 50%, #f8f8f8 75%)',
+    backgroundSize: '200% 100%',
+    animation: 'shimmer 1.5s infinite',
     borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#999',
+    fontSize: '14px'
   };
 
   return (
-    <div 
-      ref={containerRef} 
-      className={className} 
-      style={{ 
-        height: typeof height === 'number' ? `${height}px` : height,
-        minHeight: typeof height === 'number' ? `${height}px` : '200px',
-        width: '100%',
-        position: 'relative',
-        contain: 'layout style paint'
-      }}
-    >
-      {!hasLoaded && (
-        <div 
-          style={{
-            ...skeletonStyle,
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0
-          }}
-          aria-hidden="true"
-        />
-      )}
-      {hasLoaded && containerSize.width > 0 && containerSize.height > 0 && (
-        <Suspense
-          fallback={
-            <div
-              style={{ ...skeletonStyle, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-              aria-hidden="true"
-            />
-          }
-        >
+    <div ref={containerRef} className={className} style={{ height: typeof height === 'number' ? `${height}px` : height }}>
+      {hasLoaded ? (
+        <Suspense fallback={<div style={skeletonStyle}>Loading chart...</div>}>
           {children}
         </Suspense>
+      ) : (
+        <div style={skeletonStyle}>
+          Chart will load when visible
+        </div>
       )}
     </div>
   );

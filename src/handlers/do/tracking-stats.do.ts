@@ -414,8 +414,8 @@ export class TrackingStatsDO extends DurableObject {
   private async scheduleAlarmIfNeeded(): Promise<void> {
     const currentAlarm = await this.ctx.storage.getAlarm();
     if (!currentAlarm) {
-      // 5 秒后执行批量写入
-      await this.ctx.storage.setAlarm(Date.now() + 5000);
+      // 写后批量持久化；读取路径也会主动 flush，不需要每 5 秒唤醒。
+      await this.ctx.storage.setAlarm(Date.now() + 30000);
     }
   }
 

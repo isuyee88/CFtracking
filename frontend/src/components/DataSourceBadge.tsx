@@ -1,46 +1,56 @@
+/**
+ * @fileoverview 数据源指示器组件
+ * @description 显示当前数据来源（AE实时或D1归档）
+ * @module components/DataSourceBadge
+ *
+ * 输入: dataSource ('AE' | 'D1' | 'MIXED')
+ * 输出: 带样式的数据源徽章
+ * 逻辑交互: 被 Dashboard.tsx 等页面调用
+ */
+
 import React from 'react';
-import { Database, Zap, Clock, AlertCircle } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { Database, Zap, Clock, AlertCircle } from 'lucide-react';
 
 export interface DataSourceBadgeProps {
-  dataSource: 'DO' | 'D1' | 'MIXED';
+  dataSource: 'AE' | 'D1' | 'MIXED';
   className?: string;
   showLabel?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
 
 const dataSourceConfig = {
-  DO: {
-    label: 'Durable Objects',
-    description: 'Data source: Durable Objects (real-time)',
+  AE: {
+    label: 'Analytics Engine',
+    sublabel: '实时数据',
+    description: '数据来源: Analytics Engine (实时)',
     icon: Zap,
-    bgColor: 'bg-blue-100',
-    textColor: 'text-blue-800',
-    borderColor: 'border-blue-200',
-    dotColor: 'bg-blue-700',
-    infoText: 'Durable Objects real-time data',
+    bgColor: 'bg-blue-500/10',
+    textColor: 'text-blue-500',
+    borderColor: 'border-blue-500/20',
+    dotColor: 'bg-blue-500',
   },
   D1: {
     label: 'D1 Database',
-    description: 'Data source: D1 database (archived)',
+    sublabel: '归档数据',
+    description: '数据来源: D1数据库 (归档)',
     icon: Database,
-    bgColor: 'bg-amber-100',
-    textColor: 'text-amber-800',
-    borderColor: 'border-amber-200',
-    dotColor: 'bg-amber-700',
-    infoText: 'D1 archived data',
+    bgColor: 'bg-amber-500/10',
+    textColor: 'text-amber-500',
+    borderColor: 'border-amber-500/20',
+    dotColor: 'bg-amber-500',
   },
   MIXED: {
     label: 'Mixed',
-    description: 'Data source: mixed (DO + D1)',
+    sublabel: '混合数据',
+    description: '数据来源: 混合 (AE + D1)',
     icon: Clock,
-    bgColor: 'bg-violet-100',
-    textColor: 'text-violet-800',
-    borderColor: 'border-violet-200',
-    dotColor: 'bg-violet-700',
-    infoText: 'Mixed time-range query',
+    bgColor: 'bg-purple-500/10',
+    textColor: 'text-purple-500',
+    borderColor: 'border-purple-500/20',
+    dotColor: 'bg-purple-500',
   },
-} as const;
+};
 
 export const DataSourceBadge: React.FC<DataSourceBadgeProps> = ({
   dataSource,
@@ -48,7 +58,7 @@ export const DataSourceBadge: React.FC<DataSourceBadgeProps> = ({
   showLabel = true,
   size = 'md',
 }) => {
-  const config = dataSourceConfig[dataSource] || dataSourceConfig.DO;
+  const config = dataSourceConfig[dataSource] || dataSourceConfig.AE;
   const Icon = config.icon;
 
   const sizeClasses = {
@@ -77,20 +87,24 @@ export const DataSourceBadge: React.FC<DataSourceBadgeProps> = ({
       <span className={cn('relative flex h-2 w-2')}>
         <span
           className={cn(
-            'absolute inline-flex h-full w-full rounded-full opacity-35',
+            'absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping',
             config.dotColor
           )}
         />
         <span className={cn('relative inline-flex rounded-full h-2 w-2', config.dotColor)} />
       </span>
       <Icon size={iconSizes[size]} className={config.textColor} />
-      {showLabel && <span className={cn('font-medium', config.textColor)}>{config.label}</span>}
+      {showLabel && (
+        <span className={cn('font-medium', config.textColor)}>
+          {config.label}
+        </span>
+      )}
     </div>
   );
 };
 
 export interface DataSourceInfoProps {
-  dataSource: 'DO' | 'D1' | 'MIXED';
+  dataSource: 'AE' | 'D1' | 'MIXED';
   queryTime?: string;
   className?: string;
 }
@@ -100,24 +114,27 @@ export const DataSourceInfo: React.FC<DataSourceInfoProps> = ({
   queryTime,
   className,
 }) => {
-  const config = dataSourceConfig[dataSource] || dataSourceConfig.DO;
-  const formattedQueryTime = queryTime
-    ? new Date(queryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    : '--:--:--';
+  const config = dataSourceConfig[dataSource] || dataSourceConfig.AE;
 
   return (
-    <div className={cn('flex flex-col items-start gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3', className)}>
-      <div className="flex items-center gap-2">
-        <DataSourceBadge dataSource={dataSource} size="sm" />
-        <span className="text-xs text-on-surface-variant">{config.infoText}</span>
-      </div>
-      <span className="text-xs tabular-nums text-on-surface-variant">Query time: {formattedQueryTime}</span>
+    <div className={cn('flex items-center gap-3', className)}>
+      <DataSourceBadge dataSource={dataSource} size="sm" />
+      <span className="text-xs text-on-surface-variant">
+        {dataSource === 'AE' && 'AE 免费存储 3 个月，高吞吐实时查询'}
+        {dataSource === 'D1' && '归档数据，每日汇总更新'}
+        {dataSource === 'MIXED' && '跨时间段混合查询'}
+      </span>
+      {queryTime && (
+        <span className="text-xs text-on-surface-variant/60">
+          • 查询时间: {new Date(queryTime).toLocaleTimeString()}
+        </span>
+      )}
     </div>
   );
 };
 
 export interface DataSourceWarningProps {
-  dataSource: 'DO' | 'D1' | 'MIXED';
+  dataSource: 'AE' | 'D1' | 'MIXED';
   className?: string;
 }
 
@@ -125,16 +142,15 @@ export const DataSourceWarning: React.FC<DataSourceWarningProps> = ({
   dataSource,
   className,
 }) => {
-  if (dataSource !== 'D1') {
-    return null;
+  if (dataSource === 'D1') {
+    return (
+      <div className={cn('flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400', className)}>
+        <AlertCircle size={14} />
+        <span>数据为每日汇总，更新可能有延迟</span>
+      </div>
+    );
   }
-
-  return (
-    <div className={cn('flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400', className)}>
-      <AlertCircle size={14} />
-      <span>Archived D1 data may update with delay.</span>
-    </div>
-  );
+  return null;
 };
 
 export default DataSourceBadge;

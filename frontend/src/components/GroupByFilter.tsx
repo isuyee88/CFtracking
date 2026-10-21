@@ -62,9 +62,11 @@ export function GroupByFilter<T extends Record<string, any>>({
   };
 
   const getUniqueValues = (field: string): string[] => {
-    if (!field || !data.length) return [];
+    // 确保 data 是数组
+    const dataArray = Array.isArray(data) ? data : [];
+    if (!field || !dataArray.length) return [];
     const values = new Set<string>();
-    data.forEach(item => {
+    dataArray.forEach(item => {
       const val = item[field];
       if (val !== undefined && val !== null && val !== '') {
         values.add(String(val));
@@ -275,7 +277,9 @@ export function filterByGroupBy<T extends Record<string, any>>(
   data: T[],
   groupByStates: GroupByState[]
 ): T[] {
-  return data.filter(item => {
+  // 确保 data 是数组
+  const dataArray = Array.isArray(data) ? data : [];
+  return dataArray.filter(item => {
     return groupByStates.every(state => {
       if (state.value === 'all' || !state.field) return true;
       const itemValue = item[state.field];
@@ -293,14 +297,17 @@ export function groupDataBy<T extends Record<string, any>>(
 ): Map<string, T[]> {
   const result = new Map<string, T[]>();
   
+  // 确保 data 是数组
+  const dataArray = Array.isArray(data) ? data : [];
+  
   if (groupByStates.length === 0 || !groupByStates[0].field) {
-    result.set('All', data);
+    result.set('All', dataArray);
     return result;
   }
   
   const firstGroup = groupByStates[0];
   
-  data.forEach(item => {
+  dataArray.forEach(item => {
     const keyValue = item[firstGroup.field];
     const key = keyValue !== undefined && keyValue !== null && keyValue !== '' 
       ? String(keyValue) 
