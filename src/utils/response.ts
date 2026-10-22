@@ -17,8 +17,18 @@ export interface ApiResponse<T> {
   meta?: {
     page?: number;
     pageSize?: number;
-    total?: number;
-    totalPages?: number;
+    /** 精确值；截断时是下界，页码越界时为 null（字段始终存在）。 */
+    total?: number | null;
+    /** total 为 null 时为 null，避免派生 NaN。 */
+    totalPages?: number | null;
+    /** 当前页之后是否还有行（limit+1 探测）。 */
+    hasMore?: boolean;
+    /** total 是否被 LIST_COUNT_CAP 截断（下界）。 */
+    totalCapped?: boolean;
+    /** totalCapped 的别名。 */
+    totalIsApproximate?: boolean;
+    /** 请求页码窗口超出可服务范围，未执行 D1 查询。 */
+    pageOutOfRange?: boolean;
     dataSource?: 'd1_database';
   };
 }

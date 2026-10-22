@@ -14,6 +14,12 @@
 
 import { BaseRepository } from './base.repo';
 import type { D1Database } from './index';
+import {
+  LIST_COUNT_CAP,
+  buildCappedCountSql,
+  interpretCappedCount,
+  resolveListWindow,
+} from './list-query';
 import type { ClickData } from '@/types/tracking';
 
 export interface ClickQueryParams {
@@ -36,9 +42,34 @@ export interface ClickQueryParams {
 
 export interface ClickListResult {
   list: ClickData[];
-  total: number;
+  /**
+   * 匹配行数。精确值；totalCapped=true 时是下界 LIST_COUNT_CAP；
+   * 仅 pageOutOfRange=true（请求窗口超出可服务范围）时为 null。
+   */
+  total: number | null;
   page: number;
   pageSize: number;
+  /** 当前页之后是否还有行（列表查询多取 1 行得出，与 total 是否截断无关）。 */
+  hasMore: boolean;
+  /** 真实行数超过 LIST_COUNT_CAP，total 只是下界而非精确值。 */
+  totalCapped: boolean;
+  /** totalCapped 的契约别名；调用方读任一字段含义相同。 */
+  totalIsApproximate: boolean;
+  /** 请求页码窗口超出 LIST_COUNT_CAP，未执行 D1 查询，list 为空。 */
+  pageOutOfRange: boolean;
+}
+
+/** 导出用的 keyset 游标：按 (timestamp, clickId) 倒序推进，不依赖 OFFSET。 */
+export interface ClickExportCursor {
+  timestamp: string;
+  clickId: string;
+}
+
+/** 一批导出数据；hasMore 由多取 1 行判定。 */
+export interface ClickExportBatch {
+  list: ClickData[];
+  hasMore: boolean;
+  nextCursor: ClickExportCursor | null;
 }
 
 export class ClickRepository extends BaseRepository<ClickData> {
@@ -127,12 +158,16 @@ export class ClickRepository extends BaseRepository<ClickData> {
   }
 
   /**
-   * 查询点击日志列表（支持分页和筛选）
+   * 构造点击列表/导出的过滤子句与绑定参数（占位符顺序 = 参数顺序）。
+   *
+   * @param params 查询参数；空字符串/undefined 条件会被跳过。
+   * @returns conditions（未加 WHERE）与 values。
    */
-  async findClicks(params: ClickQueryParams): Promise<ClickListResult> {
+  private buildClickFilters(params: ClickQueryParams): {
+    conditions: string[];
+    values: (string | number)[];
+  } {
     const {
-      page = 1,
-      pageSize = 20,
       campaignId,
       startDate,
       endDate,
@@ -205,13 +240,120 @@ export class ClickRepository extends BaseRepository<ClickData> {
       values.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const offset = (page - 1) * pageSize;
+    return { conditions, values };
+  }
 
-    const countSql = `SELECT COUNT(*) as total FROM clicks ${whereClause}`;
-    const countStmt = this.db.prepare(countSql);
-    const countResult = await (values.length > 0 ? countStmt.bind(...values) : countStmt).first();
-    const total = (countResult?.total as number) || 0;
+  /**
+   * 导出一批点击：按 (timestamp, clickId) 倒序 keyset 翻页，不使用 OFFSET。
+   *
+   * 为什么不用 findClicks 深翻页：OFFSET 会先扫描并丢弃 offset 行，导出几万行时
+   * 单条查询必然越过 D1 7500 行预算。keyset 每批只读 limit + 1 行（<= 7001）。
+   *
+   * @param params 与列表相同的过滤条件（不含 page/pageSize）。
+   * @param cursor 上一批最后一行的 (timestamp, clickId)；null 表示从最新开始。
+   * @param limit 本批最多返回行数，内部钳制到 [1, LIST_COUNT_CAP]。
+   * @returns 本批行、是否还有更多、下一批游标；只读且幂等。
+   */
+  async findClicksForExport(
+    params: ClickQueryParams,
+    cursor: ClickExportCursor | null = null,
+    limit: number = LIST_COUNT_CAP
+  ): Promise<ClickExportBatch> {
+    const { conditions, values } = this.buildClickFilters(params);
+    const bound: (string | number)[] = [...values];
+
+    if (cursor) {
+      conditions.push('(timestamp < ? OR (timestamp = ? AND clickId < ?))');
+      bound.push(cursor.timestamp, cursor.timestamp, cursor.clickId);
+    }
+
+    const requested = Number.isFinite(limit) ? Math.floor(limit) : LIST_COUNT_CAP;
+    const pageSize = Math.min(Math.max(1, requested), LIST_COUNT_CAP);
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const result = await this.db
+      .prepare(`
+        SELECT 
+          clickId, campaignId, flowId, landingPageId, offerId,
+          timestamp, ip, userAgent, referer, country, city,
+          device, browser, os, isp, connectionType, visitorId,
+          subId1, subId2, subId3, subId4, subId5, cost
+        FROM clicks 
+        ${whereClause}
+        ORDER BY timestamp DESC, clickId DESC
+        LIMIT ?
+      `)
+      .bind(...bound, pageSize + 1)
+      .all();
+
+    const rows = (result.results as unknown as ClickData[]) || [];
+    const hasMore = rows.length > pageSize;
+    const list = hasMore ? rows.slice(0, pageSize) : rows;
+    const last = list.length > 0 ? list[list.length - 1] : undefined;
+
+    return {
+      list,
+      hasMore,
+      nextCursor: last ? { timestamp: last.timestamp, clickId: last.clickId } : null,
+    };
+  }
+
+  /**
+   * 查询点击日志列表（支持分页和筛选）。
+   *
+   * D1 行读预算（why）:
+   *   - COUNT 使用 `SELECT COUNT(*) FROM (SELECT 1 ... LIMIT cap+1)`，最多读
+   *     LIST_COUNT_CAP + 1 = 7001 行，不再全表扫描；
+   *   - 列表查询多取 1 行判断 hasMore，页码窗口保证最多读 7001 行；
+   *   - 超出窗口的页码直接返回空列表且不访问 D1。
+   *
+   * @param params 分页与筛选条件；page/pageSize 会归一化（pageSize 上限 100）。
+   * @returns 列表、total（截断时为下界，越界时为 null）、hasMore 与截断标记。
+   * @throws D1 查询失败时向上抛出；本方法只读，可安全重试（幂等）。
+   */
+  async findClicks(params: ClickQueryParams): Promise<ClickListResult> {
+    const { page, pageSize, offset, pageOutOfRange } = resolveListWindow(
+      params.page,
+      params.pageSize
+    );
+
+    if (pageOutOfRange) {
+      return {
+        list: [],
+        total: null,
+        page,
+        pageSize,
+        hasMore: false,
+        totalCapped: false,
+        totalIsApproximate: false,
+        pageOutOfRange: true,
+      };
+    }
+
+    const { conditions, values } = this.buildClickFilters(params);
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countResult = await this.db
+      .prepare(buildCappedCountSql(this.tableName, whereClause))
+      .bind(...values, LIST_COUNT_CAP + 1)
+      .first();
+    const counted = interpretCappedCount(countResult?.total);
+    const total: number | null = counted.total;
+    const totalCapped = counted.totalCapped;
+
+    // 精确 total 已证明当前 offset 之后没有行，无需再发列表查询。
+    if (total !== null && !totalCapped && offset >= total) {
+      return {
+        list: [],
+        total,
+        page,
+        pageSize,
+        hasMore: false,
+        totalCapped: false,
+        totalIsApproximate: false,
+        pageOutOfRange: false,
+      };
+    }
 
     const listSql = `
       SELECT 
@@ -225,15 +367,21 @@ export class ClickRepository extends BaseRepository<ClickData> {
       LIMIT ? OFFSET ?
     `;
     
-    const listValues = [...values, pageSize, offset];
+    const listValues = [...values, pageSize + 1, offset];
     const listResult = await this.db.prepare(listSql).bind(...listValues).all();
-    const list = (listResult.results as unknown as ClickData[]) || [];
+    const rows = (listResult.results as unknown as ClickData[]) || [];
+    const hasMore = rows.length > pageSize;
+    const list = hasMore ? rows.slice(0, pageSize) : rows;
 
     return {
       list,
       total,
       page,
       pageSize,
+      hasMore,
+      totalCapped,
+      totalIsApproximate: totalCapped,
+      pageOutOfRange: false,
     };
   }
 

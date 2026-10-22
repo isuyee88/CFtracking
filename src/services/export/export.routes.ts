@@ -12,7 +12,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Env } from '@/config/env';
-import { createExportService, type ExportRequest } from './export.service';
+import { createExportService, type ExportRequest, type ExportResult } from './export.service';
 import type { ExportFormat } from '@/utils/export.formatter';
 import { success, error } from '@/utils/response';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
@@ -238,10 +238,24 @@ function parseExportRequest(c: Context, entityType: ExportRequest['entityType'])
   };
 }
 
-function createExportResponse(_c: Context, result: { data: string; contentType: string; filename: string }): Response {
+export function createExportResponse(c: Context, result: ExportResult): Response {
+  if (result.truncated) {
+    // 部分数据不能伪装成成功下载：明确拒绝并要求收窄筛选。
+    return c.json(
+      error(
+        `Export exceeds ${result.limit} rows; narrow filters or split the date range`,
+        ERROR_CODES.VALIDATION,
+        { rowCount: result.rowCount, limit: result.limit, truncated: true }
+      ),
+      HTTP_STATUS.BAD_REQUEST
+    );
+  }
+
   const headers = new Headers();
   headers.set('Content-Type', result.contentType);
   headers.set('Content-Disposition', `attachment; filename="${result.filename}"`);
-  
+  headers.set('X-Export-Row-Count', String(result.rowCount));
+  headers.set('X-Export-Limit', String(result.limit));
+
   return new Response(result.data, { headers });
 }

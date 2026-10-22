@@ -55,7 +55,12 @@ export function createConversionLogRouter(): Hono<{ Bindings: Env }> {
         page: result.page,
         pageSize: result.pageSize,
         total: result.total,
-        totalPages: Math.ceil(result.total / result.pageSize),
+        // total 为 null（请求页码越界）时不再派生页数，避免 NaN。
+        totalPages: result.total === null ? null : Math.ceil(result.total / result.pageSize),
+        hasMore: result.hasMore,
+        totalCapped: result.totalCapped,
+        totalIsApproximate: result.totalIsApproximate,
+        pageOutOfRange: result.pageOutOfRange,
       }));
     } catch (err) {
       console.error('[ConversionLog] Failed to fetch conversions:', err);
