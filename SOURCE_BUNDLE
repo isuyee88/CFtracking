@@ -1,26 +1,33 @@
-{
-  "patch": "P09_STATS_WINDOW_V1",
-  "version": "1",
-  "status": "candidate-not-deployed",
-  "base": {
-    "label": "deploy/prod@f43eba3",
-    "ref": "f43eba3",
-    "commit": "f43eba3b1841bc4186149fd2ee2d9703f8b7f114",
-    "path": "f43eba3:worker.js",
-    "sha256": "fb52e175c1b7545121f90a8dddd84d1726be2502335cf0cc73baf8b7bcbd8c5b",
-    "bytes": 2121058
-  },
-  "output": {
-    "path": "worker.js",
-    "sha256": "1e083e1fbba1746c037a290b19a8387b545a30825482f520b575b9be718ff863",
-    "bytes": 2126072
-  },
-  "statsWindow": {
-    "defaultDays": 7,
-    "maxDays": 90,
-    "rowLimit": 7000,
-    "topN": "not implemented in the production patch; a topN query parameter is ignored"
-  },
-  "deployOrder": "deploy this bundle only; no schema migration is required for P09",
-  "rollback": "redeploy origin/deploy/prod @ f43eba3 (sha256 fb52e175...)"
+﻿{
+    "patch":  "P09_STATS_WINDOW_V1",
+    "version":  "1",
+    "status":  "candidate-not-deployed",
+    "base":  {
+                 "label":  "deploy/prod@f43eba3",
+                 "ref":  "f43eba3",
+                 "commit":  "f43eba3b1841bc4186149fd2ee2d9703f8b7f114",
+                 "path":  "f43eba3:worker.js",
+                 "sha256":  "fb52e175c1b7545121f90a8dddd84d1726be2502335cf0cc73baf8b7bcbd8c5b",
+                 "bytes":  2121058
+             },
+    "output":  {
+                   "path":  "worker.js",
+                   "sha256":  "1e083e1fbba1746c037a290b19a8387b545a30825482f520b575b9be718ff863",
+                   "bytes":  2126072
+               },
+    "statsWindow":  {
+                        "defaultDays":  7,
+                        "maxDays":  90,
+                        "rowLimit":  7000,
+                        "topN":  "not implemented in the production patch; a topN query parameter is ignored"
+                    },
+    "deployOrder":  "deploy this bundle only; no schema migration is required for P09",
+    "rollback":  "redeploy origin/deploy/prod @ f43eba3 (sha256 fb52e175...)",
+    "assets":  {
+                   "source":  "vite build @981ba99 + 8af959f",
+                   "files":  41,
+                   "entry":  "index-DpSLAWwX.js",
+                   "builtAt":  "2026-10-22T12:20:00Z",
+                   "campaignDetail":  "page-CampaignDetail.tsx-dYK6tTEx.js"
+               }
 }
