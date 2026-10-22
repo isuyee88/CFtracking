@@ -15,7 +15,7 @@
 
 import { Hono } from 'hono';
 import { ClickService } from './click.service';
-import { ConversionService } from './conversion.service';
+import { ConversionIdempotencyUnavailableError, ConversionService } from './conversion.service';
 import { persistFastPathClick, tryKvClick } from './click-fast-path.service';
 import { 
   parseVisitorIdFromCookie, 
@@ -299,9 +299,16 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
     }
 
     const service = new ConversionService(c.env);
-    const result = await service.handleConversion(body);
-
-    return c.json(success(result), HTTP_STATUS.CREATED);
+    try {
+      const result = await service.handleConversion(body);
+      return c.json(success(result), HTTP_STATUS.CREATED);
+    } catch (err) {
+      // 幂等状态未知：503 让调用方重试，而不是把“可能重复”当成成功。
+      if (err instanceof ConversionIdempotencyUnavailableError) {
+        return c.json(error(err.message, err.code, err.details), HTTP_STATUS.SERVICE_UNAVAILABLE);
+      }
+      throw err;
+    }
   });
 
   router.post('/conversion/postback', async (c) => {
@@ -315,15 +322,22 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
 
     const service = new ConversionService(c.env);
 
-    const result = await service.handleConversion({
-      clickId,
-      campaignId: c.req.query('campaign_id') || '',
-      offerId: offerId || '',
-      revenue,
-      payout: revenue,
-    });
-
-    return c.json(success(result));
+    try {
+      const result = await service.handleConversion({
+        clickId,
+        campaignId: c.req.query('campaign_id') || '',
+        offerId: offerId || '',
+        revenue,
+        payout: revenue,
+      });
+      return c.json(success(result));
+    } catch (err) {
+      // Platform retries on 5xx; a blind 200 would silently drop the conversion.
+      if (err instanceof ConversionIdempotencyUnavailableError) {
+        return c.json(error(err.message, err.code, err.details), HTTP_STATUS.SERVICE_UNAVAILABLE);
+      }
+      throw err;
+    }
   });
 
   router.post('/conversion/batch', async (c) => {

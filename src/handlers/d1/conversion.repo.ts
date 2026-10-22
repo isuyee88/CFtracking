@@ -17,6 +17,15 @@ import {
   interpretCappedCount,
   resolveListWindow,
 } from './list-query';
+import {
+  STATS_ROW_LIMIT,
+  buildConversionStatsSql,
+  buildStatsGroupSql,
+  normalizeTopN,
+  resolveStatsWindow,
+  toFiniteNumber,
+} from './stats-query';
+import type { StatsBreakdownItem, StatsWindow } from './stats-query';
 import type { ConversionData } from '@/types/tracking';
 
 export interface ConversionQueryParams {
@@ -64,6 +73,16 @@ export interface ConversionExportBatch {
   nextCursor: ConversionExportCursor | null;
 }
 
+/**
+ * 一次插入尝试的结果。
+ *
+ * `inserted=false` 只表示该 `idempotencyKey` 已经存在（并发/重试回传的输家），
+ * 不代表写入失败；写入失败会抛异常，调用方不得把异常当成 duplicate。
+ */
+export interface SaveConversionResult {
+  inserted: boolean;
+}
+
 export interface ConversionStats {
   totalConversions: number;
   approvedConversions: number;
@@ -73,30 +92,76 @@ export interface ConversionStats {
   totalPayout: number;
 }
 
+/** getConversionStats 的可选控制项。 */
+export interface ConversionStatsOptions {
+  /** 当前时间，仅测试注入；默认 `new Date()`。 */
+  now?: Date;
+  /** 可选 topN 分组；0/非法表示不分组。 */
+  topN?: number | string;
+}
+
+/** stats 响应：既有字段 + 时间窗/行读预算的可观测元数据。 */
+export interface ConversionStatsResult extends ConversionStats {
+  /** 实际生效的起始时间（ISO 8601，UTC）。 */
+  rangeStart: string;
+  /** 实际生效的结束时间（ISO 8601，UTC）。 */
+  rangeEnd: string;
+  /** 请求区间超过 90 天，已截断（保留 endDate）。 */
+  rangeCapped: boolean;
+  /** 请求缺失/非法，已回退默认最近 7 天。 */
+  rangeDefaulted: boolean;
+  /** 单次聚合的行读上限（STATS_ROW_LIMIT）。 */
+  rowLimit: number;
+  /** 聚合达到/超过 rowLimit，数值是下界而非完整窗口的精确值。 */
+  rowCapped: boolean;
+  /** 实际参与聚合的行数（<= rowLimit）。 */
+  rowsScanned: number;
+  /** 仅当请求 topN 时返回：读取窗口内转化最多的国家。 */
+  byCountry?: StatsBreakdownItem[];
+  /** 仅当请求 topN 时返回：读取窗口内转化最多的设备。 */
+  byDevice?: StatsBreakdownItem[];
+}
+
 export class ConversionRepository extends BaseRepository<ConversionData> {
   constructor(db: D1Database) {
     super(db, 'conversions');
   }
 
   /**
-   * 保存转化记录到数据库
+   * 保存转化记录到数据库；同一个 clickId 最多落一行。
+   *
+   * 幂等 why: postback 平台会重试，并发重试可能同时通过前置查询。
+   * `idempotencyKey = clickId` 上的唯一索引（迁移 084）让数据库裁决胜负：
+   * `ON CONFLICT(idempotencyKey) DO NOTHING` 只吞掉这一条索引冲突。
+   * 不用 `INSERT OR IGNORE`：它会连主键/`conversionId` 冲突一起吞掉，
+   * 把真实写入故障伪装成“重复”。
+   *
+   * @param data 转化记录；`idempotencyKey` 由本方法写入为 `data.clickId`。
+   *        空 clickId 写 NULL 而不是空字符串：NULL 之间不冲突，否则所有无
+   *        clickId 的写入会挤在同一个 "" 键上，互相被当成重复吞掉。
+   * @returns inserted=false 表示该 clickId 已有转化，本次没有写入任何行。
+   * @throws D1 写入失败（含唯一索引缺失）一律向上抛，由调用方 fail-closed。
+   * @sideEffects inserted=true 时向 D1 `conversions` 写入一行。
    */
-  async saveConversion(data: ConversionData): Promise<void> {
+  async saveConversion(data: ConversionData): Promise<SaveConversionResult> {
     const now = new Date().toISOString();
-    
-    await this.db
+    const idempotencyKey = data.clickId || null;
+
+    const result = await this.db
       .prepare(`
         INSERT INTO conversions (
-          id, conversionId, clickId, campaignId, offerId,
+          id, conversionId, clickId, idempotencyKey, campaignId, offerId,
           timestamp, revenue, payout, currency, conversionType, offerName,
           status, ip, country, device, browser, source,
           subId1, subId2, subId3, createdAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(idempotencyKey) DO NOTHING
       `)
       .bind(
         data.conversionId,
         data.conversionId,
         data.clickId,
+        idempotencyKey,
         data.campaignId,
         data.offerId,
         data.timestamp,
@@ -117,6 +182,9 @@ export class ConversionRepository extends BaseRepository<ConversionData> {
         now
       )
       .run();
+
+    // D1 用 meta.changes 报告实际影响行数；DO NOTHING 命中时是 0。
+    return { inserted: Number(result?.meta?.changes ?? 0) > 0 };
   }
 
   /**
@@ -364,42 +432,86 @@ export class ConversionRepository extends BaseRepository<ConversionData> {
   }
 
   /**
-   * 获取转化统计概览
+   * 获取转化统计概览。
+   *
+   * D1 行读预算（why）:
+   *   - 时间窗缺失/非法回退默认最近 7 天，超过 90 天截断并返回 rangeCapped；
+   *   - 聚合基于 `WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp DESC
+   *     LIMIT STATS_ROW_LIMIT` 的子查询，最多读 7000 行，依赖 idx_conversions_timestamp；
+   *   - 达到行上限时 rowCapped=true，返回值是下界，禁止当作精确值；
+   *   - 可选 topN 分组各自带行上限与 LIMIT，不返回无界分组结果。
+   *
+   * @param startDate 起始时间；`YYYY-MM-DD` 或 ISO 8601，缺省用默认窗口。
+   * @param endDate 结束时间；`YYYY-MM-DD` 或 ISO 8601，缺省用默认窗口。
+   * @param campaignId 可选 campaign 过滤。
+   * @param options 仅测试注入的 now 与可选 topN 分组。
+   * @returns 既有 stats 字段 + 时间窗/行读元数据；topN>0 时附加 byCountry/byDevice。
+   * @throws D1 查询失败时向上抛出；本方法只读，可安全重试（幂等）。
    */
   async getConversionStats(
-    startDate: string, 
-    endDate: string, 
-    campaignId?: string
-  ): Promise<ConversionStats> {
-    let sql = `
-      SELECT 
-        COUNT(*) as totalConversions,
-        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approvedConversions,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendingConversions,
-        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejectedConversions,
-        SUM(CASE WHEN status = 'approved' THEN revenue ELSE 0 END) as totalRevenue,
-        SUM(CASE WHEN status = 'approved' THEN payout ELSE 0 END) as totalPayout
-      FROM conversions 
-      WHERE timestamp >= ? AND timestamp <= ?
-    `;
-    
-    const values: (string | number)[] = [startDate, endDate];
-    
-    if (campaignId) {
-      sql += ' AND campaignId = ?';
-      values.push(campaignId);
-    }
+    startDate?: string,
+    endDate?: string,
+    campaignId?: string,
+    options: ConversionStatsOptions = {}
+  ): Promise<ConversionStatsResult> {
+    const window = resolveStatsWindow(startDate, endDate, options.now);
+    const campaignValues = campaignId ? [campaignId] : [];
 
-    const result = await this.db.prepare(sql).bind(...values).first();
-    
-    return {
-      totalConversions: (result?.totalConversions as number) || 0,
-      approvedConversions: (result?.approvedConversions as number) || 0,
-      pendingConversions: (result?.pendingConversions as number) || 0,
-      rejectedConversions: (result?.rejectedConversions as number) || 0,
-      totalRevenue: (result?.totalRevenue as number) || 0,
-      totalPayout: (result?.totalPayout as number) || 0,
+    const result = await this.db
+      .prepare(buildConversionStatsSql(campaignId))
+      .bind(window.startDate, window.endDate, ...campaignValues, STATS_ROW_LIMIT)
+      .first();
+
+    const totalConversions = toFiniteNumber(result?.totalConversions);
+    const stats: ConversionStatsResult = {
+      totalConversions,
+      approvedConversions: toFiniteNumber(result?.approvedConversions),
+      pendingConversions: toFiniteNumber(result?.pendingConversions),
+      rejectedConversions: toFiniteNumber(result?.rejectedConversions),
+      totalRevenue: toFiniteNumber(result?.totalRevenue),
+      totalPayout: toFiniteNumber(result?.totalPayout),
+      rangeStart: window.startDate,
+      rangeEnd: window.endDate,
+      rangeCapped: window.rangeCapped,
+      rangeDefaulted: window.rangeDefaulted,
+      rowLimit: STATS_ROW_LIMIT,
+      rowCapped: totalConversions >= STATS_ROW_LIMIT,
+      rowsScanned: Math.min(totalConversions, STATS_ROW_LIMIT),
     };
+
+    const topN = normalizeTopN(options.topN);
+    if (topN === 0) return stats;
+
+    const [byCountry, byDevice] = await Promise.all([
+      this.queryConversionBreakdown('country', window, campaignId, topN),
+      this.queryConversionBreakdown('device', window, campaignId, topN),
+    ]);
+
+    return { ...stats, byCountry, byDevice };
+  }
+
+  /**
+   * 查询转化 stats 的 topN 分组；SQL 内部同时受行上限与 topN 限制。
+   *
+   * @param column 分组列，仅接受 `country` / `device` 常量。
+   * @param window 已归一化的时间窗。
+   * @param campaignId 可选 campaign 过滤。
+   * @param topN 已归一化的分组条数（1..STATS_TOP_N_MAX）。
+   * @returns 按 clicks 倒序的分组项；空值/空串不计入。
+   */
+  private async queryConversionBreakdown(
+    column: 'country' | 'device',
+    window: StatsWindow,
+    campaignId: string | undefined,
+    topN: number
+  ): Promise<StatsBreakdownItem[]> {
+    const campaignValues = campaignId ? [campaignId] : [];
+    const result = await this.db
+      .prepare(buildStatsGroupSql('conversions', column, campaignId))
+      .bind(window.startDate, window.endDate, ...campaignValues, STATS_ROW_LIMIT, topN)
+      .all();
+
+    return (result.results as unknown as StatsBreakdownItem[]) || [];
   }
 
   /**

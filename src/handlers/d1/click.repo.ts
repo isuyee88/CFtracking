@@ -20,6 +20,15 @@ import {
   interpretCappedCount,
   resolveListWindow,
 } from './list-query';
+import {
+  STATS_ROW_LIMIT,
+  buildClickStatsSql,
+  buildStatsGroupSql,
+  normalizeTopN,
+  resolveStatsWindow,
+  toFiniteNumber,
+} from './stats-query';
+import type { StatsBreakdownItem, StatsWindow } from './stats-query';
 import type { ClickData } from '@/types/tracking';
 
 export interface ClickQueryParams {
@@ -70,6 +79,44 @@ export interface ClickExportBatch {
   list: ClickData[];
   hasMore: boolean;
   nextCursor: ClickExportCursor | null;
+}
+
+/** stats 的既有字段（保持向后兼容，字段名与类型不变）。 */
+export interface ClickStats {
+  totalClicks: number;
+  uniqueClicks: number;
+  countries: number;
+  deviceTypes: number;
+}
+
+/** getClickStats 的可选控制项。 */
+export interface ClickStatsOptions {
+  /** 当前时间，仅测试注入；默认 `new Date()`。 */
+  now?: Date;
+  /** 可选 topN 分组；0/非法表示不分组。 */
+  topN?: number | string;
+}
+
+/** stats 响应：既有字段 + 时间窗/行读预算的可观测元数据。 */
+export interface ClickStatsResult extends ClickStats {
+  /** 实际生效的起始时间（ISO 8601，UTC）。 */
+  rangeStart: string;
+  /** 实际生效的结束时间（ISO 8601，UTC）。 */
+  rangeEnd: string;
+  /** 请求区间超过 90 天，已截断（保留 endDate）。 */
+  rangeCapped: boolean;
+  /** 请求缺失/非法，已回退默认最近 7 天。 */
+  rangeDefaulted: boolean;
+  /** 单次聚合的行读上限（STATS_ROW_LIMIT）。 */
+  rowLimit: number;
+  /** 聚合达到/超过 rowLimit，数值是下界而非完整窗口的精确值。 */
+  rowCapped: boolean;
+  /** 实际参与聚合的行数（<= rowLimit）。 */
+  rowsScanned: number;
+  /** 仅当请求 topN 时返回：读取窗口内点击数最多的国家。 */
+  byCountry?: StatsBreakdownItem[];
+  /** 仅当请求 topN 时返回：读取窗口内点击数最多的设备。 */
+  byDevice?: StatsBreakdownItem[];
 }
 
 export class ClickRepository extends BaseRepository<ClickData> {
@@ -433,39 +480,84 @@ export class ClickRepository extends BaseRepository<ClickData> {
   }
 
   /**
-   * 获取点击统计概览
+   * 获取点击统计概览。
+   *
+   * D1 行读预算（why）:
+   *   - 时间窗缺失/非法回退默认最近 7 天，超过 90 天截断并返回 rangeCapped；
+   *   - 聚合基于 `WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp DESC
+   *     LIMIT STATS_ROW_LIMIT` 的子查询，最多读 7000 行，依赖 idx_clicks_timestamp；
+   *   - 达到行上限时 rowCapped=true，返回值是下界，禁止当作精确值；
+   *   - 可选 topN 分组各自带行上限与 LIMIT，不返回无界分组结果。
+   *
+   * @param startDate 起始时间；`YYYY-MM-DD` 或 ISO 8601，缺省用默认窗口。
+   * @param endDate 结束时间；`YYYY-MM-DD` 或 ISO 8601，缺省用默认窗口。
+   * @param campaignId 可选 campaign 过滤。
+   * @param options 仅测试注入的 now 与可选 topN 分组。
+   * @returns 既有 stats 字段 + 时间窗/行读元数据；topN>0 时附加 byCountry/byDevice。
+   * @throws D1 查询失败时向上抛出；本方法只读，可安全重试（幂等）。
    */
-  async getClickStats(startDate: string, endDate: string, campaignId?: string): Promise<{
-    totalClicks: number;
-    uniqueClicks: number;
-    countries: number;
-    deviceTypes: number;
-  }> {
-    let sql = `
-      SELECT 
-        COUNT(*) as totalClicks,
-        SUM(CASE WHEN isUnique = 1 THEN 1 ELSE 0 END) as uniqueClicks,
-        COUNT(DISTINCT country) as countries,
-        COUNT(DISTINCT device) as deviceTypes
-      FROM clicks 
-      WHERE timestamp >= ? AND timestamp <= ?
-    `;
-    
-    const values: (string | number)[] = [startDate, endDate];
-    
-    if (campaignId) {
-      sql += ' AND campaignId = ?';
-      values.push(campaignId);
-    }
+  async getClickStats(
+    startDate?: string,
+    endDate?: string,
+    campaignId?: string,
+    options: ClickStatsOptions = {}
+  ): Promise<ClickStatsResult> {
+    const window = resolveStatsWindow(startDate, endDate, options.now);
+    const campaignValues = campaignId ? [campaignId] : [];
 
-    const result = await this.db.prepare(sql).bind(...values).first();
-    
-    return {
-      totalClicks: (result?.totalClicks as number) || 0,
-      uniqueClicks: (result?.uniqueClicks as number) || 0,
-      countries: (result?.countries as number) || 0,
-      deviceTypes: (result?.deviceTypes as number) || 0,
+    const result = await this.db
+      .prepare(buildClickStatsSql(campaignId))
+      .bind(window.startDate, window.endDate, ...campaignValues, STATS_ROW_LIMIT)
+      .first();
+
+    const totalClicks = toFiniteNumber(result?.totalClicks);
+    const stats: ClickStatsResult = {
+      totalClicks,
+      uniqueClicks: toFiniteNumber(result?.uniqueClicks),
+      countries: toFiniteNumber(result?.countries),
+      deviceTypes: toFiniteNumber(result?.deviceTypes),
+      rangeStart: window.startDate,
+      rangeEnd: window.endDate,
+      rangeCapped: window.rangeCapped,
+      rangeDefaulted: window.rangeDefaulted,
+      rowLimit: STATS_ROW_LIMIT,
+      rowCapped: totalClicks >= STATS_ROW_LIMIT,
+      rowsScanned: Math.min(totalClicks, STATS_ROW_LIMIT),
     };
+
+    const topN = normalizeTopN(options.topN);
+    if (topN === 0) return stats;
+
+    const [byCountry, byDevice] = await Promise.all([
+      this.queryClickBreakdown('country', window, campaignId, topN),
+      this.queryClickBreakdown('device', window, campaignId, topN),
+    ]);
+
+    return { ...stats, byCountry, byDevice };
+  }
+
+  /**
+   * 查询 stats 的 topN 分组；SQL 内部同时受行上限与 topN 限制。
+   *
+   * @param column 分组列，仅接受 `country` / `device` 常量。
+   * @param window 已归一化的时间窗。
+   * @param campaignId 可选 campaign 过滤。
+   * @param topN 已归一化的分组条数（1..STATS_TOP_N_MAX）。
+   * @returns 按 clicks 倒序的分组项；空值/空串不计入。
+   */
+  private async queryClickBreakdown(
+    column: 'country' | 'device',
+    window: StatsWindow,
+    campaignId: string | undefined,
+    topN: number
+  ): Promise<StatsBreakdownItem[]> {
+    const campaignValues = campaignId ? [campaignId] : [];
+    const result = await this.db
+      .prepare(buildStatsGroupSql('clicks', column, campaignId))
+      .bind(window.startDate, window.endDate, ...campaignValues, STATS_ROW_LIMIT, topN)
+      .all();
+
+    return (result.results as unknown as StatsBreakdownItem[]) || [];
   }
 
   /**

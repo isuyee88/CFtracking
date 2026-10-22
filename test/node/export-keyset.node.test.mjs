@@ -37,7 +37,12 @@ const CLICK_MIGRATIONS = [
   '051_add_fingerprint_fields.sql',
 ];
 
-const CONVERSION_MIGRATIONS = ['011_create_conversions_table.sql'];
+// saveConversion writes `idempotencyKey` (migration 084), so the fixture schema
+// must match the schema production runs against; export SQL is unaffected.
+const CONVERSION_MIGRATIONS = [
+  '011_create_conversions_table.sql',
+  '084_conversion_idempotency_key.sql',
+];
 
 function readMigration(name) {
   return readFileSync(new URL(name, MIGRATIONS_DIR), 'utf8');

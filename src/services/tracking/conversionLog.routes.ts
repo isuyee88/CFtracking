@@ -77,24 +77,24 @@ export function createConversionLogRouter(): Hono<{ Bindings: Env }> {
   /**
    * GET /api/conversions/stats
    * 获取转化统计概览
+   *
+   * 时间窗由 stats-query 归一化：缺失/非法回退最近 7 天（rangeDefaulted=true），
+   * 超过 90 天截断（rangeCapped=true）；聚合最多读 STATS_ROW_LIMIT 行。
+   * 可选 `topN`（1..50）请求 byCountry/byDevice 分组，分组 SQL 自带 LIMIT。
    */
   router.get('/stats', async (c) => {
     try {
       const db = getD1Connection(c.env);
       const conversionRepo = new ConversionRepository(db);
 
-      const startDate = c.req.query('startDate');
-      const endDate = c.req.query('endDate');
+      const startDate = c.req.query('startDate') || undefined;
+      const endDate = c.req.query('endDate') || undefined;
       const campaignId = c.req.query('campaignId') || undefined;
+      const topN = c.req.query('topN') || undefined;
 
-      if (!startDate || !endDate) {
-        return c.json(
-          error('startDate and endDate are required', ERROR_CODES.VALIDATION),
-          HTTP_STATUS.BAD_REQUEST
-        );
-      }
-
-      const stats = await conversionRepo.getConversionStats(startDate, endDate, campaignId);
+      const stats = await conversionRepo.getConversionStats(startDate, endDate, campaignId, {
+        topN,
+      });
 
       return c.json(success(stats));
     } catch (err) {

@@ -17,6 +17,8 @@ export const HTTP_STATUS = {
   NOT_FOUND: 404,
   CONFLICT: 409,
   INTERNAL_ERROR: 500,
+  /** 暂态失败：本节点无法给出确定性结果（如幂等状态未知），调用方应重试。 */
+  SERVICE_UNAVAILABLE: 503,
 } as const;
 
 export const ERROR_CODES = {

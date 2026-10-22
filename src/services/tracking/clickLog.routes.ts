@@ -87,28 +87,22 @@ export function createClickLogRouter(): Hono<{ Bindings: Env }> {
   /**
    * GET /api/clicks/stats
    * 获取点击统计概览
-   * 
-   * 数据源选择:
-   * - 所有数据: D1 数据库
-   * - startDate < 3个月前: D1 数据库
+   *
+   * 时间窗由 stats-query 归一化：缺失/非法回退最近 7 天（rangeDefaulted=true），
+   * 超过 90 天截断（rangeCapped=true）；聚合最多读 STATS_ROW_LIMIT 行。
+   * 可选 `topN`（1..50）请求 byCountry/byDevice 分组，分组 SQL 自带 LIMIT。
    */
   router.get('/stats', async (c) => {
     try {
-      const startDate = c.req.query('startDate');
-      const endDate = c.req.query('endDate');
+      const startDate = c.req.query('startDate') || undefined;
+      const endDate = c.req.query('endDate') || undefined;
       const campaignId = c.req.query('campaignId') || undefined;
-
-      if (!startDate || !endDate) {
-        return c.json(
-          error('startDate and endDate are required', ERROR_CODES.VALIDATION),
-          HTTP_STATUS.BAD_REQUEST
-        );
-      }
+      const topN = c.req.query('topN') || undefined;
 
       // Use D1 database for all queries
       const db = getD1Connection(c.env);
       const clickRepo = new ClickRepository(db);
-      const stats = await clickRepo.getClickStats(startDate, endDate, campaignId);
+      const stats = await clickRepo.getClickStats(startDate, endDate, campaignId, { topN });
 
       return c.json(success({
         ...stats,

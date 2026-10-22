@@ -40,7 +40,12 @@ const CLICK_MIGRATIONS = [
   '051_add_fingerprint_fields.sql',
 ];
 
-const CONVERSION_MIGRATIONS = ['011_create_conversions_table.sql'];
+// 084 adds `idempotencyKey`; ConversionRepository.saveConversion now writes it,
+// so the test schema must match the schema production runs against.
+const CONVERSION_MIGRATIONS = [
+  '011_create_conversions_table.sql',
+  '084_conversion_idempotency_key.sql',
+];
 
 function readMigration(name) {
   return readFileSync(new URL(name, MIGRATIONS_DIR), 'utf8');
