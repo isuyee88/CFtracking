@@ -4,16 +4,16 @@
   "requiresMigration": "084_conversion_idempotency_key.sql",
   "deployOrder": "apply migration 084 before deploying this bundle",
   "base": {
-    "label": "tmp/cf-deploy-p06/worker.js",
-    "ref": null,
-    "commit": null,
-    "path": "tmp/cf-deploy-p06/worker.js",
+    "label": "deploy/prod@d3401ec",
+    "ref": "d3401ec",
+    "commit": "d3401ece3867c249dc0a7c69c68b1cbb295c76ce",
+    "path": "d3401ec:worker.js",
     "sha256": "6a526254b53ce0fa0d509e94b83dd041078ed30e81161686f805ecc6d4dda3dc",
     "bytes": 2117249
   },
   "output": {
     "path": "worker.js",
-    "sha256": "6f460c2cd6ba80be3491663d79b1f83d12c773b8b61fbd342e5e89b8bee8c010",
-    "bytes": 2120609
+    "sha256": "fb52e175c1b7545121f90a8dddd84d1726be2502335cf0cc73baf8b7bcbd8c5b",
+    "bytes": 2121058
   }
 }

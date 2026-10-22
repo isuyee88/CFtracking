@@ -5388,6 +5388,7 @@ var init_conversion_repo = __esm({
        */
       async saveConversion(data) {
         const now = (/* @__PURE__ */ new Date()).toISOString();
+        const __p08Key = data.clickId || null;
         const __p08Result = await this.db.prepare(`
         INSERT INTO conversions (
           id, conversionId, clickId, idempotencyKey, campaignId, offerId,
@@ -5400,7 +5401,7 @@ var init_conversion_repo = __esm({
           data.conversionId,
           data.conversionId,
           data.clickId,
-          data.clickId,
+          __p08Key,
           data.campaignId,
           data.offerId,
           data.timestamp,
@@ -38017,7 +38018,7 @@ function createTrackingScriptRouter() {
       const conversionId = body.tid || crypto.randomUUID();
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const conversionRepo = new ConversionRepository(c.env.DB);
-      await conversionRepo.saveConversion({
+      const __p08ScriptSave = await conversionRepo.saveConversion({
         conversionId,
         clickId: body.clickId || "",
         campaignId: body.campaignId,
@@ -38029,19 +38030,25 @@ function createTrackingScriptRouter() {
         conversionType: body.status || "lead",
         offerName: null
       });
-      const trackingDO = c.env.TRACKING_STATS_DO.get(
-        c.env.TRACKING_STATS_DO.idFromName("global-stats")
-      );
-      await trackingDO.fetch("http://do/track-conversion", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          clickId: body.clickId,
-          revenue: body.payout || 0
-        })
-      });
+      const __p08ScriptInserted = !!(__p08ScriptSave && __p08ScriptSave.inserted);
+      // P08: a retried script conversion must not increment todayConversions
+      // twice. The response keeps `recorded: true` because the conversion
+      // exists either way; only DO statistics are gated on the insert winner.
+      if (__p08ScriptInserted) {
+        const trackingDO = c.env.TRACKING_STATS_DO.get(
+          c.env.TRACKING_STATS_DO.idFromName("global-stats")
+        );
+        await trackingDO.fetch("http://do/track-conversion", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            clickId: body.clickId,
+            revenue: body.payout || 0
+          })
+        });
+      }
       c.executionCtx.waitUntil(
         (async () => {
           try {
