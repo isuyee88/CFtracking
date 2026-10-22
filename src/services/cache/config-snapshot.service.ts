@@ -7,6 +7,10 @@
  * Invariant: a published key must describe the current control-plane state. A
  * rename/pause/delete therefore also *deletes* the alias key; leaving it in
  * place makes the fast path redirect to an offer that was already edited.
+ *
+ * Failure invariant: publishing is fail-closed. If a KV write or D1 read fails,
+ * the alias keys are deleted so clicks fall back to D1 instead of reading a
+ * partially written snapshot.
  */
 
 import type { Env } from '@/config/env';
@@ -67,10 +71,29 @@ export class ConfigSnapshotPublisher {
    * Returns null when there is nothing publishable (campaign gone, paused, or
    * no active offer). The alias key is deleted in that case so the click path
    * falls back to D1 instead of serving a stale offer URL.
+   *
+   * Reads campaigns/flows/flowOffers/flowLandingPages/offers. Writes or deletes
+   * `clickcfg:{alias}` plus `cfg:snapshot:*`/`cfg:pointer:*` in UNIQUENESS_KV.
+   * Idempotent for the same control-plane state. Throws after deleting the
+   * affected alias keys when storage fails, because a retained key would serve
+   * a pre-write offer URL.
    */
   async publishCampaign(aliasOrId: string, previousAlias?: string): Promise<ClickConfigSnapshot | null> {
     const actualAlias = String(aliasOrId || '').trim();
     if (!actualAlias) return null;
+    try {
+      return await this.publishCampaignInner(actualAlias, previousAlias);
+    } catch (error) {
+      // A half-published snapshot is worse than no snapshot: the compatibility
+      // reader ignores `status`, so drop both the alias this call tried to write
+      // and the one it was renamed from. Cleanup is best-effort; the original
+      // failure is what the caller must see.
+      await this.dropAliases([actualAlias, previousAlias]);
+      throw error;
+    }
+  }
+
+  private async publishCampaignInner(actualAlias: string, previousAlias?: string): Promise<ClickConfigSnapshot | null> {
     const campaign = await this.campaignRepo.findByAlias(actualAlias)
       || await this.campaignRepo.findById(actualAlias);
     if (!campaign) {
@@ -79,11 +102,21 @@ export class ConfigSnapshotPublisher {
       return null;
     }
 
+    // The update DTO accepts `alias: null`, so the row can be alias-less even
+    // though the type says string. Publishing would write a junk
+    // `clickcfg:null`; treat it as unpublishable and clean up the known alias.
+    const campaignAlias = String(campaign.alias || '').trim();
+    if (!campaignAlias) {
+      await this.invalidateAlias(actualAlias);
+      await this.dropPreviousAlias(previousAlias, actualAlias);
+      return null;
+    }
+
     // The compatibility `clickcfg` reader ignores `status`, so a paused
     // campaign must not keep a key at all.
     if (campaign.status !== 'active') {
-      await this.invalidateAlias(campaign.alias);
-      await this.dropPreviousAlias(previousAlias, campaign.alias);
+      await this.invalidateAlias(campaignAlias);
+      await this.dropPreviousAlias(previousAlias, campaignAlias);
       return null;
     }
 
@@ -110,14 +143,14 @@ export class ConfigSnapshotPublisher {
         status: campaign.status === 'active' ? 'active' : 'paused',
         updatedAt: new Date().toISOString(),
       };
-      await this.env.UNIQUENESS_KV.put(`${KEY_PREFIX}${campaign.alias}`, JSON.stringify(snapshot));
+      await this.env.UNIQUENESS_KV.put(`${KEY_PREFIX}${campaignAlias}`, JSON.stringify(snapshot));
       await this.publishFullSnapshot(campaign, flows);
-      await this.dropPreviousAlias(previousAlias, campaign.alias);
+      await this.dropPreviousAlias(previousAlias, campaignAlias);
       return snapshot;
     }
 
-    await this.invalidateAlias(campaign.alias);
-    await this.dropPreviousAlias(previousAlias, campaign.alias);
+    await this.invalidateAlias(campaignAlias);
+    await this.dropPreviousAlias(previousAlias, campaignAlias);
     return null;
   }
 
@@ -137,12 +170,22 @@ export class ConfigSnapshotPublisher {
   /**
    * Re-publish every campaign alias affected by a control-plane write.
    * Sequential on purpose: admin writes are low-QPS and this bounds D1 reads.
+   *
+   * A single alias failure must not leave the remaining aliases on the old
+   * snapshot, so every alias is attempted; the first error is rethrown after
+   * the loop. `publishCampaign` already deleted the failing alias key.
    */
   async publishAliases(aliases: string[]): Promise<number> {
     let published = 0;
-    for (const alias of aliases) {
-      if (await this.publishCampaign(alias)) published += 1;
+    let firstError: unknown = null;
+    for (const alias of this.normalizeAliases(aliases)) {
+      try {
+        if (await this.publishCampaign(alias)) published += 1;
+      } catch (error) {
+        firstError ??= error;
+      }
     }
+    if (firstError) throw firstError;
     return published;
   }
 
@@ -177,9 +220,26 @@ export class ConfigSnapshotPublisher {
   }
 
   private async dropPreviousAlias(previousAlias: string | undefined, currentAlias: string): Promise<void> {
-    if (previousAlias && previousAlias !== currentAlias) {
-      await this.invalidateAlias(previousAlias);
+    const previous = String(previousAlias || '').trim();
+    if (previous && previous !== currentAlias) {
+      await this.invalidateAlias(previous);
     }
+  }
+
+  /** Trim, drop blanks, and dedupe so one alias is published at most once. */
+  private normalizeAliases(aliases: Array<string | undefined>): string[] {
+    return [...new Set(aliases.map((alias) => String(alias || '').trim()).filter(Boolean))];
+  }
+
+  /** Delete every given alias, tolerating storage errors during failure cleanup. */
+  private async dropAliases(aliases: Array<string | undefined>): Promise<void> {
+    await Promise.all(this.normalizeAliases(aliases).map(async (alias) => {
+      try {
+        await this.invalidateAlias(alias);
+      } catch {
+        // Best-effort: the publish error is the actionable signal.
+      }
+    }));
   }
 
   /**

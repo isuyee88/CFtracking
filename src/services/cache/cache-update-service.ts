@@ -131,6 +131,11 @@ export class CacheUpdateService {
   
   /**
    * 编程式缓存更新(数据变更后自动触发) + SSE通知
+   *
+   * The click-config sync is isolated from page-cache maintenance: a Cache API
+   * failure may skip one list/dashboard invalidation (recoverable by TTL), but
+   * it must never leave `clickcfg:{alias}` on the pre-write offer URL. Awaited
+   * by the admin write path; never called from the click path.
    */
   async onDataChanged(
     entity: string,
@@ -142,38 +147,43 @@ export class CacheUpdateService {
     console.log(`[CacheUpdate] Entity ${entity}:${id} ${action}d`);
     
     const start = Date.now();
+    const clickLike = entity.startsWith('click') || entity.startsWith('conversion');
     
     try {
-      // Click is an event, not page content: no cache invalidation. Conversion
-      // only changes today's aggregate and the affected conversion entry.
-      const keysToInvalidate = entity.startsWith('click')
-        ? []
-        : (entity.startsWith('conversion')
-          ? [CacheKeyBuilder.entityDetail('conversion', id), CacheKeyBuilder.dashboard('today')]
-          : this.getRelatedCacheKeys(entity, id, action, context));
-      
-      // 失效缓存
-      await this.cacheManager.invalidateBatch(keysToInvalidate);
-      
-      // 通过SSE通知客户端
-      for (const key of keysToInvalidate) {
-        this.sseNotification.notifyCacheInvalidated(key, userId);
-      }
-      
-      // 如果是特定实体变更,发送更详细的通知
-      if (entity && id) {
-        this.sseNotification.notifyDataChanged(entity, id, action, userId);
-      }
-      
-      // 点击/转化是高频事件，不走全量预热。
-      if (action !== 'delete' && !entity.startsWith('click') && !entity.startsWith('conversion')) {
-        await this.warmupEntityCache(entity, id);
+      try {
+        // Click is an event, not page content: no cache invalidation. Conversion
+        // only changes today's aggregate and the affected conversion entry.
+        const keysToInvalidate = entity.startsWith('click')
+          ? []
+          : (entity.startsWith('conversion')
+            ? [CacheKeyBuilder.entityDetail('conversion', id), CacheKeyBuilder.dashboard('today')]
+            : this.getRelatedCacheKeys(entity, id, action, context));
+        
+        // 失效缓存
+        await this.cacheManager.invalidateBatch(keysToInvalidate);
+        
+        // 通过SSE通知客户端
+        for (const key of keysToInvalidate) {
+          this.sseNotification.notifyCacheInvalidated(key, userId);
+        }
+        
+        // 如果是特定实体变更,发送更详细的通知
+        if (entity && id) {
+          this.sseNotification.notifyDataChanged(entity, id, action, userId);
+        }
+        
+        // 点击/转化是高频事件，不走全量预热。
+        if (action !== 'delete' && !clickLike) {
+          await this.warmupEntityCache(entity, id);
+        }
+      } catch (error) {
+        console.error('[CacheUpdate] Page cache maintenance failed:', error);
       }
 
       // Control-plane changes must republish the click config for every alias
       // they affect; a retained key keeps redirecting to the old offer URL.
       // Click/conversion never enter this branch, keeping the click path off D1.
-      if (!entity.startsWith('click') && !entity.startsWith('conversion')) {
+      if (!clickLike) {
         await this.syncClickConfig(entity, id, action, context);
       }
       
@@ -438,7 +448,8 @@ export class CacheUpdateService {
   /**
    * Keep the alias-scoped click config in sync with the entity that changed.
    * Every branch runs on the write path so a click cannot observe pre-write
-   * config unless the KV write itself fails.
+   * config; when the publish itself fails the publisher deletes the key, which
+   * sends the click back to D1 instead of the old snapshot.
    */
   private async syncClickConfig(
     entity: string,
