@@ -1,12 +1,17 @@
 {
-  "source": "patched deploy/prod bundle",
-  "sourceRef": "origin/deploy/prod:worker.js",
-  "sourceSha256": "47d277cce739d1a3878f07d0bc712d19ef7eb844d6bfe2c65b4d3ca8098b2c34",
-  "bundleSha256": "02eec5aeba0e5d1868effccbdd1c861b0a8bd721a52aeccaed320895ba2f38fb",
-  "bytes": 2077014,
-  "generatedAt": "2026-10-22T08:06:06.051Z",
-  "generator": "ops/scripts/patch/apply-offer-macro-patch.mjs",
-  "patch": "p0-5-offer-macro-expansion",
-  "assets": "unchanged: keep the assets/ and wrangler.toml already in deploy/prod",
-  "note": "commit this worker.js and SOURCE_BUNDLE to cftracking/deploy/prod; do not hand-edit"
+  "patch": "P06_WEBHOOK_AUTH_V1",
+  "version": "1",
+  "base": {
+    "label": "live-p06",
+    "ref": null,
+    "commit": null,
+    "path": "tmp/cftracking-p06-webhook/worker.live.baseline.js",
+    "sha256": "cb2b48ef3ea7464f0e24730db609d20024728f927b93de28ffd18baa06923f89",
+    "bytes": 2114538
+  },
+  "output": {
+    "path": "worker.js",
+    "sha256": "6a526254b53ce0fa0d509e94b83dd041078ed30e81161686f805ecc6d4dda3dc",
+    "bytes": 2117249
+  }
 }
