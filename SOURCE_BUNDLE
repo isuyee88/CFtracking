@@ -1,7 +1,12 @@
 {
-  "source": "patched live bundle",
-  "sourceConfig": "D:\\suyee\\cloudflare\\tmp\\cftracking-release-config\\wrangler.toml",
-  "bundleSha256": "7f06656f3d2d512c890d6912dfcee58c14c7c81a0112be4cb5346a70b559953a",
-  "generatedAt": "2026-10-20T06:53:54.633Z",
-  "assetsFiles": 9
+  "source": "patched deploy/prod bundle",
+  "sourceRef": "origin/deploy/prod:worker.js",
+  "sourceSha256": "6e17ea691598e32d559572ae374b0ab7d3b179f3e0ece7b47af8e2435c9443bc",
+  "bundleSha256": "47d277cce739d1a3878f07d0bc712d19ef7eb844d6bfe2c65b4d3ca8098b2c34",
+  "bytes": 2075786,
+  "generatedAt": "2026-10-22T01:54:13.393Z",
+  "generator": "ops/scripts/patch/apply-click-config-lifecycle-patch.mjs",
+  "patch": "p0-4-clickcfg-lifecycle",
+  "assets": "unchanged: keep the assets/ and wrangler.toml already in deploy/prod",
+  "note": "commit this worker.js and SOURCE_BUNDLE to cftracking/deploy/prod; do not hand-edit"
 }

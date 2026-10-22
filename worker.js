@@ -59288,49 +59288,149 @@ async function resolveCacheMutationEvent(c) {
 __name(resolveCacheMutationEvent, "resolveCacheMutationEvent");
 __name2(resolveCacheMutationEvent, "resolveCacheMutationEvent");
 __name22(resolveCacheMutationEvent, "resolveCacheMutationEvent");
+/* p0-4-clickcfg-lifecycle */
+async function __captureClickCfgAliases(env, request) {
+  try {
+    if (!env || !env.DB || !request) return [];
+    const method = String(request.method || "GET").toUpperCase();
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) return [];
+    const url = new URL(request.url);
+    const mapping = [
+      { prefix: "/api/campaigns", entity: "campaign" },
+      { prefix: "/api/flows", entity: "flow" },
+      { prefix: "/api/offers", entity: "offer" },
+      { prefix: "/api/landing-pages", entity: "landing" }
+    ].find((item) => url.pathname === item.prefix || url.pathname.startsWith(item.prefix + "/"));
+    if (!mapping) return [];
+    const suffix = url.pathname.slice(mapping.prefix.length).replace(/^\/+/, "");
+    const candidate = suffix ? suffix.split("/")[0] : "";
+    if (!candidate || RESERVED_MUTATION_SEGMENTS.has(candidate)) return [];
+    const id = decodeURIComponent(candidate);
+    let rows = [];
+    if (mapping.entity === "campaign") {
+      rows = (await env.DB.prepare("SELECT alias FROM campaigns WHERE id = ? OR alias = ? LIMIT 1").bind(id, id).all()).results || [];
+    } else if (mapping.entity === "flow") {
+      rows = (await env.DB.prepare("SELECT c.alias AS alias FROM flows f JOIN campaigns c ON c.id = f.campaignId WHERE f.id = ?").bind(id).all()).results || [];
+    } else if (mapping.entity === "offer") {
+      rows = (await env.DB.prepare("SELECT DISTINCT c.alias AS alias FROM flowOffers fo JOIN flows f ON f.id = fo.flowId JOIN campaigns c ON c.id = f.campaignId WHERE fo.offerId = ?").bind(id).all()).results || [];
+    } else if (mapping.entity === "landing") {
+      rows = (await env.DB.prepare("SELECT DISTINCT c.alias AS alias FROM flowLandingPages flp JOIN flows f ON f.id = flp.flowId JOIN campaigns c ON c.id = f.campaignId WHERE flp.landingPageId = ?").bind(id).all()).results || [];
+    }
+    const aliases = [];
+    for (const row of rows) {
+      const alias = String(row && row.alias || "").trim();
+      if (alias && !aliases.includes(alias)) aliases.push(alias);
+    }
+    return aliases;
+  } catch (error) {
+    console.warn("[cfg-publish] alias capture failed:", error && error.message ? error.message : String(error));
+    return [];
+  }
+}
+__name(__captureClickCfgAliases, "__captureClickCfgAliases");
+
 async function __publishClickCfg(env, mutation) {
   try {
     if (!env || !env.DB || !env.UNIQUENESS_KV) return;
     const entity = String(mutation.entity || "").toLowerCase();
     if (!["campaign", "flow", "offer", "landing"].includes(entity)) return;
     const id = String(mutation.entityId || "");
+    const previousAliases = Array.isArray(mutation.previousAliases) ? mutation.previousAliases : [];
+    const aliases = [];
+    const seenAliases = /* @__PURE__ */ new Set();
+    const addAlias = (value) => {
+      const alias = String(value || "").trim();
+      if (!alias || seenAliases.has(alias)) return;
+      seenAliases.add(alias);
+      aliases.push(alias);
+    };
+    const dropAlias = async (alias) => {
+      try {
+        await env.UNIQUENESS_KV.delete("clickcfg:" + alias);
+        await env.UNIQUENESS_KV.delete("cfg:pointer:" + alias);
+      } catch (dropError) {
+        console.warn("[cfg-publish] drop failed for " + alias + ":", dropError && dropError.message ? dropError.message : String(dropError));
+      }
+      // The click path checks the snapshot pointer before clickcfg. KV alone
+      // is not enough: an edge-cached pointer would still serve the old offer.
+      try {
+        const cacheStore = typeof globalThis !== "undefined" ? globalThis.caches : void 0;
+        if (cacheStore && cacheStore.default && typeof cacheStore.default.delete === "function") {
+          await cacheStore.default.delete("https://t.isuyee.com/__cfg/" + encodeURIComponent(alias) + "/pointer");
+        }
+      } catch (cacheError) {
+        console.warn("[cfg-publish] cache drop failed for " + alias + ":", cacheError && cacheError.message ? cacheError.message : String(cacheError));
+      }
+    };
+    // Must run before the rows query: a delete/rename removes the joins that
+    // would otherwise tell us which aliases just lost their config.
+    for (const alias of previousAliases) addAlias(alias);
     let rows = [];
-    if (entity === "campaign") {
-      rows = (await env.DB.prepare("SELECT alias FROM campaigns WHERE id = ? OR alias = ? LIMIT 1").bind(id, id).all()).results || [];
-    } else if (entity === "flow") {
-      rows = (await env.DB.prepare("SELECT c.alias AS alias FROM flows f JOIN campaigns c ON c.id = f.campaignId WHERE f.id = ? AND c.status = 'active'").bind(id).all()).results || [];
-    } else if (entity === "offer") {
-      rows = (await env.DB.prepare("SELECT DISTINCT c.alias AS alias FROM flowOffers fo JOIN flows f ON f.id = fo.flowId JOIN campaigns c ON c.id = f.campaignId WHERE fo.offerId = ? AND c.status = 'active' AND f.status = 'active'").bind(id).all()).results || [];
-    } else if (entity === "landing") {
-      rows = (await env.DB.prepare("SELECT DISTINCT c.alias AS alias FROM flowLandingPages flp JOIN flows f ON f.id = flp.flowId JOIN campaigns c ON c.id = f.campaignId WHERE flp.landingPageId = ? AND c.status = 'active' AND f.status = 'active'").bind(id).all()).results || [];
+    try {
+      if (entity === "campaign") {
+        rows = (await env.DB.prepare("SELECT alias FROM campaigns WHERE id = ? OR alias = ? LIMIT 1").bind(id, id).all()).results || [];
+      } else if (entity === "flow") {
+        rows = (await env.DB.prepare("SELECT c.alias AS alias FROM flows f JOIN campaigns c ON c.id = f.campaignId WHERE f.id = ? AND c.status = 'active'").bind(id).all()).results || [];
+      } else if (entity === "offer") {
+        rows = (await env.DB.prepare("SELECT DISTINCT c.alias AS alias FROM flowOffers fo JOIN flows f ON f.id = fo.flowId JOIN campaigns c ON c.id = f.campaignId WHERE fo.offerId = ? AND c.status = 'active' AND f.status = 'active'").bind(id).all()).results || [];
+      } else if (entity === "landing") {
+        rows = (await env.DB.prepare("SELECT DISTINCT c.alias AS alias FROM flowLandingPages flp JOIN flows f ON f.id = flp.flowId JOIN campaigns c ON c.id = f.campaignId WHERE flp.landingPageId = ? AND c.status = 'active' AND f.status = 'active'").bind(id).all()).results || [];
+      }
+    } catch (lookupError) {
+      // A failed discovery query must not skip the pre-captured aliases:
+      // they are the only handles on keys whose rows were just deleted.
+      console.warn("[cfg-publish] alias lookup failed:", lookupError && lookupError.message ? lookupError.message : String(lookupError));
     }
-    for (const row of rows) {
-      const alias = String(row.alias || "");
-      if (!alias) continue;
-      const cfgRows = (await env.DB.prepare("SELECT c.id AS campaignId, f.id AS flowId, fo.offerId AS offerId, o.url AS offerUrl, (SELECT flp.landingPageId FROM flowLandingPages flp WHERE flp.flowId = f.id ORDER BY flp.weight DESC LIMIT 1) AS landingPageId FROM campaigns c JOIN flows f ON f.campaignId = c.id AND f.status = 'active' JOIN flowOffers fo ON fo.flowId = f.id JOIN offers o ON o.id = fo.offerId AND o.status = 'active' WHERE c.alias = ? ORDER BY fo.weight DESC LIMIT 1").bind(alias).all()).results || [];
-      if (!cfgRows.length) {
-        if (mutation.action === "delete") await env.UNIQUENESS_KV.delete("clickcfg:" + alias);
-        continue;
+    for (const row of rows) addAlias(row && row.alias);
+    // A paused landing keeps the flowLandingPages association, so the alias
+    // query still yields candidates. Treat a missing/non-active landing as
+    // unpublishable instead of echoing a stale landing into the snapshot.
+    if (entity === "landing") {
+      let landingRows = [];
+      try {
+        landingRows = (await env.DB.prepare("SELECT status FROM landingPages WHERE id = ? LIMIT 1").bind(id).all()).results || [];
+      } catch (landingError) {
+        console.warn("[cfg-publish] landing status lookup failed:", landingError && landingError.message ? landingError.message : String(landingError));
       }
-      const r = cfgRows[0];
-      const snapshot = { campaignId: r.campaignId, flowId: r.flowId, offerId: r.offerId, offerUrl: r.offerUrl, landingPageId: r.landingPageId || null, status: "active", updatedAt: new Date().toISOString() };
-      await env.UNIQUENESS_KV.put("clickcfg:" + alias, JSON.stringify(snapshot));
-      const fullFlows = [];
-      const flowRows = (await env.DB.prepare("SELECT * FROM flows WHERE campaignId = ? AND status = 'active'").bind(r.campaignId).all()).results || [];
-      for (const flowRow of flowRows) {
-        const offerRows = (await env.DB.prepare("SELECT fo.offerId, fo.weight, o.url FROM flowOffers fo JOIN offers o ON o.id = fo.offerId WHERE fo.flowId = ? AND o.status = 'active'").bind(flowRow.id).all()).results || [];
-        const landingRows = (await env.DB.prepare("SELECT landingPageId, weight FROM flowLandingPages WHERE flowId = ?").bind(flowRow.id).all()).results || [];
-        let filters = [];
-        let actionConfig = {};
-        try { filters = JSON.parse(flowRow.filters || "[]"); } catch {}
-        try { actionConfig = JSON.parse(flowRow.actionConfig || "{}"); } catch {}
-        fullFlows.push({ id: flowRow.id, type: flowRow.type || "regular", weight: Number(flowRow.weight) || 0, status: flowRow.status, filters, actionType: flowRow.actionType || "redirect", actionConfig, offers: offerRows.map((x) => ({ offerId: x.offerId, weight: Number(x.weight) || 0, url: x.url || null })), landingPages: landingRows.map((x) => ({ landingPageId: x.landingPageId, weight: Number(x.weight) || 0 })) });
+      const landingStatus = landingRows.length ? String(landingRows[0].status || "").toLowerCase() : "";
+      if (landingStatus !== "active") {
+        for (const alias of aliases) {
+          await dropAlias(alias);
+        }
+        return;
       }
-      const version = Date.now().toString(36) + "-" + r.campaignId;
-      const full = { scope: alias, version, campaign: { id: r.campaignId, alias, status: "active" }, flows: fullFlows, updatedAt: new Date().toISOString() };
-      await env.UNIQUENESS_KV.put("cfg:snapshot:" + alias + ":" + version, JSON.stringify(full), { expirationTtl: 604800 });
-      await env.UNIQUENESS_KV.put("cfg:pointer:" + alias, JSON.stringify({ version, updatedAt: full.updatedAt }), { expirationTtl: 604800 });
-      console.log("[cfg-publish] " + alias + " " + snapshot.flowId + " " + snapshot.offerId);
+    }
+    for (const alias of aliases) {
+      try {
+        const cfgRows = (await env.DB.prepare("SELECT c.id AS campaignId, f.id AS flowId, fo.offerId AS offerId, o.url AS offerUrl, (SELECT flp.landingPageId FROM flowLandingPages flp JOIN landingPages lp ON lp.id = flp.landingPageId AND lp.status = 'active' WHERE flp.flowId = f.id ORDER BY flp.weight DESC LIMIT 1) AS landingPageId FROM campaigns c JOIN flows f ON f.campaignId = c.id AND f.status = 'active' JOIN flowOffers fo ON fo.flowId = f.id JOIN offers o ON o.id = fo.offerId AND o.status = 'active' WHERE c.alias = ? AND c.status = 'active' ORDER BY fo.weight DESC LIMIT 1").bind(alias).all()).results || [];
+        if (!cfgRows.length) {
+          await dropAlias(alias);
+          continue;
+        }
+        const r = cfgRows[0];
+        const snapshot = { campaignId: r.campaignId, flowId: r.flowId, offerId: r.offerId, offerUrl: r.offerUrl, landingPageId: r.landingPageId || null, status: "active", updatedAt: new Date().toISOString() };
+        await env.UNIQUENESS_KV.put("clickcfg:" + alias, JSON.stringify(snapshot));
+        const fullFlows = [];
+        const flowRows = (await env.DB.prepare("SELECT * FROM flows WHERE campaignId = ? AND status = 'active'").bind(r.campaignId).all()).results || [];
+        for (const flowRow of flowRows) {
+          const offerRows = (await env.DB.prepare("SELECT fo.offerId, fo.weight, o.url FROM flowOffers fo JOIN offers o ON o.id = fo.offerId WHERE fo.flowId = ? AND o.status = 'active'").bind(flowRow.id).all()).results || [];
+          const landingRows = (await env.DB.prepare("SELECT landingPageId, weight FROM flowLandingPages WHERE flowId = ?").bind(flowRow.id).all()).results || [];
+          let filters = [];
+          let actionConfig = {};
+          try { filters = JSON.parse(flowRow.filters || "[]"); } catch {}
+          try { actionConfig = JSON.parse(flowRow.actionConfig || "{}"); } catch {}
+          fullFlows.push({ id: flowRow.id, type: flowRow.type || "regular", weight: Number(flowRow.weight) || 0, status: flowRow.status, filters, actionType: flowRow.actionType || "redirect", actionConfig, offers: offerRows.map((x) => ({ offerId: x.offerId, weight: Number(x.weight) || 0, url: x.url || null })), landingPages: landingRows.map((x) => ({ landingPageId: x.landingPageId, weight: Number(x.weight) || 0 })) });
+        }
+        const version = Date.now().toString(36) + "-" + r.campaignId;
+        const full = { scope: alias, version, campaign: { id: r.campaignId, alias, status: "active" }, flows: fullFlows, updatedAt: new Date().toISOString() };
+        await env.UNIQUENESS_KV.put("cfg:snapshot:" + alias + ":" + version, JSON.stringify(full), { expirationTtl: 604800 });
+        await env.UNIQUENESS_KV.put("cfg:pointer:" + alias, JSON.stringify({ version, updatedAt: full.updatedAt }), { expirationTtl: 604800 });
+        console.log("[cfg-publish] " + alias + " " + snapshot.flowId + " " + snapshot.offerId);
+      } catch (aliasError) {
+        // Fail closed: never leave a half-written or pre-write key behind.
+        await dropAlias(alias);
+        console.warn("[cfg-publish] failed for " + alias + ":", aliasError && aliasError.message ? aliasError.message : String(aliasError));
+      }
     }
   } catch (error) {
     console.warn("[cfg-publish] failed:", error && error.message ? error.message : String(error));
@@ -59338,11 +59438,15 @@ async function __publishClickCfg(env, mutation) {
 }
 __name(__publishClickCfg, "__publishClickCfg");
 app7.use("/api/*", async (c, next) => {
+  const __previousClickCfgAliases = await __captureClickCfgAliases(c.env, c.req.raw);
   await next();
   const mutation = await resolveCacheMutationEvent(c);
   if (!mutation) {
     return;
   }
+  // Merge after next(): entityId/action come from the response, while the
+  // aliases were captured while the pre-write rows still existed.
+  mutation.previousAliases = __previousClickCfgAliases;
   c.executionCtx.waitUntil(
     createCacheUpdateRoutes(c.env).onDataChanged(mutation.entity, mutation.entityId, mutation.action).catch((error2) => {
       console.error("[CacheUpdate] Post-mutation invalidation failed:", error2);
