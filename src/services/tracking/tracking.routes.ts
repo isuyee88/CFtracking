@@ -16,6 +16,7 @@
 import { Hono } from 'hono';
 import { ClickService } from './click.service';
 import { ConversionService } from './conversion.service';
+import { persistFastPathClick, tryKvClick } from './click-fast-path.service';
 import { 
   parseVisitorIdFromCookie, 
   generateCookieHeader,
@@ -27,6 +28,7 @@ import { validateRequired } from '@/utils/validator';
 import { HTTP_STATUS, ERROR_CODES } from '@/config/constants';
 import type { Env } from '@/config/env';
 import { extractCloudflareInfo, getClientIP, generateFingerprint, assessRisk } from '@/utils/cloudflare';
+import { generateClickId, generateVisitorId } from '@/utils/crypto';
 
 export function createTrackingRouter(): Hono<{ Bindings: Env }> {
   const router = new Hono<{ Bindings: Env }>();
@@ -45,7 +47,6 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
    */
   router.get('/click/:campaignAlias', async (c) => {
     const campaignAlias = c.req.param('campaignAlias');
-    const service = new ClickService(c.env);
 
     // 提取完整的 Cloudflare 请求信息
     const cfInfo = extractCloudflareInfo(c);
@@ -68,11 +69,22 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
     const browser = detectBrowser(userAgent);
     const os = detectOS(userAgent);
 
-    const subId1 = c.req.query('sub1') || c.req.query('subid1');
-    const subId2 = c.req.query('sub2') || c.req.query('subid2');
-    const subId3 = c.req.query('sub3') || c.req.query('subid3');
-    const subId4 = c.req.query('sub4') || c.req.query('subid4');
-    const subId5 = c.req.query('sub5') || c.req.query('subid5');
+    // Prod-compatible subid capture: `sub1` / `subid1` / `sub_id_1` … 30.
+    // The first five feed ClickData; all 30 feed URL macros ({subid7} etc.).
+    const subIds: Array<string | undefined> = [];
+    for (let index = 1; index <= 30; index += 1) {
+      subIds.push(
+        c.req.query(`sub${index}`) ||
+          c.req.query(`subid${index}`) ||
+          c.req.query(`sub_id_${index}`) ||
+          undefined
+      );
+    }
+    const subId1 = subIds[0];
+    const subId2 = subIds[1];
+    const subId3 = subIds[2];
+    const subId4 = subIds[3];
+    const subId5 = subIds[4];
     const cost = c.req.query('cost') ? parseFloat(c.req.query('cost')!) : undefined;
 
     // 解析去重参数
@@ -89,6 +101,39 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
       const urlParams = new URL(c.req.url).searchParams;
       urlParams.set('__originalUrl', c.req.url);
 
+      // KV `clickcfg:` fast path, before any D1 read. A miss (no binding/key,
+      // invalid JSON/shape, paused snapshot, KV error) returns null and the
+      // request continues through ClickService exactly as before.
+      const fastPathContext = {
+        clickId: generateClickId(),
+        visitorId: generateVisitorId(),
+        subIds,
+        urlParams,
+        referer,
+        ip,
+        country,
+        city,
+        region,
+        device,
+        browser,
+        os,
+        userAgent,
+      };
+      const fastPath = await tryKvClick(c.env, campaignAlias, fastPathContext);
+      if (fastPath) {
+        const response = c.redirect(fastPath.redirectUrl, 302);
+        response.headers.set('X-Cfg-Cache', 'kv');
+        // Best-effort analytics; the redirect must not wait on D1/KV writes.
+        const persist = persistFastPathClick(c.env, fastPath.snapshot, fastPathContext, fastPath.redirectUrl);
+        try {
+          c.executionCtx.waitUntil(persist);
+        } catch {
+          await persist;
+        }
+        return response;
+      }
+
+      const service = new ClickService(c.env);
       const result = await service.handleClick({
         campaignId: campaignAlias,
         ip,
@@ -105,6 +150,7 @@ export function createTrackingRouter(): Hono<{ Bindings: Env }> {
         subId3,
         subId4,
         subId5,
+        subIds,
         cost,
         uniquenessMethod,
         uniquenessParameter,

@@ -7,6 +7,11 @@
  * @logic 路由处理 -> Service -> Response
  * @frontend API 调用
  * @backend FlowService
+ *
+ * Invariant: every write that can change the redirect result (flow fields,
+ * landing/offer links, flow rules) republishes the owning campaign snapshot
+ * before responding. The click path reads the snapshot first, so a skipped
+ * republish keeps serving the pre-write rules until the key expires.
  */
 
 import { Hono } from 'hono';
@@ -314,6 +319,8 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
         ...body,
         flowId,
       });
+      // Rules are evaluated from the published snapshot on the click path.
+      await new CacheUpdateService(c.env).onDataChanged('flow', flowId, 'update');
       return c.json(success(rule), HTTP_STATUS.CREATED);
     } catch (err) {
       if (err instanceof Error && err.message === 'Flow not found') {
@@ -335,7 +342,14 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
     const service = new FlowService(c.env);
 
     try {
+      // Read the rule first: update/delete cannot recover flowId afterwards.
+      const existing = await service.getRuleById(ruleId);
+      if (!existing) {
+        return c.json(error('Rule not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+
       const rule = await service.updateRule(ruleId, body);
+      await new CacheUpdateService(c.env).onDataChanged('flow', existing.flowId, 'update');
       return c.json(success(rule));
     } catch (err) {
       if (err instanceof Error && err.message === 'Rule not found') {
@@ -353,7 +367,15 @@ export function createFlowRouter(): Hono<{ Bindings: Env }> {
     const service = new FlowService(c.env);
 
     try {
+      // Soft delete keeps the row, but the snapshot must still be republished
+      // so the deleted rule stops matching on the click path immediately.
+      const existing = await service.getRuleById(ruleId);
+      if (!existing) {
+        return c.json(error('Rule not found', ERROR_CODES.NOT_FOUND), HTTP_STATUS.NOT_FOUND);
+      }
+
       await service.deleteRule(ruleId);
+      await new CacheUpdateService(c.env).onDataChanged('flow', existing.flowId, 'update');
       return c.json(success({ deleted: true }));
     } catch (err) {
       if (err instanceof Error && err.message === 'Rule not found') {

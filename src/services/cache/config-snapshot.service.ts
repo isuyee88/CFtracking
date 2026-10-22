@@ -4,6 +4,10 @@
  * Control-plane writes are followed by a snapshot publish; the click path then
  * reads only KV/Cache. This intentionally runs outside the click request path.
  *
+ * Read-back: `ConfigSnapshotReader.readClickConfig` is the consumer of
+ * `clickcfg:{alias}`. It returns null on every failure so the click path can
+ * fall back to D1 instead of serving a stale or half-written snapshot.
+ *
  * Invariant: a published key must describe the current control-plane state. A
  * rename/pause/delete therefore also *deletes* the alias key; leaving it in
  * place makes the fast path redirect to an offer that was already edited.
@@ -295,4 +299,71 @@ export class ConfigSnapshotPublisher {
     }
     return { total: active.length, published };
   }
+}
+
+/**
+ * Read side of the `clickcfg:` compatibility fast path.
+ *
+ * The click route asks this reader before D1, so a control-plane publish is
+ * observable without a deploy. It is intentionally stateless: Workers isolates
+ * are long-lived, and any in-isolate cache would keep serving an offer URL that
+ * the control plane already renamed or paused. KV itself is the cache layer.
+ *
+ * Failure policy (all return null -> caller falls back to D1):
+ * - `UNIQUENESS_KV` binding missing, empty alias;
+ * - KV miss, `get(..., 'json')` parse error, network/permission error;
+ * - snapshot shape invalid, `offerUrl` empty, or `status !== 'active'`.
+ */
+export class ConfigSnapshotReader {
+  constructor(private env: Env) {}
+
+  /**
+   * Read `clickcfg:{alias}` for the click fast path.
+   *
+   * @param alias campaign alias from `/click/:campaignAlias`
+   * @returns a normalized active snapshot, or null when D1 must decide
+   */
+  async readClickConfig(alias: string): Promise<ClickConfigSnapshot | null> {
+    const actualAlias = String(alias || '').trim();
+    if (!actualAlias) return null;
+    const kv = this.env.UNIQUENESS_KV;
+    if (!kv) return null;
+
+    try {
+      const value = await kv.get(`${KEY_PREFIX}${actualAlias}`, 'json');
+      return normalizeClickConfigSnapshot(value);
+    } catch (error) {
+      // Fail open toward D1: a broken KV read must not turn a click into a 500.
+      console.warn('[ConfigSnapshot] clickcfg read failed, falling back to D1:', error);
+      return null;
+    }
+  }
+}
+
+/**
+ * Validate a raw KV value. Exported so the offline tests can lock the shape
+ * without going through a KV mock that silently accepts anything.
+ */
+export function normalizeClickConfigSnapshot(value: unknown): ClickConfigSnapshot | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+
+  const offerUrl = typeof raw.offerUrl === 'string' ? raw.offerUrl.trim() : '';
+  const campaignId = typeof raw.campaignId === 'string' ? raw.campaignId.trim() : '';
+  // The publisher deletes paused aliases; treat any non-active row as absent so
+  // a manually written or legacy key cannot serve a paused campaign.
+  if (!offerUrl || !campaignId || raw.status !== 'active') return null;
+
+  const optionalString = (field: unknown): string | null =>
+    typeof field === 'string' && field.trim() ? field : null;
+
+  return {
+    campaignId,
+    flowId: optionalString(raw.flowId),
+    offerId: optionalString(raw.offerId),
+    offerUrl,
+    landingPageId: optionalString(raw.landingPageId),
+    status: 'active',
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : '',
+  };
 }

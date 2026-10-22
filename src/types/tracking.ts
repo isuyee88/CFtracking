@@ -31,6 +31,11 @@ export interface ClickData {
   cost: number;
   /** Final destination URL recorded for the click. */
   redirectUrl?: string | null;
+  /**
+   * 去重结果：是否为首访。
+   * 缺省视为唯一，兼容 AE-only 上下文中未携带该字段的旧数据。
+   */
+  isUnique?: boolean;
   // UTM 参数
   utmSource?: string | null;
   utmMedium?: string | null;
@@ -94,6 +99,8 @@ export interface ClickData {
   cfTLSClientAuthCertPresented?: boolean | null;
   // 指纹和风险评估
   fingerprint?: string | null;
+  /** TLS JA3 指纹（clicked 表 ja3Hash 列；来自 Bot Management）。 */
+  ja3Hash?: string | null;
   riskScore?: number;
   isBot?: boolean;
   isProxy?: boolean;

@@ -1,9 +1,16 @@
-// Campaign Clone API Routes
-// POST /api/campaigns/:id/clone - 克隆一个 Campaign
+/**
+ * @fileoverview Campaign clone API route.
+ *
+ * `POST /api/campaigns/:id/clone` deep-copies a campaign through
+ * {@link CampaignCloneService}. The clone is committed by the service in one
+ * atomic D1 batch; cache maintenance runs only after that, and a cache failure
+ * must never turn a committed clone into a 500.
+ */
 
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { CampaignCloneService } from '../services/campaign/campaign-clone.service';
+import { CacheUpdateService } from '../services/cache/cache-update-service';
 import type { Env } from '../config/env';
 
 const cloneRouter = new Hono<{ Bindings: Env }>();
@@ -36,13 +43,22 @@ cloneRouter.post('/campaigns/:id/clone', async (c) => {
     // 创建 Service
     const cloneService = new CampaignCloneService(c.env.DB);
     
-    // 执行克隆
+    // 执行克隆（service 内部单 batch 提交）
     const result = await cloneService.clone(
       campaignId,
       validated.newName,
       validated.options
     );
-    
+
+    // The clone is already committed. Cache maintenance is best-effort here:
+    // onDataChanged already logs internally, and this catch keeps a constructor
+    // failure (e.g. no Cache API binding) from masquerading as a failed clone.
+    try {
+      await new CacheUpdateService(c.env).onDataChanged('campaign', result.data.clonedId, 'create');
+    } catch (cacheError) {
+      console.error('Clone campaign committed but cache refresh failed:', cacheError);
+    }
+
     // 返回成功响应
     return c.json({
       success: true,

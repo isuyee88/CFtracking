@@ -47,10 +47,64 @@ export class ClickRepository extends BaseRepository<ClickData> {
   }
 
   /**
-   * 保存点击记录到数据库
+   * 保存点击记录到数据库。
+   *
+   * 列名必须与 migrations 010/019/022/050/051 的真实 schema 一致：布尔列统一
+   * 绑定 0/1，riskReasons 只做 JSON.stringify（空数组落 NULL）。schema 没有
+   * deviceFingerprint 列，因此不写入；serverFingerprint/clientFingerprint 无
+   * 数据时保持 NULL。
    */
   async saveClick(data: ClickData): Promise<void> {
     const now = new Date().toISOString();
+    // 缺失时保持旧行为（唯一）；只有显式 false 才落 0。
+    const isUnique = data.isUnique === false ? 0 : 1;
+    const riskReasons =
+      Array.isArray(data.riskReasons) && data.riskReasons.length > 0
+        ? JSON.stringify(data.riskReasons)
+        : null;
+
+    const values: (string | number | null)[] = [
+      data.clickId, // id
+      data.clickId,
+      data.campaignId,
+      data.flowId ?? null,
+      data.landingPageId ?? null,
+      data.offerId ?? null,
+      data.timestamp,
+      data.ip,
+      data.userAgent,
+      data.referer ?? null,
+      data.country ?? null,
+      data.city ?? null,
+      data.device ?? null,
+      data.browser ?? null,
+      data.os ?? null,
+      data.isp ?? null,
+      data.connectionType ?? null,
+      data.visitorId,
+      data.subId1 ?? null,
+      data.subId2 ?? null,
+      data.subId3 ?? null,
+      data.subId4 ?? null,
+      data.subId5 ?? null,
+      data.cost,
+      isUnique,
+      data.redirectUrl ?? null,
+      now,
+      data.cfRayId ?? null,
+      data.cfBotScore ?? null,
+      data.fingerprint ?? null,
+      data.riskScore ?? 0,
+      data.isBot === true ? 1 : 0,
+      data.isSuspicious === true ? 1 : 0,
+      riskReasons,
+      data.ja3Hash ?? data.cfBotJA3Hash ?? null,
+      data.utmSource ?? null,
+      data.utmMedium ?? null,
+      data.utmCampaign ?? null,
+      data.utmTerm ?? null,
+      data.utmContent ?? null,
+    ];
 
     try {
       await this.db
@@ -59,93 +113,18 @@ export class ClickRepository extends BaseRepository<ClickData> {
             id, clickId, campaignId, flowId, landingPageId, offerId,
             timestamp, ip, userAgent, referer, country, city,
             device, browser, os, isp, connectionType, visitorId,
-            subId1, subId2, subId3, subId4, subId5, cost, isUnique, redirectUrl, createdAt
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            subId1, subId2, subId3, subId4, subId5, cost, isUnique, redirectUrl, createdAt,
+            cfRayId, cfBotScore, fingerprint, riskScore, isBot, isSuspicious, riskReasons, ja3Hash,
+            utmSource, utmMedium, utmCampaign, utmTerm, utmContent
+          ) VALUES (${values.map(() => '?').join(', ')})
         `)
-        .bind(
-          data.clickId,
-          data.clickId,
-          data.campaignId,
-          data.flowId,
-          data.landingPageId,
-          data.offerId,
-          data.timestamp,
-          data.ip,
-          data.userAgent,
-          data.referer,
-          data.country,
-          data.city,
-          data.device,
-          data.browser,
-          data.os,
-          data.isp,
-          data.connectionType,
-          data.visitorId,
-          data.subId1,
-          data.subId2,
-          data.subId3,
-          data.subId4,
-          data.subId5,
-          data.cost,
-          1,
-          data.redirectUrl,
-          now
-        )
+        .bind(...values)
         .run();
     } catch (error) {
       console.error('[ClickRepository] saveClick error:', error);
       throw error;
     }
   }
-
-  // /**
-  //  * 保存点击记录到数据库
-  //  */
-  // async saveClick(data: ClickData): Promise<void> {
-  //   const now = new Date().toISOString();
-  //
-  //   try {
-  //     await this.db
-  //       .prepare(`
-  //         INSERT INTO clicks (
-  //           id, clickId, campaignId, flowId, landingPageId, offerId,
-  //           timestamp, ip, userAgent, referer, country, city,
-  //           device, browser, os, isp, connectionType, visitorId,
-  //           subId1, subId2, subId3, subId4, subId5, cost, isUnique, redirectUrl, createdAt
-  //         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  //       `)
-  //       .bind(
-  //         data.clickId,
-  //         data.clickId,
-  //         data.campaignId,
-  //         data.flowId,
-  //         data.landingPageId,
-  //         data.offerId,
-  //         data.timestamp,
-  //         data.ip,
-  //         data.userAgent,
-  //         data.referer,
-  //         data.country,
-  //         data.city,
-  //         data.device,
-  //         data.browser,
-  //         data.os,
-  //         data.isp,
-  //         data.connectionType,
-  //         data.visitorId,
-  //         data.subId1,
-  //         data.subId2,
-  //         data.subId3,
-  //         data.cost,
-  //         1,
-  //         null,
-  //         now
-  //       )
-  //       .run();
-  //   } catch (error) {
-  //     console.error('Error saving click to D1:', error);
-  //   }
-  // }
 
   /**
    * 查询点击日志列表（支持分页和筛选）

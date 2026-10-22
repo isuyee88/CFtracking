@@ -13,6 +13,7 @@
     "build:worker": "npm run verify && node --require=./.wrangler-dns-bootstrap.cjs ./node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir dist",
     "typecheck": "tsc --noEmit",
     "test:run": "vitest run",
+    "test:node": "node --disable-warning=ExperimentalWarning --experimental-transform-types --test --test-isolation=none \"test/node/*.node.test.mjs\"",
     "test:e2e:smoke": "npx tsx test/e2e-comprehensive.ts",
     "test:e2e:matrix": "npx tsx test/e2e-regression-matrix.ts",
     "test:e2e": "playwright test",

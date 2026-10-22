@@ -1,15 +1,77 @@
-// Campaign Clone Service
-// 实现 Campaign 深拷贝功能，包括关联的 Flows、Offers、Landings 和 Autorules
+/**
+ * @fileoverview Campaign deep-clone service.
+ *
+ * Copies a campaign's control-plane configuration — the campaign row, its
+ * flows, each flow's offer/landing relations, and the campaign-level autorule
+ * binding entries — onto freshly generated IDs.
+ *
+ * Schema source of truth: `schema/migrations`. Campaigns/flows use camelCase
+ * columns (`domain`, `"group"`, `trafficSource`, `costModel`, `costValue`,
+ * `campaignId`, `status`, `actionType`, `actionConfig`, `createdAt`,
+ * `updatedAt`); flow relations live in `flowOffers` / `flowLandingPages`;
+ * campaign autorules live in `campaign_rule_binding_entries`.
+ *
+ * Invariants:
+ * - `offers` and `landingPages` are global libraries: clones reference them,
+ *   never copy or delete them.
+ * - `campaigns.alias` is UNIQUE, so every clone gets a freshly probed alias;
+ *   `apiToken` is UNIQUE too, so it is regenerated rather than copied.
+ * - All writes go through one `db.batch()`. D1 batches are atomic, so a failure
+ *   leaves neither a campaign nor orphan flows/relations behind.
+ * - Statistics are not columns on `campaigns` and are not copied. Traffic
+ *   aggregates are per-campaign rows in `trafficSummary`, keyed by the new id,
+ *   so the clone starts with zero history for free.
+ *
+ * @see schema/migrations/001_init.sql
+ * @see schema/migrations/016_add_display_ids.sql
+ * @see schema/migrations/023_add_campaign_uniqueness_method.sql
+ * @see schema/migrations/024_add_flow_action_fields.sql
+ * @see schema/migrations/045_enhance_flow_rules.sql
+ * @see schema/migrations/058_unify_autorules_binding_and_metrics.sql
+ * @see schema/migrations/061_expand_autorule_bindings_priority.sql
+ */
 
-import type { D1Database } from '@cloudflare/workers-types';
+import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types';
+import { generateApiToken, generateUUID } from '@/utils/crypto';
 
 export interface CloneOptions {
-  cloneStatus?: boolean;        // 是否保留原状态（默认 false，克隆后为 paused）
-  cloneFlows?: boolean;         // 是否克隆 Flows（默认 true）
-  cloneOffers?: boolean;        // 是否克隆 Offers（默认 true）
-  cloneLandings?: boolean;      // 是否克隆 Landings（默认 true）
-  cloneAutorules?: boolean;     // 是否克隆 Autorules（默认 true）
-  cloneCostSettings?: boolean;  // 是否克隆成本配置（默认 true）
+  /** Keep the original status; otherwise the clone is created `paused`. */
+  cloneStatus?: boolean;
+  /** Clone the campaign's flows (default true). */
+  cloneFlows?: boolean;
+  /** Clone each cloned flow's `flowOffers` rows (default true). */
+  cloneOffers?: boolean;
+  /** Clone each cloned flow's `flowLandingPages` rows (default true). */
+  cloneLandings?: boolean;
+  /** Clone the campaign-level `campaign_rule_binding_entries` (default true). */
+  cloneAutorules?: boolean;
+  /** Copy `costModel`/`costValue`; otherwise reset to `cpc`/0 (default true). */
+  cloneCostSettings?: boolean;
+}
+
+/** The committed campaign row as returned to the caller. */
+export interface ClonedCampaign {
+  id: string;
+  displayId: string;
+  name: string;
+  alias: string;
+  domain: string;
+  group: string | null;
+  trafficSource: string | null;
+  flowRotation: string;
+  costModel: string;
+  costValue: number;
+  currency: string;
+  trafficLoss: number;
+  uniquenessMethod: string;
+  uniquenessParameter: string | null;
+  uniquenessTTL: number;
+  visitorBinding: string;
+  apiToken: string;
+  parameters: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CloneCampaignResult {
@@ -17,7 +79,7 @@ export interface CloneCampaignResult {
   data: {
     originalId: string;
     clonedId: string;
-    clonedCampaign: any;
+    clonedCampaign: ClonedCampaign;
     clonedFlowCount: number;
     clonedOfferCount: number;
     clonedLandingCount: number;
@@ -26,312 +88,414 @@ export interface CloneCampaignResult {
   message: string;
 }
 
+interface CampaignRow {
+  id: string;
+  displayId: string | null;
+  name: string;
+  alias: string;
+  domain: string;
+  group: string | null;
+  trafficSource: string | null;
+  flowRotation: string | null;
+  costModel: string | null;
+  costValue: number | null;
+  currency: string | null;
+  trafficLoss: number | null;
+  uniquenessMethod: string | null;
+  uniquenessParameter: string | null;
+  uniquenessTTL: number | null;
+  visitorBinding: string | null;
+  parameters: string | null;
+  status: string | null;
+}
+
+interface FlowRow {
+  id: string;
+  name: string;
+  type: string | null;
+  weight: number | null;
+  status: string | null;
+  filters: string | null;
+  filterLogic: string | null;
+  priority: number | null;
+  actionType: string | null;
+  actionConfig: string | null;
+}
+
+interface FlowOfferRow {
+  flowId: string;
+  offerId: string;
+  weight: number | null;
+}
+
+interface FlowLandingRow {
+  flowId: string;
+  landingPageId: string;
+  weight: number | null;
+}
+
+interface BindingEntryRow {
+  ruleId: string;
+  priority: number;
+  enabled: number;
+}
+
 export class CampaignCloneService {
   constructor(private db: D1Database) {}
-  
+
   /**
-   * 克隆一个 Campaign 及其关联数据
-   * @param originalId 原 Campaign ID
-   * @param newName 新 Campaign 名称
-   * @param options 克隆选项
-   * @returns 克隆结果
+   * Clone a campaign and its configuration.
+   *
+   * Reads the original campaign, flows, flow relations and campaign bindings,
+   * generates new IDs/alias/token, then writes everything in one atomic batch.
+   * The original row and the global offer/landing libraries are never modified.
+   *
+   * @param originalId campaign `id` or `displayId`
+   * @param newName requested clone name; made unique against existing names
+   * @param options clone switches; omitted flags default to true/false as documented
+   * @returns committed clone plus per-entity copied counts
+   * @throws Error when the campaign is missing or the batch fails (nothing written)
    */
   async clone(
     originalId: string,
     newName: string,
     options: CloneOptions = {}
   ): Promise<CloneCampaignResult> {
-    
-    // 设置默认选项
     const opts: Required<CloneOptions> = {
-      cloneStatus: false,
-      cloneFlows: true,
-      cloneOffers: true,
-      cloneLandings: true,
-      cloneAutorules: true,
-      cloneCostSettings: true,
-      ...options
+      cloneStatus: options.cloneStatus ?? false,
+      cloneFlows: options.cloneFlows ?? true,
+      cloneOffers: options.cloneOffers ?? true,
+      cloneLandings: options.cloneLandings ?? true,
+      cloneAutorules: options.cloneAutorules ?? true,
+      cloneCostSettings: options.cloneCostSettings ?? true,
     };
-    
-    // 1. 验证原 Campaign 存在
+
     const original = await this.getCampaignById(originalId);
     if (!original) {
       throw new Error(`Campaign with ID '${originalId}' not found`);
     }
-    
-    // 2. 生成唯一名称（如果冲突）
+
+    const now = new Date().toISOString();
+    const newId = this.generateId('c');
     const uniqueName = await this.generateUniqueName(newName);
-    
-    // 3. 执行克隆（使用事务）
-    const result = await this.executeClone(original, uniqueName, opts);
-    
-    return result;
-  }
-  
-  /**
-   * 执行克隆操作（事务）
-   */
-  private async executeClone(
-    original: any,
-    newName: string,
-    options: Required<CloneOptions>
-  ): Promise<CloneCampaignResult> {
-    
-    try {
-      // 生成新 ID
-      const newId = this.generateCampaignId();
-      const now = new Date().toISOString();
-      
-      // 克隆 Campaign 基本信息
-      const clonedCampaign = {
-        ...original,
-        id: newId,
-        name: newName,
-        status: options.cloneStatus ? original.status : 'paused',
-        created_at: now,
-        updated_at: now,
-        // 清空统计数据
-        total_clicks: 0,
-        total_conversions: 0,
-        total_revenue: 0,
-        total_cost: 0
-      };
-      
-      // 插入新 Campaign
-      await this.db.prepare(`
+    const alias = await this.generateUniqueAlias(uniqueName, original.alias);
+
+    // A deleted campaign must not produce a deleted clone: only an explicit
+    // cloneStatus request copies a status that is still visible in the UI.
+    const status = opts.cloneStatus && original.status && original.status !== 'deleted'
+      ? original.status
+      : 'paused';
+
+    const clonedCampaign: ClonedCampaign = {
+      id: newId,
+      displayId: newId,
+      name: uniqueName,
+      alias,
+      domain: original.domain ?? '',
+      group: original.group ?? null,
+      trafficSource: original.trafficSource ?? null,
+      flowRotation: original.flowRotation ?? 'position',
+      costModel: opts.cloneCostSettings ? (original.costModel ?? 'cpc') : 'cpc',
+      costValue: opts.cloneCostSettings ? (original.costValue ?? 0) : 0,
+      currency: original.currency ?? 'USD',
+      trafficLoss: original.trafficLoss ?? 0,
+      uniquenessMethod: original.uniquenessMethod ?? 'none',
+      uniquenessParameter: original.uniquenessParameter ?? null,
+      uniquenessTTL: original.uniquenessTTL ?? 86400,
+      visitorBinding: original.visitorBinding ?? 'none',
+      apiToken: generateApiToken(),
+      parameters: original.parameters ?? '{}',
+      status,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Flows may point at either the row id or the displayId; accept both.
+    const campaignIds = this.uniqueStrings([original.id, original.displayId]);
+    const flows = opts.cloneFlows ? await this.getFlows(campaignIds) : [];
+    const flowIdMap = new Map<string, string>();
+    for (const flow of flows) {
+      flowIdMap.set(flow.id, this.generateId('f'));
+    }
+
+    const oldFlowIds = flows.map((flow) => flow.id);
+    const offers = opts.cloneOffers && oldFlowIds.length > 0
+      ? await this.getFlowOffers(oldFlowIds)
+      : [];
+    const landings = opts.cloneLandings && oldFlowIds.length > 0
+      ? await this.getFlowLandings(oldFlowIds)
+      : [];
+    const bindings = opts.cloneAutorules
+      ? await this.getCampaignBindingEntries(campaignIds)
+      : [];
+
+    const statements: D1PreparedStatement[] = [
+      this.db.prepare(`
         INSERT INTO campaigns (
-          id, name, traffic_source_id, default_landing_url,
-          status, daily_cap, cost_model, cost_value,
-          created_at, updated_at,
-          total_clicks, total_conversions, total_revenue, total_cost
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, displayId, name, alias, domain, "group", trafficSource,
+          flowRotation, costModel, costValue, currency, trafficLoss,
+          uniquenessMethod, uniquenessParameter, uniquenessTTL,
+          visitorBinding, apiToken, parameters, status, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         clonedCampaign.id,
+        clonedCampaign.displayId,
         clonedCampaign.name,
-        clonedCampaign.traffic_source_id,
-        clonedCampaign.default_landing_url,
+        clonedCampaign.alias,
+        clonedCampaign.domain,
+        clonedCampaign.group,
+        clonedCampaign.trafficSource,
+        clonedCampaign.flowRotation,
+        clonedCampaign.costModel,
+        clonedCampaign.costValue,
+        clonedCampaign.currency,
+        clonedCampaign.trafficLoss,
+        clonedCampaign.uniquenessMethod,
+        clonedCampaign.uniquenessParameter,
+        clonedCampaign.uniquenessTTL,
+        clonedCampaign.visitorBinding,
+        clonedCampaign.apiToken,
+        clonedCampaign.parameters,
         clonedCampaign.status,
-        clonedCampaign.daily_cap,
-        clonedCampaign.cost_model,
-        options.cloneCostSettings ? clonedCampaign.cost_value : null,
-        clonedCampaign.created_at,
-        clonedCampaign.updated_at,
-        0, 0, 0, 0
-      ).run();
-      
-      // 克隆关联数据
-      let flowCount = 0, offerCount = 0, landingCount = 0, autoruleCount = 0;
-      
-      if (options.cloneFlows) {
-        flowCount = await this.cloneFlows(original.id, newId);
-      }
-      
-      if (options.cloneOffers) {
-        offerCount = await this.cloneOffers(original.id, newId);
-      }
-      
-      if (options.cloneLandings) {
-        landingCount = await this.cloneLandings(original.id, newId);
-      }
-      
-      if (options.cloneAutorules) {
-        autoruleCount = await this.cloneAutorules(original.id, newId);
-      }
-      
-      return {
-        success: true,
-        data: {
-          originalId: original.id,
-          clonedId: newId,
-          clonedCampaign,
-          clonedFlowCount: flowCount,
-          clonedOfferCount: offerCount,
-          clonedLandingCount: landingCount,
-          clonedAutoruleCount: autoruleCount
-        },
-        message: `Campaign '${newName}' cloned successfully`
-      };
-      
+        clonedCampaign.createdAt,
+        clonedCampaign.updatedAt
+      ),
+    ];
+
+    for (const flow of flows) {
+      const newFlowId = flowIdMap.get(flow.id);
+      if (!newFlowId) continue;
+      statements.push(
+        this.db.prepare(`
+          INSERT INTO flows (
+            id, displayId, campaignId, name, type, weight, status,
+            filters, filterLogic, priority, actionType, actionConfig,
+            createdAt, updatedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          newFlowId,
+          newFlowId,
+          newId,
+          flow.name,
+          flow.type ?? 'regular',
+          flow.weight ?? 100,
+          flow.status ?? 'active',
+          flow.filters ?? '[]',
+          flow.filterLogic ?? 'AND',
+          flow.priority ?? 0,
+          flow.actionType ?? 'redirect',
+          flow.actionConfig ?? '{}',
+          now,
+          now
+        )
+      );
+    }
+
+    for (const offer of offers) {
+      const newFlowId = flowIdMap.get(offer.flowId);
+      if (!newFlowId) continue;
+      statements.push(
+        this.db.prepare(
+          `INSERT INTO flowOffers (flowId, offerId, weight, createdAt) VALUES (?, ?, ?, ?)`
+        ).bind(newFlowId, offer.offerId, offer.weight ?? 100, now)
+      );
+    }
+
+    for (const landing of landings) {
+      const newFlowId = flowIdMap.get(landing.flowId);
+      if (!newFlowId) continue;
+      statements.push(
+        this.db.prepare(
+          `INSERT INTO flowLandingPages (flowId, landingPageId, weight, createdAt) VALUES (?, ?, ?, ?)`
+        ).bind(newFlowId, landing.landingPageId, landing.weight ?? 100, now)
+      );
+    }
+
+    for (const binding of bindings) {
+      statements.push(
+        this.db.prepare(`
+          INSERT INTO campaign_rule_binding_entries (
+            id, campaignId, ruleId, priority, enabled, createdAt, updatedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          `cre-${generateUUID()}`,
+          newId,
+          binding.ruleId,
+          binding.priority ?? 0,
+          binding.enabled ?? 1,
+          now,
+          now
+        )
+      );
+    }
+
+    // One batch keeps the clone atomic: campaign, flows and relations commit
+    // together or not at all. No cache/invalidation work here — the route owns
+    // that, after the commit is observable.
+    try {
+      await this.db.batch(statements);
     } catch (error) {
       throw new Error(`Failed to clone campaign: ${(error as Error).message}`);
     }
+
+    return {
+      success: true,
+      data: {
+        originalId: original.id,
+        clonedId: newId,
+        clonedCampaign,
+        clonedFlowCount: flows.length,
+        clonedOfferCount: offers.filter((row) => flowIdMap.has(row.flowId)).length,
+        clonedLandingCount: landings.filter((row) => flowIdMap.has(row.flowId)).length,
+        clonedAutoruleCount: bindings.length,
+      },
+      message: `Campaign '${uniqueName}' cloned successfully`,
+    };
   }
-  
-  /**
-   * 克隆 Flows
-   */
-  private async cloneFlows(originalCampaignId: string, newCampaignId: string): Promise<number> {
-    const flows = await this.db.prepare(`
-      SELECT * FROM flows WHERE campaign_id = ?
-    `).bind(originalCampaignId).all();
-    
-    if (!flows.results || flows.results.length === 0) {
-      return 0;
-    }
-    
-    for (const flow of flows.results) {
-      const newFlowId = this.generateFlowId();
-      await this.db.prepare(`
-        INSERT INTO flows (
-          id, campaign_id, name, type, weight, 
-          filters, actions, enabled, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        newFlowId,
-        newCampaignId,
-        flow.name,
-        flow.type,
-        flow.weight,
-        flow.filters,
-        flow.actions,
-        flow.enabled,
-        new Date().toISOString()
-      ).run();
-    }
-    
-    return flows.results.length;
+
+  private async getCampaignById(id: string): Promise<CampaignRow | null> {
+    const row = await this.db
+      .prepare(`SELECT * FROM campaigns WHERE id = ? OR displayId = ? LIMIT 1`)
+      .bind(id, id)
+      .first<CampaignRow>();
+    return row ?? null;
   }
-  
-  /**
-   * 克隆 Offers 关联
-   */
-  private async cloneOffers(originalCampaignId: string, newCampaignId: string): Promise<number> {
-    const offers = await this.db.prepare(`
-      SELECT * FROM campaign_offers WHERE campaign_id = ?
-    `).bind(originalCampaignId).all();
-    
-    if (!offers.results || offers.results.length === 0) {
-      return 0;
-    }
-    
-    for (const offer of offers.results) {
-      await this.db.prepare(`
-        INSERT INTO campaign_offers (campaign_id, offer_id, weight, status)
-        VALUES (?, ?, ?, ?)
-      `).bind(
-        newCampaignId,
-        offer.offer_id,
-        offer.weight,
-        offer.status
-      ).run();
-    }
-    
-    return offers.results.length;
+
+  private async getFlows(campaignIds: string[]): Promise<FlowRow[]> {
+    const placeholders = this.placeholders(campaignIds);
+    const result = await this.db
+      .prepare(`
+        SELECT id, name, type, weight, status, filters, filterLogic, priority, actionType, actionConfig
+        FROM flows
+        WHERE campaignId IN (${placeholders})
+        ORDER BY createdAt ASC, id ASC
+      `)
+      .bind(...campaignIds)
+      .all<FlowRow>();
+    return result.results ?? [];
   }
-  
-  /**
-   * 克隆 Landings 关联
-   */
-  private async cloneLandings(originalCampaignId: string, newCampaignId: string): Promise<number> {
-    const landings = await this.db.prepare(`
-      SELECT * FROM campaign_landings WHERE campaign_id = ?
-    `).bind(originalCampaignId).all();
-    
-    if (!landings.results || landings.results.length === 0) {
-      return 0;
-    }
-    
-    for (const landing of landings.results) {
-      await this.db.prepare(`
-        INSERT INTO campaign_landings (campaign_id, landing_page_id, weight, status)
-        VALUES (?, ?, ?, ?)
-      `).bind(
-        newCampaignId,
-        landing.landing_page_id,
-        landing.weight,
-        landing.status
-      ).run();
-    }
-    
-    return landings.results.length;
+
+  private async getFlowOffers(flowIds: string[]): Promise<FlowOfferRow[]> {
+    const placeholders = this.placeholders(flowIds);
+    const result = await this.db
+      .prepare(`
+        SELECT flowId, offerId, weight
+        FROM flowOffers
+        WHERE flowId IN (${placeholders})
+        ORDER BY flowId ASC, id ASC
+      `)
+      .bind(...flowIds)
+      .all<FlowOfferRow>();
+    return result.results ?? [];
   }
-  
-  /**
-   * 克隆 Autorules 绑定
-   */
-  private async cloneAutorules(originalCampaignId: string, newCampaignId: string): Promise<number> {
-    const autorules = await this.db.prepare(`
-      SELECT * FROM autorule_bindings WHERE campaign_id = ?
-    `).bind(originalCampaignId).all();
-    
-    if (!autorules.results || autorules.results.length === 0) {
-      return 0;
-    }
-    
-    for (const rule of autorules.results) {
-      const newBindingId = this.generateBindingId();
-      await this.db.prepare(`
-        INSERT INTO autorule_bindings (id, campaign_id, autorule_id, enabled, created_at)
-        VALUES (?, ?, ?, ?, ?)
-      `).bind(
-        newBindingId,
-        newCampaignId,
-        rule.autorule_id,
-        rule.enabled,
-        new Date().toISOString()
-      ).run();
-    }
-    
-    return autorules.results.length;
+
+  private async getFlowLandings(flowIds: string[]): Promise<FlowLandingRow[]> {
+    const placeholders = this.placeholders(flowIds);
+    const result = await this.db
+      .prepare(`
+        SELECT flowId, landingPageId, weight
+        FROM flowLandingPages
+        WHERE flowId IN (${placeholders})
+        ORDER BY flowId ASC, id ASC
+      `)
+      .bind(...flowIds)
+      .all<FlowLandingRow>();
+    return result.results ?? [];
   }
-  
-  /**
-   * 获取 Campaign
-   */
-  private async getCampaignById(id: string): Promise<any | null> {
-    const result = await this.db.prepare(`
-      SELECT * FROM campaigns WHERE id = ?
-    `).bind(id).first();
-    
-    return result || null;
+
+  private async getCampaignBindingEntries(campaignIds: string[]): Promise<BindingEntryRow[]> {
+    const placeholders = this.placeholders(campaignIds);
+    const result = await this.db
+      .prepare(`
+        SELECT ruleId, priority, enabled
+        FROM campaign_rule_binding_entries
+        WHERE campaignId IN (${placeholders})
+        ORDER BY priority ASC, ruleId ASC
+      `)
+      .bind(...campaignIds)
+      .all<BindingEntryRow>();
+    return result.results ?? [];
   }
-  
+
   /**
-   * 生成唯一名称
+   * Keep the requested name unique for the admin UI. `campaigns.name` is not
+   * UNIQUE, but two identically named rows are indistinguishable in list views.
    */
   private async generateUniqueName(baseName: string): Promise<string> {
-    let name = baseName;
-    let counter = 0;
-    const copyBaseName = /^(.*) - Copy(?: \d+)?$/.exec(baseName)?.[1];
-    const suffixBaseName = copyBaseName ? `${copyBaseName} - Copy` : baseName;
-    
-    while (await this.nameExists(name)) {
-      counter++;
-      name = `${suffixBaseName} ${counter}`;
+    const requested = baseName.trim() || 'Campaign Copy';
+    if (!(await this.nameExists(requested))) {
+      return requested;
     }
-    
-    return name;
+
+    const copyBaseName = /^(.*) - Copy(?: \d+)?$/.exec(requested)?.[1];
+    const suffixBaseName = copyBaseName ? `${copyBaseName} - Copy` : requested;
+    let counter = 1;
+    let candidate = `${suffixBaseName} ${counter}`;
+    while (await this.nameExists(candidate)) {
+      counter++;
+      candidate = `${suffixBaseName} ${counter}`;
+    }
+    return candidate;
   }
-  
-  /**
-   * 检查名称是否存在
-   */
+
   private async nameExists(name: string): Promise<boolean> {
-    const result = await this.db.prepare(`
-      SELECT COUNT(*) as count FROM campaigns WHERE name = ?
-    `).bind(name).first();
-    
-    return Boolean(result && (result.count as number) > 0);
+    const row = await this.db
+      .prepare(`SELECT 1 AS found FROM campaigns WHERE name = ? LIMIT 1`)
+      .bind(name)
+      .first<{ found: number }>();
+    return row !== null;
   }
-  
+
   /**
-   * 生成 Campaign ID
+   * Derive an alias from the clone name and probe until it is UNIQUE. A
+   * non-latin name slugifies to '' and falls back to the original alias so the
+   * clone never gets a meaningless or empty alias.
    */
-  private generateCampaignId(): string {
-    return `camp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  private async generateUniqueAlias(seedName: string, originalAlias: string): Promise<string> {
+    let base = this.slugify(seedName) || this.slugify(originalAlias) || 'campaign';
+    if (base.length < 2) {
+      base = `${base}-copy`;
+    }
+
+    for (let counter = 1; ; counter++) {
+      const suffix = counter === 1 ? '' : `-${counter}`;
+      const head = base.slice(0, Math.max(1, 50 - suffix.length)).replace(/-+$/, '');
+      const candidate = `${head || 'campaign'}${suffix}`;
+      if (!(await this.aliasExists(candidate))) {
+        return candidate;
+      }
+    }
   }
-  
-  /**
-   * 生成 Flow ID
-   */
-  private generateFlowId(): string {
-    return `flow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  private async aliasExists(alias: string): Promise<boolean> {
+    const row = await this.db
+      .prepare(`SELECT 1 AS found FROM campaigns WHERE alias = ? LIMIT 1`)
+      .bind(alias)
+      .first<{ found: number }>();
+    return row !== null;
   }
-  
-  /**
-   * 生成 Binding ID
-   */
-  private generateBindingId(): string {
-    return `binding-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  /** Lowercase kebab-case; mirrors the alias shape the create route accepts. */
+  private slugify(value: string): string {
+    return value
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40)
+      .replace(/-+$/, '');
+  }
+
+  private generateId(prefix: string): string {
+    return `${prefix}${generateUUID().replace(/-/g, '').slice(0, 16)}`;
+  }
+
+  private placeholders(values: string[]): string {
+    return values.map(() => '?').join(',');
+  }
+
+  private uniqueStrings(values: Array<string | null | undefined>): string[] {
+    return [...new Set(values.filter((value): value is string => Boolean(value)))];
   }
 }
