@@ -24,6 +24,7 @@ import { ExportButton } from '../components/ExportButton';
 import { ActiveFilterBar } from '../components/ActiveFilterBar';
 import { TablePagination } from '../components/TablePagination';
 import { formatCampaignForExport } from '../utils/export';
+import { buildCampaignTrackingUrl } from '../utils/campaignUrl';
 import { QuickDateRangePicker } from '@/components/DateRangePicker';
 import { GroupByFilter, filterByGroupBy } from '../components/GroupByFilter';
 import type { GroupByState, GroupByOption } from '../types/filter';
@@ -90,8 +91,7 @@ interface CampaignStats {
 }
 
 const transformCampaign = (backend: BackendCampaign, stats?: CampaignStats): Campaign => {
-  const currentDomain = typeof window !== 'undefined' ? window.location.host : 'cf-tracking.suyee88.workers.dev';
-  const trackingUrl = `https://${currentDomain}/link/${backend.alias}`;
+  const trackingUrl = buildCampaignTrackingUrl(backend.domain, backend.alias);
 
   return {
     id: backend.displayId || backend.id,

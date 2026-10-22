@@ -52,8 +52,15 @@ import {
   LazyAreaChart, LazyArea, LazyXAxis, LazyYAxis, LazyCartesianGrid, LazyTooltip, LazyResponsiveContainer,
   LazyBarChart, LazyBar
 } from '../components/ChartWrapper';
-import { fetchCampaign, updateCampaign, fetchCampaignStats, fetchFlows, createFlow, updateFlow, deleteFlow, addOfferToFlow, addLandingPageToFlow, fetchTrafficSources } from '../services/api';
+import { fetchCampaign, updateCampaign, fetchCampaignStats, fetchFlows, createFlow, updateFlow, deleteFlow, addOfferToFlow, addLandingPageToFlow, fetchTrafficSources, fetchDomains } from '../services/api';
 import { FlowDesigner } from '../components/FlowDesigner';
+import type { Domain } from '../types/domain';
+import {
+  buildCampaignTrackingUrl,
+  isUsableTrackingDomain,
+  pickDefaultTrackingDomain,
+  sortTrackingDomains,
+} from '../utils/campaignUrl';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -127,15 +134,13 @@ interface Campaign {
   uniquenessTTL?: number;
   visitorBinding?: string;
   notes?: string;
+  parameters?: Record<string, unknown>;
 }
 
 // Transform backend data to frontend format
 const transformCampaign = (backend: BackendCampaign): Campaign => {
-  // Always use current domain from window location
-  // This ensures we use the actual domain the user is currently accessing
-  const currentDomain = window.location.host;
-  // Build real tracking URL using current domain with /link/ prefix
-  const trackingUrl = `https://${currentDomain}/link/${backend.alias}`;
+  // Fallback only; the page rebuilds the URL from the selected tracking domain.
+  const trackingUrl = buildCampaignTrackingUrl(backend.domain, backend.alias);
 
   return {
     id: backend.displayId || backend.id,
@@ -176,6 +181,7 @@ const transformCampaign = (backend: BackendCampaign): Campaign => {
     uniquenessTTL: backend.uniquenessTTL,
     visitorBinding: backend.visitorBinding,
     notes: backend.notes,
+    parameters: backend.parameters || {},
   };
 };
 
@@ -218,6 +224,12 @@ export const CampaignDetail = () => {
   const [flows, setFlows] = useState<any[]>([]);
   const [connections, setConnections] = useState<any[]>([]);
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([]);
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [selectedDomain, setSelectedDomain] = useState('');
+  const trackingDomains = React.useMemo(
+    () => sortTrackingDomains(domains.filter(isUsableTrackingDomain)),
+    [domains]
+  );
 
   // Fetch campaign data
   useEffect(() => {
@@ -225,14 +237,18 @@ export const CampaignDetail = () => {
       try {
         setLoading(true);
 
-        // Load campaign and traffic sources in parallel
-        const [campaign, sourcesData] = await Promise.all([
+        // Load campaign, traffic sources and tracking domains in parallel
+        const [campaign, sourcesData, domainsData] = await Promise.all([
           fetchCampaign(id!),
           fetchTrafficSources(false).catch(() => []),
+          fetchDomains(false).catch(() => []),
         ]);
 
         if (Array.isArray(sourcesData)) {
           setTrafficSources(sourcesData);
+        }
+        if (Array.isArray(domainsData)) {
+          setDomains(domainsData);
         }
 
         console.log('[CampaignDetail] Fetched campaign:', {
@@ -286,6 +302,19 @@ export const CampaignDetail = () => {
       loadCampaign();
     }
   }, [id]);
+
+  // 域名列表到达后补默认值；已选域名仍可用时不覆盖用户选择。
+  useEffect(() => {
+    if (!campaign || trackingDomains.length === 0) {
+      return;
+    }
+    setSelectedDomain((current) => {
+      if (current && trackingDomains.some((domain) => domain.hostname === current)) {
+        return current;
+      }
+      return pickDefaultTrackingDomain(trackingDomains, campaign.domain);
+    });
+  }, [campaign, trackingDomains]);
 
   if (loading) {
     return (
@@ -376,9 +405,27 @@ export const CampaignDetail = () => {
     setActiveEditSection('basic');
   };
 
-  const handleCopyLink = async () => {
+  const selectedTrafficSource = trafficSources.find(
+    (source) =>
+      source.id === campaign.trafficSourceId ||
+      source.id === campaign.source ||
+      source.name === campaign.source
+  );
+  const trackingDomain = selectedDomain || campaign.domain || window.location.host;
+  const domainChoices = trackingDomains.length > 0
+    ? trackingDomains.map((domain) => domain.hostname)
+    : [window.location.host];
+  const trackingUrl = campaign.alias
+    ? buildCampaignTrackingUrl(
+        trackingDomain,
+        campaign.alias,
+        selectedTrafficSource?.parameters,
+        campaign.parameters
+      )
+    : campaign.url;
+
+  const handleCopyUrl = async () => {
     try {
-      const trackingUrl = campaign.url;
       await navigator.clipboard.writeText(trackingUrl);
       toast.success('URL Copied', 'Tracking URL has been copied to clipboard!');
     } catch (err) {
@@ -387,44 +434,7 @@ export const CampaignDetail = () => {
     }
   };
 
-  const handleCopyUrl = async () => {
-    try {
-      const url = generateTrackingUrl();
-      await navigator.clipboard.writeText(url);
-      toast.success('URL Copied', 'Tracking URL has been copied to clipboard!');
-    } catch (err) {
-      console.error('Failed to copy URL:', err);
-      toast.error('Copy Failed', 'Failed to copy URL to clipboard');
-    }
-  };
-
-  // Generate tracking URL with traffic source parameters
-  const generateTrackingUrl = () => {
-    if (!campaign?.domain || !campaign?.alias) return campaign?.url || '';
-
-    let baseUrl = campaign.domain.startsWith('http') ? campaign.domain : `https://${campaign.domain}`;
-    baseUrl = baseUrl.replace(/\/$/, '');
-    let url = `${baseUrl}/link/${campaign.alias}`;
-
-    // Find the selected traffic source and append its parameters
-    const selectedSource = trafficSources.find(ts => ts.id === campaign.source);
-    const params = selectedSource?.parameters;
-
-    if (params && Array.isArray(params) && params.length > 0) {
-      const searchParams = new URLSearchParams();
-      params.forEach((p: any) => {
-        if (p.paramName && p.macro) {
-          searchParams.set(p.paramName, p.macro);
-        }
-      });
-      const queryString = searchParams.toString();
-      if (queryString) {
-        url = `${url}?${queryString}`;
-      }
-    }
-
-    return url;
-  };
+  const handleCopyLink = handleCopyUrl;
 
   const handleInputChange = (field: keyof Campaign, value: any) => {
     if (editedCampaign) {
@@ -697,13 +707,29 @@ eval(atob('${btoa(script)}'));
           </div>
         </div>
         <div className="flex gap-3">
-          <button 
-            onClick={handleCopyLink}
-            className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors"
-          >
-            <Copy size={16} />
-            Copy Link
-          </button>
+          <div className="flex items-stretch border border-outline-variant" title="Choose a tracking domain before copying">
+            <div className="relative flex items-center">
+              <Globe size={14} className="pointer-events-none absolute left-2.5 text-on-surface-variant" />
+              <select
+                aria-label="Tracking domain"
+                value={trackingDomain}
+                onChange={(event) => setSelectedDomain(event.target.value)}
+                className="cursor-pointer appearance-none bg-transparent py-2 pl-8 pr-7 text-[10px] font-bold uppercase tracking-widest text-primary outline-none"
+              >
+                {domainChoices.map((hostname) => (
+                  <option key={hostname} value={hostname}>{hostname}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="pointer-events-none absolute right-2 text-on-surface-variant" />
+            </div>
+            <button
+              onClick={handleCopyLink}
+              className="flex items-center gap-2 border-l border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary transition-colors hover:bg-surface-container"
+            >
+              <Copy size={16} />
+              Copy Link
+            </button>
+          </div>
           {campaign.status === 'Active' ? (
             <button className="flex items-center gap-2 px-4 py-2 border border-outline-variant text-primary text-xs font-bold uppercase tracking-widest hover:bg-surface-container transition-colors">
               <Pause size={16} />
@@ -737,8 +763,10 @@ eval(atob('${btoa(script)}'));
           onDoubleClick={handleCopyUrl}
           title="Click or double-click to copy"
         >
-          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Tracking URL</span>
-          <p className="text-sm font-mono text-primary truncate group-hover:underline">{generateTrackingUrl()}</p>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+            Tracking URL · {trackingDomain}
+          </span>
+          <p className="text-sm font-mono text-primary truncate group-hover:underline">{trackingUrl}</p>
         </div>
         <button 
           onClick={handleCopyUrl}
@@ -1477,8 +1505,8 @@ eval(atob('${btoa(script)}'));
                       </label>
                       <input
                         type="text"
-                        value={editedCampaign.url}
-                        onChange={(e) => handleInputChange('url', e.target.value)}
+                        value={trackingUrl}
+                        readOnly
                         className="w-full px-4 py-2 bg-surface text-sm border border-outline-variant focus:border-primary outline-none transition-all font-mono"
                       />
                     </div>

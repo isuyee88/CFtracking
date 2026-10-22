@@ -15,6 +15,7 @@ import type { FilterConfig } from './filters';
 import { FlowDesigner, type FlowNode, type FlowConnection } from './FlowDesigner';
 import { fetchTrafficSources } from '../services/api';
 import type { TrafficSource } from '../types/trafficSource';
+import { buildCampaignTrackingUrl } from '../utils/campaignUrl';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -132,32 +133,12 @@ export const CampaignForm: React.FC<CampaignFormProps> = ({
     }
   }, [initialData]);
 
-  // 自动生成 Campaign URL（包含 Traffic Source 的宏参数）
+  // 自动生成 Campaign URL（包含 Traffic Source 的宏参数，宏值保持未编码）
   const campaignUrl = useMemo(() => {
     if (!formData.domain || !formData.alias) return '';
 
     const selectedSource = trafficSources.find(ts => ts.id === formData.trafficSource);
-    const params = selectedSource?.parameters;
-
-    let baseUrl = formData.domain.startsWith('http') ? formData.domain : `https://${formData.domain}`;
-    baseUrl = baseUrl.replace(/\/$/, '');
-    // 使用 /link/ 前缀作为追踪链接
-    let url = `${baseUrl}/link/${formData.alias}`;
-
-    if (params && Array.isArray(params) && params.length > 0) {
-      const searchParams = new URLSearchParams();
-      params.forEach((p: any) => {
-        if (p.paramName && p.macro) {
-          searchParams.set(p.paramName, p.macro);
-        }
-      });
-      const queryString = searchParams.toString();
-      if (queryString) {
-        url = `${url}?${queryString}`;
-      }
-    }
-
-    return url;
+    return buildCampaignTrackingUrl(formData.domain, formData.alias, selectedSource?.parameters);
   }, [formData.domain, formData.alias, formData.trafficSource, trafficSources]);
 
   // 自动生成 alias（基于 name）

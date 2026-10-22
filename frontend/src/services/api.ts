@@ -135,6 +135,17 @@ async function fetchAllPages<T>(buildUrl: (page: number, pageSize: number) => st
 export async function fetchCampaigns() {
   return fetchAllPages<any>((page, pageSize) => `${API_BASE_URL}/api/campaigns?page=${page}&pageSize=${pageSize}`);
 }
+// 获取可用跟踪域名（Campaign 详情页复制跟踪链接时选择）
+export async function fetchDomains(withStats = false) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/domains?page=1&pageSize=100&status=active&withStats=${withStats ? 'true' : 'false'}`
+  );
+  const result = await handleResponse<any>(response);
+  if (Array.isArray(result.data)) {
+    return result.data;
+  }
+  return result.data?.list || [];
+}
 // 获取单个 Campaign
 export async function fetchCampaign(id: string | number) {
   const response = await fetch(`${API_BASE_URL}/api/campaigns/${id}`);
