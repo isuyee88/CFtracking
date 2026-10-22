@@ -1,12 +1,12 @@
 {
   "source": "patched deploy/prod bundle",
   "sourceRef": "origin/deploy/prod:worker.js",
-  "sourceSha256": "6e17ea691598e32d559572ae374b0ab7d3b179f3e0ece7b47af8e2435c9443bc",
-  "bundleSha256": "47d277cce739d1a3878f07d0bc712d19ef7eb844d6bfe2c65b4d3ca8098b2c34",
-  "bytes": 2075786,
-  "generatedAt": "2026-10-22T01:54:13.393Z",
-  "generator": "ops/scripts/patch/apply-click-config-lifecycle-patch.mjs",
-  "patch": "p0-4-clickcfg-lifecycle",
+  "sourceSha256": "47d277cce739d1a3878f07d0bc712d19ef7eb844d6bfe2c65b4d3ca8098b2c34",
+  "bundleSha256": "02eec5aeba0e5d1868effccbdd1c861b0a8bd721a52aeccaed320895ba2f38fb",
+  "bytes": 2077014,
+  "generatedAt": "2026-10-22T08:06:06.051Z",
+  "generator": "ops/scripts/patch/apply-offer-macro-patch.mjs",
+  "patch": "p0-5-offer-macro-expansion",
   "assets": "unchanged: keep the assets/ and wrangler.toml already in deploy/prod",
   "note": "commit this worker.js and SOURCE_BUNDLE to cftracking/deploy/prod; do not hand-edit"
 }

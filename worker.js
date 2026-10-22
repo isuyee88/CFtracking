@@ -37693,6 +37693,37 @@ async function persistFastPathClick(c, cfg, clickId, visitorId, targetUrl) {
 }
 __name(persistFastPathClick, "persistFastPathClick");
 __name2(persistFastPathClick, "persistFastPathClick");
+/* p0-5-offer-macro-expansion */
+function __expandOfferUrlMacros(cfg, clickId, visitorId, c) {
+  try {
+    const cf = c.req.raw.cf || {};
+    const q = (name) => c.req.query(name) || "";
+    const replacements = {
+      "{clickid}": clickId,
+      "{click_id}": clickId,
+      "{visitor}": visitorId,
+      "{campaign}": String(cfg.campaignId || ""),
+      "{campaign_id}": String(cfg.campaignId || ""),
+      "{referer}": c.req.header("Referer") || "",
+      "{useragent}": c.req.header("User-Agent") || "",
+      "{ip}": getClientIP(c) || "",
+      "{country}": cf.country || cf.ipCountry || "",
+      "{city}": cf.city || ""
+    };
+    for (let i = 1; i <= 30; i += 1) {
+      const value = q("sub" + i) || q("subid" + i) || q("sub_id_" + i);
+      replacements["{subid" + i + "}"] = value;
+      replacements["{sub_id_" + i + "}"] = value;
+    }
+    let out = String(cfg.offerUrl || "");
+    for (const [token, value] of Object.entries(replacements)) {
+      out = out.replace(new RegExp(token.replace(/[{}]/g, "\\$&"), "gi"), encodeURIComponent(String(value || "")));
+    }
+    return out;
+  } catch {
+    return String(cfg.offerUrl || "");
+  }
+}
 async function tryKvClick(c, campaignAlias) {
   try {
     const kv = c.env.UNIQUENESS_KV;
@@ -37701,7 +37732,7 @@ async function tryKvClick(c, campaignAlias) {
     if (!cfg || !cfg.offerUrl) return null;
     const clickId = generateClickId();
     const visitorId = await generateVisitorId(getClientIP(c), c.req.header("User-Agent") || "unknown");
-    const target = new URL(cfg.offerUrl);
+    const target = new URL(__expandOfferUrlMacros(cfg, clickId, visitorId, c));
     target.searchParams.set("clickid", clickId);
     target.searchParams.set("visitor", visitorId);
     for (let i = 1; i <= 30; i++) {
@@ -37827,7 +37858,7 @@ async function trySnapshotClick(c, campaignAlias) {
     if (!cfg || !cfg.offerUrl) return null;
     const clickId = generateClickId();
     const visitorId = await generateVisitorId(getClientIP(c), c.req.header("User-Agent") || "unknown");
-    const target = new URL(cfg.offerUrl);
+    const target = new URL(__expandOfferUrlMacros(cfg, clickId, visitorId, c));
     target.searchParams.set("clickid", clickId);
     target.searchParams.set("visitor", visitorId);
     for (let i = 1; i <= 30; i++) {
