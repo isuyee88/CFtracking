@@ -1,19 +1,26 @@
 {
-  "patch": "P08_CONVERSION_IDEMPOTENCY_V1",
+  "patch": "P09_STATS_WINDOW_V1",
   "version": "1",
-  "requiresMigration": "084_conversion_idempotency_key.sql",
-  "deployOrder": "apply migration 084 before deploying this bundle",
+  "status": "candidate-not-deployed",
   "base": {
-    "label": "deploy/prod@d3401ec",
-    "ref": "d3401ec",
-    "commit": "d3401ece3867c249dc0a7c69c68b1cbb295c76ce",
-    "path": "d3401ec:worker.js",
-    "sha256": "6a526254b53ce0fa0d509e94b83dd041078ed30e81161686f805ecc6d4dda3dc",
-    "bytes": 2117249
+    "label": "deploy/prod@f43eba3",
+    "ref": "f43eba3",
+    "commit": "f43eba3b1841bc4186149fd2ee2d9703f8b7f114",
+    "path": "f43eba3:worker.js",
+    "sha256": "fb52e175c1b7545121f90a8dddd84d1726be2502335cf0cc73baf8b7bcbd8c5b",
+    "bytes": 2121058
   },
   "output": {
     "path": "worker.js",
-    "sha256": "fb52e175c1b7545121f90a8dddd84d1726be2502335cf0cc73baf8b7bcbd8c5b",
-    "bytes": 2121058
-  }
+    "sha256": "1e083e1fbba1746c037a290b19a8387b545a30825482f520b575b9be718ff863",
+    "bytes": 2126072
+  },
+  "statsWindow": {
+    "defaultDays": 7,
+    "maxDays": 90,
+    "rowLimit": 7000,
+    "topN": "not implemented in the production patch; a topN query parameter is ignored"
+  },
+  "deployOrder": "deploy this bundle only; no schema migration is required for P09",
+  "rollback": "redeploy origin/deploy/prod @ f43eba3 (sha256 fb52e175...)"
 }
